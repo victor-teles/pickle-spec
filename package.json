@@ -1,5 +1,5 @@
 {
-  "name": "sum-ai",
+  "name": "pickle-spec",
   "module": "index.ts",
   "type": "module",
   "devDependencies": {
@@ -7,5 +7,8 @@
   },
   "peerDependencies": {
     "typescript": "^5"
+  },
+  "dependencies": {
+    "@browserbasehq/stagehand": "^3.1.0"
   }
 }
