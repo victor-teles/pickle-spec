@@ -1,7 +1,23 @@
 {
   "name": "pickle-spec",
+  "version": "0.1.0",
   "module": "index.ts",
   "type": "module",
+  "bin": {
+    "pickle-spec": "./src/cli.ts"
+  },
+  "exports": {
+    ".": "./index.ts"
+  },
+  "files": [
+    "src/*.ts",
+    "!src/*.test.ts",
+    "index.ts"
+  ],
+  "scripts": {
+    "typecheck": "bunx tsc --noEmit",
+    "test": "bun test"
+  },
   "devDependencies": {
     "@types/bun": "latest"
   },
@@ -9,6 +25,12 @@
     "typescript": "^5"
   },
   "dependencies": {
-    "@browserbasehq/stagehand": "^3.1.0"
+    "@browserbasehq/stagehand": "^3.1.0",
+    "@cucumber/gherkin": "^29.0.0",
+    "@cucumber/messages": "^26.0.0",
+    "commander": "^13.0.0",
+    "picocolors": "^1.1.0",
+    "prompts": "^2.4.2",
+    "zod": "^3.25.0"
   }
 }
