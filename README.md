@@ -4,10 +4,10 @@ AI-powered Gherkin test runner. Write `.feature` files in plain English — pick
 
 ## How It Works
 
-pickle-spec parses standard Gherkin `.feature` files and executes each step using [Stagehand](https://github.com/browserbase/stagehand), an AI-powered browser automation library:
+pickle-spec parses standard Gherkin `.feature` files and executes each step using AI-powered browser automation:
 
-- **Given / When** steps are dispatched as browser actions (`stagehand.act()`) — clicking, typing, navigating
-- **Then** steps are dispatched as verifications (`stagehand.extract()`) — the AI reads the page and checks if the expectation is met
+- **Given / When** steps are dispatched as browser actions — clicking, typing, navigating
+- **Then** steps are dispatched as verifications — the AI reads the page and checks if the expectation is met
 - Steps containing **"navigate to"** are handled as direct URL navigation
 
 Each scenario gets its own isolated browser context.
@@ -146,7 +146,7 @@ export default defineConfig({
     port: 3000,
     url: 'http://localhost:3000',
   },
-  stagehand: {
+  browser: {
     env: 'LOCAL',
     modelName: 'claude-4-6-sonnet-latest',
     headless: true,
@@ -165,7 +165,7 @@ If configured, pickle-spec starts your dev server before running tests and stops
 | `url`            | `string` | —       | Base URL for navigation                          |
 | `startupTimeout` | `number` | `30000` | Milliseconds to wait for the server to be ready  |
 
-### Stagehand options
+### Browser options
 
 | Option               | Type                        | Default                      | Description                               |
 | -------------------- | --------------------------- | ---------------------------- | ----------------------------------------- |
@@ -213,7 +213,7 @@ You can import `defineConfig` for type-safe configuration:
 
 ```typescript
 import { defineConfig } from 'pickle-spec'
-import type { PickleSpecConfig, ServerConfig, StagehandConfig } from 'pickle-spec'
+import type { PickleSpecConfig, ServerConfig, BrowserConfig } from 'pickle-spec'
 ```
 
 ## Environment Variables
@@ -230,6 +230,10 @@ When using Browserbase, also set:
 BROWSERBASE_API_KEY=...
 BROWSERBASE_PROJECT_ID=...
 ```
+
+## Credits
+
+- [Stagehand](https://github.com/browserbase/stagehand) — AI-powered browser automation library
 
 ## License
 
