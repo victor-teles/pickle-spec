@@ -1,5 +1,5 @@
 import { test, expect, describe, beforeAll, afterAll } from 'bun:test'
-import { parseFeatureFile, parseFeatureFiles, filterPicklesByTag } from './parser'
+import { parseFeatureFile, parseFeatureFiles, filterPicklesByTag, hasIgnoreTag } from './parser'
 import { tmpdir } from 'os'
 import { join } from 'path'
 import { mkdirSync, rmSync } from 'fs'
@@ -314,5 +314,54 @@ Feature: Filter 3
     const result = await parseFeatureFile(path)
     const filtered = filterPicklesByTag(result.pickles, '@nonexistent')
     expect(filtered).toHaveLength(0)
+  })
+})
+
+describe('hasIgnoreTag', () => {
+  test('returns true for pickle with @ignore tag', async () => {
+    const path = await writeFeature('ignore1.feature', `
+Feature: Ignore
+  @ignore
+  Scenario: Ignored
+    Given step
+`)
+
+    const result = await parseFeatureFile(path)
+    expect(hasIgnoreTag(result.pickles[0]!)).toBe(true)
+  })
+
+  test('returns false for pickle without @ignore tag', async () => {
+    const path = await writeFeature('ignore2.feature', `
+Feature: No Ignore
+  Scenario: Normal
+    Given step
+`)
+
+    const result = await parseFeatureFile(path)
+    expect(hasIgnoreTag(result.pickles[0]!)).toBe(false)
+  })
+
+  test('returns false for pickle with other tags but not @ignore', async () => {
+    const path = await writeFeature('ignore3.feature', `
+Feature: Other Tags
+  @smoke @regression
+  Scenario: Tagged
+    Given step
+`)
+
+    const result = await parseFeatureFile(path)
+    expect(hasIgnoreTag(result.pickles[0]!)).toBe(false)
+  })
+
+  test('detects @ignore inherited from feature level', async () => {
+    const path = await writeFeature('ignore4.feature', `
+@ignore
+Feature: Ignored Feature
+  Scenario: Inherits ignore
+    Given step
+`)
+
+    const result = await parseFeatureFile(path)
+    expect(hasIgnoreTag(result.pickles[0]!)).toBe(true)
   })
 })

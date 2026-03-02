@@ -31,6 +31,11 @@ export function reportScenarioStart(scenarioName: string): void {
   console.log(pc.bold(`  Scenario: ${scenarioName}`))
 }
 
+export function reportScenarioIgnored(scenarioName: string): void {
+  console.log('')
+  console.log(pc.yellow(`  ⊘ Scenario: ${scenarioName} ${pc.dim('(ignored)')}`))
+}
+
 export function reportStepResult(
   keyword: string,
   text: string,
@@ -93,10 +98,15 @@ export function reportError(message: string): void {
   console.error(pc.red(pc.bold(`Error: ${message}`)))
 }
 
+let cancelledReported = false
+
 export function reportCancelled(): void {
+  if (cancelledReported) return
+  cancelledReported = true
   stopSpinner()
   console.log('')
   console.log(pc.yellow(pc.bold('  Run cancelled by user (Ctrl+C)')))
+  console.log(pc.dim('  Press Ctrl+C again to force exit'))
 }
 
 // --- Verbose logging ---

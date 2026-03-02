@@ -65,3 +65,10 @@ export function filterPicklesByTag(pickles: readonly Pickle[], tag: string): Pic
     pickle.tags.some(t => t.name === normalizedTag)
   )
 }
+
+/**
+ * Check if a pickle has the @ignore tag.
+ */
+export function hasIgnoreTag(pickle: Pickle): boolean {
+  return pickle.tags.some(t => t.name === '@ignore')
+}

@@ -31,7 +31,10 @@ program
     language?: string
     screenshot?: string
   }) => {
-    const onSigint = () => { cancelRun() }
+    const onSigint = () => {
+      reportCancelled()
+      cancelRun()
+    }
     process.on('SIGINT', onSigint)
 
     try {
@@ -68,9 +71,6 @@ program
         verbose: opts.verbose ?? false,
       })
 
-      if (result.cancelled) {
-        reportCancelled()
-      }
       reportSummary(result)
       process.exit(result.failed > 0 || result.cancelled ? 1 : 0)
     } catch (err) {

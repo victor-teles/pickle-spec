@@ -12,9 +12,9 @@ import type {
 } from './types'
 import { StepKeywordType } from '@cucumber/messages'
 import type { Pickle, PickleStep, Step, GherkinDocument } from '@cucumber/messages'
-import type { ParsedFeature } from './parser'
+import { hasIgnoreTag, type ParsedFeature } from './parser'
 import { startServer, stopServer, type ManagedServer } from './server'
-import { reportStepResult, reportStepStart, reportScenarioStart, reportFeatureStart, reportVerbose, reportVerboseLog } from './reporter'
+import { reportStepResult, reportStepStart, reportScenarioStart, reportScenarioIgnored, reportFeatureStart, reportVerbose, reportVerboseLog } from './reporter'
 import { captureScreenshot } from './screenshots'
 import type { ScreenshotConfig } from './types'
 
@@ -128,10 +128,62 @@ const NAVIGATION_PATTERN = new RegExp(
   'i',
 )
 
-let cancelled = false
+// --- Cancellation infrastructure ---
+
+let abortController: AbortController | null = null
+let activeStagehand: Stagehand | null = null
+let activeServer: ManagedServer | null = null
+
+class CancellationError extends Error {
+  constructor() {
+    super('Run cancelled by user')
+    this.name = 'CancellationError'
+  }
+}
+
+function initCancellation(): AbortSignal {
+  abortController = new AbortController()
+  return abortController.signal
+}
 
 export function cancelRun(): void {
-  cancelled = true
+  if (abortController && !abortController.signal.aborted) {
+    abortController.abort()
+  }
+
+  if (activeStagehand) {
+    activeStagehand.close({ force: true }).catch(() => {})
+    activeStagehand = null
+  }
+
+  if (activeServer) {
+    stopServer(activeServer)
+    activeServer = null
+  }
+}
+
+function isCancelled(): boolean {
+  return abortController?.signal.aborted ?? false
+}
+
+function withCancellation<T>(promise: Promise<T>): Promise<T> {
+  if (isCancelled()) return Promise.reject(new CancellationError())
+
+  return new Promise<T>((resolve, reject) => {
+    const onAbort = () => reject(new CancellationError())
+    abortController!.signal.addEventListener('abort', onAbort, { once: true })
+
+    promise.then(
+      (value) => {
+        abortController?.signal.removeEventListener('abort', onAbort)
+        resolve(value)
+      },
+      (err) => {
+        abortController?.signal.removeEventListener('abort', onAbort)
+        reject(err)
+      },
+    )
+  })
 }
 
 const SUPPRESSED_CONSOLE_PATTERNS = [
@@ -178,6 +230,7 @@ async function executeStep(
   effectiveType: EffectiveStepType,
   baseUrl: string,
   verbose: boolean,
+  signal: AbortSignal,
   screenshotCtx?: { config: ScreenshotConfig; featureName: string; scenarioName: string; stepIndex: number },
 ): Promise<StepResult> {
   const startTime = Date.now()
@@ -195,10 +248,10 @@ async function executeStep(
 
         if (url.startsWith('http') || url.startsWith('/')) {
           if (verbose) reportVerbose(`Navigating to ${url}`)
-          await page.goto(url, { waitUntil: 'domcontentloaded' })
+          await withCancellation(page.goto(url, { waitUntil: 'domcontentloaded' }))
         } else {
           if (verbose) reportVerbose(`Navigating to ${baseUrl}`)
-          await page.goto(baseUrl, { waitUntil: 'domcontentloaded' })
+          await withCancellation(page.goto(baseUrl, { waitUntil: 'domcontentloaded' }))
         }
       } else {
         if (verbose) reportVerbose(`Agent executing: "${prompt}"`)
@@ -206,6 +259,7 @@ async function executeStep(
         const execResult = await agent.execute({
           instruction: prompt,
           maxSteps: 10,
+          signal,
         })
         if (!execResult.success) {
           result = {
@@ -234,6 +288,7 @@ async function executeStep(
           `You may scroll or observe the page to gather enough information.`,
         maxSteps: 5,
         output: VerificationSchema,
+        signal,
       })
 
       const verification = execResult.output as z.infer<typeof VerificationSchema> | undefined
@@ -256,13 +311,19 @@ async function executeStep(
       result = { step, status: 'passed', durationMs: Date.now() - startTime }
     }
   } catch (err) {
+    if (err instanceof CancellationError) throw err
+    if (isCancelled()) throw new CancellationError()
+    if (err instanceof Error && (err.name === 'AbortError' || err.name === 'AgentAbortError')) {
+      throw new CancellationError()
+    }
+
     result = {
       step,
       status: 'failed',
       durationMs: Date.now() - startTime,
       error: err instanceof Error ? err.message : String(err),
     }
-    if (screenshotCtx) {
+    if (screenshotCtx && !isCancelled()) {
       result.screenshotPath = await captureScreenshot(stagehand, screenshotCtx.config, {
         ...screenshotCtx, stepText: step.text, status: result.status,
       })
@@ -287,6 +348,7 @@ async function executeScenario(
   stepInfoMap: Map<string, { keyword: string; type: EffectiveStepType }>,
   verbose: boolean,
   featureName: string,
+  signal: AbortSignal,
 ): Promise<ScenarioResult> {
   const startTime = Date.now()
   const stagehandConfig = config.browser!
@@ -312,13 +374,15 @@ async function executeScenario(
     experimental: true
   })
 
+  activeStagehand = stagehand
+
   if (verbose) reportVerbose('Launching browser...')
-  await stagehand.init()
+  await withCancellation(stagehand.init())
   if (verbose) reportVerbose('Browser ready')
 
   const page = stagehand.context.pages()[0]!
   if (verbose) reportVerbose(`Navigating to ${baseUrl}`)
-  await page.goto(baseUrl, { waitUntil: 'domcontentloaded' })
+  await withCancellation(page.goto(baseUrl, { waitUntil: 'domcontentloaded' }))
 
   const stepResults: StepResult[] = []
   let scenarioFailed = false
@@ -327,7 +391,7 @@ async function executeScenario(
 
   for (let i = 0; i < pickle.steps.length; i++) {
     const step = pickle.steps[i]!
-    if (scenarioFailed || cancelled) {
+    if (scenarioFailed || isCancelled()) {
       const info = stepInfoMap.get(step.astNodeIds[0]!)
       reportStepResult(info?.keyword ?? '  ', step.text, {
         step,
@@ -346,22 +410,37 @@ async function executeScenario(
     const screenshotCtx = hasScreenshots
       ? { config: screenshotConfig!, featureName, scenarioName: pickle.name, stepIndex: i }
       : undefined
-    const result = await executeStep(stagehand, step, effectiveType, baseUrl, verbose, screenshotCtx)
-    stepResults.push(result)
-    reportStepResult(keyword, step.text, result)
 
-    if (result.status === 'failed') {
-      scenarioFailed = true
+    try {
+      const result = await executeStep(stagehand, step, effectiveType, baseUrl, verbose, signal, screenshotCtx)
+      stepResults.push(result)
+      reportStepResult(keyword, step.text, result)
+
+      if (result.status === 'failed') {
+        scenarioFailed = true
+      }
+    } catch (err) {
+      if (err instanceof CancellationError || isCancelled()) {
+        reportStepResult(keyword, step.text, { step, status: 'skipped', durationMs: 0 })
+        stepResults.push({ step, status: 'skipped', durationMs: 0 })
+        break
+      }
+      throw err
     }
   }
 
-  if (verbose) reportVerbose('Closing browser')
-  await stagehand.close()
+  try {
+    if (verbose) reportVerbose('Closing browser')
+    await stagehand.close()
+  } catch {
+    // Browser may already be closed by cancellation handler
+  }
+  activeStagehand = null
   restoreLogs()
 
   return {
     pickle,
-    status: (scenarioFailed || cancelled) ? 'failed' : 'passed',
+    status: (scenarioFailed || isCancelled()) ? 'failed' : 'passed',
     steps: stepResults,
     durationMs: Date.now() - startTime,
   }
@@ -376,17 +455,19 @@ export async function runFeatures(
   options: { verbose: boolean },
 ): Promise<RunResult> {
   const overallStart = Date.now()
+  const signal = initCancellation()
   let server: ManagedServer | undefined
 
   try {
     if (config.server?.command) {
       server = await startServer(config.server)
+      activeServer = server
     }
 
     const featureResults: FeatureResult[] = []
 
     for (const feature of features) {
-      if (cancelled) break
+      if (isCancelled()) break
       reportFeatureStart(feature.featureName, feature.filePath)
       const featureStart = Date.now()
 
@@ -394,9 +475,21 @@ export async function runFeatures(
       const scenarioResults: ScenarioResult[] = []
 
       for (const pickle of feature.pickles) {
-        if (cancelled) break
+        if (isCancelled()) break
+
+        if (hasIgnoreTag(pickle)) {
+          reportScenarioIgnored(pickle.name)
+          scenarioResults.push({
+            pickle,
+            status: 'skipped',
+            steps: pickle.steps.map(step => ({ step, status: 'skipped' as const, durationMs: 0 })),
+            durationMs: 0,
+          })
+          continue
+        }
+
         reportScenarioStart(pickle.name)
-        const result = await executeScenario(pickle, config, stepInfoMap, options.verbose, feature.featureName)
+        const result = await executeScenario(pickle, config, stepInfoMap, options.verbose, feature.featureName, signal)
         scenarioResults.push(result)
       }
 
@@ -426,12 +519,13 @@ export async function runFeatures(
       passed,
       failed,
       skipped,
-      cancelled,
+      cancelled: isCancelled(),
       artifactsDir: hasScreenshots ? (config.screenshots!.outputDir ?? './pickle-artifacts') : undefined,
     }
   } finally {
     if (server) {
       stopServer(server)
+      activeServer = null
     }
   }
 }
