@@ -37,7 +37,10 @@ export async function loadConfig(configPath?: string): Promise<PickleSpecConfig>
   }
 
   const mod = await import(resolvedPath)
-  const userConfig: PickleSpecConfig = mod.default ?? mod
+  const userConfig = mod.default ?? mod
+
+  // Support legacy 'stagehand' key as alias for 'browser'
+  const browserConfig = userConfig.browser ?? userConfig.stagehand
 
   return {
     language: userConfig.language,
@@ -45,7 +48,7 @@ export async function loadConfig(configPath?: string): Promise<PickleSpecConfig>
     server: userConfig.server ? resolveServerConfig(userConfig.server) : undefined,
     browser: {
       ...DEFAULT_CONFIG.browser,
-      ...userConfig.browser,
+      ...browserConfig,
     },
   }
 }
