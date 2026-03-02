@@ -109,12 +109,46 @@ export function reportCancelled(): void {
   console.log(pc.dim('  Press Ctrl+C again to force exit'))
 }
 
-// --- Verbose logging ---
+// --- Log suppression ---
 
 const SUPPRESSED_LOG_PATTERNS = [
   /Using agent in default DOM mode/i,
   /will default to.*hybrid/i,
+  /AI SDK Warning/,
+  /\[Stagehand\]/,
+  /\[v3-piercer\]/,
+  /OUT OF SYNC/,
+  /DEPRECATED/,
 ]
+
+export function suppressThirdPartyLogs(): () => void {
+  const origWarn = console.warn
+  const origError = console.error
+  const origLog = console.log
+
+  const shouldSuppress = (args: unknown[]) => {
+    const msg = typeof args[0] === 'string' ? args[0] : ''
+    return SUPPRESSED_LOG_PATTERNS.some(p => p.test(msg))
+  }
+
+  console.warn = (...args: unknown[]) => {
+    if (!shouldSuppress(args)) origWarn.apply(console, args)
+  }
+  console.error = (...args: unknown[]) => {
+    if (!shouldSuppress(args)) origError.apply(console, args)
+  }
+  console.log = (...args: unknown[]) => {
+    if (!shouldSuppress(args)) origLog.apply(console, args)
+  }
+
+  return () => {
+    console.warn = origWarn
+    console.error = origError
+    console.log = origLog
+  }
+}
+
+// --- Verbose logging ---
 
 export function reportVerboseLog(line: LogLine): void {
   const msg = line.message

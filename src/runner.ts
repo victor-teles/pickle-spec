@@ -10,216 +10,29 @@ import type {
   FeatureResult,
   RunResult,
 } from './types'
-import { StepKeywordType } from '@cucumber/messages'
-import type { Pickle, PickleStep, Step, GherkinDocument } from '@cucumber/messages'
+import type { Pickle, PickleStep } from '@cucumber/messages'
 import { hasIgnoreTag, type ParsedFeature } from './parser'
 import { startServer, stopServer, type ManagedServer } from './server'
-import { reportStepResult, reportStepStart, reportScenarioStart, reportScenarioIgnored, reportFeatureStart, reportVerbose, reportVerboseLog } from './reporter'
+import { reportStepResult, reportStepStart, reportScenarioStart, reportScenarioIgnored, reportFeatureStart, reportVerbose, reportVerboseLog, suppressThirdPartyLogs } from './reporter'
 import { captureScreenshot } from './screenshots'
 import type { ScreenshotConfig } from './types'
+import {
+  type EffectiveStepType,
+  buildStepInfoMap,
+  buildStepPrompt,
+  VerificationSchema,
+  NAVIGATION_PATTERN,
+} from './step-utils'
+import {
+  CancellationError,
+  initCancellation,
+  isCancelled,
+  withCancellation,
+  setActiveStagehand,
+  setActiveServer,
+} from './cancellation'
 
-/**
- * Effective step type for dispatch: Context (Given), Action (When), Outcome (Then).
- */
-type EffectiveStepType = 'Context' | 'Action' | 'Outcome'
-
-/**
- * Build a map from AST Step ID to its keyword and keyword type.
- */
-function buildStepInfoMap(document: GherkinDocument): Map<string, { keyword: string; type: EffectiveStepType }> {
-  const map = new Map<string, { keyword: string; type: EffectiveStepType }>()
-
-  if (!document.feature) return map
-
-  function processSteps(steps: readonly Step[], previousType: EffectiveStepType = 'Context') {
-    let lastEffective: EffectiveStepType = previousType
-    for (const step of steps) {
-      let effective: EffectiveStepType
-      switch (step.keywordType) {
-        case StepKeywordType.CONTEXT:
-          effective = 'Context'
-          break
-        case StepKeywordType.ACTION:
-          effective = 'Action'
-          break
-        case StepKeywordType.OUTCOME:
-          effective = 'Outcome'
-          break
-        case StepKeywordType.CONJUNCTION:
-        default:
-          effective = lastEffective
-          break
-      }
-      lastEffective = effective
-      map.set(step.id, { keyword: step.keyword, type: effective })
-    }
-  }
-
-  for (const child of document.feature.children) {
-    if (child.background) {
-      processSteps(child.background.steps)
-    }
-    if (child.scenario) {
-      processSteps(child.scenario.steps)
-    }
-    if (child.rule) {
-      for (const ruleChild of child.rule.children) {
-        if (ruleChild.background) {
-          processSteps(ruleChild.background.steps)
-        }
-        if (ruleChild.scenario) {
-          processSteps(ruleChild.scenario.steps)
-        }
-      }
-    }
-  }
-
-  return map
-}
-
-/**
- * Build prompt text for a step, including data table or doc string arguments.
- */
-function buildStepPrompt(step: PickleStep): string {
-  let prompt = step.text
-
-  if (step.argument?.dataTable) {
-    const rows = step.argument.dataTable.rows
-    if (rows.length > 0) {
-      const headers = rows[0]!.cells.map(c => c.value)
-      const dataRows = rows.slice(1)
-      prompt += '\n\nWith the following data:\n'
-      prompt += headers.join(' | ') + '\n'
-      for (const row of dataRows) {
-        prompt += row.cells.map(c => c.value).join(' | ') + '\n'
-      }
-    }
-  }
-
-  if (step.argument?.docString) {
-    prompt += '\n\n' + step.argument.docString.content
-  }
-
-  return prompt
-}
-
-const VerificationSchema = z.object({
-  meetsExpectation: z.boolean().describe(
-    'Whether the current page state matches the expected condition',
-  ),
-  actualState: z.string().describe(
-    'Description of the actual state observed on the page',
-  ),
-})
-
-/**
- * Multilingual regex to detect navigation patterns in step text.
- * Supports English, Portuguese, Spanish, and French.
- */
-const NAVIGATION_PATTERN = new RegExp(
-  '(?:' +
-    'I (?:am on|navigate to|visit|go to|open)' +               // English
-    '|(?:eu )?(?:navego para|visito|abro|estou em)' +           // Portuguese
-    '|(?:yo )?(?:navego a|visito|abro|estoy en)' +              // Spanish
-    '|(?:je )?(?:navigue vers|visite|ouvre|suis sur)' +          // French
-  ')' +
-  '\\s+(?:(?:the|a|o|la|le|el|à)\\s+)?' +                      // optional articles
-  '["\'"]?(.+?)["\'"]?\\s*$',                                   // capture target (non-greedy)
-  'i',
-)
-
-// --- Cancellation infrastructure ---
-
-let abortController: AbortController | null = null
-let activeStagehand: Stagehand | null = null
-let activeServer: ManagedServer | null = null
-
-class CancellationError extends Error {
-  constructor() {
-    super('Run cancelled by user')
-    this.name = 'CancellationError'
-  }
-}
-
-function initCancellation(): AbortSignal {
-  abortController = new AbortController()
-  return abortController.signal
-}
-
-export function cancelRun(): void {
-  if (abortController && !abortController.signal.aborted) {
-    abortController.abort()
-  }
-
-  if (activeStagehand) {
-    activeStagehand.close({ force: true }).catch(() => {})
-    activeStagehand = null
-  }
-
-  if (activeServer) {
-    stopServer(activeServer)
-    activeServer = null
-  }
-}
-
-function isCancelled(): boolean {
-  return abortController?.signal.aborted ?? false
-}
-
-function withCancellation<T>(promise: Promise<T>): Promise<T> {
-  if (isCancelled()) return Promise.reject(new CancellationError())
-
-  return new Promise<T>((resolve, reject) => {
-    const onAbort = () => reject(new CancellationError())
-    abortController!.signal.addEventListener('abort', onAbort, { once: true })
-
-    promise.then(
-      (value) => {
-        abortController?.signal.removeEventListener('abort', onAbort)
-        resolve(value)
-      },
-      (err) => {
-        abortController?.signal.removeEventListener('abort', onAbort)
-        reject(err)
-      },
-    )
-  })
-}
-
-const SUPPRESSED_CONSOLE_PATTERNS = [
-  /AI SDK Warning/,
-  /\[Stagehand\]/,
-  /\[v3-piercer\]/,
-  /OUT OF SYNC/,
-  /DEPRECATED/,
-]
-
-function suppressThirdPartyLogs(): () => void {
-  const origWarn = console.warn
-  const origError = console.error
-  const origLog = console.log
-
-  const shouldSuppress = (args: unknown[]) => {
-    const msg = typeof args[0] === 'string' ? args[0] : ''
-    return SUPPRESSED_CONSOLE_PATTERNS.some(p => p.test(msg))
-  }
-
-  console.warn = (...args: unknown[]) => {
-    if (!shouldSuppress(args)) origWarn.apply(console, args)
-  }
-  console.error = (...args: unknown[]) => {
-    if (!shouldSuppress(args)) origError.apply(console, args)
-  }
-  console.log = (...args: unknown[]) => {
-    if (!shouldSuppress(args)) origLog.apply(console, args)
-  }
-
-  return () => {
-    console.warn = origWarn
-    console.error = origError
-    console.log = origLog
-  }
-}
+export { cancelRun } from './cancellation'
 
 /**
  * Execute a single step against Stagehand.
@@ -374,7 +187,7 @@ async function executeScenario(
     experimental: true
   })
 
-  activeStagehand = stagehand
+  setActiveStagehand(stagehand)
 
   if (verbose) reportVerbose('Launching browser...')
   await withCancellation(stagehand.init())
@@ -435,7 +248,7 @@ async function executeScenario(
   } catch {
     // Browser may already be closed by cancellation handler
   }
-  activeStagehand = null
+  setActiveStagehand(null)
   restoreLogs()
 
   return {
@@ -461,7 +274,7 @@ export async function runFeatures(
   try {
     if (config.server?.command) {
       server = await startServer(config.server)
-      activeServer = server
+      setActiveServer(server)
     }
 
     const featureResults: FeatureResult[] = []
@@ -525,7 +338,7 @@ export async function runFeatures(
   } finally {
     if (server) {
       stopServer(server)
-      activeServer = null
+      setActiveServer(null)
     }
   }
 }
