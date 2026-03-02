@@ -207,15 +207,6 @@ Scaffold a starter `pickle.config.ts` in the current directory.
 pickle init
 ```
 
-## Programmatic API
-
-You can import `defineConfig` for type-safe configuration:
-
-```typescript
-import { defineConfig } from 'pickle-spec'
-import type { PickleSpecConfig, ServerConfig, BrowserConfig } from 'pickle-spec'
-```
-
 ## Environment Variables
 
 Bun automatically loads `.env` files. Set your API key there:
