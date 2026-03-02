@@ -30,8 +30,8 @@ program
     try {
       const config = await loadConfig(opts.config)
 
-      if (opts.headed && config.stagehand) {
-        config.stagehand.headless = false
+      if (opts.headed && config.browser) {
+        config.browser.headless = false
       }
 
       const features = await parseFeatureFiles(glob)

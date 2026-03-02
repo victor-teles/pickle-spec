@@ -11,7 +11,7 @@ export interface ServerConfig {
   startupTimeout?: number
 }
 
-export interface StagehandConfig {
+export interface BrowserConfig {
   /** 'LOCAL' or 'BROWSERBASE' */
   env?: 'LOCAL' | 'BROWSERBASE'
   /** Model name (e.g., 'claude-4-6-sonnet-latest', 'gpt-4o') */
@@ -33,7 +33,7 @@ export interface StagehandConfig {
 
 export interface PickleSpecConfig {
   server?: ServerConfig
-  stagehand?: StagehandConfig
+  browser?: BrowserConfig
 }
 
 // --- Execution Result Types ---

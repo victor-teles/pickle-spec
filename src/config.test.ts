@@ -22,10 +22,10 @@ describe('defineConfig', () => {
 describe('loadConfig', () => {
   test('returns defaults when config file does not exist', async () => {
     const config = await loadConfig('/nonexistent/path/pickle.config.ts')
-    expect(config.stagehand).toBeDefined()
-    expect(config.stagehand!.env).toBe('LOCAL')
-    expect(config.stagehand!.modelName).toBe('claude-4-6-sonnet-latest')
-    expect(config.stagehand!.headless).toBe(true)
+    expect(config.browser).toBeDefined()
+    expect(config.browser!.env).toBe('LOCAL')
+    expect(config.browser!.modelName).toBe('claude-4-6-sonnet-latest')
+    expect(config.browser!.headless).toBe(true)
     expect(config.server).toBeUndefined()
   })
 
@@ -38,10 +38,10 @@ describe('loadConfig', () => {
 
     try {
       const config = await loadConfig(tmpPath)
-      expect(config.stagehand!.modelName).toBe('gpt-4o')
-      expect(config.stagehand!.env).toBe('BROWSERBASE')
+      expect(config.browser!.modelName).toBe('gpt-4o')
+      expect(config.browser!.env).toBe('BROWSERBASE')
       // Defaults should be merged in
-      expect(config.stagehand!.headless).toBe(true)
+      expect(config.browser!.headless).toBe(true)
     } finally {
       await Bun.file(tmpPath).exists() && (await Bun.$`rm ${tmpPath}`)
     }
@@ -76,10 +76,10 @@ describe('loadConfig', () => {
 
     try {
       const config = await loadConfig(tmpPath)
-      expect(config.stagehand!.headless).toBe(false)
+      expect(config.browser!.headless).toBe(false)
       // Other defaults still present
-      expect(config.stagehand!.env).toBe('LOCAL')
-      expect(config.stagehand!.modelName).toBe('claude-4-6-sonnet-latest')
+      expect(config.browser!.env).toBe('LOCAL')
+      expect(config.browser!.modelName).toBe('claude-4-6-sonnet-latest')
     } finally {
       await Bun.file(tmpPath).exists() && (await Bun.$`rm ${tmpPath}`)
     }
