@@ -139,6 +139,133 @@ Feature: Glob Two
       'No .feature files found',
     )
   })
+
+  test('accepts an array of glob patterns', async () => {
+    await writeFeature('multi-a1.feature', `
+Feature: Multi A
+  Scenario: Test
+    Given something
+`)
+    await writeFeature('multi-b1.feature', `
+Feature: Multi B
+  Scenario: Test
+    Given something
+`)
+
+    const results = await parseFeatureFiles([
+      join(fixtureDir, 'multi-a*.feature'),
+      join(fixtureDir, 'multi-b*.feature'),
+    ])
+    expect(results.length).toBe(2)
+    expect(results.map(r => r.featureName)).toContain('Multi A')
+    expect(results.map(r => r.featureName)).toContain('Multi B')
+  })
+
+  test('deduplicates files matched by overlapping patterns', async () => {
+    await writeFeature('overlap.feature', `
+Feature: Overlap
+  Scenario: Test
+    Given something
+`)
+
+    const results = await parseFeatureFiles([
+      join(fixtureDir, 'overlap*.feature'),
+      join(fixtureDir, 'over*.feature'),
+    ])
+    const overlapResults = results.filter(r => r.featureName === 'Overlap')
+    expect(overlapResults.length).toBe(1)
+  })
+
+  test('throws with all patterns listed when no files match', async () => {
+    expect(
+      parseFeatureFiles(['nonexistent-a/**/*.feature', 'nonexistent-b/**/*.feature']),
+    ).rejects.toThrow(
+      'No .feature files found matching pattern: nonexistent-a/**/*.feature, nonexistent-b/**/*.feature',
+    )
+  })
+})
+
+describe('i18n support', () => {
+  test('parses Portuguese feature file with language parameter', async () => {
+    const path = await writeFeature('pt.feature', `
+Funcionalidade: Busca
+  Cenário: Visitar página principal
+    Dado eu estou na página principal
+    Quando eu digito "Brasil" no campo de busca
+    Então eu devo ver resultados relacionados ao Brasil
+`)
+
+    const result = await parseFeatureFile(path, 'pt')
+    expect(result.featureName).toBe('Busca')
+    expect(result.pickles).toHaveLength(1)
+    expect(result.pickles[0]!.name).toBe('Visitar página principal')
+    expect(result.pickles[0]!.steps).toHaveLength(3)
+  })
+
+  test('parses Spanish feature file with language parameter', async () => {
+    const path = await writeFeature('es.feature', `
+Característica: Búsqueda
+  Escenario: Visitar página principal
+    Dado estoy en la página principal
+    Cuando ingreso "test" en el campo de búsqueda
+    Entonces debería ver resultados
+`)
+
+    const result = await parseFeatureFile(path, 'es')
+    expect(result.featureName).toBe('Búsqueda')
+    expect(result.pickles).toHaveLength(1)
+    expect(result.pickles[0]!.steps).toHaveLength(3)
+  })
+
+  test('per-file language comment overrides default', async () => {
+    const path = await writeFeature('language-comment.feature', `# language: fr
+Fonctionnalité: Connexion
+  Scénario: Connexion valide
+    Soit je suis sur la page de connexion
+    Quand je saisis des identifiants valides
+    Alors je devrais voir le tableau de bord
+`)
+
+    // Pass 'en' as default, but the file declares 'fr'
+    const result = await parseFeatureFile(path, 'en')
+    expect(result.featureName).toBe('Connexion')
+    expect(result.pickles).toHaveLength(1)
+    expect(result.pickles[0]!.steps).toHaveLength(3)
+  })
+
+  test('defaults to English when no language is specified', async () => {
+    const path = await writeFeature('default-en.feature', `
+Feature: Default
+  Scenario: English test
+    Given something
+    When I do something
+    Then I see something
+`)
+
+    const result = await parseFeatureFile(path)
+    expect(result.featureName).toBe('Default')
+    expect(result.pickles).toHaveLength(1)
+    expect(result.pickles[0]!.steps).toHaveLength(3)
+  })
+
+  test('parseFeatureFiles passes language to each file', async () => {
+    await writeFeature('i18n-es1.feature', `
+Característica: Primera
+  Escenario: Prueba
+    Dado algo
+`)
+    await writeFeature('i18n-es2.feature', `
+Característica: Segunda
+  Escenario: Prueba
+    Dado algo mas
+`)
+
+    const results = await parseFeatureFiles(join(fixtureDir, 'i18n-es*.feature'), 'es')
+    expect(results.length).toBe(2)
+    for (const r of results) {
+      expect(r.pickles).toHaveLength(1)
+    }
+  })
 })
 
 describe('filterPicklesByTag', () => {

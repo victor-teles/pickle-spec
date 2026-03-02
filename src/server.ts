@@ -11,9 +11,12 @@ export interface ManagedServer {
  * Start the dev server and wait for it to be ready.
  */
 export async function startServer(config: ServerConfig): Promise<ManagedServer> {
-  reportServerStarting(config.command)
+  const command = config.command!
+  const url = config.url!
 
-  const args = config.command.split(' ')
+  reportServerStarting(command)
+
+  const args = command.split(' ')
   const proc = Bun.spawn(args, {
     stdout: 'ignore',
     stderr: 'pipe',
@@ -25,9 +28,9 @@ export async function startServer(config: ServerConfig): Promise<ManagedServer> 
 
   while (Date.now() - startTime < timeout) {
     try {
-      const response = await fetch(config.url)
+      const response = await fetch(url)
       if (response.ok || response.status < 500) {
-        reportServerReady(config.url)
+        reportServerReady(url)
         return {
           process: proc,
           stop: () => proc.kill(),
@@ -41,7 +44,7 @@ export async function startServer(config: ServerConfig): Promise<ManagedServer> 
 
   proc.kill()
   throw new Error(
-    `Server failed to start within ${timeout}ms. Command: "${config.command}", URL: "${config.url}"`,
+    `Server failed to start within ${timeout}ms. Command: "${command}", URL: "${url}"`,
   )
 }
 

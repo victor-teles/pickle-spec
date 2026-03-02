@@ -1,6 +1,5 @@
 import { test, expect, describe, afterAll } from 'bun:test'
 import { startServer, stopServer } from './server'
-import type { Server } from 'bun'
 import { spyOn } from 'bun:test'
 
 // Suppress reporter console output during tests

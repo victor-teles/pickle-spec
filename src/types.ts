@@ -2,11 +2,11 @@ import type { Pickle, PickleStep } from '@cucumber/messages'
 
 export interface ServerConfig {
   /** Shell command to start the dev server (e.g., 'bun run dev') */
-  command: string
+  command?: string
   /** Port the server listens on */
-  port: number
-  /** Full base URL for navigation (e.g., 'http://localhost:3000') */
-  url: string
+  port?: number
+  /** Full base URL for navigation (e.g., 'http://localhost:3000'). Auto-derived from port if omitted. */
+  url?: string
   /** Timeout in ms to wait for server readiness. Default: 30000 */
   startupTimeout?: number
 }
@@ -29,9 +29,17 @@ export interface BrowserConfig {
   projectId?: string
   /** Verbose logging level */
   verbose?: 0 | 1 | 2
+  /** DOM settle timeout in ms. Default: 3000 */
+  domSettleTimeout?: number
+  /** Act operation timeout in ms */
+  actTimeoutMs?: number
 }
 
 export interface PickleSpecConfig {
+  /** Default Gherkin dialect (e.g., 'en', 'pt', 'ja'). Default: 'en' */
+  language?: string
+  /** Glob pattern(s) for feature files  */
+  features?: string | string[]
   server?: ServerConfig
   browser?: BrowserConfig
 }

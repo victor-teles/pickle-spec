@@ -1,14 +1,13 @@
 import { defineConfig } from 'pickle-spec'
 
 export default defineConfig({
+  features: '**/*.feature',
   server: {
-    command: 'bun run dev',
-    port: 3000,
-    url: 'http://localhost:3000',
+    url: "https://google.com",
   },
   browser: {
     env: 'LOCAL',
-    modelName: 'claude-4-6-sonnet-latest',
-    headless: true,
+    modelName: 'openai/gpt-5.2',
+    headless: false,
   },
 })

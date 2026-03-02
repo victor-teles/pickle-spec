@@ -16,16 +16,18 @@ program
 program
   .command('run')
   .description('Run feature files')
-  .argument('[glob]', 'Glob pattern for feature files', 'features/**/*.feature')
+  .argument('[glob]', 'Glob pattern for feature files')
   .option('-c, --config <path>', 'Path to pickle.config.ts')
   .option('--headed', 'Show browser window (disable headless)')
   .option('--verbose', 'Enable verbose output')
   .option('-t, --tag <tag>', 'Filter scenarios by tag')
-  .action(async (glob: string, opts: {
+  .option('-l, --language <code>', 'Default Gherkin language (e.g., pt, ja, fr)')
+  .action(async (glob: string | undefined, opts: {
     config?: string
     headed?: boolean
     verbose?: boolean
     tag?: string
+    language?: string
   }) => {
     try {
       const config = await loadConfig(opts.config)
@@ -34,9 +36,12 @@ program
         config.browser.headless = false
       }
 
-      const features = await parseFeatureFiles(glob)
+      const language = opts.language ?? config.language
+      const featurePatterns = glob ?? config.features ?? 'features/**/*.feature'
+      const features = await parseFeatureFiles(featurePatterns, language)
 
       let featuresToRun = features
+      
       if (opts.tag) {
         featuresToRun = features
           .map(f => ({ ...f, pickles: filterPicklesByTag(f.pickles, opts.tag!) }))

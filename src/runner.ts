@@ -108,6 +108,22 @@ const VerificationSchema = z.object({
 })
 
 /**
+ * Multilingual regex to detect navigation patterns in step text.
+ * Supports English, Portuguese, Spanish, and French.
+ */
+const NAVIGATION_PATTERN = new RegExp(
+  '(?:' +
+    'I (?:am on|navigate to|visit|go to|open)' +               // English
+    '|(?:eu )?(?:navego para|visito|abro|estou em)' +           // Portuguese
+    '|(?:yo )?(?:navego a|visito|abro|estoy en)' +              // Spanish
+    '|(?:je )?(?:navigue vers|visite|ouvre|suis sur)' +          // French
+  ')' +
+  '\\s+(?:(?:the|a|o|la|le|el|à)\\s+)?' +                      // optional articles
+  '["\'"]?(.+?)["\'"]?\\s*$',                                   // capture target (non-greedy)
+  'i',
+)
+
+/**
  * Execute a single step against Stagehand.
  */
 async function executeStep(
@@ -121,24 +137,33 @@ async function executeStep(
 
   try {
     if (effectiveType === 'Context' || effectiveType === 'Action') {
-      // Given/When: perform actions
-      // Detect navigation-like steps
-      const navMatch = prompt.match(
-        /(?:I (?:am on|navigate to|visit|go to|open))\s+(?:the\s+)?["']?([^\s"']+)["']?\s*$/i,
-      )
+      const navMatch = prompt.match(NAVIGATION_PATTERN)
 
       if (navMatch && effectiveType === 'Context') {
         const page = stagehand.context.pages()[0]!
-        const target = navMatch[1]!
+        const target = navMatch[1]!.trim()
         const url = target.startsWith('/') ? `${baseUrl}${target}` : target
 
         if (url.startsWith('http') || url.startsWith('/')) {
-          await page.goto(url)
+          await page.goto(url, { waitUntil: 'domcontentloaded' })
         } else {
-          await stagehand.act(prompt)
+          // Target is a natural-language page name (e.g. "main page") — navigate to base URL
+          await page.goto(baseUrl, { waitUntil: 'domcontentloaded' })
         }
       } else {
-        await stagehand.act(prompt)
+        const agent = stagehand.agent()
+        const result = await agent.execute({
+          instruction: prompt,
+          maxSteps: 10,
+        })
+        if (!result.success) {
+          return {
+            step,
+            status: 'failed',
+            durationMs: Date.now() - startTime,
+            error: result.message,
+          }
+        }
       }
 
       return {
@@ -147,19 +172,24 @@ async function executeStep(
         durationMs: Date.now() - startTime,
       }
     } else {
-      // Then: extract and verify
-      const result = await stagehand.extract(
-        `Verify the following condition on the current page: "${prompt}". ` +
-        `Determine if the page currently meets this expectation.`,
-        VerificationSchema,
-      )
+      const agent = stagehand.agent()
+      const result = await agent.execute({
+        instruction:
+          `Verify the following condition on the current page: "${prompt}". ` +
+          `Determine if the page currently meets this expectation. ` +
+          `You may scroll or observe the page to gather enough information.`,
+        maxSteps: 5,
+        output: VerificationSchema,
+      })
 
-      if (!result.meetsExpectation) {
+      const verification = result.output as z.infer<typeof VerificationSchema> | undefined
+
+      if (!verification || !verification.meetsExpectation) {
         return {
           step,
           status: 'failed',
           durationMs: Date.now() - startTime,
-          error: `Expected: "${prompt}" | Actual: ${result.actualState}`,
+          error: `Expected: "${prompt}" | Actual: ${verification?.actualState ?? result.message}`,
         }
       }
 
@@ -203,12 +233,15 @@ async function executeScenario(
     verbose: verbose ? 2 : 0,
     apiKey: stagehandConfig.apiKey,
     projectId: stagehandConfig.projectId,
+    domSettleTimeout: stagehandConfig.domSettleTimeout ?? 3000,
+    actTimeoutMs: stagehandConfig.actTimeoutMs,
+    experimental: true
   })
 
   await stagehand.init()
 
   const page = stagehand.context.pages()[0]!
-  await page.goto(baseUrl)
+  await page.goto(baseUrl, { waitUntil: 'domcontentloaded' })
 
   const stepResults: StepResult[] = []
   let scenarioFailed = false
@@ -225,7 +258,6 @@ async function executeScenario(
       continue
     }
 
-    // Look up the step info from the AST
     const info = stepInfoMap.get(step.astNodeIds[0]!)
     const effectiveType: EffectiveStepType = info?.type ?? 'Action'
     const keyword = info?.keyword ?? '  '
@@ -261,7 +293,7 @@ export async function runFeatures(
   let server: ManagedServer | undefined
 
   try {
-    if (config.server) {
+    if (config.server?.command) {
       server = await startServer(config.server)
     }
 
