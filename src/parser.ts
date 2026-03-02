@@ -12,9 +12,9 @@ export interface ParsedFeature {
 /**
  * Parse a single .feature file into its AST and compiled Pickles.
  */
-export async function parseFeatureFile(filePath: string): Promise<ParsedFeature> {
+export async function parseFeatureFile(filePath: string, language?: string): Promise<ParsedFeature> {
   const uuidFn = IdGenerator.uuid()
-  const parser = new Parser(new AstBuilder(uuidFn), new GherkinClassicTokenMatcher())
+  const parser = new Parser(new AstBuilder(uuidFn), new GherkinClassicTokenMatcher(language ?? 'en'))
 
   const file = Bun.file(filePath)
   const content = await file.text()
@@ -31,19 +31,25 @@ export async function parseFeatureFile(filePath: string): Promise<ParsedFeature>
 }
 
 /**
- * Discover and parse all .feature files matching the given glob pattern.
+ * Discover and parse all .feature files matching the given glob pattern(s).
  */
-export async function parseFeatureFiles(globPattern: string): Promise<ParsedFeature[]> {
-  const glob = new Bun.Glob(globPattern)
+export async function parseFeatureFiles(globPattern: string | string[], language?: string): Promise<ParsedFeature[]> {
+  const patterns = Array.isArray(globPattern) ? globPattern : [globPattern]
+  const seen = new Set<string>()
   const results: ParsedFeature[] = []
 
-  for await (const filePath of glob.scan({ cwd: process.cwd(), absolute: true })) {
-    const parsed = await parseFeatureFile(filePath)
-    results.push(parsed)
+  for (const pattern of patterns) {
+    const glob = new Bun.Glob(pattern)
+    for await (const filePath of glob.scan({ cwd: process.cwd(), absolute: true })) {
+      if (seen.has(filePath)) continue
+      seen.add(filePath)
+      const parsed = await parseFeatureFile(filePath, language)
+      results.push(parsed)
+    }
   }
 
   if (results.length === 0) {
-    throw new Error(`No .feature files found matching pattern: ${globPattern}`)
+    throw new Error(`No .feature files found matching pattern: ${patterns.join(', ')}`)
   }
 
   return results
@@ -58,4 +64,11 @@ export function filterPicklesByTag(pickles: readonly Pickle[], tag: string): Pic
   return pickles.filter(pickle =>
     pickle.tags.some(t => t.name === normalizedTag)
   )
+}
+
+/**
+ * Check if a pickle has the @ignore tag.
+ */
+export function hasIgnoreTag(pickle: Pickle): boolean {
+  return pickle.tags.some(t => t.name === '@ignore')
 }

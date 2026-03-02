@@ -3,8 +3,8 @@
 import { Command } from 'commander'
 import { loadConfig } from './config'
 import { parseFeatureFiles, filterPicklesByTag } from './parser'
-import { runFeatures } from './runner'
-import { reportSummary, reportError } from './reporter'
+import { runFeatures, cancelRun } from './runner'
+import { reportSummary, reportError, reportCancelled } from './reporter'
 
 const program = new Command()
 
@@ -16,17 +16,27 @@ program
 program
   .command('run')
   .description('Run feature files')
-  .argument('[glob]', 'Glob pattern for feature files', 'features/**/*.feature')
+  .argument('[glob]', 'Glob pattern for feature files')
   .option('-c, --config <path>', 'Path to pickle.config.ts')
   .option('--headed', 'Show browser window (disable headless)')
   .option('--verbose', 'Enable verbose output')
   .option('-t, --tag <tag>', 'Filter scenarios by tag')
-  .action(async (glob: string, opts: {
+  .option('-l, --language <code>', 'Default Gherkin language (e.g., pt, ja, fr)')
+  .option('--screenshot <mode>', 'Screenshot mode: off, on-failure, on-step')
+  .action(async (glob: string | undefined, opts: {
     config?: string
     headed?: boolean
     verbose?: boolean
     tag?: string
+    language?: string
+    screenshot?: string
   }) => {
+    const onSigint = () => {
+      reportCancelled()
+      cancelRun()
+    }
+    process.on('SIGINT', onSigint)
+
     try {
       const config = await loadConfig(opts.config)
 
@@ -34,9 +44,19 @@ program
         config.browser.headless = false
       }
 
-      const features = await parseFeatureFiles(glob)
+      if (opts.screenshot) {
+        config.screenshots = {
+          ...config.screenshots,
+          mode: opts.screenshot as 'off' | 'on-failure' | 'on-step',
+        }
+      }
+
+      const language = opts.language ?? config.language
+      const featurePatterns = glob ?? config.features ?? 'features/**/*.feature'
+      const features = await parseFeatureFiles(featurePatterns, language)
 
       let featuresToRun = features
+      
       if (opts.tag) {
         featuresToRun = features
           .map(f => ({ ...f, pickles: filterPicklesByTag(f.pickles, opts.tag!) }))
@@ -52,10 +72,12 @@ program
       })
 
       reportSummary(result)
-      process.exit(result.failed > 0 ? 1 : 0)
+      process.exit(result.failed > 0 || result.cancelled ? 1 : 0)
     } catch (err) {
       reportError(err instanceof Error ? err.message : String(err))
       process.exit(1)
+    } finally {
+      process.off('SIGINT', onSigint)
     }
   })
 
