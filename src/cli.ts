@@ -22,18 +22,27 @@ program
   .option('--verbose', 'Enable verbose output')
   .option('-t, --tag <tag>', 'Filter scenarios by tag')
   .option('-l, --language <code>', 'Default Gherkin language (e.g., pt, ja, fr)')
+  .option('--screenshot <mode>', 'Screenshot mode: off, on-failure, on-step')
   .action(async (glob: string | undefined, opts: {
     config?: string
     headed?: boolean
     verbose?: boolean
     tag?: string
     language?: string
+    screenshot?: string
   }) => {
     try {
       const config = await loadConfig(opts.config)
 
       if (opts.headed && config.browser) {
         config.browser.headless = false
+      }
+
+      if (opts.screenshot) {
+        config.screenshots = {
+          ...config.screenshots,
+          mode: opts.screenshot as 'off' | 'on-failure' | 'on-step',
+        }
       }
 
       const language = opts.language ?? config.language

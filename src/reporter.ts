@@ -1,5 +1,6 @@
 import pc from 'picocolors'
 import type { StepResult, RunResult } from './types'
+import type { LogLine } from '@browserbasehq/stagehand'
 
 export function reportFeatureStart(featureName: string, filePath: string): void {
   console.log('')
@@ -28,6 +29,9 @@ export function reportStepResult(
       if (result.error) {
         console.log(pc.red(`      ${result.error}`))
       }
+      if (result.screenshotPath) {
+        console.log(pc.dim(`      Screenshot: ${result.screenshotPath}`))
+      }
       break
     case 'skipped':
       console.log(pc.yellow(`    ${keyword}${text} ${pc.dim('(skipped)')}`))
@@ -52,6 +56,9 @@ export function reportSummary(result: RunResult): void {
   }
 
   console.log(pc.dim(`\n  Total time: ${(result.totalDurationMs / 1000).toFixed(1)}s`))
+  if (result.artifactsDir) {
+    console.log(pc.dim(`  Artifacts: ${result.artifactsDir}`))
+  }
   console.log('')
 }
 
@@ -65,4 +72,22 @@ export function reportServerReady(url: string): void {
 
 export function reportError(message: string): void {
   console.error(pc.red(pc.bold(`Error: ${message}`)))
+}
+
+const SUPPRESSED_LOG_PATTERNS = [
+  /Using agent in default DOM mode/i,
+  /will default to.*hybrid/i,
+]
+
+export function reportVerboseLog(line: LogLine): void {
+  const msg = line.message
+  if (!msg) return
+  if (SUPPRESSED_LOG_PATTERNS.some(p => p.test(msg))) return
+
+  const category = line.category ? `[${line.category}] ` : ''
+  console.log(pc.dim(`      ${category}${msg}`))
+}
+
+export function reportVerbose(message: string): void {
+  console.log(pc.cyan(`      ${message}`))
 }

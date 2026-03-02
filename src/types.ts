@@ -42,6 +42,22 @@ export interface PickleSpecConfig {
   features?: string | string[]
   server?: ServerConfig
   browser?: BrowserConfig
+  screenshots?: ScreenshotConfig
+}
+
+// --- Screenshot Config ---
+
+export type ScreenshotMode = 'off' | 'on-failure' | 'on-step'
+
+export interface ScreenshotConfig {
+  /** When to capture screenshots. Default: 'off' */
+  mode?: ScreenshotMode
+  /** Output directory for screenshots. Default: './pickle-artifacts' */
+  outputDir?: string
+  /** Image format. Default: 'png' */
+  format?: 'png' | 'jpeg'
+  /** Capture full scrollable page instead of viewport. Default: false */
+  fullPage?: boolean
 }
 
 // --- Execution Result Types ---
@@ -53,6 +69,7 @@ export interface StepResult {
   status: StepStatus
   durationMs: number
   error?: string
+  screenshotPath?: string
 }
 
 export type ScenarioStatus = 'passed' | 'failed' | 'skipped'
@@ -77,4 +94,5 @@ export interface RunResult {
   passed: number
   failed: number
   skipped: number
+  artifactsDir?: string
 }

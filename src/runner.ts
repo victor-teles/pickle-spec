@@ -11,7 +11,9 @@ import { StepKeywordType } from '@cucumber/messages'
 import type { Pickle, PickleStep, Step, GherkinDocument } from '@cucumber/messages'
 import type { ParsedFeature } from './parser'
 import { startServer, stopServer, type ManagedServer } from './server'
-import { reportStepResult, reportScenarioStart, reportFeatureStart } from './reporter'
+import { reportStepResult, reportScenarioStart, reportFeatureStart, reportVerbose, reportVerboseLog } from './reporter'
+import { captureScreenshot } from './screenshots'
+import type { ScreenshotConfig } from './types'
 
 /**
  * Effective step type for dispatch: Context (Given), Action (When), Outcome (Then).
@@ -123,6 +125,16 @@ const NAVIGATION_PATTERN = new RegExp(
   'i',
 )
 
+function suppressThirdPartyWarnings(): () => void {
+  const originalWarn = console.warn
+  console.warn = (...args: unknown[]) => {
+    const msg = typeof args[0] === 'string' ? args[0] : ''
+    if (msg.includes('AI SDK Warning')) return
+    originalWarn.apply(console, args)
+  }
+  return () => { console.warn = originalWarn }
+}
+
 /**
  * Execute a single step against Stagehand.
  */
@@ -131,9 +143,12 @@ async function executeStep(
   step: PickleStep,
   effectiveType: EffectiveStepType,
   baseUrl: string,
+  verbose: boolean,
+  screenshotCtx?: { config: ScreenshotConfig; featureName: string; scenarioName: string; stepIndex: number },
 ): Promise<StepResult> {
   const startTime = Date.now()
   const prompt = buildStepPrompt(step)
+  let result: StepResult
 
   try {
     if (effectiveType === 'Context' || effectiveType === 'Action') {
@@ -145,35 +160,40 @@ async function executeStep(
         const url = target.startsWith('/') ? `${baseUrl}${target}` : target
 
         if (url.startsWith('http') || url.startsWith('/')) {
+          if (verbose) reportVerbose(`Navigating to ${url}`)
           await page.goto(url, { waitUntil: 'domcontentloaded' })
         } else {
-          // Target is a natural-language page name (e.g. "main page") — navigate to base URL
+          if (verbose) reportVerbose(`Navigating to ${baseUrl}`)
           await page.goto(baseUrl, { waitUntil: 'domcontentloaded' })
         }
       } else {
+        if (verbose) reportVerbose(`Agent executing: "${prompt}"`)
         const agent = stagehand.agent()
-        const result = await agent.execute({
+        const execResult = await agent.execute({
           instruction: prompt,
           maxSteps: 10,
         })
-        if (!result.success) {
-          return {
+        if (!execResult.success) {
+          result = {
             step,
             status: 'failed',
             durationMs: Date.now() - startTime,
-            error: result.message,
+            error: execResult.message,
           }
+          if (screenshotCtx) {
+            result.screenshotPath = await captureScreenshot(stagehand, screenshotCtx.config, {
+              ...screenshotCtx, stepText: step.text, status: result.status,
+            })
+          }
+          return result
         }
       }
 
-      return {
-        step,
-        status: 'passed',
-        durationMs: Date.now() - startTime,
-      }
+      result = { step, status: 'passed', durationMs: Date.now() - startTime }
     } else {
+      if (verbose) reportVerbose(`Verifying: "${prompt}"`)
       const agent = stagehand.agent()
-      const result = await agent.execute({
+      const execResult = await agent.execute({
         instruction:
           `Verify the following condition on the current page: "${prompt}". ` +
           `Determine if the page currently meets this expectation. ` +
@@ -182,31 +202,46 @@ async function executeStep(
         output: VerificationSchema,
       })
 
-      const verification = result.output as z.infer<typeof VerificationSchema> | undefined
+      const verification = execResult.output as z.infer<typeof VerificationSchema> | undefined
 
       if (!verification || !verification.meetsExpectation) {
-        return {
+        result = {
           step,
           status: 'failed',
           durationMs: Date.now() - startTime,
-          error: `Expected: "${prompt}" | Actual: ${verification?.actualState ?? result.message}`,
+          error: `Expected: "${prompt}" | Actual: ${verification?.actualState ?? execResult.message}`,
         }
+        if (screenshotCtx) {
+          result.screenshotPath = await captureScreenshot(stagehand, screenshotCtx.config, {
+            ...screenshotCtx, stepText: step.text, status: result.status,
+          })
+        }
+        return result
       }
 
-      return {
-        step,
-        status: 'passed',
-        durationMs: Date.now() - startTime,
-      }
+      result = { step, status: 'passed', durationMs: Date.now() - startTime }
     }
   } catch (err) {
-    return {
+    result = {
       step,
       status: 'failed',
       durationMs: Date.now() - startTime,
       error: err instanceof Error ? err.message : String(err),
     }
+    if (screenshotCtx) {
+      result.screenshotPath = await captureScreenshot(stagehand, screenshotCtx.config, {
+        ...screenshotCtx, stepText: step.text, status: result.status,
+      })
+    }
+    return result
   }
+
+  if (screenshotCtx) {
+    result.screenshotPath = await captureScreenshot(stagehand, screenshotCtx.config, {
+      ...screenshotCtx, stepText: step.text, status: result.status,
+    })
+  }
+  return result
 }
 
 /**
@@ -217,10 +252,13 @@ async function executeScenario(
   config: PickleSpecConfig,
   stepInfoMap: Map<string, { keyword: string; type: EffectiveStepType }>,
   verbose: boolean,
+  featureName: string,
 ): Promise<ScenarioResult> {
   const startTime = Date.now()
   const stagehandConfig = config.browser!
   const baseUrl = config.server?.url ?? 'http://localhost:3000'
+
+  const restoreWarnings = suppressThirdPartyWarnings()
 
   const stagehand = new Stagehand({
     env: stagehandConfig.env ?? 'LOCAL',
@@ -230,7 +268,9 @@ async function executeScenario(
     localBrowserLaunchOptions: {
       headless: stagehandConfig.headless ?? true,
     },
-    verbose: verbose ? 2 : 0,
+    verbose: 0,
+    disablePino: true,
+    logger: verbose ? (line) => reportVerboseLog(line) : undefined,
     apiKey: stagehandConfig.apiKey,
     projectId: stagehandConfig.projectId,
     domSettleTimeout: stagehandConfig.domSettleTimeout ?? 3000,
@@ -238,15 +278,21 @@ async function executeScenario(
     experimental: true
   })
 
+  if (verbose) reportVerbose('Launching browser...')
   await stagehand.init()
+  if (verbose) reportVerbose('Browser ready')
 
   const page = stagehand.context.pages()[0]!
+  if (verbose) reportVerbose(`Navigating to ${baseUrl}`)
   await page.goto(baseUrl, { waitUntil: 'domcontentloaded' })
 
   const stepResults: StepResult[] = []
   let scenarioFailed = false
+  const screenshotConfig = config.screenshots
+  const hasScreenshots = screenshotConfig && screenshotConfig.mode !== 'off'
 
-  for (const step of pickle.steps) {
+  for (let i = 0; i < pickle.steps.length; i++) {
+    const step = pickle.steps[i]!
     if (scenarioFailed) {
       const info = stepInfoMap.get(step.astNodeIds[0]!)
       reportStepResult(info?.keyword ?? '  ', step.text, {
@@ -262,7 +308,10 @@ async function executeScenario(
     const effectiveType: EffectiveStepType = info?.type ?? 'Action'
     const keyword = info?.keyword ?? '  '
 
-    const result = await executeStep(stagehand, step, effectiveType, baseUrl)
+    const screenshotCtx = hasScreenshots
+      ? { config: screenshotConfig!, featureName, scenarioName: pickle.name, stepIndex: i }
+      : undefined
+    const result = await executeStep(stagehand, step, effectiveType, baseUrl, verbose, screenshotCtx)
     stepResults.push(result)
     reportStepResult(keyword, step.text, result)
 
@@ -271,7 +320,9 @@ async function executeScenario(
     }
   }
 
+  if (verbose) reportVerbose('Closing browser')
   await stagehand.close()
+  restoreWarnings()
 
   return {
     pickle,
@@ -308,7 +359,7 @@ export async function runFeatures(
 
       for (const pickle of feature.pickles) {
         reportScenarioStart(pickle.name)
-        const result = await executeScenario(pickle, config, stepInfoMap, options.verbose)
+        const result = await executeScenario(pickle, config, stepInfoMap, options.verbose, feature.featureName)
         scenarioResults.push(result)
       }
 
@@ -331,12 +382,14 @@ export async function runFeatures(
       }
     }
 
+    const hasScreenshots = config.screenshots && config.screenshots.mode !== 'off'
     return {
       features: featureResults,
       totalDurationMs: Date.now() - overallStart,
       passed,
       failed,
       skipped,
+      artifactsDir: hasScreenshots ? (config.screenshots!.outputDir ?? './pickle-artifacts') : undefined,
     }
   } finally {
     if (server) {
