@@ -14,7 +14,7 @@ export interface ServerConfig {
 export interface StagehandConfig {
   /** 'LOCAL' or 'BROWSERBASE' */
   env?: 'LOCAL' | 'BROWSERBASE'
-  /** Model name (e.g., 'claude-3-5-sonnet-latest', 'gpt-4o') */
+  /** Model name (e.g., 'claude-4-6-sonnet-latest', 'gpt-4o') */
   modelName?: string
   /** Model client options (apiKey, baseURL, etc.) */
   modelClientOptions?: {

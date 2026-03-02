@@ -148,7 +148,7 @@ export default defineConfig({
   },
   stagehand: {
     env: 'LOCAL',
-    modelName: 'claude-3-5-sonnet-latest',
+    modelName: 'claude-4-6-sonnet-latest',
     headless: true,
   },
 })
@@ -170,7 +170,7 @@ If configured, pickle-spec starts your dev server before running tests and stops
 | Option               | Type                        | Default                      | Description                               |
 | -------------------- | --------------------------- | ---------------------------- | ----------------------------------------- |
 | `env`                | `'LOCAL' \| 'BROWSERBASE'`  | `'LOCAL'`                    | Run browser locally or via Browserbase    |
-| `modelName`          | `string`                    | `'claude-3-5-sonnet-latest'` | AI model for browser automation           |
+| `modelName`          | `string`                    | `'claude-4-6-sonnet-latest'` | AI model for browser automation           |
 | `modelClientOptions` | `{ apiKey?, baseURL? }`     | —                            | Custom API key or base URL for the model  |
 | `headless`           | `boolean`                   | `true`                       | Run browser without a visible window      |
 | `apiKey`             | `string`                    | —                            | Browserbase API key (when env is `BROWSERBASE`) |

@@ -195,8 +195,8 @@ async function executeScenario(
   const stagehand = new Stagehand({
     env: stagehandConfig.env ?? 'LOCAL',
     model: stagehandConfig.modelClientOptions
-      ? { modelName: stagehandConfig.modelName ?? 'claude-3-5-sonnet-latest', ...stagehandConfig.modelClientOptions }
-      : (stagehandConfig.modelName ?? 'claude-3-5-sonnet-latest'),
+      ? { modelName: stagehandConfig.modelName ?? 'claude-4-6-sonnet-latest', ...stagehandConfig.modelClientOptions }
+      : (stagehandConfig.modelName ?? 'claude-4-6-sonnet-latest'),
     localBrowserLaunchOptions: {
       headless: stagehandConfig.headless ?? true,
     },
