@@ -189,7 +189,7 @@ async function executeScenario(
   verbose: boolean,
 ): Promise<ScenarioResult> {
   const startTime = Date.now()
-  const stagehandConfig = config.stagehand!
+  const stagehandConfig = config.browser!
   const baseUrl = config.server?.url ?? 'http://localhost:3000'
 
   const stagehand = new Stagehand({

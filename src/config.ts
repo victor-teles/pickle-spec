@@ -7,7 +7,7 @@ export function defineConfig(config: PickleSpecConfig): PickleSpecConfig {
 }
 
 const DEFAULT_CONFIG: PickleSpecConfig = {
-  stagehand: {
+  browser: {
     env: 'LOCAL',
     modelName: 'claude-4-6-sonnet-latest',
     headless: true,
@@ -31,9 +31,9 @@ export async function loadConfig(configPath?: string): Promise<PickleSpecConfig>
 
   return {
     server: userConfig.server ? { ...userConfig.server } : undefined,
-    stagehand: {
-      ...DEFAULT_CONFIG.stagehand,
-      ...userConfig.stagehand,
+    browser: {
+      ...DEFAULT_CONFIG.browser,
+      ...userConfig.browser,
     },
   }
 }
