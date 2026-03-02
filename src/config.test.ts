@@ -24,7 +24,7 @@ describe('loadConfig', () => {
     const config = await loadConfig('/nonexistent/path/pickle.config.ts')
     expect(config.stagehand).toBeDefined()
     expect(config.stagehand!.env).toBe('LOCAL')
-    expect(config.stagehand!.modelName).toBe('claude-3-5-sonnet-latest')
+    expect(config.stagehand!.modelName).toBe('claude-4-6-sonnet-latest')
     expect(config.stagehand!.headless).toBe(true)
     expect(config.server).toBeUndefined()
   })
@@ -79,7 +79,7 @@ describe('loadConfig', () => {
       expect(config.stagehand!.headless).toBe(false)
       // Other defaults still present
       expect(config.stagehand!.env).toBe('LOCAL')
-      expect(config.stagehand!.modelName).toBe('claude-3-5-sonnet-latest')
+      expect(config.stagehand!.modelName).toBe('claude-4-6-sonnet-latest')
     } finally {
       await Bun.file(tmpPath).exists() && (await Bun.$`rm ${tmpPath}`)
     }

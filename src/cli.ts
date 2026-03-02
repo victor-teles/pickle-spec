@@ -81,7 +81,7 @@ export default defineConfig({
   },
   stagehand: {
     env: 'LOCAL',
-    modelName: 'claude-3-5-sonnet-latest',
+    modelName: 'claude-4-6-sonnet-latest',
     headless: true,
   },
 })

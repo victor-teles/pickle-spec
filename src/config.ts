@@ -9,7 +9,7 @@ export function defineConfig(config: PickleSpecConfig): PickleSpecConfig {
 const DEFAULT_CONFIG: PickleSpecConfig = {
   stagehand: {
     env: 'LOCAL',
-    modelName: 'claude-3-5-sonnet-latest',
+    modelName: 'claude-4-6-sonnet-latest',
     headless: true,
   },
 }
