@@ -1,5 +1,6 @@
 Feature: Search
 
+  @ignore
   Scenario: Visit main page
     Given I navigate to main page
     When I input "Brazil" on search input and press enter

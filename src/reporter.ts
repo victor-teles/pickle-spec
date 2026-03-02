@@ -1,6 +1,24 @@
 import pc from 'picocolors'
+import ora, { type Ora } from 'ora'
 import type { StepResult, RunResult } from './types'
 import type { LogLine } from '@browserbasehq/stagehand'
+
+// --- Spinner ---
+
+let spinner: Ora | null = null
+
+export function reportStepStart(keyword: string, text: string): void {
+  if (spinner) spinner.stop()
+  spinner = ora({ text: `${keyword}${text}`, indent: 4 }).start()
+}
+
+function stopSpinner(): void {
+  if (!spinner) return
+  spinner.stop()
+  spinner = null
+}
+
+// --- Core reporters ---
 
 export function reportFeatureStart(featureName: string, filePath: string): void {
   console.log('')
@@ -18,14 +36,15 @@ export function reportStepResult(
   text: string,
   result: StepResult,
 ): void {
+  stopSpinner()
   const duration = pc.dim(`(${result.durationMs}ms)`)
 
   switch (result.status) {
     case 'passed':
-      console.log(pc.green(`    ${keyword}${text} ${duration}`))
+      console.log(pc.green(`    ✔ ${keyword}${text} ${duration}`))
       break
     case 'failed':
-      console.log(pc.red(`    ${keyword}${text} ${duration}`))
+      console.log(pc.red(`    ✖ ${keyword}${text} ${duration}`))
       if (result.error) {
         console.log(pc.red(`      ${result.error}`))
       }
@@ -34,7 +53,7 @@ export function reportStepResult(
       }
       break
     case 'skipped':
-      console.log(pc.yellow(`    ${keyword}${text} ${pc.dim('(skipped)')}`))
+      console.log(pc.yellow(`    ⊘ ${keyword}${text} ${pc.dim('(skipped)')}`))
       break
   }
 }
@@ -74,6 +93,14 @@ export function reportError(message: string): void {
   console.error(pc.red(pc.bold(`Error: ${message}`)))
 }
 
+export function reportCancelled(): void {
+  stopSpinner()
+  console.log('')
+  console.log(pc.yellow(pc.bold('  Run cancelled by user (Ctrl+C)')))
+}
+
+// --- Verbose logging ---
+
 const SUPPRESSED_LOG_PATTERNS = [
   /Using agent in default DOM mode/i,
   /will default to.*hybrid/i,
@@ -84,10 +111,15 @@ export function reportVerboseLog(line: LogLine): void {
   if (!msg) return
   if (SUPPRESSED_LOG_PATTERNS.some(p => p.test(msg))) return
 
-  const category = line.category ? `[${line.category}] ` : ''
-  console.log(pc.dim(`      ${category}${msg}`))
+  reportVerbose(`[${line.category ?? 'stagehand'}] ${msg}`)
 }
 
 export function reportVerbose(message: string): void {
-  console.log(pc.cyan(`      ${message}`))
+  if (spinner) {
+    spinner.clear()
+    console.log(pc.dim(`      ${message}`))
+    spinner.render()
+  } else {
+    console.log(pc.dim(`      ${message}`))
+  }
 }

@@ -1,3 +1,6 @@
+// Disable AI SDK warning logs before any AI SDK code is imported
+;(globalThis as any).AI_SDK_LOG_WARNINGS = false
+
 import { Stagehand } from '@browserbasehq/stagehand'
 import { z } from 'zod'
 import type {
@@ -11,7 +14,7 @@ import { StepKeywordType } from '@cucumber/messages'
 import type { Pickle, PickleStep, Step, GherkinDocument } from '@cucumber/messages'
 import type { ParsedFeature } from './parser'
 import { startServer, stopServer, type ManagedServer } from './server'
-import { reportStepResult, reportScenarioStart, reportFeatureStart, reportVerbose, reportVerboseLog } from './reporter'
+import { reportStepResult, reportStepStart, reportScenarioStart, reportFeatureStart, reportVerbose, reportVerboseLog } from './reporter'
 import { captureScreenshot } from './screenshots'
 import type { ScreenshotConfig } from './types'
 
@@ -125,14 +128,45 @@ const NAVIGATION_PATTERN = new RegExp(
   'i',
 )
 
-function suppressThirdPartyWarnings(): () => void {
-  const originalWarn = console.warn
-  console.warn = (...args: unknown[]) => {
+let cancelled = false
+
+export function cancelRun(): void {
+  cancelled = true
+}
+
+const SUPPRESSED_CONSOLE_PATTERNS = [
+  /AI SDK Warning/,
+  /\[Stagehand\]/,
+  /\[v3-piercer\]/,
+  /OUT OF SYNC/,
+  /DEPRECATED/,
+]
+
+function suppressThirdPartyLogs(): () => void {
+  const origWarn = console.warn
+  const origError = console.error
+  const origLog = console.log
+
+  const shouldSuppress = (args: unknown[]) => {
     const msg = typeof args[0] === 'string' ? args[0] : ''
-    if (msg.includes('AI SDK Warning')) return
-    originalWarn.apply(console, args)
+    return SUPPRESSED_CONSOLE_PATTERNS.some(p => p.test(msg))
   }
-  return () => { console.warn = originalWarn }
+
+  console.warn = (...args: unknown[]) => {
+    if (!shouldSuppress(args)) origWarn.apply(console, args)
+  }
+  console.error = (...args: unknown[]) => {
+    if (!shouldSuppress(args)) origError.apply(console, args)
+  }
+  console.log = (...args: unknown[]) => {
+    if (!shouldSuppress(args)) origLog.apply(console, args)
+  }
+
+  return () => {
+    console.warn = origWarn
+    console.error = origError
+    console.log = origLog
+  }
 }
 
 /**
@@ -258,7 +292,7 @@ async function executeScenario(
   const stagehandConfig = config.browser!
   const baseUrl = config.server?.url ?? 'http://localhost:3000'
 
-  const restoreWarnings = suppressThirdPartyWarnings()
+  const restoreLogs = suppressThirdPartyLogs()
 
   const stagehand = new Stagehand({
     env: stagehandConfig.env ?? 'LOCAL',
@@ -270,7 +304,7 @@ async function executeScenario(
     },
     verbose: 0,
     disablePino: true,
-    logger: verbose ? (line) => reportVerboseLog(line) : undefined,
+    logger: verbose ? (line) => reportVerboseLog(line) : () => {},
     apiKey: stagehandConfig.apiKey,
     projectId: stagehandConfig.projectId,
     domSettleTimeout: stagehandConfig.domSettleTimeout ?? 3000,
@@ -293,7 +327,7 @@ async function executeScenario(
 
   for (let i = 0; i < pickle.steps.length; i++) {
     const step = pickle.steps[i]!
-    if (scenarioFailed) {
+    if (scenarioFailed || cancelled) {
       const info = stepInfoMap.get(step.astNodeIds[0]!)
       reportStepResult(info?.keyword ?? '  ', step.text, {
         step,
@@ -308,6 +342,7 @@ async function executeScenario(
     const effectiveType: EffectiveStepType = info?.type ?? 'Action'
     const keyword = info?.keyword ?? '  '
 
+    reportStepStart(keyword, step.text)
     const screenshotCtx = hasScreenshots
       ? { config: screenshotConfig!, featureName, scenarioName: pickle.name, stepIndex: i }
       : undefined
@@ -322,11 +357,11 @@ async function executeScenario(
 
   if (verbose) reportVerbose('Closing browser')
   await stagehand.close()
-  restoreWarnings()
+  restoreLogs()
 
   return {
     pickle,
-    status: scenarioFailed ? 'failed' : 'passed',
+    status: (scenarioFailed || cancelled) ? 'failed' : 'passed',
     steps: stepResults,
     durationMs: Date.now() - startTime,
   }
@@ -351,6 +386,7 @@ export async function runFeatures(
     const featureResults: FeatureResult[] = []
 
     for (const feature of features) {
+      if (cancelled) break
       reportFeatureStart(feature.featureName, feature.filePath)
       const featureStart = Date.now()
 
@@ -358,6 +394,7 @@ export async function runFeatures(
       const scenarioResults: ScenarioResult[] = []
 
       for (const pickle of feature.pickles) {
+        if (cancelled) break
         reportScenarioStart(pickle.name)
         const result = await executeScenario(pickle, config, stepInfoMap, options.verbose, feature.featureName)
         scenarioResults.push(result)
@@ -389,6 +426,7 @@ export async function runFeatures(
       passed,
       failed,
       skipped,
+      cancelled,
       artifactsDir: hasScreenshots ? (config.screenshots!.outputDir ?? './pickle-artifacts') : undefined,
     }
   } finally {

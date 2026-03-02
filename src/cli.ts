@@ -3,8 +3,8 @@
 import { Command } from 'commander'
 import { loadConfig } from './config'
 import { parseFeatureFiles, filterPicklesByTag } from './parser'
-import { runFeatures } from './runner'
-import { reportSummary, reportError } from './reporter'
+import { runFeatures, cancelRun } from './runner'
+import { reportSummary, reportError, reportCancelled } from './reporter'
 
 const program = new Command()
 
@@ -31,6 +31,9 @@ program
     language?: string
     screenshot?: string
   }) => {
+    const onSigint = () => { cancelRun() }
+    process.on('SIGINT', onSigint)
+
     try {
       const config = await loadConfig(opts.config)
 
@@ -65,11 +68,16 @@ program
         verbose: opts.verbose ?? false,
       })
 
+      if (result.cancelled) {
+        reportCancelled()
+      }
       reportSummary(result)
-      process.exit(result.failed > 0 ? 1 : 0)
+      process.exit(result.failed > 0 || result.cancelled ? 1 : 0)
     } catch (err) {
       reportError(err instanceof Error ? err.message : String(err))
       process.exit(1)
+    } finally {
+      process.off('SIGINT', onSigint)
     }
   })
 

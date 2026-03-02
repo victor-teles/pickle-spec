@@ -94,5 +94,6 @@ export interface RunResult {
   passed: number
   failed: number
   skipped: number
+  cancelled?: boolean
   artifactsDir?: string
 }
