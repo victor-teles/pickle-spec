@@ -63,8 +63,6 @@ export function setActiveServer(server: ManagedServer | null): void {
   activeServer = server
 }
 
-// --- Error guard ---
-
 export function rethrowIfCancellation(err: unknown): void {
   if (err instanceof CancellationError) throw err
   if (isCancelled()) throw new CancellationError()
@@ -73,7 +71,6 @@ export function rethrowIfCancellation(err: unknown): void {
   }
 }
 
-// --- Promise wrapper ---
 
 export function withCancellation<T>(promise: Promise<T>): Promise<T> {
   if (isCancelled()) return Promise.reject(new CancellationError())

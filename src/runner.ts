@@ -1,4 +1,4 @@
-;(globalThis as any).AI_SDK_LOG_WARNINGS = false
+; (globalThis as any).AI_SDK_LOG_WARNINGS = false
 
 import { Stagehand } from '@browserbasehq/stagehand'
 import { z } from 'zod'
@@ -41,10 +41,9 @@ import {
   resetBrowserState,
   closeStagehand,
 } from './browser-lifecycle'
+import { navigateAndSimplify } from './dom-optimization'
 
 export { cancelRun } from './cancellation'
-
-// --- Inline helpers ---
 
 function makeFailedStepResult(step: PickleStep, startTime: number, error: string): StepResult {
   return { step, status: 'failed', durationMs: Date.now() - startTime, error }
@@ -89,7 +88,7 @@ class Semaphore {
   private queue: (() => void)[] = []
   private active = 0
 
-  constructor(private readonly limit: number) {}
+  constructor(private readonly limit: number) { }
 
   async acquire(): Promise<void> {
     if (this.active < this.limit) {
@@ -111,8 +110,6 @@ class Semaphore {
   }
 }
 
-// --- Step execution ---
-
 async function executeWithObserveAct(
   stagehand: Stagehand,
   agent: ReturnType<Stagehand['agent']>,
@@ -120,35 +117,34 @@ async function executeWithObserveAct(
   verbose: boolean,
   signal: AbortSignal,
   reporter: ReporterContext,
-): Promise<{ success: boolean; error?: string }> {
+  observeTimeout = 10000,
+): Promise<{ success: boolean; error?: string }[]> {
   if (verbose) reporter.verbose(`Observing: "${prompt}"`)
-  const actions = await withCancellation(stagehand.observe(prompt))
+
+  const actions = await withCancellation(stagehand.observe(prompt, { timeout: observeTimeout }))
 
   if (actions.length === 0) {
     if (verbose) reporter.verbose(`Observe returned no actions, falling back to agent`)
     const result = await agent.execute({ instruction: prompt, maxSteps: 10, signal })
-    return { success: result.success, error: result.success ? undefined : result.message }
+    return [{ success: result.success, error: result.success ? undefined : result.message }]
   }
+
+  const executedActions: { success: boolean; error?: string }[] = []
 
   for (const action of actions) {
     if (isCancelled()) throw new CancellationError()
     if (verbose) reporter.verbose(`Acting: ${action.description}`)
     try {
-      const actResult = await withCancellation(stagehand.act(action))
-      if (!actResult.success) {
-        if (verbose) reporter.verbose(`Act failed, falling back to agent`)
-        const result = await agent.execute({ instruction: prompt, maxSteps: 10, signal })
-        return { success: result.success, error: result.success ? undefined : result.message }
-      }
+      const result = await withCancellation(stagehand.act(action))
+      executedActions.push({ success: result.success, error: result.success ? undefined : result.message })
     } catch (err) {
       rethrowIfCancellation(err)
-      if (verbose) reporter.verbose(`Act threw error, falling back to agent: ${err}`)
-      const result = await agent.execute({ instruction: prompt, maxSteps: 10, signal })
-      return { success: result.success, error: result.success ? undefined : result.message }
+      if (verbose) reporter.verbose(`Act threw error`)
+      executedActions.push({ success: false, error: err instanceof Error ? err.message : String(err) })
     }
   }
 
-  return { success: true }
+  return executedActions
 }
 
 async function executeStep(
@@ -163,13 +159,15 @@ async function executeStep(
   reporter: ReporterContext,
   screenshotCtx?: { config: ScreenshotConfig; featureName: string; scenarioName: string; stepIndex: number },
   traceCtx?: { traceDir: string; stepIndex: number },
+  domSimplification = true,
+  observeTimeout = 10000,
 ): Promise<StepResult> {
   const startTime = Date.now()
   const prompt = buildStepPrompt(step)
 
   let recorder: TraceRecorder | null = null
   if (traceCtx) {
-    try { recorder = await startStepTrace(stagehand) } catch {}
+    try { recorder = await startStepTrace(stagehand) } catch { }
   }
 
   async function finalize(result: StepResult): Promise<StepResult> {
@@ -178,7 +176,7 @@ async function executeStep(
         await recorder.stop()
         const prefix = `step-${String(traceCtx.stepIndex).padStart(2, '0')}`
         result.traceFramePaths = await recorder.saveFrames(traceCtx.traceDir, prefix)
-      } catch {}
+      } catch { }
     }
     result.screenshotPath = await maybeScreenshot(stagehand, step, result.status, screenshotCtx)
     return result
@@ -195,28 +193,28 @@ async function executeStep(
 
         if (url.startsWith('http') || url.startsWith('/')) {
           if (verbose) reporter.verbose(`Navigating to ${url}`)
-          await withCancellation(page.goto(url, { waitUntil: 'domcontentloaded', timeoutMs: navTimeout }))
+          await navigateAndSimplify(page, url, { waitUntil: 'domcontentloaded', timeoutMs: navTimeout }, domSimplification)
         } else {
           if (verbose) reporter.verbose(`Navigating to ${baseUrl}`)
-          await withCancellation(page.goto(baseUrl, { waitUntil: 'domcontentloaded', timeoutMs: navTimeout }))
+          await navigateAndSimplify(page, baseUrl, { waitUntil: 'domcontentloaded', timeoutMs: navTimeout }, domSimplification)
         }
       } else {
-        const execResult = await executeWithObserveAct(stagehand, agent, prompt, verbose, signal, reporter)
-        if (!execResult.success) {
-          return await finalize(makeFailedStepResult(step, startTime, execResult.error ?? 'Action failed'))
+        const execResults = await executeWithObserveAct(stagehand, agent, prompt, verbose, signal, reporter, observeTimeout)
+        for (const execResult of execResults) {
+          if (!execResult.success) {
+            return await finalize(makeFailedStepResult(step, startTime, execResult.error ?? 'Action failed'))
+          }
         }
       }
 
       return await finalize({ step, status: 'passed', durationMs: Date.now() - startTime })
     }
 
-    // Outcome (Then) step — verification
     if (verbose) reporter.verbose(`Verifying: "${prompt}"`)
     const execResult = await agent.execute({
       instruction:
         `Verify the following condition on the current page: "${prompt}". ` +
-        `Determine if the page currently meets this expectation. ` +
-        `You may scroll or observe the page to gather enough information.`,
+        `Determine if the page currently meets this expectation. `,
       maxSteps: 5,
       output: VerificationSchema,
       signal,
@@ -283,6 +281,8 @@ async function executeScenario(
       const result = await executeStep(
         stagehand, agent, step, effectiveType, baseUrl, navTimeout,
         verbose, signal, reporter, screenshotCtx, { traceDir, stepIndex: i },
+        config.browser?.domSimplification ?? true,
+        config.browser?.observeTimeout ?? 10000,
       )
       stepResults.push(result)
       reporter.stepResult(keyword, step.text, result)
@@ -338,7 +338,7 @@ async function runFeatureSerial(
 
       if (!isFirstScenario) {
         try {
-          await resetBrowserState(stagehand!, baseUrl, navTimeout)
+          await resetBrowserState(stagehand!, baseUrl, navTimeout, browserConfig.domSimplification ?? true)
         } catch {
           await closeStagehand(stagehand!)
           stagehand = await createStagehandAndNavigate(browserConfig, baseUrl, navTimeout, verbose, reporter)
