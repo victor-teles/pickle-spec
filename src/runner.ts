@@ -1,4 +1,3 @@
-// Disable AI SDK warning logs before any AI SDK code is imported
 ;(globalThis as any).AI_SDK_LOG_WARNINGS = false
 
 import { Stagehand } from '@browserbasehq/stagehand'
@@ -9,13 +8,16 @@ import type {
   ScenarioResult,
   FeatureResult,
   RunResult,
+  ScreenshotConfig,
+  StepStatus,
 } from './types'
 import type { Pickle, PickleStep } from '@cucumber/messages'
 import { hasIgnoreTag, type ParsedFeature } from './parser'
 import { startServer, stopServer, type ManagedServer } from './server'
-import { reportStepResult, reportStepStart, reportScenarioStart, reportScenarioIgnored, reportFeatureStart, reportVerbose, reportVerboseLog, suppressThirdPartyLogs } from './reporter'
-import { captureScreenshot } from './screenshots'
-import type { ScreenshotConfig } from './types'
+import { reportScenarioIgnored, reportFeatureStart, reportVerbose, suppressThirdPartyLogs, createDirectReporter, createBufferedReporter, startParallelProgress, type ReporterContext } from './reporter'
+import { join } from 'path'
+import { captureScreenshot, sanitize } from './screenshots'
+import { startStepTrace, type TraceRecorder } from './trace'
 import {
   type EffectiveStepType,
   buildStepInfoMap,
@@ -28,27 +30,159 @@ import {
   initCancellation,
   isCancelled,
   withCancellation,
+  rethrowIfCancellation,
   setActiveStagehand,
+  addActiveStagehand,
+  removeActiveStagehand,
   setActiveServer,
 } from './cancellation'
+import {
+  createStagehandAndNavigate,
+  resetBrowserState,
+  closeStagehand,
+} from './browser-lifecycle'
 
 export { cancelRun } from './cancellation'
 
-/**
- * Execute a single step against Stagehand.
- */
+// --- Inline helpers ---
+
+function makeFailedStepResult(step: PickleStep, startTime: number, error: string): StepResult {
+  return { step, status: 'failed', durationMs: Date.now() - startTime, error }
+}
+
+function makeSkippedResult(pickle: Pickle): ScenarioResult {
+  return {
+    pickle,
+    status: 'skipped',
+    steps: pickle.steps.map(step => ({ step, status: 'skipped' as const, durationMs: 0 })),
+    durationMs: 0,
+  }
+}
+
+async function maybeScreenshot(
+  stagehand: Stagehand,
+  step: PickleStep,
+  status: StepStatus,
+  screenshotCtx?: { config: ScreenshotConfig; featureName: string; scenarioName: string; stepIndex: number },
+): Promise<string | undefined> {
+  if (!screenshotCtx) return undefined
+  return captureScreenshot(stagehand, screenshotCtx.config, {
+    ...screenshotCtx, stepText: step.text, status,
+  })
+}
+
+function aggregateResults(featureResults: FeatureResult[]): { passed: number; failed: number; skipped: number } {
+  let passed = 0, failed = 0, skipped = 0
+  for (const f of featureResults) {
+    for (const s of f.scenarios) {
+      if (s.status === 'passed') passed++
+      else if (s.status === 'failed') failed++
+      else skipped++
+    }
+  }
+  return { passed, failed, skipped }
+}
+
+// --- Concurrency ---
+
+class Semaphore {
+  private queue: (() => void)[] = []
+  private active = 0
+
+  constructor(private readonly limit: number) {}
+
+  async acquire(): Promise<void> {
+    if (this.active < this.limit) {
+      this.active++
+      return
+    }
+    return new Promise<void>(resolve => {
+      this.queue.push(resolve)
+    })
+  }
+
+  release(): void {
+    this.active--
+    const next = this.queue.shift()
+    if (next) {
+      this.active++
+      next()
+    }
+  }
+}
+
+// --- Step execution ---
+
+async function executeWithObserveAct(
+  stagehand: Stagehand,
+  agent: ReturnType<Stagehand['agent']>,
+  prompt: string,
+  verbose: boolean,
+  signal: AbortSignal,
+  reporter: ReporterContext,
+): Promise<{ success: boolean; error?: string }> {
+  if (verbose) reporter.verbose(`Observing: "${prompt}"`)
+  const actions = await withCancellation(stagehand.observe(prompt))
+
+  if (actions.length === 0) {
+    if (verbose) reporter.verbose(`Observe returned no actions, falling back to agent`)
+    const result = await agent.execute({ instruction: prompt, maxSteps: 10, signal })
+    return { success: result.success, error: result.success ? undefined : result.message }
+  }
+
+  for (const action of actions) {
+    if (isCancelled()) throw new CancellationError()
+    if (verbose) reporter.verbose(`Acting: ${action.description}`)
+    try {
+      const actResult = await withCancellation(stagehand.act(action))
+      if (!actResult.success) {
+        if (verbose) reporter.verbose(`Act failed, falling back to agent`)
+        const result = await agent.execute({ instruction: prompt, maxSteps: 10, signal })
+        return { success: result.success, error: result.success ? undefined : result.message }
+      }
+    } catch (err) {
+      rethrowIfCancellation(err)
+      if (verbose) reporter.verbose(`Act threw error, falling back to agent: ${err}`)
+      const result = await agent.execute({ instruction: prompt, maxSteps: 10, signal })
+      return { success: result.success, error: result.success ? undefined : result.message }
+    }
+  }
+
+  return { success: true }
+}
+
 async function executeStep(
   stagehand: Stagehand,
+  agent: ReturnType<Stagehand['agent']>,
   step: PickleStep,
   effectiveType: EffectiveStepType,
   baseUrl: string,
+  navTimeout: number,
   verbose: boolean,
   signal: AbortSignal,
+  reporter: ReporterContext,
   screenshotCtx?: { config: ScreenshotConfig; featureName: string; scenarioName: string; stepIndex: number },
+  traceCtx?: { traceDir: string; stepIndex: number },
 ): Promise<StepResult> {
   const startTime = Date.now()
   const prompt = buildStepPrompt(step)
-  let result: StepResult
+
+  let recorder: TraceRecorder | null = null
+  if (traceCtx) {
+    try { recorder = await startStepTrace(stagehand) } catch {}
+  }
+
+  async function finalize(result: StepResult): Promise<StepResult> {
+    if (recorder && traceCtx) {
+      try {
+        await recorder.stop()
+        const prefix = `step-${String(traceCtx.stepIndex).padStart(2, '0')}`
+        result.traceFramePaths = await recorder.saveFrames(traceCtx.traceDir, prefix)
+      } catch {}
+    }
+    result.screenshotPath = await maybeScreenshot(stagehand, step, result.status, screenshotCtx)
+    return result
+  }
 
   try {
     if (effectiveType === 'Context' || effectiveType === 'Action') {
@@ -60,196 +194,108 @@ async function executeStep(
         const url = target.startsWith('/') ? `${baseUrl}${target}` : target
 
         if (url.startsWith('http') || url.startsWith('/')) {
-          if (verbose) reportVerbose(`Navigating to ${url}`)
-          await withCancellation(page.goto(url, { waitUntil: 'domcontentloaded' }))
+          if (verbose) reporter.verbose(`Navigating to ${url}`)
+          await withCancellation(page.goto(url, { waitUntil: 'domcontentloaded', timeoutMs: navTimeout }))
         } else {
-          if (verbose) reportVerbose(`Navigating to ${baseUrl}`)
-          await withCancellation(page.goto(baseUrl, { waitUntil: 'domcontentloaded' }))
+          if (verbose) reporter.verbose(`Navigating to ${baseUrl}`)
+          await withCancellation(page.goto(baseUrl, { waitUntil: 'domcontentloaded', timeoutMs: navTimeout }))
         }
       } else {
-        if (verbose) reportVerbose(`Agent executing: "${prompt}"`)
-        const agent = stagehand.agent()
-        const execResult = await agent.execute({
-          instruction: prompt,
-          maxSteps: 10,
-          signal,
-        })
+        const execResult = await executeWithObserveAct(stagehand, agent, prompt, verbose, signal, reporter)
         if (!execResult.success) {
-          result = {
-            step,
-            status: 'failed',
-            durationMs: Date.now() - startTime,
-            error: execResult.message,
-          }
-          if (screenshotCtx) {
-            result.screenshotPath = await captureScreenshot(stagehand, screenshotCtx.config, {
-              ...screenshotCtx, stepText: step.text, status: result.status,
-            })
-          }
-          return result
+          return await finalize(makeFailedStepResult(step, startTime, execResult.error ?? 'Action failed'))
         }
       }
 
-      result = { step, status: 'passed', durationMs: Date.now() - startTime }
-    } else {
-      if (verbose) reportVerbose(`Verifying: "${prompt}"`)
-      const agent = stagehand.agent()
-      const execResult = await agent.execute({
-        instruction:
-          `Verify the following condition on the current page: "${prompt}". ` +
-          `Determine if the page currently meets this expectation. ` +
-          `You may scroll or observe the page to gather enough information.`,
-        maxSteps: 5,
-        output: VerificationSchema,
-        signal,
-      })
-
-      const verification = execResult.output as z.infer<typeof VerificationSchema> | undefined
-
-      if (!verification || !verification.meetsExpectation) {
-        result = {
-          step,
-          status: 'failed',
-          durationMs: Date.now() - startTime,
-          error: `Expected: "${prompt}" | Actual: ${verification?.actualState ?? execResult.message}`,
-        }
-        if (screenshotCtx) {
-          result.screenshotPath = await captureScreenshot(stagehand, screenshotCtx.config, {
-            ...screenshotCtx, stepText: step.text, status: result.status,
-          })
-        }
-        return result
-      }
-
-      result = { step, status: 'passed', durationMs: Date.now() - startTime }
+      return await finalize({ step, status: 'passed', durationMs: Date.now() - startTime })
     }
+
+    // Outcome (Then) step — verification
+    if (verbose) reporter.verbose(`Verifying: "${prompt}"`)
+    const execResult = await agent.execute({
+      instruction:
+        `Verify the following condition on the current page: "${prompt}". ` +
+        `Determine if the page currently meets this expectation. ` +
+        `You may scroll or observe the page to gather enough information.`,
+      maxSteps: 5,
+      output: VerificationSchema,
+      signal,
+    })
+
+    const verification = execResult.output as z.infer<typeof VerificationSchema> | undefined
+
+    if (!verification || !verification.meetsExpectation) {
+      const error = `Expected: "${prompt}" | Actual: ${verification?.actualState ?? execResult.message}`
+      return await finalize(makeFailedStepResult(step, startTime, error))
+    }
+
+    return await finalize({ step, status: 'passed', durationMs: Date.now() - startTime })
   } catch (err) {
-    if (err instanceof CancellationError) throw err
-    if (isCancelled()) throw new CancellationError()
-    if (err instanceof Error && (err.name === 'AbortError' || err.name === 'AgentAbortError')) {
-      throw new CancellationError()
-    }
-
-    result = {
-      step,
-      status: 'failed',
-      durationMs: Date.now() - startTime,
-      error: err instanceof Error ? err.message : String(err),
-    }
-    if (screenshotCtx && !isCancelled()) {
-      result.screenshotPath = await captureScreenshot(stagehand, screenshotCtx.config, {
-        ...screenshotCtx, stepText: step.text, status: result.status,
-      })
-    }
+    rethrowIfCancellation(err)
+    const result = makeFailedStepResult(step, startTime, err instanceof Error ? err.message : String(err))
+    if (!isCancelled()) return await finalize(result)
     return result
   }
-
-  if (screenshotCtx) {
-    result.screenshotPath = await captureScreenshot(stagehand, screenshotCtx.config, {
-      ...screenshotCtx, stepText: step.text, status: result.status,
-    })
-  }
-  return result
 }
 
-/**
- * Execute a single scenario (Pickle).
- */
+// --- Scenario execution ---
+
 async function executeScenario(
+  stagehand: Stagehand,
   pickle: Pickle,
   config: PickleSpecConfig,
   stepInfoMap: Map<string, { keyword: string; type: EffectiveStepType }>,
   verbose: boolean,
   featureName: string,
   signal: AbortSignal,
+  reporter: ReporterContext,
 ): Promise<ScenarioResult> {
   const startTime = Date.now()
-  const stagehandConfig = config.browser!
   const baseUrl = config.server?.url ?? 'http://localhost:3000'
-
-  const restoreLogs = suppressThirdPartyLogs()
-
-  const stagehand = new Stagehand({
-    env: stagehandConfig.env ?? 'LOCAL',
-    model: stagehandConfig.modelClientOptions
-      ? { modelName: stagehandConfig.modelName ?? 'claude-4-6-sonnet-latest', ...stagehandConfig.modelClientOptions }
-      : (stagehandConfig.modelName ?? 'claude-4-6-sonnet-latest'),
-    localBrowserLaunchOptions: {
-      headless: stagehandConfig.headless ?? true,
-    },
-    verbose: 0,
-    disablePino: true,
-    logger: verbose ? (line) => reportVerboseLog(line) : () => {},
-    apiKey: stagehandConfig.apiKey,
-    projectId: stagehandConfig.projectId,
-    domSettleTimeout: stagehandConfig.domSettleTimeout ?? 3000,
-    actTimeoutMs: stagehandConfig.actTimeoutMs,
-    experimental: true
-  })
-
-  setActiveStagehand(stagehand)
-
-  if (verbose) reportVerbose('Launching browser...')
-  await withCancellation(stagehand.init())
-  if (verbose) reportVerbose('Browser ready')
-
-  const page = stagehand.context.pages()[0]!
-  if (verbose) reportVerbose(`Navigating to ${baseUrl}`)
-  await withCancellation(page.goto(baseUrl, { waitUntil: 'domcontentloaded' }))
-
+  const navTimeout = config.browser?.navigationTimeout ?? 15000
+  const agent = stagehand.agent()
   const stepResults: StepResult[] = []
   let scenarioFailed = false
   const screenshotConfig = config.screenshots
   const hasScreenshots = screenshotConfig && screenshotConfig.mode !== 'off'
+  const artifactsDir = config.screenshots?.outputDir ?? './.pickle/artifacts'
+  const traceDir = join(artifactsDir, 'traces', sanitize(featureName), sanitize(pickle.name))
 
   for (let i = 0; i < pickle.steps.length; i++) {
     const step = pickle.steps[i]!
+    const info = stepInfoMap.get(step.astNodeIds[0]!)
+    const keyword = info?.keyword ?? '  '
+
     if (scenarioFailed || isCancelled()) {
-      const info = stepInfoMap.get(step.astNodeIds[0]!)
-      reportStepResult(info?.keyword ?? '  ', step.text, {
-        step,
-        status: 'skipped',
-        durationMs: 0,
-      })
+      reporter.stepResult(keyword, step.text, { step, status: 'skipped', durationMs: 0 })
       stepResults.push({ step, status: 'skipped', durationMs: 0 })
       continue
     }
 
-    const info = stepInfoMap.get(step.astNodeIds[0]!)
     const effectiveType: EffectiveStepType = info?.type ?? 'Action'
-    const keyword = info?.keyword ?? '  '
+    reporter.stepStart(keyword, step.text)
 
-    reportStepStart(keyword, step.text)
     const screenshotCtx = hasScreenshots
       ? { config: screenshotConfig!, featureName, scenarioName: pickle.name, stepIndex: i }
       : undefined
 
     try {
-      const result = await executeStep(stagehand, step, effectiveType, baseUrl, verbose, signal, screenshotCtx)
+      const result = await executeStep(
+        stagehand, agent, step, effectiveType, baseUrl, navTimeout,
+        verbose, signal, reporter, screenshotCtx, { traceDir, stepIndex: i },
+      )
       stepResults.push(result)
-      reportStepResult(keyword, step.text, result)
-
-      if (result.status === 'failed') {
-        scenarioFailed = true
-      }
+      reporter.stepResult(keyword, step.text, result)
+      if (result.status === 'failed') scenarioFailed = true
     } catch (err) {
       if (err instanceof CancellationError || isCancelled()) {
-        reportStepResult(keyword, step.text, { step, status: 'skipped', durationMs: 0 })
+        reporter.stepResult(keyword, step.text, { step, status: 'skipped', durationMs: 0 })
         stepResults.push({ step, status: 'skipped', durationMs: 0 })
         break
       }
       throw err
     }
   }
-
-  try {
-    if (verbose) reportVerbose('Closing browser')
-    await stagehand.close()
-  } catch {
-    // Browser may already be closed by cancellation handler
-  }
-  setActiveStagehand(null)
-  restoreLogs()
 
   return {
     pickle,
@@ -259,9 +305,153 @@ async function executeScenario(
   }
 }
 
-/**
- * Execute all parsed features.
- */
+// --- Feature execution strategies ---
+
+async function runFeatureSerial(
+  pickles: readonly Pickle[],
+  config: PickleSpecConfig,
+  stepInfoMap: Map<string, { keyword: string; type: EffectiveStepType }>,
+  featureName: string,
+  verbose: boolean,
+  signal: AbortSignal,
+): Promise<ScenarioResult[]> {
+  const browserConfig = config.browser!
+  const baseUrl = config.server?.url ?? 'http://localhost:3000'
+  const navTimeout = browserConfig.navigationTimeout ?? 15000
+  const reporter = createDirectReporter()
+  const scenarioResults: ScenarioResult[] = []
+  let stagehand: Stagehand | null = null
+
+  try {
+    stagehand = await createStagehandAndNavigate(browserConfig, baseUrl, navTimeout, verbose, reporter)
+    setActiveStagehand(stagehand)
+    let isFirstScenario = true
+
+    for (const pickle of pickles) {
+      if (isCancelled()) break
+
+      if (hasIgnoreTag(pickle)) {
+        reporter.scenarioIgnored(pickle.name)
+        scenarioResults.push(makeSkippedResult(pickle))
+        continue
+      }
+
+      if (!isFirstScenario) {
+        try {
+          await resetBrowserState(stagehand!, baseUrl, navTimeout)
+        } catch {
+          await closeStagehand(stagehand!)
+          stagehand = await createStagehandAndNavigate(browserConfig, baseUrl, navTimeout, verbose, reporter)
+          setActiveStagehand(stagehand)
+        }
+      }
+      isFirstScenario = false
+
+      reporter.scenarioStart(pickle.name)
+      const result = await executeScenario(stagehand!, pickle, config, stepInfoMap, verbose, featureName, signal, reporter)
+      scenarioResults.push(result)
+    }
+  } finally {
+    if (stagehand) {
+      if (verbose) reportVerbose('Closing browser')
+      await closeStagehand(stagehand)
+      setActiveStagehand(null)
+    }
+  }
+
+  return scenarioResults
+}
+
+async function runFeatureParallel(
+  pickles: readonly Pickle[],
+  runnablePickles: readonly Pickle[],
+  config: PickleSpecConfig,
+  stepInfoMap: Map<string, { keyword: string; type: EffectiveStepType }>,
+  featureName: string,
+  verbose: boolean,
+  signal: AbortSignal,
+  concurrency: number,
+): Promise<ScenarioResult[]> {
+  const browserConfig = config.browser!
+  const baseUrl = config.server?.url ?? 'http://localhost:3000'
+  const navTimeout = browserConfig.navigationTimeout ?? 15000
+  const semaphore = new Semaphore(concurrency)
+  const scenarioResults: ScenarioResult[] = []
+  let completed = 0
+  let progress = startParallelProgress(runnablePickles.length)
+
+  const scenarioTasks: Promise<{ pickle: Pickle; result: ScenarioResult }>[] = []
+
+  for (const pickle of pickles) {
+    if (isCancelled()) break
+
+    if (hasIgnoreTag(pickle)) {
+      reportScenarioIgnored(pickle.name)
+      scenarioResults.push(makeSkippedResult(pickle))
+      continue
+    }
+
+    const task = (async () => {
+      await semaphore.acquire()
+      try {
+        if (isCancelled()) return { pickle, result: makeSkippedResult(pickle) }
+
+        const reporter = createBufferedReporter()
+        reporter.scenarioStart(pickle.name)
+        let stagehand: Stagehand | null = null
+
+        try {
+          stagehand = await createStagehandAndNavigate(browserConfig, baseUrl, navTimeout, verbose, reporter)
+          addActiveStagehand(stagehand)
+          const result = await executeScenario(stagehand, pickle, config, stepInfoMap, verbose, featureName, signal, reporter)
+          return { pickle, result }
+        } catch (err) {
+          if (err instanceof CancellationError || isCancelled()) {
+            return { pickle, result: makeSkippedResult(pickle) }
+          }
+          return {
+            pickle,
+            result: {
+              pickle,
+              status: 'failed' as const,
+              steps: pickle.steps.map(step => ({ step, status: 'failed' as const, durationMs: 0, error: err instanceof Error ? err.message : String(err) })),
+              durationMs: 0,
+            },
+          }
+        } finally {
+          if (stagehand) {
+            await closeStagehand(stagehand)
+            removeActiveStagehand(stagehand)
+          }
+          completed++
+          progress.stop()
+          reporter.flush()
+          if (completed < runnablePickles.length) {
+            progress = startParallelProgress(runnablePickles.length)
+            progress.update(completed)
+          }
+        }
+      } finally {
+        semaphore.release()
+      }
+    })()
+
+    scenarioTasks.push(task)
+  }
+
+  const settled = await Promise.allSettled(scenarioTasks)
+  progress.stop()
+  for (const entry of settled) {
+    if (entry.status === 'fulfilled') {
+      scenarioResults.push(entry.value.result)
+    }
+  }
+
+  return scenarioResults
+}
+
+// --- Main entry point ---
+
 export async function runFeatures(
   features: ParsedFeature[],
   config: PickleSpecConfig,
@@ -270,6 +460,8 @@ export async function runFeatures(
   const overallStart = Date.now()
   const signal = initCancellation()
   let server: ManagedServer | undefined
+  const concurrency = config.concurrency ?? 1
+  const verbose = options.verbose || config.verbose || false
 
   try {
     if (config.server?.command) {
@@ -283,27 +475,25 @@ export async function runFeatures(
       if (isCancelled()) break
       reportFeatureStart(feature.featureName, feature.filePath)
       const featureStart = Date.now()
-
       const stepInfoMap = buildStepInfoMap(feature.document)
-      const scenarioResults: ScenarioResult[] = []
+      const runnablePickles = feature.pickles.filter(p => !hasIgnoreTag(p))
 
-      for (const pickle of feature.pickles) {
-        if (isCancelled()) break
+      let scenarioResults: ScenarioResult[]
 
-        if (hasIgnoreTag(pickle)) {
+      if (runnablePickles.length === 0) {
+        scenarioResults = feature.pickles.map(pickle => {
           reportScenarioIgnored(pickle.name)
-          scenarioResults.push({
-            pickle,
-            status: 'skipped',
-            steps: pickle.steps.map(step => ({ step, status: 'skipped' as const, durationMs: 0 })),
-            durationMs: 0,
-          })
-          continue
+          return makeSkippedResult(pickle)
+        })
+      } else {
+        const restoreLogs = verbose ? undefined : suppressThirdPartyLogs()
+        try {
+          scenarioResults = concurrency <= 1
+            ? await runFeatureSerial(feature.pickles, config, stepInfoMap, feature.featureName, verbose, signal)
+            : await runFeatureParallel(feature.pickles, runnablePickles, config, stepInfoMap, feature.featureName, verbose, signal, concurrency)
+        } finally {
+          restoreLogs?.()
         }
-
-        reportScenarioStart(pickle.name)
-        const result = await executeScenario(pickle, config, stepInfoMap, options.verbose, feature.featureName, signal)
-        scenarioResults.push(result)
       }
 
       featureResults.push({
@@ -314,26 +504,13 @@ export async function runFeatures(
       })
     }
 
-    let passed = 0
-    let failed = 0
-    let skipped = 0
-    for (const f of featureResults) {
-      for (const s of f.scenarios) {
-        if (s.status === 'passed') passed++
-        else if (s.status === 'failed') failed++
-        else skipped++
-      }
-    }
-
-    const hasScreenshots = config.screenshots && config.screenshots.mode !== 'off'
+    const artifactsDir = config.screenshots?.outputDir ?? './.pickle/artifacts'
     return {
       features: featureResults,
       totalDurationMs: Date.now() - overallStart,
-      passed,
-      failed,
-      skipped,
+      ...aggregateResults(featureResults),
       cancelled: isCancelled(),
-      artifactsDir: hasScreenshots ? (config.screenshots!.outputDir ?? './pickle-artifacts') : undefined,
+      artifactsDir,
     }
   } finally {
     if (server) {

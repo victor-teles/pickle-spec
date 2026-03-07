@@ -18,6 +18,27 @@ function stopSpinner(): void {
   spinner = null
 }
 
+// --- Parallel progress spinner ---
+
+let parallelSpinner: Ora | null = null
+
+export function startParallelProgress(total: number): { update(completed: number): void; stop(): void } {
+  parallelSpinner = ora({ text: `Running scenarios (0/${total} completed)`, indent: 2 }).start()
+  return {
+    update(completed: number) {
+      if (parallelSpinner) {
+        parallelSpinner.text = `Running scenarios (${completed}/${total} completed)`
+      }
+    },
+    stop() {
+      if (parallelSpinner) {
+        parallelSpinner.stop()
+        parallelSpinner = null
+      }
+    },
+  }
+}
+
 // --- Core reporters ---
 
 export function reportFeatureStart(featureName: string, filePath: string): void {
@@ -165,5 +186,79 @@ export function reportVerbose(message: string): void {
     spinner.render()
   } else {
     console.log(pc.dim(`      ${message}`))
+  }
+}
+
+// --- Reporter Context (for parallel execution) ---
+
+export interface ReporterContext {
+  stepStart(keyword: string, text: string): void
+  stepResult(keyword: string, text: string, result: StepResult): void
+  scenarioStart(scenarioName: string): void
+  scenarioIgnored(scenarioName: string): void
+  verbose(message: string): void
+  verboseLog(line: LogLine): void
+  flush(): void
+}
+
+export function createDirectReporter(): ReporterContext {
+  return {
+    stepStart: reportStepStart,
+    stepResult: reportStepResult,
+    scenarioStart: reportScenarioStart,
+    scenarioIgnored: reportScenarioIgnored,
+    verbose: reportVerbose,
+    verboseLog: reportVerboseLog,
+    flush() {},
+  }
+}
+
+export function createBufferedReporter(): ReporterContext {
+  const lines: string[] = []
+
+  function formatStepResult(keyword: string, text: string, result: StepResult): string[] {
+    const duration = pc.dim(`(${result.durationMs}ms)`)
+    const out: string[] = []
+    switch (result.status) {
+      case 'passed':
+        out.push(pc.green(`    ✔ ${keyword}${text} ${duration}`))
+        break
+      case 'failed':
+        out.push(pc.red(`    ✖ ${keyword}${text} ${duration}`))
+        if (result.error) out.push(pc.red(`      ${result.error}`))
+        if (result.screenshotPath) out.push(pc.dim(`      Screenshot: ${result.screenshotPath}`))
+        break
+      case 'skipped':
+        out.push(pc.yellow(`    ⊘ ${keyword}${text} ${pc.dim('(skipped)')}`))
+        break
+    }
+    return out
+  }
+
+  return {
+    stepStart() {},
+    stepResult(keyword, text, result) {
+      lines.push(...formatStepResult(keyword, text, result))
+    },
+    scenarioStart(scenarioName) {
+      lines.push('')
+      lines.push(pc.bold(`  Scenario: ${scenarioName}`))
+    },
+    scenarioIgnored(scenarioName) {
+      lines.push('')
+      lines.push(pc.yellow(`  ⊘ Scenario: ${scenarioName} ${pc.dim('(ignored)')}`))
+    },
+    verbose(message) {
+      lines.push(pc.dim(`      ${message}`))
+    },
+    verboseLog(line) {
+      const msg = line.message
+      if (!msg) return
+      if (SUPPRESSED_LOG_PATTERNS.some(p => p.test(msg))) return
+      lines.push(pc.dim(`      [${line.category ?? 'stagehand'}] ${msg}`))
+    },
+    flush() {
+      for (const line of lines) console.log(line)
+    },
   }
 }

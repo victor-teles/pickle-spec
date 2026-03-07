@@ -40,7 +40,7 @@ export async function captureScreenshot(
   if (context.status === 'skipped') return undefined
 
   try {
-    const outputDir = config.outputDir ?? './pickle-artifacts'
+    const outputDir = config.outputDir ?? './.pickle/artifacts'
     const format = config.format ?? 'png'
     const dir = join(outputDir, sanitize(context.featureName), sanitize(context.scenarioName))
 
