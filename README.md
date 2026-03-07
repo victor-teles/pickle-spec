@@ -1,6 +1,6 @@
 # pickle-spec
 
-AI-powered Gherkin test runner. Write `.feature` files in plain English — pickle-spec executes them with Claude and browser automation. No step definitions needed.
+AI-powered Gherkin test runner. Write `.feature` files in natural language. pickle-spec executes them with AI and browser automation. No step definitions needed.
 
 ## How It Works
 
@@ -15,7 +15,7 @@ Each scenario gets its own isolated browser context.
 ## Prerequisites
 
 - [Bun](https://bun.sh) runtime (v1.0+)
-- An [Anthropic API key](https://console.anthropic.com/) for Claude
+- An API key for your chosen model provider (see [Environment Variables](#environment-variables))
 
 ## Installation
 
@@ -53,10 +53,17 @@ Feature: Example Search
 
 ### 3. Set your API key
 
-Create a `.env` file (Bun loads it automatically):
+Create a `.env` file (Bun loads it automatically). Set the key for the provider that matches your configured model:
 
 ```
+# Claude (default)
 ANTHROPIC_API_KEY=sk-ant-...
+
+# OpenAI
+OPENAI_API_KEY=sk-...
+
+# Google
+GOOGLE_GENERATIVE_AI_API_KEY=...
 ```
 
 ### 4. Run
@@ -133,6 +140,49 @@ Feature: Dashboard
     Then I should see the stats panel
 ```
 
+### Multi-language support
+
+pickle-spec supports writing feature files in other languages (Portuguese, Spanish, French, Japanese, etc.) using standard Gherkin i18n:
+
+```gherkin
+# language: pt
+Funcionalidade: Pesquisa
+
+  Cenario: Visitar um site
+    Dado I navigate to "https://example.com"
+    Entao I should see "Example Domain"
+```
+
+Set the default language in config or override per run:
+
+```bash
+pickle run --language pt
+```
+
+## Parallel Execution
+
+By default, pickle-spec runs up to 3 scenarios in parallel per feature. Control this with the `-j` flag or the `concurrency` config option:
+
+```bash
+pickle run -j 5          # Run up to 5 scenarios in parallel
+pickle run -j 1          # Run scenarios sequentially
+```
+
+## Screenshots
+
+Capture screenshots on failure or after every step:
+
+```bash
+pickle run --screenshot on-failure
+pickle run --screenshot on-step
+```
+
+Screenshots are saved to `.pickle/artifacts` by default. See [Screenshot options](#screenshot-options) for full configuration.
+
+## HTML Reports
+
+After each run, pickle-spec generates an HTML report with embedded screenshots and traces, and opens it in your browser automatically.
+
 ## Configuration
 
 Create `pickle.config.ts` in your project root (or run `pickle init`):
@@ -141,6 +191,8 @@ Create `pickle.config.ts` in your project root (or run `pickle init`):
 import { defineConfig } from 'pickle-spec'
 
 export default defineConfig({
+  language: 'en',
+  concurrency: 3,
   server: {
     command: 'bun run dev',
     port: 3000,
@@ -148,11 +200,20 @@ export default defineConfig({
   },
   browser: {
     env: 'LOCAL',
-    modelName: 'claude-4-6-sonnet-latest',
+    modelName: 'claude-4-6-sonnet-latest', // or 'gpt-4o', 'gemini-2.0-flash', etc.
     headless: true,
   },
 })
 ```
+
+### Top-level options
+
+| Option        | Type                   | Default                    | Description                              |
+| ------------- | ---------------------- | -------------------------- | ---------------------------------------- |
+| `language`    | `string`               | `'en'`                     | Default Gherkin dialect (e.g., `pt`, `ja`) |
+| `features`    | `string \| string[]`   | `'features/**/*.feature'`  | Glob pattern(s) for feature files        |
+| `concurrency` | `number`               | `3`                        | Max parallel scenarios per feature       |
+| `verbose`     | `boolean`              | `false`                    | Enable verbose logging                   |
 
 ### Server options
 
@@ -173,9 +234,25 @@ If configured, pickle-spec starts your dev server before running tests and stops
 | `modelName`          | `string`                    | `'claude-4-6-sonnet-latest'` | AI model for browser automation           |
 | `modelClientOptions` | `{ apiKey?, baseURL? }`     | —                            | Custom API key or base URL for the model  |
 | `headless`           | `boolean`                   | `true`                       | Run browser without a visible window      |
+| `domSettleTimeout`   | `number`                    | `3000`                       | DOM settle timeout in ms                  |
+| `actTimeoutMs`       | `number`                    | `15000`                      | Act operation timeout in ms               |
+| `observeTimeout`     | `number`                    | `10000`                      | Observe operation timeout in ms           |
+| `navigationTimeout`  | `number`                    | `15000`                      | Page.goto() timeout in ms                 |
+| `cacheDir`           | `string \| false`           | `'.pickle/cache'`            | Cache directory for act() results. `false` to disable |
+| `selfHeal`           | `boolean`                   | `true`                       | Re-run cached actions with AI when they fail |
+| `domSimplification`  | `boolean`                   | `true`                       | Remove heavy DOM elements and disable animations |
 | `apiKey`             | `string`                    | —                            | Browserbase API key (when env is `BROWSERBASE`) |
 | `projectId`          | `string`                    | —                            | Browserbase project ID                    |
 | `verbose`            | `0 \| 1 \| 2`              | —                            | Logging verbosity level                   |
+
+### Screenshot options
+
+| Option      | Type                                   | Default              | Description                                |
+| ----------- | -------------------------------------- | -------------------- | ------------------------------------------ |
+| `mode`      | `'off' \| 'on-failure' \| 'on-step'`  | `'off'`              | When to capture screenshots                |
+| `outputDir` | `string`                               | `'./.pickle/artifacts'` | Output directory for screenshots        |
+| `format`    | `'png' \| 'jpeg'`                      | `'png'`              | Image format                               |
+| `fullPage`  | `boolean`                              | `false`              | Capture full scrollable page               |
 
 ## CLI Reference
 
@@ -190,14 +267,20 @@ pickle run --headed                     # Show browser window
 pickle run --verbose                    # Verbose output
 pickle run --tag @smoke                 # Filter by tag
 pickle run --config ./custom.config.ts  # Custom config path
+pickle run --language pt                # Run with Portuguese Gherkin
+pickle run --screenshot on-failure      # Capture screenshots on failure
+pickle run -j 5                         # Run 5 scenarios in parallel
 ```
 
-| Flag                  | Description                          |
-| --------------------- | ------------------------------------ |
-| `-c, --config <path>` | Path to config file                  |
-| `--headed`            | Disable headless mode (show browser) |
-| `--verbose`           | Enable verbose logging               |
-| `-t, --tag <tag>`     | Filter scenarios by tag              |
+| Flag                       | Description                          |
+| -------------------------- | ------------------------------------ |
+| `-c, --config <path>`      | Path to config file                  |
+| `--headed`                 | Disable headless mode (show browser) |
+| `--verbose`                | Enable verbose logging               |
+| `-t, --tag <tag>`          | Filter scenarios by tag              |
+| `-l, --language <code>`    | Override Gherkin language             |
+| `--screenshot <mode>`      | Screenshot mode: `off`, `on-failure`, `on-step` |
+| `-j, --concurrency <n>`   | Max parallel scenarios per feature   |
 
 ### `pickle init`
 
@@ -209,11 +292,26 @@ pickle init
 
 ## Environment Variables
 
-Bun automatically loads `.env` files. Set your API key there:
+Bun automatically loads `.env` files. Set the API key for your chosen model provider:
 
 ```
+# Anthropic (default)
 ANTHROPIC_API_KEY=sk-ant-...
+
+# OpenAI
+OPENAI_API_KEY=sk-...
+
+# Google
+GOOGLE_GENERATIVE_AI_API_KEY=...
+
+# Other supported providers
+GROQ_API_KEY=...
+MISTRAL_API_KEY=...
+DEEPSEEK_API_KEY=...
+XAI_API_KEY=...
 ```
+
+The correct env var is auto-detected based on your configured `modelName`. You can also pass the key directly via `browser.modelClientOptions.apiKey` in your config.
 
 When using Browserbase, also set:
 
