@@ -50,5 +50,8 @@ export async function loadConfig(configPath?: string): Promise<PickleSpecConfig>
       ...DEFAULT_CONFIG.browser,
       ...browserConfig,
     },
+    screenshots: userConfig.screenshots,
+    concurrency: userConfig.concurrency ?? 3,
+    verbose: userConfig.verbose ?? false,
   }
 }

@@ -5,6 +5,8 @@ import { loadConfig } from './config'
 import { parseFeatureFiles, filterPicklesByTag } from './parser'
 import { runFeatures, cancelRun } from './runner'
 import { reportSummary, reportError, reportCancelled } from './reporter'
+import { generateHtmlReport } from './html-report'
+import pc from 'picocolors'
 
 const program = new Command()
 
@@ -23,6 +25,7 @@ program
   .option('-t, --tag <tag>', 'Filter scenarios by tag')
   .option('-l, --language <code>', 'Default Gherkin language (e.g., pt, ja, fr)')
   .option('--screenshot <mode>', 'Screenshot mode: off, on-failure, on-step')
+  .option('-j, --concurrency <n>', 'Max parallel scenarios per feature', parseInt)
   .action(async (glob: string | undefined, opts: {
     config?: string
     headed?: boolean
@@ -30,6 +33,7 @@ program
     tag?: string
     language?: string
     screenshot?: string
+    concurrency?: number
   }) => {
     const onSigint = () => {
       reportCancelled()
@@ -51,6 +55,10 @@ program
         }
       }
 
+      if (opts.concurrency) {
+        config.concurrency = opts.concurrency
+      }
+
       const language = opts.language ?? config.language
       const featurePatterns = glob ?? config.features ?? 'features/**/*.feature'
       const features = await parseFeatureFiles(featurePatterns, language)
@@ -68,10 +76,16 @@ program
       }
 
       const result = await runFeatures(featuresToRun, config, {
-        verbose: opts.verbose ?? false,
+        verbose: opts.verbose ?? config.verbose ?? false,
       })
 
       reportSummary(result)
+
+      const reportPath = await generateHtmlReport(result)
+      console.log(pc.dim(`  Report: ${reportPath}`))
+      console.log('')
+
+      Bun.spawn(['open', reportPath])
       process.exit(result.failed > 0 || result.cancelled ? 1 : 0)
     } catch (err) {
       reportError(err instanceof Error ? err.message : String(err))

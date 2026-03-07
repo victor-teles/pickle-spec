@@ -16,7 +16,8 @@
   ],
   "scripts": {
     "typecheck": "bunx tsc --noEmit",
-    "test": "bun test"
+    "test": "bun test",
+    "run:example": "cd example && bun run ../src/cli.ts run"
   },
   "devDependencies": {
     "@types/bun": "latest"

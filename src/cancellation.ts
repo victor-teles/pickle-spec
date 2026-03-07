@@ -4,7 +4,7 @@ import { stopServer, type ManagedServer } from './server'
 // --- Mutable run state ---
 
 let abortController: AbortController | null = null
-let activeStagehand: Stagehand | null = null
+const activeStagehands: Set<Stagehand> = new Set()
 let activeServer: ManagedServer | null = null
 
 // --- Error ---
@@ -28,10 +28,10 @@ export function cancelRun(): void {
     abortController.abort()
   }
 
-  if (activeStagehand) {
-    activeStagehand.close({ force: true }).catch(() => {})
-    activeStagehand = null
+  for (const sh of activeStagehands) {
+    sh.close({ force: true }).catch(() => {})
   }
+  activeStagehands.clear()
 
   if (activeServer) {
     stopServer(activeServer)
@@ -43,12 +43,34 @@ export function isCancelled(): boolean {
   return abortController?.signal.aborted ?? false
 }
 
+export function addActiveStagehand(stagehand: Stagehand): void {
+  activeStagehands.add(stagehand)
+}
+
+export function removeActiveStagehand(stagehand: Stagehand): void {
+  activeStagehands.delete(stagehand)
+}
+
 export function setActiveStagehand(stagehand: Stagehand | null): void {
-  activeStagehand = stagehand
+  if (stagehand === null) {
+    activeStagehands.clear()
+  } else {
+    activeStagehands.add(stagehand)
+  }
 }
 
 export function setActiveServer(server: ManagedServer | null): void {
   activeServer = server
+}
+
+// --- Error guard ---
+
+export function rethrowIfCancellation(err: unknown): void {
+  if (err instanceof CancellationError) throw err
+  if (isCancelled()) throw new CancellationError()
+  if (err instanceof Error && (err.name === 'AbortError' || err.name === 'AgentAbortError')) {
+    throw new CancellationError()
+  }
 }
 
 // --- Promise wrapper ---

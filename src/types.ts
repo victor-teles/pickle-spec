@@ -33,6 +33,12 @@ export interface BrowserConfig {
   domSettleTimeout?: number
   /** Act operation timeout in ms */
   actTimeoutMs?: number
+  /** Navigation timeout in ms for page.goto(). Default: 15000 */
+  navigationTimeout?: number
+  /** Directory to cache act() results for cost savings. Set to false to disable. Default: '.pickle/cache' */
+  cacheDir?: string | false
+  /** Enable self-healing when cached actions fail. Default: true */
+  selfHeal?: boolean
 }
 
 export interface PickleSpecConfig {
@@ -43,6 +49,10 @@ export interface PickleSpecConfig {
   server?: ServerConfig
   browser?: BrowserConfig
   screenshots?: ScreenshotConfig
+  /** Max parallel scenarios per feature. Default: 3 (parallel) */
+  concurrency?: number
+  /** Enable verbose logging (Stagehand logs + third-party logs). Default: false */
+  verbose?: boolean
 }
 
 // --- Screenshot Config ---
@@ -52,7 +62,7 @@ export type ScreenshotMode = 'off' | 'on-failure' | 'on-step'
 export interface ScreenshotConfig {
   /** When to capture screenshots. Default: 'off' */
   mode?: ScreenshotMode
-  /** Output directory for screenshots. Default: './pickle-artifacts' */
+  /** Output directory for screenshots. Default: './.pickle/artifacts' */
   outputDir?: string
   /** Image format. Default: 'png' */
   format?: 'png' | 'jpeg'
@@ -70,6 +80,7 @@ export interface StepResult {
   durationMs: number
   error?: string
   screenshotPath?: string
+  traceFramePaths?: string[]
 }
 
 export type ScenarioStatus = 'passed' | 'failed' | 'skipped'
@@ -96,4 +107,5 @@ export interface RunResult {
   skipped: number
   cancelled?: boolean
   artifactsDir?: string
+  reportPath?: string
 }
