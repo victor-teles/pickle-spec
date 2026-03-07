@@ -31,14 +31,18 @@ export interface BrowserConfig {
   verbose?: 0 | 1 | 2
   /** DOM settle timeout in ms. Default: 3000 */
   domSettleTimeout?: number
-  /** Act operation timeout in ms */
+  /** Act operation timeout in ms. Default: 15000 */
   actTimeoutMs?: number
+  /** Observe operation timeout in ms. Default: 10000 */
+  observeTimeout?: number
   /** Navigation timeout in ms for page.goto(). Default: 15000 */
   navigationTimeout?: number
   /** Directory to cache act() results for cost savings. Set to false to disable. Default: '.pickle/cache' */
   cacheDir?: string | false
   /** Enable self-healing when cached actions fail. Default: true */
   selfHeal?: boolean
+  /** Remove heavy DOM elements (video, iframe) and disable animations after navigation. Default: true */
+  domSimplification?: boolean
 }
 
 export interface PickleSpecConfig {

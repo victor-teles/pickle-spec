@@ -23,17 +23,17 @@
     "@types/bun": "latest"
   },
   "peerDependencies": {
-    "typescript": "^5"
+    "typescript": "^5.9.3"
   },
   "dependencies": {
     "@browserbasehq/stagehand": "^3.1.0",
     "@cucumber/gherkin": "^29.0.0",
-    "@cucumber/messages": "^26.0.0",
-    "commander": "^13.0.0",
+    "@cucumber/messages": "^26.0.1",
+    "commander": "^13.1.0",
     "dotenv": "^17.3.1",
     "ora": "^9.3.0",
-    "picocolors": "^1.1.0",
+    "picocolors": "^1.1.1",
     "prompts": "^2.4.2",
-    "zod": "^3.25.0"
+    "zod": "^3.25.76"
   }
 }
