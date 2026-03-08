@@ -7,6 +7,7 @@ import { parseFeatureFiles, filterPicklesByTag } from './parser'
 import { runFeatures, cancelRun } from './runner'
 import { reportSummary, reportError, reportCancelled } from './reporter'
 import { generateHtmlReport } from './html-report'
+import { detectPackageManager, getRunCommand, getAddCommand } from './package-manager'
 import pc from 'picocolors'
 
 const pkg = await Bun.file(resolve(import.meta.dir, '../package.json')).json()
@@ -100,7 +101,7 @@ program
 
 program
   .command('init')
-  .description('Create a starter pickle.config.ts')
+  .description('Create a starter pickle.config.ts and install pickle-spec')
   .action(async () => {
     const configPath = 'pickle.config.ts'
     const file = Bun.file(configPath)
@@ -110,15 +111,18 @@ program
       process.exit(1)
     }
 
+    const pm = await detectPackageManager()
+    const runCmd = getRunCommand(pm)
+
     const configContent = `import { defineConfig } from 'pickle-spec'
 
 export default defineConfig({
   server: {
-    command: 'bun run dev',
+    command: '${runCmd} dev',
     port: 3000,
     url: 'http://localhost:3000',
   },
-  stagehand: {
+  browser: {
     env: 'LOCAL',
     modelName: 'claude-4-6-sonnet-latest',
     headless: true,
@@ -127,7 +131,24 @@ export default defineConfig({
 `
 
     await Bun.write(configPath, configContent)
-    console.log(`Created ${configPath}`)
+    console.log(pc.green(`Created ${configPath}`))
+    console.log(pc.dim(`  Detected package manager: ${pm}`))
+
+    console.log(`\nInstalling pickle-spec...`)
+    const addCmd = getAddCommand(pm)
+    const proc = Bun.spawn(addCmd.split(' ').concat('pickle-spec'), {
+      stdout: 'inherit',
+      stderr: 'inherit',
+      cwd: process.cwd(),
+    })
+    const exitCode = await proc.exited
+
+    if (exitCode !== 0) {
+      reportError(`Failed to install pickle-spec (exit code ${exitCode})`)
+      process.exit(1)
+    }
+
+    console.log(pc.green(`\nPickle-spec is ready!`))
   })
 
 program.parse()
