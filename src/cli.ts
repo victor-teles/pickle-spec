@@ -1,5 +1,6 @@
 #!/usr/bin/env bun
 
+import { resolve } from 'path'
 import { Command } from 'commander'
 import { loadConfig } from './config'
 import { parseFeatureFiles, filterPicklesByTag } from './parser'
@@ -8,12 +9,14 @@ import { reportSummary, reportError, reportCancelled } from './reporter'
 import { generateHtmlReport } from './html-report'
 import pc from 'picocolors'
 
+const pkg = await Bun.file(resolve(import.meta.dir, '../package.json')).json()
+
 const program = new Command()
 
 program
   .name('pickle-spec')
   .description('Run Gherkin .feature files with AI-powered browser automation')
-  .version('0.1.0')
+  .version(pkg.version)
 
 program
   .command('run')
