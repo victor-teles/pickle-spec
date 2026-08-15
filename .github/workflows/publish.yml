@@ -24,9 +24,10 @@ jobs:
         run: bun run typecheck
 
       - name: Test
-        run: bun test
+        run: bun run test
 
       - name: Set version from tag
+        working-directory: packages/pickle-spec
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
           jq --arg v "$VERSION" '.version = $v' package.json > tmp.json
@@ -36,11 +37,12 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add package.json
+          git add packages/pickle-spec/package.json
           git commit -m "chore: bump version to ${GITHUB_REF_NAME#v}"
           git push origin HEAD:main
 
       - name: Publish
+        working-directory: packages/pickle-spec
         run: bunx npm publish --access public
         env:
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}

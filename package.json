@@ -1,39 +1,16 @@
 {
-  "name": "pickle-spec",
-  "version": "1.0.2",
-  "module": "index.ts",
-  "type": "module",
-  "bin": {
-    "pickle": "./src/cli.ts"
-  },
-  "exports": {
-    ".": "./index.ts"
-  },
-  "files": [
-    "src/*.ts",
-    "!src/*.test.ts",
-    "index.ts"
-  ],
+  "name": "pickle-spec-monorepo",
+  "private": true,
+  "workspaces": ["apps/*", "packages/*"],
   "scripts": {
-    "typecheck": "bunx tsc --noEmit",
-    "test": "bun test",
-    "run:example": "cd example && bun run ../src/cli.ts run"
+    "typecheck": "turbo run typecheck",
+    "test": "turbo run test",
+    "run:example": "turbo run run:example --filter=@pickle-spec/example"
   },
   "devDependencies": {
-    "@types/bun": "latest"
-  },
-  "peerDependencies": {
+    "@types/bun": "latest",
+    "turbo": "^2.8.1",
     "typescript": "^5.9.3"
   },
-  "dependencies": {
-    "@browserbasehq/stagehand": "^3.1.0",
-    "@cucumber/gherkin": "^29.0.0",
-    "@cucumber/messages": "^26.0.1",
-    "commander": "^13.1.0",
-    "dotenv": "^17.3.1",
-    "ora": "^9.3.0",
-    "picocolors": "^1.1.1",
-    "prompts": "^2.4.2",
-    "zod": "^3.25.76"
-  }
+  "packageManager": "bun@1.3.11"
 }
