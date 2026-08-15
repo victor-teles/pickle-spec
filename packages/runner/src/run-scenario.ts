@@ -16,10 +16,17 @@ export interface ResolvedAction {
   description: string
 }
 
+export interface TestArtifact {
+  kind: 'screenshot' | 'trace' | 'recording' | 'device-log'
+  path: string
+  mediaType?: string
+}
+
 export interface StepExecution {
   state: TestResultState
   resolvedActions: ResolvedAction[]
   message?: string
+  artifacts?: TestArtifact[]
 }
 
 export interface TargetSession {
@@ -43,6 +50,7 @@ export interface TestStepResult {
   state: TestResultState
   resolvedActions: ResolvedAction[]
   message?: string
+  artifacts?: TestArtifact[]
 }
 
 export interface TestResult {
@@ -58,6 +66,8 @@ export interface TestResult {
   state: TestResultState
   steps: TestStepResult[]
   message?: string
+  attempts?: number
+  flaky?: boolean
 }
 
 interface RunEventEnvelope {
@@ -85,6 +95,20 @@ export interface RunScenarioInput {
   adapter: ExecutionTargetAdapter
   signal?: AbortSignal
   onEvent?: (event: RunEvent) => void | Promise<void>
+  retry?: {
+    infrastructureErrors: number
+  }
+  timeout?: {
+    stepMs?: number
+    scenarioMs?: number
+  }
+}
+
+class ExecutionDeadlineError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'ExecutionDeadlineError'
+  }
 }
 
 function errorMessage(error: unknown): string {
@@ -93,6 +117,32 @@ function errorMessage(error: unknown): string {
 
 function isCancellation(error: unknown, signal?: AbortSignal): boolean {
   return Boolean(signal?.aborted) || (error instanceof Error && error.name === 'AbortError')
+}
+
+function executeWithDeadline<T>(
+  operation: (signal: AbortSignal) => Promise<T>,
+  signal: AbortSignal | undefined,
+  timeoutMs: number | undefined,
+  timeoutMessage: string,
+): Promise<T> {
+  if (timeoutMs === undefined) {
+    return operation(signal ?? new AbortController().signal)
+  }
+
+  const controller = new AbortController()
+  const onAbort = () => controller.abort()
+  signal?.addEventListener('abort', onAbort, { once: true })
+
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => {
+      controller.abort()
+      reject(new ExecutionDeadlineError(timeoutMessage))
+    }, timeoutMs)
+    operation(controller.signal).then(resolve, reject).finally(() => {
+      clearTimeout(timer)
+      signal?.removeEventListener('abort', onAbort)
+    })
+  })
 }
 
 function createTestResult(
@@ -115,7 +165,8 @@ function createTestResult(
   }
 }
 
-export async function runScenario(input: RunScenarioInput): Promise<ScenarioRun> {
+async function runScenarioAttempt(input: RunScenarioInput): Promise<ScenarioRun> {
+  const scenarioStartedAt = Date.now()
   const events: RunEvent[] = []
   let sequence = 0
   const emit = async (event: RunEventPayload): Promise<void> => {
@@ -132,6 +183,12 @@ export async function runScenario(input: RunScenarioInput): Promise<ScenarioRun>
     type: 'scenario-started',
     scenario: { name: input.scenario.name },
   })
+
+  if (input.scenario.tags.includes('@ignore')) {
+    const result = createTestResult(input, 'skipped', [], 'Scenario is tagged @ignore')
+    await emit({ type: 'scenario-finished', result })
+    return { events, result }
+  }
 
   if (input.signal?.aborted) {
     const result = createTestResult(
@@ -179,7 +236,21 @@ export async function runScenario(input: RunScenarioInput): Promise<ScenarioRun>
       await emit({ type: 'step-started', step })
       let execution: StepExecution
       try {
-        execution = await session.executeStep(step, input.signal)
+        const scenarioRemaining = input.timeout?.scenarioMs === undefined
+          ? undefined
+          : input.timeout.scenarioMs - (Date.now() - scenarioStartedAt)
+        const usesScenarioDeadline = scenarioRemaining !== undefined
+          && (input.timeout?.stepMs === undefined || scenarioRemaining <= input.timeout.stepMs)
+        const timeoutMs = usesScenarioDeadline ? Math.max(0, scenarioRemaining) : input.timeout?.stepMs
+        const timeoutMessage = usesScenarioDeadline
+          ? `Scenario exceeded its ${input.timeout!.scenarioMs}ms deadline`
+          : `Step exceeded its ${input.timeout!.stepMs}ms deadline`
+        execution = await executeWithDeadline(
+          operationSignal => session.executeStep(step, operationSignal),
+          input.signal,
+          timeoutMs,
+          timeoutMessage,
+        )
       } catch (error) {
         state = isCancellation(error, input.signal) ? 'cancelled' : 'infrastructure-error'
         message = errorMessage(error)
@@ -213,6 +284,7 @@ export async function runScenario(input: RunScenarioInput): Promise<ScenarioRun>
         state: execution.state,
         resolvedActions: execution.resolvedActions,
         ...(execution.message ? { message: execution.message } : {}),
+        ...(execution.artifacts?.length ? { artifacts: execution.artifacts } : {}),
       }
       steps.push(result)
       await emit({ type: 'step-finished', result })
@@ -242,4 +314,38 @@ export async function runScenario(input: RunScenarioInput): Promise<ScenarioRun>
   await emit({ type: 'scenario-finished', result })
 
   return { events, result }
+}
+
+export async function runScenario(input: RunScenarioInput): Promise<ScenarioRun> {
+  const events: RunEvent[] = []
+  const maximumAttempts = (input.retry?.infrastructureErrors ?? 0) + 1
+
+  for (let attempt = 1; attempt <= maximumAttempts; attempt++) {
+    const run = await runScenarioAttempt({ ...input, onEvent: undefined, retry: undefined })
+    const shouldRetry = run.result.state === 'infrastructure-error'
+      && attempt < maximumAttempts
+      && !input.signal?.aborted
+
+    const result: TestResult = attempt === 1
+      ? run.result
+      : {
+          ...run.result,
+          attempts: attempt,
+          flaky: run.result.state === 'passed' || run.result.state === 'passed-with-adaptation',
+        }
+
+    for (const event of run.events) {
+      const versionedEvent = {
+        ...event,
+        sequence: events.length + 1,
+        ...(event.type === 'scenario-finished' && !shouldRetry ? { result } : {}),
+      } as RunEvent
+      events.push(versionedEvent)
+      await input.onEvent?.(versionedEvent)
+    }
+
+    if (!shouldRetry) return { events, result }
+  }
+
+  throw new Error('Runner exhausted attempts without producing a test result')
 }

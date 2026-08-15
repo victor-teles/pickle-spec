@@ -6,8 +6,8 @@ const scenario: Scenario = {
   name: 'Complete a purchase',
   tags: [],
   steps: [
-    { keyword: 'Given', text: 'a product is in the basket' },
-    { keyword: 'Then', text: 'the purchase succeeds' },
+    { keyword: 'Given', text: 'a product is in the basket', type: 'context' },
+    { keyword: 'Then', text: 'the purchase succeeds', type: 'outcome' },
   ],
 }
 
@@ -61,12 +61,12 @@ describe('runScenario', () => {
       state: 'passed',
       steps: [
         {
-          step: { keyword: 'Given', text: 'a product is in the basket' },
+          step: { keyword: 'Given', text: 'a product is in the basket', type: 'context' },
           state: 'passed',
           resolvedActions: [{ description: 'Performed: a product is in the basket' }],
         },
         {
-          step: { keyword: 'Then', text: 'the purchase succeeds' },
+          step: { keyword: 'Then', text: 'the purchase succeeds', type: 'outcome' },
           state: 'passed',
           resolvedActions: [{ description: 'Performed: the purchase succeeds' }],
         },
@@ -282,5 +282,67 @@ describe('runScenario', () => {
       type: 'scenario-finished',
       result: { state: 'infrastructure-error' },
     })
+  })
+
+  test('retries infrastructure errors in a fresh logical session and marks later success flaky', async () => {
+    let attempt = 0
+    const close = mock(async () => {})
+    const openSession = mock(async () => {
+      attempt++
+      return {
+        async executeStep() {
+          if (attempt === 1) throw new Error('Browser process exited')
+          return { state: 'passed' as const, resolvedActions: [] }
+        },
+        close,
+      }
+    })
+
+    const run = await runScenario({
+      specification,
+      scenario: { ...scenario, steps: scenario.steps.slice(0, 1) },
+      executionTargetProfile: { id: 'web' },
+      adapter: { openSession },
+      retry: { infrastructureErrors: 1 },
+    })
+
+    expect(run.result).toMatchObject({
+      state: 'passed',
+      attempts: 2,
+      flaky: true,
+    })
+    expect(openSession).toHaveBeenCalledTimes(2)
+    expect(close).toHaveBeenCalledTimes(2)
+  })
+
+  test('aborts a timed-out step and closes its logical session', async () => {
+    const close = mock(async () => {})
+    const run = await runScenario({
+      specification,
+      scenario: { ...scenario, steps: scenario.steps.slice(0, 1) },
+      executionTargetProfile: { id: 'web' },
+      adapter: {
+        async openSession() {
+          return {
+            async executeStep(_step, signal) {
+              await new Promise((resolve, reject) => {
+                signal?.addEventListener('abort', () => reject(new DOMException('Aborted', 'AbortError')), {
+                  once: true,
+                })
+              })
+              return { state: 'passed', resolvedActions: [] }
+            },
+            close,
+          }
+        },
+      },
+      timeout: { stepMs: 5 },
+    })
+
+    expect(run.result).toMatchObject({
+      state: 'infrastructure-error',
+      message: 'Step exceeded its 5ms deadline',
+    })
+    expect(close).toHaveBeenCalledTimes(1)
   })
 })

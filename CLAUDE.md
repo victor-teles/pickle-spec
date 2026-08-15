@@ -6,8 +6,11 @@ alwaysApply: false
 
 This repository is a Bun + Turborepo monorepo:
 
-- `packages/pickle-spec` — published CLI and library
-- `apps/example` — sample feature files
+- `packages/spec` — Specification parsing and selection
+- `packages/runner` — scheduling, run events, and test results
+- `packages/web` — Stagehand execution-target adapter
+- `packages/cli` — executable package composition
+- `apps/example` — sample Specifications
 
 Use `bun run typecheck` and `bun run test` from the repo root. Those scripts run through Turborepo.
 

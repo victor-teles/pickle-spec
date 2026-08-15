@@ -194,4 +194,101 @@ export default {
     })
     expect(await Bun.file(closeMarker).text()).toBe('closed')
   })
+
+  test('runs a real web Scenario through the public web adapter composition', async () => {
+    const artifactDirectory = join(workspace, 'web-artifacts')
+    const applicationUrl = 'data:text/html,<button id="search">Search</button><div id="results"></div>'
+    await Bun.write(join(workspace, 'web.feature'), `Feature: Web search
+  Scenario: Search from the application
+    Given I navigate to the main page
+    When I search for pickles
+    Then pickle results are visible`)
+    await Bun.write(join(workspace, 'pickle.config.jsonc'), `{
+  // The CLI owns this declarative target configuration.
+  "executionTargetProfile": { "id": "web" },
+  "server": {
+    "command": "exit 9",
+    "url": ${JSON.stringify(applicationUrl)},
+    "reuseExisting": true
+  },
+  "web": {
+    "baseUrl": ${JSON.stringify(applicationUrl)},
+    "screenshots": {
+      "mode": "on-step",
+      "outputDir": ${JSON.stringify(artifactDirectory)}
+    }
+  }
+}`)
+    await Bun.write(join(workspace, 'web.extensions.ts'), `
+export default {
+  webAutomationFactory: {
+    async open() {
+      let page = ''
+      return {
+        async navigate(url) { page = await (await fetch(url)).text() },
+        async observe() {
+          return [{ description: 'Search for pickles', handle: 'search' }]
+        },
+        async act() {
+          page += '<div>Pickle results</div>'
+          return { success: true }
+        },
+        async verify() {
+          return {
+            meetsExpectation: page.includes('Pickle results'),
+            actualState: page,
+          }
+        },
+        async screenshot() { return new Uint8Array([137, 80, 78, 71]) },
+        async close() {},
+      }
+    },
+  },
+}
+`)
+
+    const process = Bun.spawn({
+      cmd: [
+        pickleCommand,
+        'run',
+        'web.feature',
+        '--config',
+        'pickle.config.jsonc',
+        '--extensions',
+        'web.extensions.ts',
+      ],
+      cwd: workspace,
+      env: { ...Bun.env },
+      stdout: 'pipe',
+      stderr: 'pipe',
+    })
+    const [exitCode, stdout, stderr] = await Promise.all([
+      process.exited,
+      new Response(process.stdout).text(),
+      new Response(process.stderr).text(),
+    ])
+    const records = stdout.trim().split('\n').map(line => JSON.parse(line))
+
+    expect(stderr).toBe('')
+    expect(exitCode).toBe(0)
+    expect(records.at(-1)).toMatchObject({
+      kind: 'test-result',
+      result: {
+        schemaVersion: 1,
+        specification: { name: 'Web search' },
+        scenario: { name: 'Search from the application' },
+        executionTargetProfile: { id: 'web' },
+        state: 'passed',
+        steps: [
+          { artifacts: [{ kind: 'screenshot', mediaType: 'image/png' }] },
+          { resolvedActions: [{ description: 'Search for pickles' }] },
+          { state: 'passed' },
+        ],
+      },
+    })
+    const screenshots = new Bun.Glob('**/*.png').scanSync({ cwd: artifactDirectory })
+    expect([...screenshots]).toHaveLength(3)
+    expect(stdout).not.toContain('Stagehand')
+    expect(stdout).not.toContain('gherkinDocument')
+  })
 })

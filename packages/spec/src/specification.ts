@@ -1,10 +1,9 @@
-import { AstBuilder, GherkinClassicTokenMatcher, Parser } from '@cucumber/gherkin'
-import { IdGenerator } from '@cucumber/messages'
+import { AstBuilder, compile, GherkinClassicTokenMatcher, Parser } from '@cucumber/gherkin'
+import { IdGenerator, StepKeywordType } from '@cucumber/messages'
 import type {
-  Background,
-  Rule,
-  Scenario as GherkinScenario,
-  Step as GherkinStep,
+  GherkinDocument,
+  PickleStep,
+  Step,
 } from '@cucumber/messages'
 
 export interface SpecificationSource {
@@ -15,6 +14,11 @@ export interface SpecificationSource {
 export interface ScenarioStep {
   keyword: string
   text: string
+  type: 'context' | 'action' | 'outcome'
+  argument?: {
+    dataTable?: string[][]
+    docString?: string
+  }
 }
 
 export interface Scenario {
@@ -36,41 +40,77 @@ export interface ParseSpecificationInput {
   language?: string
 }
 
-function mapSteps(steps: readonly GherkinStep[]): ScenarioStep[] {
-  return steps.map(step => ({
-    keyword: step.keyword.trim(),
-    text: step.text,
-  }))
-}
+type ScenarioStepType = ScenarioStep['type']
 
-function mapScenario(
-  scenario: GherkinScenario,
-  backgrounds: readonly Background[],
-  inheritedTags: readonly string[] = [],
-): Scenario {
-  return {
-    name: scenario.name,
-    tags: [...inheritedTags, ...scenario.tags.map(({ name }) => name)],
-    steps: [
-      ...backgrounds.flatMap(background => mapSteps(background.steps)),
-      ...mapSteps(scenario.steps),
-    ],
+function stepType(keywordType: StepKeywordType | undefined, previous: ScenarioStepType): ScenarioStepType {
+  switch (keywordType) {
+    case StepKeywordType.CONTEXT:
+      return 'context'
+    case StepKeywordType.ACTION:
+      return 'action'
+    case StepKeywordType.OUTCOME:
+      return 'outcome'
+    case StepKeywordType.CONJUNCTION:
+    case StepKeywordType.UNKNOWN:
+    default:
+      return previous
   }
 }
 
-function mapRule(rule: Rule, featureBackgrounds: readonly Background[]): Scenario[] {
-  const ruleBackgrounds = rule.children.flatMap(child => child.background ? [child.background] : [])
-  const ruleTags = rule.tags.map(({ name }) => name)
+function collectStepInfo(document: GherkinDocument): Map<string, Pick<ScenarioStep, 'keyword' | 'type'>> {
+  const result = new Map<string, Pick<ScenarioStep, 'keyword' | 'type'>>()
 
-  return rule.children.flatMap(child => child.scenario
-    ? [mapScenario(child.scenario, [...featureBackgrounds, ...ruleBackgrounds], ruleTags)]
-    : [])
+  function addSteps(steps: readonly Step[]): void {
+    let previous: ScenarioStepType = 'context'
+    for (const step of steps) {
+      previous = stepType(step.keywordType, previous)
+      result.set(step.id, { keyword: step.keyword.trim(), type: previous })
+    }
+  }
+
+  for (const child of document.feature?.children ?? []) {
+    if (child.background) addSteps(child.background.steps)
+    if (child.scenario) addSteps(child.scenario.steps)
+    for (const ruleChild of child.rule?.children ?? []) {
+      if (ruleChild.background) addSteps(ruleChild.background.steps)
+      if (ruleChild.scenario) addSteps(ruleChild.scenario.steps)
+    }
+  }
+
+  return result
+}
+
+function mapArgument(step: PickleStep): ScenarioStep['argument'] {
+  if (step.argument?.dataTable) {
+    return {
+      dataTable: step.argument.dataTable.rows.map(row => row.cells.map(cell => cell.value)),
+    }
+  }
+  if (step.argument?.docString) {
+    return { docString: step.argument.docString.content }
+  }
+  return undefined
+}
+
+function mapStep(
+  step: PickleStep,
+  infoByAstNodeId: ReadonlyMap<string, Pick<ScenarioStep, 'keyword' | 'type'>>,
+): ScenarioStep {
+  const info = infoByAstNodeId.get(step.astNodeIds[0] ?? '')
+  const argument = mapArgument(step)
+  return {
+    keyword: info?.keyword ?? '',
+    text: step.text,
+    type: info?.type ?? 'context',
+    ...(argument ? { argument } : {}),
+  }
 }
 
 export function parseSpecification(input: ParseSpecificationInput): Specification {
   const language = input.language ?? 'en'
+  const newId = IdGenerator.incrementing()
   const parser = new Parser(
-    new AstBuilder(IdGenerator.incrementing()),
+    new AstBuilder(newId),
     new GherkinClassicTokenMatcher(language),
   )
   const document = parser.parse(input.source)
@@ -80,12 +120,12 @@ export function parseSpecification(input: ParseSpecificationInput): Specificatio
     throw new Error(`Specification "${input.uri}" does not contain a Feature`)
   }
 
-  const featureBackgrounds = feature.children.flatMap(child => child.background ? [child.background] : [])
-  const scenarios: Scenario[] = feature.children.flatMap((child) => {
-    if (child.scenario) return [mapScenario(child.scenario, featureBackgrounds)]
-    if (child.rule) return mapRule(child.rule, featureBackgrounds)
-    return []
-  })
+  const infoByAstNodeId = collectStepInfo(document)
+  const scenarios: Scenario[] = compile(document, input.uri, newId).map(pickle => ({
+    name: pickle.name,
+    tags: pickle.tags.map(({ name }) => name),
+    steps: pickle.steps.map(step => mapStep(step, infoByAstNodeId)),
+  }))
 
   return {
     name: feature.name,

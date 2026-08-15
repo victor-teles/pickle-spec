@@ -17,7 +17,11 @@ This repo uses a single-context layout:
 /
 ├── CONTEXT.md
 ├── docs/adr/
-└── packages/pickle-spec/
+└── packages/
+    ├── cli/
+    ├── runner/
+    ├── spec/
+    └── web/
 ```
 
 ## Use the glossary's vocabulary
