@@ -10,6 +10,8 @@ export type TestResultState =
 
 export interface ExecutionTargetProfile {
   id: string
+  adapter?: string
+  capabilities?: readonly string[]
 }
 
 export interface ResolvedAction {

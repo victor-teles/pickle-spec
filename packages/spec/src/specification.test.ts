@@ -15,6 +15,7 @@ Feature: Checkout
 
     expect(specification).toEqual({
       name: 'Checkout',
+      id: expect.any(String),
       source: {
         uri: 'features/checkout.feature',
         language: 'en',
@@ -23,6 +24,7 @@ Feature: Checkout
       scenarios: [
         {
           name: 'Complete a purchase',
+          id: expect.any(String),
           tags: ['@smoke'],
           steps: [
             {
@@ -142,6 +144,7 @@ Feature: Search
     expect(specification.scenarios).toEqual([
       {
         name: 'View the account',
+        id: expect.any(String),
         tags: [],
         steps: [
           { keyword: 'Given', text: 'an account exists', type: 'context' },
@@ -155,6 +158,7 @@ Feature: Search
       },
       {
         name: 'Reject access',
+        id: expect.any(String),
         tags: ['@locked', '@security'],
         steps: [
           { keyword: 'Given', text: 'an account exists', type: 'context' },
@@ -168,6 +172,27 @@ Feature: Search
         ],
       },
     ])
+  })
+
+  test('collects adapter-neutral capability requirements without naming an adapter', () => {
+    const specification = parseSpecification({
+      uri: 'features/location.feature',
+      source: `@pickle:requires:camera
+Feature: Nearby stores
+  @pickle:requires:geolocation
+  Scenario: Show stores near the customer
+    When the customer shares their location
+    Then nearby stores are listed`,
+    })
+
+    expect(specification.scenarios[0]?.capabilityRequirements).toEqual([
+      'camera',
+      'geolocation',
+    ])
+    expect(JSON.stringify(specification)).not.toContain('adapter')
+    expect(JSON.stringify(specification.scenarios[0])).not.toMatch(
+      /stagehand|agent-device/i,
+    )
   })
 
   test('expands Scenario Outlines and exposes adapter-neutral step types', () => {
@@ -192,6 +217,9 @@ Feature: Search
     expect(specification.scenarios).toEqual([
       {
         name: 'Find a product',
+        id: expect.any(String),
+        examplesId: expect.any(String),
+        examplesRowId: expect.any(String),
         tags: ['@web'],
         steps: [
           {
@@ -214,6 +242,9 @@ Feature: Search
       },
       {
         name: 'Find a product',
+        id: expect.any(String),
+        examplesId: expect.any(String),
+        examplesRowId: expect.any(String),
         tags: ['@web'],
         steps: [
           {
@@ -235,5 +266,81 @@ Feature: Search
         ],
       },
     ])
+  })
+
+  test('derives a stable identifier from the specification URI and names', () => {
+    const source = `@pickle:state:active
+Feature: Checkout
+  Scenario: Complete a purchase
+    Given a product is in the basket
+    Then the purchase succeeds`
+    const first = parseSpecification({
+      uri: 'features/checkout.feature',
+      source,
+    })
+    const extraStep = parseSpecification({
+      uri: 'features/checkout.feature',
+      source: `${source}
+    And a receipt is shown`,
+    })
+    const renamed = parseSpecification({
+      uri: 'features/checkout.feature',
+      source: source.replace('Complete a purchase', 'Complete checkout'),
+    })
+    const moved = parseSpecification({
+      uri: 'features/shop/checkout.feature',
+      source,
+    })
+    const renamedFeature = parseSpecification({
+      uri: 'features/checkout.feature',
+      source: source.replace('Feature: Checkout', 'Feature: Basket'),
+    })
+
+    expect(first.id).toBeTruthy()
+    expect(first.scenarios[0]?.id).toBeTruthy()
+    expect(extraStep.id).toBe(first.id)
+    expect(extraStep.scenarios[0]?.id).toBe(first.scenarios[0]?.id)
+    expect(renamed.scenarios[0]?.id).not.toBe(first.scenarios[0]?.id)
+    expect(moved.id).not.toBe(first.id)
+    expect(renamedFeature.id).not.toBe(first.id)
+  })
+
+  test('derives examples row identifiers from row values so reordering keeps identity', () => {
+    const outline = (rows: string) => `Feature: Pay
+  Scenario Outline: Pay
+    When the customer pays with <method>
+    Then the payment succeeds
+
+    Examples:
+      | method |
+${rows}`
+    const cardFirst = parseSpecification({
+      uri: 'features/pay.feature',
+      source: outline('      | card   |\n      | cash   |'),
+    })
+    const cashFirst = parseSpecification({
+      uri: 'features/pay.feature',
+      source: outline('      | cash   |\n      | card   |'),
+    })
+    const visa = parseSpecification({
+      uri: 'features/pay.feature',
+      source: outline('      | visa   |\n      | cash   |'),
+    })
+    const cardId = cardFirst.scenarios.find((scenario) =>
+      scenario.steps.some((step) => step.text.includes('card')),
+    )?.examplesRowId
+    const reorderedCardId = cashFirst.scenarios.find((scenario) =>
+      scenario.steps.some((step) => step.text.includes('card')),
+    )?.examplesRowId
+    const visaId = visa.scenarios.find((scenario) =>
+      scenario.steps.some((step) => step.text.includes('visa')),
+    )?.examplesRowId
+
+    expect(cardId).toBeTruthy()
+    expect(reorderedCardId).toBe(cardId)
+    expect(visaId).not.toBe(cardId)
+    expect(cardFirst.scenarios[0]?.examplesId).toBe(
+      cashFirst.scenarios[0]?.examplesId,
+    )
   })
 })

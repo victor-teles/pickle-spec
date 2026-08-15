@@ -1,3 +1,4 @@
+@pickle:state:active
 Feature: Search
 
   @ignore

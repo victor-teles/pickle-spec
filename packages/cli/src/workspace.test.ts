@@ -390,6 +390,29 @@ export default { adapter: missingAdapter }
     )
   })
 
+  test('check rejects an unsupported Stagehand model before execution resources start', async () => {
+    const project = await createCheckProject('invalid-model-name', {
+      config: {
+        ...defaultCheckConfig,
+        web: {
+          baseUrl: 'https://example.com',
+          browser: { modelName: 'google/gemini-3.7-flash' },
+        },
+      },
+      specification: validSpecification,
+    })
+
+    const checked = runCheck(project)
+
+    expect(checked.exitCode).toBe(2)
+    expect(checked.stderr.toString()).toContain(
+      'web.browser.modelName "google/gemini-3.7-flash" is not a Stagehand-supported model',
+    )
+    expect(checked.stderr.toString()).toContain(
+      'Correct the value and run pickle check again',
+    )
+  })
+
   test('check rejects invalid Specifications before execution resources start', async () => {
     const project = await createCheckProject('invalid-specification', {
       config: defaultCheckConfig,
@@ -478,7 +501,7 @@ export default {}
     )
   })
 
-  test('migrate previews namespaced identifiers and writes only after confirmation', async () => {
+  test('migrate previews missing Specification state and writes only after confirmation', async () => {
     const source = `# keep this comment
 
 @smoke
@@ -498,12 +521,10 @@ Feature: Checkout
       env: { ...Bun.env },
     })
     expect(preview.exitCode).toBe(0)
-    expect(preview.stdout.toString()).toMatch(
-      /Feature "Checkout": add @pickle:id:[0-9a-f]{16} @pickle:state:active/,
+    expect(preview.stdout.toString()).toContain(
+      'Feature "Checkout": add @pickle:state:active',
     )
-    expect(preview.stdout.toString()).toMatch(
-      /Scenario "Complete a purchase": add @pickle:id:[0-9a-f]{16}/,
-    )
+    expect(preview.stdout.toString()).not.toContain('@pickle:id:')
     expect(preview.stdout.toString()).toContain(
       'Re-run pickle migrate --yes after reviewing the preview',
     )
@@ -520,14 +541,9 @@ Feature: Checkout
     )
     const migrated = await Bun.file(featurePath).text()
     expect(migrated).toContain('# keep this comment')
-    expect(migrated).toContain('\n@smoke\n@pickle:id:')
-    expect(migrated).toContain('@pickle:state:active')
+    expect(migrated).toContain('\n@smoke\n@pickle:state:active')
+    expect(migrated).not.toContain('@pickle:id:')
     expect(migrated).toContain('Then the purchase succeeds')
-    for (const id of applied.stdout
-      .toString()
-      .match(/@pickle:id:[0-9a-f]{16}/g) ?? []) {
-      expect(migrated).toContain(id)
-    }
 
     const checked = runCheck(project)
     expect(checked.exitCode).toBe(0)
@@ -558,7 +574,7 @@ Feature: Checkout
     const checked = runCheck(project)
 
     expect(checked.exitCode).toBe(2)
-    expect(checked.stderr.toString()).toContain('missing a durable identifier')
+    expect(checked.stderr.toString()).toContain('missing a Specification state')
     expect(checked.stderr.toString()).toContain(
       'Run pickle migrate to add missing metadata',
     )
@@ -620,7 +636,7 @@ Feature: Checkout
     })
 
     expect(run.exitCode).toBe(0)
-    expect(run.stderr.toString()).toContain('missing a durable identifier')
+    expect(run.stderr.toString()).toContain('missing a Specification state')
     expect(run.stderr.toString()).toContain(
       'Run pickle migrate to add missing metadata',
     )
@@ -841,5 +857,264 @@ export default {
     expect([...screenshots]).toHaveLength(3)
     expect(stdout).not.toContain('Stagehand')
     expect(stdout).not.toContain('gherkinDocument')
+  })
+
+  test('selects a named test suite by path, tag, state, and name query', async () => {
+    const project = await createCheckProject('named-suite', {
+      config: {
+        schemaVersion: 1,
+        specifications: 'features/**/*.feature',
+        executionTargetProfile: { id: 'deterministic' },
+        suites: {
+          smoke: {
+            paths: ['features/checkout/**'],
+            tagExpression: '@smoke',
+            states: ['active', 'draft'],
+            scenarioName: 'checkout',
+          },
+        },
+      },
+      extensions: await Bun.file(
+        join(workspace, 'pickle.extensions.ts'),
+      ).text(),
+    })
+    await mkdir(join(project, 'features', 'checkout'), { recursive: true })
+    await Bun.write(
+      join(project, 'features', 'checkout', 'guest.feature'),
+      `@pickle:id:specguestaaaaaaaa @pickle:state:active @smoke
+Feature: Guest checkout
+  @pickle:id:scnguestbbbbbbbb
+  Scenario: Checkout as a guest
+    Then the purchase succeeds`,
+    )
+    await Bun.write(
+      join(project, 'features', 'checkout', 'draft.feature'),
+      `@pickle:id:specdraftaaaaaaaa @pickle:state:draft @smoke
+Feature: Draft checkout
+  @pickle:id:scndraftbbbbbbbb
+  Scenario: Checkout as a draft customer
+    Then the purchase succeeds`,
+    )
+    await Bun.write(
+      join(project, 'features', 'search.feature'),
+      `@pickle:id:specsearchaaaaaaa @pickle:state:active @smoke
+Feature: Search
+  @pickle:id:scnsearchbbbbbbb
+  Scenario: Find a product
+    Then results are visible`,
+    )
+
+    const run = Bun.spawnSync({
+      cmd: [pickleCommand, 'run', '--suite', 'smoke'],
+      cwd: project,
+      env: { ...Bun.env, PICKLE_TEST_OUTCOME: 'passed' },
+    })
+    const records = run.stdout
+      .toString()
+      .trim()
+      .split('\n')
+      .filter(Boolean)
+      .map((line) => JSON.parse(line))
+      .filter((record) => record.kind === 'test-result')
+
+    expect(run.stderr.toString()).toBe('')
+    expect(run.exitCode).toBe(0)
+    expect(
+      records.map((record) => [
+        record.result.specification.name,
+        record.result.scenario.name,
+      ]),
+    ).toEqual([
+      ['Draft checkout', 'Checkout as a draft customer'],
+      ['Guest checkout', 'Checkout as a guest'],
+    ])
+  })
+
+  test('produces one test result per Scenario and execution target profile', async () => {
+    const project = await createCheckProject('multi-target', {
+      config: {
+        schemaVersion: 1,
+        specifications: 'features/**/*.feature',
+        executionTargetProfiles: {
+          web: { adapter: 'web', capabilities: ['screenshots'] },
+          android: { adapter: 'android', capabilities: ['geolocation'] },
+        },
+      },
+      specification: validSpecification,
+      extensions: `
+export default {
+  adapters: {
+    web: {
+      capabilities: ['screenshots', 'web'],
+      async openSession() {
+        return {
+          async executeStep(step) {
+            return {
+              state: 'passed',
+              resolvedActions: [{ description: \`web: \${step.text}\` }],
+            }
+          },
+          async close() {},
+        }
+      },
+    },
+    android: {
+      capabilities: ['geolocation'],
+      async openSession() {
+        return {
+          async executeStep(step) {
+            return {
+              state: 'passed',
+              resolvedActions: [{ description: \`android: \${step.text}\` }],
+            }
+          },
+          async close() {},
+        }
+      },
+    },
+  },
+}
+`,
+    })
+
+    const run = Bun.spawnSync({
+      cmd: [pickleCommand, 'run'],
+      cwd: project,
+      env: { ...Bun.env },
+    })
+    const records = run.stdout
+      .toString()
+      .trim()
+      .split('\n')
+      .filter(Boolean)
+      .map((line) => JSON.parse(line))
+      .filter((record) => record.kind === 'test-result')
+
+    expect(run.stderr.toString()).toBe('')
+    expect(run.exitCode).toBe(0)
+    expect(
+      records.map((record) => [
+        record.result.scenario.name,
+        record.result.executionTargetProfile.id,
+        record.result.state,
+      ]),
+    ).toEqual([
+      ['Validate project', 'web', 'passed'],
+      ['Validate project', 'android', 'passed'],
+    ])
+  })
+
+  test('rejects an incompatible target selection before starting execution resources', async () => {
+    const projectName = 'incompatible-target'
+    const projectPath = join(workspace, projectName)
+    const marker = join(projectPath, 'server-started.txt')
+    const project = await createCheckProject(projectName, {
+      config: {
+        schemaVersion: 1,
+        specifications: 'features/**/*.feature',
+        executionTargetProfiles: {
+          web: { adapter: 'web', capabilities: ['screenshots'] },
+        },
+        server: {
+          command: `bun -e "await Bun.write('${marker}', 'started')"`,
+          url: 'http://127.0.0.1:1',
+          startupTimeoutMs: 50,
+          pollIntervalMs: 10,
+        },
+      },
+      specification: {
+        path: 'features/location.feature',
+        source: `@pickle:id:speclocationaaaa @pickle:state:active @pickle:requires:geolocation
+Feature: Nearby stores
+  @pickle:id:scnlocationbbbb
+  Scenario: Show stores near the customer
+    Then nearby stores are listed`,
+      },
+      extensions: `
+export default {
+  adapters: {
+    web: {
+      capabilities: ['screenshots', 'web'],
+      async openSession() {
+        throw new Error('must not open')
+      },
+    },
+  },
+}
+`,
+    })
+
+    const run = Bun.spawnSync({
+      cmd: [pickleCommand, 'run'],
+      cwd: project,
+      env: { ...Bun.env },
+    })
+
+    expect(run.exitCode).toBe(2)
+    expect(run.stderr.toString()).toContain(
+      'Execution target profile "web" lacks required capabilities for Scenario "Show stores near the customer": geolocation',
+    )
+    expect(await Bun.file(marker).exists()).toBe(false)
+  })
+
+  test('loads custom adapters only from explicit extension imports', async () => {
+    const project = await createCheckProject('no-plugin-discovery', {
+      config: {
+        schemaVersion: 1,
+        specifications: 'features/**/*.feature',
+        executionTargetProfiles: {
+          discovered: { adapter: 'discovered' },
+        },
+      },
+      specification: validSpecification,
+      extensions: 'export default {}',
+    })
+    const pluginPath = join(
+      project,
+      'node_modules',
+      'pickle-plugin-discovered',
+      'index.ts',
+    )
+    await mkdir(dirname(pluginPath), { recursive: true })
+    await Bun.write(
+      pluginPath,
+      `throw new Error('dynamic plugin discovery must not load this module')
+export default { adapter: { async openSession() { throw new Error('no') } } }
+`,
+    )
+
+    const run = Bun.spawnSync({
+      cmd: [pickleCommand, 'run'],
+      cwd: project,
+      env: { ...Bun.env },
+    })
+
+    expect(run.exitCode).toBe(2)
+    expect(run.stderr.toString()).toContain(
+      'Execution target profile "discovered" requires adapter "discovered". Import it from pickle.extensions.ts.',
+    )
+    expect(run.stderr.toString()).not.toContain('dynamic plugin discovery')
+  })
+
+  test('check rejects an invalid named test suite query', async () => {
+    const project = await createCheckProject('invalid-suite', {
+      config: {
+        ...defaultCheckConfig,
+        suites: {
+          smoke: { states: ['published'] },
+        },
+      },
+      specification: validSpecification,
+    })
+
+    const checked = runCheck(project)
+
+    expect(checked.exitCode).toBe(2)
+    expect(checked.stderr.toString()).toContain(
+      'selection.states must be draft, active, or deprecated',
+    )
+    expect(checked.stderr.toString()).toContain(
+      'Correct the value and run pickle check again',
+    )
   })
 })

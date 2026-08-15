@@ -1,3 +1,7 @@
+---
+status: superseded by ADR-0011
+---
+
 # Use Gherkin tags for durable identity
 
 Pickle Spec uses namespaced Gherkin tags as durable specification and scenario identifiers. Generated Cucumber IDs cannot identify history, test results, or execution plans because they change during parsing.

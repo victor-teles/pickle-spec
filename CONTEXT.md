@@ -12,6 +12,18 @@ _Avoid_: Spec file, test file
 A platform-independent example of expected product behavior within a specification.
 _Avoid_: Test case, script
 
+**Identifier**:
+The durable identity of a specification, scenario, examples block, or examples row. Test results, execution plans, and history attach to this identity.
+_Avoid_: Pickle ID, cucumber ID, test ID
+
+**Derived identifier**:
+The identifier computed from the specification URI and name, together with the scenario or examples name or examples row values, when no explicit identifier is declared.
+_Avoid_: Implicit ID, automatic ID, content hash, natural key
+
+**Explicit identifier**:
+An identifier declared on a specification, scenario, examples block, or examples row that replaces the derived identifier.
+_Avoid_: Manual ID, override ID, pinned ID
+
 **Execution target**:
 The product surface where a scenario runs, such as a web application or mobile application.
 _Avoid_: Platform, engine, environment

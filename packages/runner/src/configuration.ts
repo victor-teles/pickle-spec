@@ -3,10 +3,12 @@ import type {
   ExecutionTargetAdapter,
   ExecutionTargetProfile,
 } from './run-scenario'
+import type { RunTarget } from './run-scenarios'
 
 export interface RunConfiguration {
   schemaVersion: 1
-  executionTargetProfile: ExecutionTargetProfile
+  executionTargetProfile?: ExecutionTargetProfile
+  executionTargetProfiles?: ExecutionTargetProfile[]
   concurrency?: number
   execution?: {
     infrastructureRetries?: number
@@ -16,7 +18,8 @@ export interface RunConfiguration {
 }
 
 export interface RunExtensions {
-  adapter: ExecutionTargetAdapter
+  adapter?: ExecutionTargetAdapter
+  adapters?: Record<string, ExecutionTargetAdapter>
 }
 
 export interface RunExtensionManifest {
@@ -27,6 +30,7 @@ export interface RunExtensionManifest {
 export interface ResolvedRunConfiguration extends ExecutionPolicy {
   adapter: ExecutionTargetAdapter
   executionTargetProfile: ExecutionTargetProfile
+  targets: RunTarget[]
   concurrency: number
 }
 
@@ -57,11 +61,98 @@ function positiveInteger(value: unknown, field: string): void {
   }
 }
 
-function validateExecutionTargetProfile(value: unknown): void {
-  const profile = record(value, 'executionTargetProfile')
-  knownFields(profile, ['id'], 'executionTargetProfile')
+function validateCapabilities(
+  value: unknown,
+  field: string,
+): readonly string[] {
+  if (!Array.isArray(value) || value.length === 0) {
+    throw new Error(`${field} must contain at least one capability`)
+  }
+  if (!value.every((item) => typeof item === 'string' && item.trim())) {
+    throw new Error(`${field} must not contain an empty capability`)
+  }
+  return value
+}
+
+function validateExecutionTargetProfile(
+  value: unknown,
+  field = 'executionTargetProfile',
+): ExecutionTargetProfile {
+  const profile = record(value, field)
+  knownFields(profile, ['id', 'adapter', 'capabilities'], field)
   if (typeof profile.id !== 'string' || !profile.id.trim()) {
-    throw new Error('executionTargetProfile.id must not be empty')
+    throw new Error(`${field}.id must not be empty`)
+  }
+  if (
+    profile.adapter !== undefined &&
+    (typeof profile.adapter !== 'string' || !profile.adapter.trim())
+  ) {
+    throw new Error(`${field}.adapter must not be empty`)
+  }
+  if (profile.capabilities !== undefined) {
+    profile.capabilities = validateCapabilities(
+      profile.capabilities,
+      `${field}.capabilities`,
+    )
+  }
+  return profile as unknown as ExecutionTargetProfile
+}
+
+function configuredProfiles(
+  configuration: RunConfiguration,
+): ExecutionTargetProfile[] {
+  if (configuration.executionTargetProfiles?.length) {
+    return configuration.executionTargetProfiles
+  }
+  if (configuration.executionTargetProfile) {
+    return [configuration.executionTargetProfile]
+  }
+  throw new Error(
+    'executionTargetProfile or executionTargetProfiles is required',
+  )
+}
+
+function isAdapter(
+  value: ExecutionTargetAdapter | undefined,
+): value is ExecutionTargetAdapter {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    typeof value.openSession === 'function'
+  )
+}
+
+function adapterForProfile(
+  profile: ExecutionTargetProfile,
+  extensions: RunExtensions,
+): ExecutionTargetAdapter {
+  const resolved = profile.adapter
+    ? (extensions.adapters?.[profile.id] ??
+      extensions.adapters?.[profile.adapter])
+    : extensions.adapter
+  if (!isAdapter(resolved)) {
+    throw new Error(
+      `Execution target profile "${profile.id}" requires adapter ` +
+        `"${profile.adapter ?? 'custom'}". Import it from pickle.extensions.ts.`,
+    )
+  }
+  return resolved
+}
+
+function assertProfileCapabilities(
+  profile: ExecutionTargetProfile,
+  adapter: ExecutionTargetAdapter,
+): void {
+  const adapterCapabilities = adapter.capabilities
+  if (!profile.capabilities || !adapterCapabilities) return
+  const available = new Set(adapterCapabilities)
+  const missing = profile.capabilities.filter(
+    (capability) => !available.has(capability),
+  )
+  if (missing.length > 0) {
+    throw new Error(
+      `Execution target profile "${profile.id}" declares capabilities the adapter does not provide: ${missing.join(', ')}`,
+    )
   }
 }
 
@@ -69,7 +160,13 @@ export function validateRunConfiguration(value: unknown): RunConfiguration {
   const configuration = record(value, 'run configuration')
   knownFields(
     configuration,
-    ['schemaVersion', 'executionTargetProfile', 'concurrency', 'execution'],
+    [
+      'schemaVersion',
+      'executionTargetProfile',
+      'executionTargetProfiles',
+      'concurrency',
+      'execution',
+    ],
     'run configuration',
   )
   if (configuration.schemaVersion !== 1) {
@@ -77,7 +174,36 @@ export function validateRunConfiguration(value: unknown): RunConfiguration {
       `Unsupported configuration schemaVersion: ${String(configuration.schemaVersion)}`,
     )
   }
-  validateExecutionTargetProfile(configuration.executionTargetProfile)
+  if (configuration.executionTargetProfile !== undefined) {
+    configuration.executionTargetProfile = validateExecutionTargetProfile(
+      configuration.executionTargetProfile,
+    )
+  }
+  if (configuration.executionTargetProfiles !== undefined) {
+    if (
+      !Array.isArray(configuration.executionTargetProfiles) ||
+      configuration.executionTargetProfiles.length === 0
+    ) {
+      throw new Error(
+        'executionTargetProfiles must contain at least one execution target profile',
+      )
+    }
+    configuration.executionTargetProfiles =
+      configuration.executionTargetProfiles.map((profile, index) =>
+        validateExecutionTargetProfile(
+          profile,
+          `executionTargetProfiles[${index}]`,
+        ),
+      )
+  }
+  if (
+    configuration.executionTargetProfile === undefined &&
+    configuration.executionTargetProfiles === undefined
+  ) {
+    throw new Error(
+      'executionTargetProfile or executionTargetProfiles is required',
+    )
+  }
   positiveInteger(configuration.concurrency, 'concurrency')
   if (configuration.execution !== undefined) {
     const execution = record(configuration.execution, 'execution')
@@ -120,18 +246,19 @@ export function resolveRunConfiguration(
   extensions: RunExtensions,
 ): ResolvedRunConfiguration {
   const validatedConfiguration = validateRunConfiguration(configuration)
-  if (
-    typeof extensions.adapter !== 'object' ||
-    extensions.adapter === null ||
-    typeof extensions.adapter.openSession !== 'function'
-  ) {
-    throw new Error('extensions.adapter must provide openSession')
-  }
+  const profiles = configuredProfiles(validatedConfiguration)
+  const targets = profiles.map((executionTargetProfile) => {
+    const adapter = adapterForProfile(executionTargetProfile, extensions)
+    assertProfileCapabilities(executionTargetProfile, adapter)
+    return { executionTargetProfile, adapter }
+  })
+  const first = targets[0]!
   const retries = validatedConfiguration.execution?.infrastructureRetries
 
   return {
-    adapter: extensions.adapter,
-    executionTargetProfile: validatedConfiguration.executionTargetProfile,
+    adapter: first.adapter,
+    executionTargetProfile: first.executionTargetProfile,
+    targets,
     concurrency: validatedConfiguration.concurrency ?? 1,
     retry: { infrastructureErrors: retries ?? 0 },
     timeout: {

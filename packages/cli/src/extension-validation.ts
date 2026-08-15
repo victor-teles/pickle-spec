@@ -33,6 +33,21 @@ function isRelevantSemanticDiagnostic(
   )
 }
 
+function requiredExtensionPropertyType(
+  typeChecker: ts.TypeChecker,
+  parent: ts.Type,
+  name: string,
+  sourceFile: ts.SourceFile,
+): ts.Type | undefined {
+  const property = parent.getProperty(name)
+  if (!property || property.flags & ts.SymbolFlags.Optional) return undefined
+  const declaration =
+    property.valueDeclaration ?? property.declarations?.[0] ?? sourceFile
+  const type = typeChecker.getTypeOfSymbolAtLocation(property, declaration)
+  if (type.flags & ts.TypeFlags.Undefined) return undefined
+  return type
+}
+
 function extensionProvidesAdapter(
   typeChecker: ts.TypeChecker,
   defaultExport: ts.Symbol,
@@ -50,18 +65,22 @@ function extensionProvidesAdapter(
     exportedSymbol,
     declaration,
   )
-  const adapter = extensionType.getProperty('adapter')
-  const adapterDeclaration =
-    adapter?.valueDeclaration ?? adapter?.declarations?.[0] ?? sourceFile
-  const adapterType =
-    adapter &&
-    typeChecker.getTypeOfSymbolAtLocation(adapter, adapterDeclaration)
-
+  const adaptersType = requiredExtensionPropertyType(
+    typeChecker,
+    extensionType,
+    'adapters',
+    sourceFile,
+  )
   return Boolean(
-    adapter &&
-      !(adapter.flags & ts.SymbolFlags.Optional) &&
-      adapterType &&
-      !(adapterType.flags & ts.TypeFlags.Undefined),
+    requiredExtensionPropertyType(
+      typeChecker,
+      extensionType,
+      'adapter',
+      sourceFile,
+    ) ||
+      adaptersType
+        ?.getProperties()
+        .some((property) => property.name !== '__index'),
   )
 }
 

@@ -2,16 +2,25 @@
 
 import { relative, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
-import type { ExecutionTargetAdapter } from '@pickle-spec/runner'
-import { resolveRunConfiguration, runScenarios } from '@pickle-spec/runner'
+import type {
+  ExecutionTargetAdapter,
+  ExecutionTargetProfile,
+  RunExtensions,
+} from '@pickle-spec/runner'
+import {
+  resolveRunConfiguration,
+  runScenarios,
+  validateTargetSelection,
+} from '@pickle-spec/runner'
 import {
   parseSpecification,
   type SelectionOptions,
+  type SpecificationState,
   selectScenarios,
   validateSpecificationMetadata,
 } from '@pickle-spec/spec'
 import { createWebAdapter, type WebAdapterOptions } from '@pickle-spec/web'
-import { loadConfig, type PickleConfig } from './config'
+import { loadConfig, type PickleConfig, runConfigurationFrom } from './config'
 import type { Extensions } from './extensions'
 import { checkProject, initializeProject, migrateProject } from './project'
 import { startServer } from './server'
@@ -20,6 +29,8 @@ interface RunArguments {
   pattern?: string
   configPath?: string
   extensionsPath?: string
+  suite?: string
+  profiles?: string[]
   selection: SelectionOptions
   retries?: number
   concurrency?: number
@@ -70,6 +81,12 @@ function parseRunArguments(argv: string[]): RunArguments {
       case '--extensions':
         args.extensionsPath = valueAfter(argv, index++)
         break
+      case '--suite':
+        args.suite = valueAfter(argv, index++)
+        break
+      case '--profile':
+        args.profiles = [...(args.profiles ?? []), valueAfter(argv, index++)]
+        break
       case '--scenario':
         args.selection.scenarioName = valueAfter(argv, index++)
         break
@@ -77,6 +94,14 @@ function parseRunArguments(argv: string[]): RunArguments {
       case '-t':
         args.selection.tagExpression = valueAfter(argv, index++)
         break
+      case '--state': {
+        const state = valueAfter(argv, index++)
+        args.selection.states = [
+          ...(args.selection.states ?? []),
+          state as SpecificationState,
+        ]
+        break
+      }
       case '--shard':
         args.selection.shard = parseShard(valueAfter(argv, index++))
         break
@@ -168,16 +193,21 @@ async function discoverSpecifications(
 function configuredWebOptions(
   config: PickleConfig,
   args: RunArguments,
+  profileId?: string,
 ): WebAdapterOptions | undefined {
-  if (!config.web) return undefined
+  const web =
+    (profileId
+      ? config.executionTargetProfiles?.[profileId]?.web
+      : undefined) ?? config.web
+  if (!web) return undefined
   return {
-    ...config.web,
+    ...web,
     browser: {
-      ...config.web.browser,
+      ...web.browser,
       ...(args.headed ? { headless: false } : {}),
     },
     screenshots: {
-      ...config.web.screenshots,
+      ...web.screenshots,
       ...(args.screenshotMode ? { mode: args.screenshotMode } : {}),
     },
   }
@@ -195,6 +225,43 @@ function configuredAdapter(
   return createWebAdapter(web, extensions.webAutomationFactory)
 }
 
+function configuredRunExtensions(
+  extensions: Extensions,
+  config: PickleConfig,
+  args: RunArguments,
+  profiles: readonly ExecutionTargetProfile[],
+): RunExtensions {
+  const adapters: Record<string, ExecutionTargetAdapter> = {
+    ...extensions.adapters,
+  }
+  if (extensions.adapter) adapters.custom ??= extensions.adapter
+
+  for (const profile of profiles) {
+    if (profile.adapter !== 'web' || adapters[profile.id]) continue
+    const web = configuredWebOptions(config, args, profile.id)
+    if (adapters.web) {
+      adapters[profile.id] = adapters.web
+      continue
+    }
+    if (!web) {
+      throw new Error(
+        'Configure web.baseUrl or export an adapter from pickle.extensions.ts',
+      )
+    }
+    adapters[profile.id] = createWebAdapter(
+      web,
+      extensions.webAutomationFactory,
+    )
+  }
+
+  return {
+    adapter: profiles.some((profile) => profile.adapter)
+      ? extensions.adapter
+      : configuredAdapter(extensions, configuredWebOptions(config, args)),
+    adapters,
+  }
+}
+
 async function run(argv: string[]): Promise<number> {
   const args = parseRunArguments(argv)
   const config = await loadConfig(args.configPath)
@@ -208,35 +275,41 @@ async function run(argv: string[]): Promise<number> {
       args.pattern ?? config.specifications ?? 'features/**/*.feature',
       args.language ?? config.language,
     )
+    const suiteSelection = args.suite ? config.suites?.[args.suite] : undefined
+    if (args.suite && !suiteSelection) {
+      throw new Error(`Unknown test suite "${args.suite}"`)
+    }
+    const baseSelection = suiteSelection ?? config.selection
     const selections = selectScenarios(specifications, {
-      ...config.selection,
+      ...baseSelection,
       ...args.selection,
-      shard: args.selection.shard ?? config.selection?.shard,
+      shard: args.selection.shard ?? baseSelection?.shard,
     })
     if (selections.length === 0)
       throw new Error('No Scenarios match the current selection')
 
     const extensions = await loadExtensions(args.extensionsPath)
-    const web = configuredWebOptions(config, args)
+    const runConfiguration = {
+      ...runConfigurationFrom(config, args.profiles),
+      concurrency: args.concurrency ?? config.concurrency,
+      execution: {
+        infrastructureRetries:
+          args.retries ?? config.execution?.infrastructureRetries,
+        stepTimeoutMs: args.stepTimeoutMs ?? config.execution?.stepTimeoutMs,
+        scenarioTimeoutMs:
+          args.scenarioTimeoutMs ?? config.execution?.scenarioTimeoutMs,
+      },
+    }
     const resolvedConfiguration = resolveRunConfiguration(
-      {
-        schemaVersion: config.schemaVersion,
-        executionTargetProfile: config.executionTargetProfile ?? {
-          id: web ? 'web' : 'custom',
-        },
-        concurrency: args.concurrency ?? config.concurrency,
-        execution: {
-          infrastructureRetries:
-            args.retries ?? config.execution?.infrastructureRetries,
-          stepTimeoutMs: args.stepTimeoutMs ?? config.execution?.stepTimeoutMs,
-          scenarioTimeoutMs:
-            args.scenarioTimeoutMs ?? config.execution?.scenarioTimeoutMs,
-        },
-      },
-      {
-        adapter: configuredAdapter(extensions, web),
-      },
+      runConfiguration,
+      configuredRunExtensions(
+        extensions,
+        config,
+        args,
+        runConfiguration.executionTargetProfiles ?? [],
+      ),
     )
+    validateTargetSelection(selections, resolvedConfiguration.targets)
     server = await startServer({
       ...config.server,
       ...(args.reuseServer ? { reuseExisting: true } : {}),

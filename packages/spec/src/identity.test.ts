@@ -26,32 +26,24 @@ Feature: Checkout
 `
 
 describe('planSpecificationMigration', () => {
-  test('previews namespaced identifiers and lifecycle tags without rewriting unrelated source', () => {
+  test('previews missing Specification state without rewriting unrelated source or adding identifiers', () => {
     const plan = planSpecificationMigration([
       { uri: 'features/checkout.feature', source: checkoutSource },
     ])
     const preview = formatMigrationPreview(plan)
 
     expect(preview).toContain('features/checkout.feature')
-    expect(preview).toMatch(
-      /Feature "Checkout": add @pickle:id:[0-9a-f]{16} @pickle:state:active/,
-    )
-    expect(preview).toMatch(
-      /Scenario "Complete a purchase": add @pickle:id:[0-9a-f]{16}/,
-    )
-    expect(preview).toMatch(/Scenario "Pay": add @pickle:id:[0-9a-f]{16}/)
-    expect(preview).toMatch(
-      /Examples "Payment methods": add @pickle:id:[0-9a-f]{16}/,
-    )
-    expect(preview).toMatch(/Examples row 1: add pickle_id [0-9a-f]{16}/)
-    expect(preview).toMatch(/Examples row 2: add pickle_id [0-9a-f]{16}/)
+    expect(preview).toContain('Feature "Checkout": add @pickle:state:active')
+    expect(preview).not.toContain('@pickle:id:')
+    expect(preview).not.toContain('pickle_id')
 
     const nextSource = plan.files[0]?.nextSource ?? ''
     expect(nextSource).toContain('# keep this comment')
     expect(nextSource).toContain('  # scenario comment')
-    expect(nextSource).toContain('\n@smoke\n@pickle:id:')
-    expect(nextSource).toContain('@pickle:state:active')
-    expect(nextSource).toContain('| pickle_id | method |')
+    expect(nextSource).toContain('\n@smoke\n@pickle:state:active')
+    expect(nextSource).not.toContain('@pickle:id:')
+    expect(nextSource).not.toContain('pickle_id')
+    expect(nextSource).toContain('| method |')
     expect(nextSource).toContain('| card   |')
     expect(nextSource).toContain('| cash   |')
     expect(plan.files[0]?.source).toBe(checkoutSource)
@@ -91,7 +83,22 @@ Feature: Checkout
     ).not.toThrow()
   })
 
-  test('rejects missing, duplicate, malformed, and conflicting metadata', () => {
+  test('accepts a Specification that declares state and derives identifiers', () => {
+    expect(() =>
+      validateSpecificationMetadata([
+        {
+          uri: 'features/checkout.feature',
+          source: `@pickle:state:active
+Feature: Checkout
+  Scenario: Complete a purchase
+    Then the purchase succeeds
+`,
+        },
+      ]),
+    ).not.toThrow()
+  })
+
+  test('rejects missing state, duplicate, malformed, and conflicting metadata', () => {
     expect(() =>
       validateSpecificationMetadata([
         {
@@ -102,7 +109,22 @@ Feature: Checkout
 `,
         },
       ]),
-    ).toThrow(/missing a durable identifier/)
+    ).toThrow(/missing a Specification state/)
+
+    expect(() =>
+      validateSpecificationMetadata([
+        {
+          uri: 'features/checkout.feature',
+          source: `@pickle:state:active
+Feature: Checkout
+  Scenario: Login
+    Then it works
+  Scenario: Login
+    Then it also works
+`,
+        },
+      ]),
+    ).toThrow(/Duplicate identifier/)
 
     expect(() =>
       validateSpecificationMetadata([

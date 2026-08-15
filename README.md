@@ -40,19 +40,29 @@ Create `pickle.config.jsonc` in the project root:
 {
   "schemaVersion": 1,
   "specifications": "features/**/*.feature",
-  "executionTargetProfile": {
-    "id": "web"
+  "suites": {
+    "smoke": {
+      "paths": ["features/checkout/**"],
+      "tagExpression": "@smoke",
+      "states": ["active"]
+    }
   },
-  "web": {
-    "baseUrl": "http://localhost:3000",
-    "browser": {
-      "environment": "local",
-      "modelName": "anthropic/claude-sonnet-4-6",
-      "headless": true
-    },
-    "screenshots": {
-      "mode": "on-failure",
-      "outputDir": ".pickle/artifacts"
+  "executionTargetProfiles": {
+    "web": {
+      "adapter": "web",
+      "capabilities": ["screenshots"],
+      "web": {
+        "baseUrl": "http://localhost:3000",
+        "browser": {
+          "environment": "local",
+          "modelName": "anthropic/claude-sonnet-4-6",
+          "headless": true
+        },
+        "screenshots": {
+          "mode": "on-failure",
+          "outputDir": ".pickle/artifacts"
+        }
+      }
     }
   },
   "execution": {
@@ -64,7 +74,7 @@ Create `pickle.config.jsonc` in the project root:
 }
 ```
 
-Set the API key for the configured model provider. Bun loads environment variables from `.env`.
+Set the API key for the configured model provider. Bun loads environment variables from `.env`. For local Chrome, Stagehand needs that key on `model.apiKey`: set `web.browser.modelApiKey` or the provider env var (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GOOGLE_API_KEY`, `GEMINI_API_KEY`, or `GOOGLE_GENERATIVE_AI_API_KEY`). `web.browser.modelName` must be a Stagehand-supported `provider/model` value; Pickle Spec rejects unknown names before it starts browsers.
 
 ## Run Specifications
 
@@ -72,13 +82,10 @@ To run the configured Specification glob, use:
 
 ```bash
 pickle run
-```
-
-To select Scenarios or override execution policy, use:
-
-```bash
+pickle run --suite smoke --profile web
 pickle run "features/**/*.feature" --tag "@smoke and not @slow"
 pickle run "features/**/*.feature" --scenario "checkout"
+pickle run "features/**/*.feature" --state draft
 pickle run "features/**/*.feature" --shard 1/3
 pickle run "features/**/*.feature" --concurrency 5 --retries 1
 pickle run "features/**/*.feature" --screenshot on-step
@@ -94,6 +101,7 @@ Create `pickle.extensions.ts` when a project needs a custom execution-target ada
 import type { ExecutionTargetAdapter } from '@pickle-spec/runner'
 
 const adapter: ExecutionTargetAdapter = {
+  capabilities: ['filesystem'],
   async openSession() {
     return {
       async executeStep(step) {
@@ -108,13 +116,28 @@ const adapter: ExecutionTargetAdapter = {
 }
 
 export default {
-  executionTargetProfile: { id: 'custom' },
-  adapter,
+  adapters: {
+    custom: adapter,
+  },
+}
+```
+
+Declare the profile in `pickle.config.jsonc` and import the adapter explicitly. Pickle Spec does not discover plugins dynamically.
+
+```jsonc
+{
+  "schemaVersion": 1,
+  "executionTargetProfiles": {
+    "custom": {
+      "adapter": "custom",
+      "capabilities": ["filesystem"]
+    }
+  }
 }
 ```
 
 Run the custom adapter with:
 
 ```bash
-pickle run "features/**/*.feature" --extensions pickle.extensions.ts
+pickle run --profile custom --extensions pickle.extensions.ts
 ```

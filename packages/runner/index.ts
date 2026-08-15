@@ -26,5 +26,5 @@ export type {
   TestResultState,
 } from './src/run-scenario'
 export { runScenario } from './src/run-scenario'
-export type { RunScenariosInput } from './src/run-scenarios'
-export { runScenarios } from './src/run-scenarios'
+export type { RunScenariosInput, RunTarget } from './src/run-scenarios'
+export { runScenarios, validateTargetSelection } from './src/run-scenarios'

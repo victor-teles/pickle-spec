@@ -1,4 +1,5 @@
 # language: pt
+@pickle:state:active
 Funcionalidade: Busca
 
   Cenário: Visitar página principal
