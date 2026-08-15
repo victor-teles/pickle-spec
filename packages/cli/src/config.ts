@@ -47,39 +47,43 @@ export interface PickleConfig {
   server?: ServerConfig
 }
 
+function toExecutionTargetProfile(
+  id: string,
+  profile: {
+    adapter?: string
+    capabilities?: readonly string[]
+  },
+): ExecutionTargetProfile {
+  return {
+    id,
+    ...(profile.adapter ? { adapter: profile.adapter } : {}),
+    ...(profile.capabilities ? { capabilities: profile.capabilities } : {}),
+  }
+}
+
 function selectedExecutionTargetProfiles(
   config: PickleConfig,
   profileIds?: readonly string[],
 ): ExecutionTargetProfile[] {
   if (config.executionTargetProfiles) {
-    const ids = profileIds?.length
-      ? profileIds
-      : Object.keys(config.executionTargetProfiles)
+    const profiles = config.executionTargetProfiles
+    const ids = profileIds?.length ? profileIds : Object.keys(profiles)
     return ids.map((id) => {
-      const profile = config.executionTargetProfiles?.[id]
+      const profile = profiles[id]
       if (!profile) {
         throw new Error(`Unknown execution target profile "${id}"`)
       }
-      return {
-        id,
-        adapter: profile.adapter,
-        ...(profile.capabilities ? { capabilities: profile.capabilities } : {}),
-      }
+      return toExecutionTargetProfile(id, profile)
     })
   }
   if (profileIds?.length) {
     throw new Error(`Unknown execution target profile "${profileIds[0]}"`)
   }
   return [
-    {
-      id: config.executionTargetProfile?.id ?? (config.web ? 'web' : 'custom'),
-      ...(config.executionTargetProfile?.adapter
-        ? { adapter: config.executionTargetProfile.adapter }
-        : {}),
-      ...(config.executionTargetProfile?.capabilities
-        ? { capabilities: config.executionTargetProfile.capabilities }
-        : {}),
-    },
+    toExecutionTargetProfile(
+      config.executionTargetProfile?.id ?? (config.web ? 'web' : 'custom'),
+      config.executionTargetProfile ?? {},
+    ),
   ]
 }
 

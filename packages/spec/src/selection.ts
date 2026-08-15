@@ -177,7 +177,7 @@ function globToRegExp(pattern: string): RegExp {
       regex += '[^/]*'
       continue
     }
-    if ('\\^$+{}()|[]?'.includes(character) || character === '.') {
+    if ('\\^$+{}()|[]?.'.includes(character)) {
       regex += `\\${character}`
       continue
     }

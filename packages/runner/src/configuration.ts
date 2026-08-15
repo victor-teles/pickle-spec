@@ -252,12 +252,7 @@ export function resolveRunConfiguration(
     assertProfileCapabilities(executionTargetProfile, adapter)
     return { executionTargetProfile, adapter }
   })
-  const first = targets[0]
-  if (!first) {
-    throw new Error(
-      'executionTargetProfile or executionTargetProfiles is required',
-    )
-  }
+  const first = targets[0]!
   const retries = validatedConfiguration.execution?.infrastructureRetries
 
   return {

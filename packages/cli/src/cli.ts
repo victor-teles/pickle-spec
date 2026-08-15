@@ -195,10 +195,10 @@ function configuredWebOptions(
   args: RunArguments,
   profileId?: string,
 ): WebAdapterOptions | undefined {
-  const profileWeb = profileId
-    ? config.executionTargetProfiles?.[profileId]?.web
-    : undefined
-  const web = profileWeb ?? config.web
+  const web =
+    (profileId
+      ? config.executionTargetProfiles?.[profileId]?.web
+      : undefined) ?? config.web
   if (!web) return undefined
   return {
     ...web,
@@ -254,12 +254,10 @@ function configuredRunExtensions(
     )
   }
 
-  if (profiles.some((profile) => profile.adapter)) {
-    return { adapter: extensions.adapter, adapters }
-  }
-
   return {
-    adapter: configuredAdapter(extensions, configuredWebOptions(config, args)),
+    adapter: profiles.some((profile) => profile.adapter)
+      ? extensions.adapter
+      : configuredAdapter(extensions, configuredWebOptions(config, args)),
     adapters,
   }
 }
@@ -277,10 +275,10 @@ async function run(argv: string[]): Promise<number> {
       args.pattern ?? config.specifications ?? 'features/**/*.feature',
       args.language ?? config.language,
     )
-    if (args.suite && !config.suites?.[args.suite]) {
+    const suiteSelection = args.suite ? config.suites?.[args.suite] : undefined
+    if (args.suite && !suiteSelection) {
       throw new Error(`Unknown test suite "${args.suite}"`)
     }
-    const suiteSelection = args.suite ? config.suites?.[args.suite] : undefined
     const baseSelection = suiteSelection ?? config.selection
     const selections = selectScenarios(specifications, {
       ...baseSelection,
