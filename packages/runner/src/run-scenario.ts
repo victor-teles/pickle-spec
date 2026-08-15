@@ -42,6 +42,7 @@ export interface OpenSessionInput {
 }
 
 export interface ExecutionTargetAdapter {
+  capabilities?: readonly string[]
   openSession(input: OpenSessionInput): Promise<TargetSession>
 }
 
@@ -88,20 +89,27 @@ export interface ScenarioRun {
   result: TestResult
 }
 
-export interface RunScenarioInput {
+export interface RetryPolicy {
+  infrastructureErrors: number
+}
+
+export interface ExecutionTimeouts {
+  stepMs?: number
+  scenarioMs?: number
+}
+
+export interface ExecutionPolicy {
+  retry?: RetryPolicy
+  timeout?: ExecutionTimeouts
+}
+
+export interface RunScenarioInput extends ExecutionPolicy {
   specification: Specification
   scenario: Scenario
   executionTargetProfile: ExecutionTargetProfile
   adapter: ExecutionTargetAdapter
   signal?: AbortSignal
   onEvent?: (event: RunEvent) => void | Promise<void>
-  retry?: {
-    infrastructureErrors: number
-  }
-  timeout?: {
-    stepMs?: number
-    scenarioMs?: number
-  }
 }
 
 class ExecutionDeadlineError extends Error {
@@ -243,8 +251,8 @@ async function runScenarioAttempt(input: RunScenarioInput): Promise<ScenarioRun>
           && (input.timeout?.stepMs === undefined || scenarioRemaining <= input.timeout.stepMs)
         const timeoutMs = usesScenarioDeadline ? Math.max(0, scenarioRemaining) : input.timeout?.stepMs
         const timeoutMessage = usesScenarioDeadline
-          ? `Scenario exceeded its ${input.timeout!.scenarioMs}ms deadline`
-          : `Step exceeded its ${input.timeout!.stepMs}ms deadline`
+          ? `Scenario exceeded its ${input.timeout?.scenarioMs}ms deadline`
+          : `Step exceeded its ${input.timeout?.stepMs}ms deadline`
         execution = await executeWithDeadline(
           operationSignal => session.executeStep(step, operationSignal),
           input.signal,

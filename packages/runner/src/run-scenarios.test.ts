@@ -50,3 +50,22 @@ test('runs selected Scenarios concurrently while preserving stable test-result o
   expect(maximumActive).toBe(2)
   expect(openSession).toHaveBeenCalledTimes(2)
 })
+
+test('rejects a target that lacks a Scenario capability requirement before opening a session', async () => {
+  const openSession = mock(async () => {
+    throw new Error('must not open')
+  })
+  const selection = selections[0]!
+
+  await expect(runScenarios({
+    selections: [{
+      ...selection,
+      scenario: { ...selection.scenario, capabilityRequirements: ['geolocation'] },
+    }],
+    executionTargetProfile: { id: 'web' },
+    adapter: { capabilities: ['screenshots'], openSession },
+  })).rejects.toThrow(
+    'Execution target profile "web" lacks required capabilities for Scenario "First": geolocation',
+  )
+  expect(openSession).not.toHaveBeenCalled()
+})

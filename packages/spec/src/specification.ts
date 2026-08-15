@@ -25,6 +25,7 @@ export interface Scenario {
   name: string
   tags: string[]
   steps: ScenarioStep[]
+  capabilityRequirements?: string[]
 }
 
 export interface Specification {

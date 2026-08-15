@@ -2,7 +2,6 @@ import type { ExecutionTargetProfile } from '@pickle-spec/runner'
 import type { SelectionOptions } from '@pickle-spec/spec'
 import type { WebAdapterOptions } from '@pickle-spec/web'
 import { resolve } from 'node:path'
-import { pathToFileURL } from 'node:url'
 
 export interface ServerConfig {
   command?: string
@@ -15,6 +14,7 @@ export interface ServerConfig {
 }
 
 export interface PickleConfig {
+  schemaVersion: 1
   language?: string
   specifications?: string | string[]
   executionTargetProfile?: ExecutionTargetProfile
@@ -29,8 +29,52 @@ export interface PickleConfig {
   server?: ServerConfig
 }
 
-export function defineConfig(config: PickleConfig): PickleConfig {
-  return config
+function record(value: unknown, field: string): Record<string, unknown> {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    throw new Error(`${field} must be an object`)
+  }
+  return value as Record<string, unknown>
+}
+
+function optionalString(value: unknown, field: string): void {
+  if (value !== undefined && typeof value !== 'string') {
+    throw new Error(`${field} must be a string`)
+  }
+}
+
+function validateConfig(value: unknown): PickleConfig {
+  const config = record(value, 'configuration')
+  if (config.schemaVersion !== 1) {
+    throw new Error(`Unsupported configuration schemaVersion: ${String(config.schemaVersion)}`)
+  }
+  optionalString(config.language, 'language')
+  if (
+    config.specifications !== undefined
+    && typeof config.specifications !== 'string'
+    && !(Array.isArray(config.specifications) && config.specifications.every(item => typeof item === 'string'))
+  ) {
+    throw new Error('specifications must be a string or an array of strings')
+  }
+  if (config.executionTargetProfile !== undefined) {
+    const profile = record(config.executionTargetProfile, 'executionTargetProfile')
+    if (typeof profile.id !== 'string' || !profile.id.trim()) {
+      throw new Error('executionTargetProfile.id must not be empty')
+    }
+  }
+  if (config.web !== undefined) {
+    const web = record(config.web, 'web')
+    if (typeof web.baseUrl !== 'string' || !web.baseUrl.trim()) {
+      throw new Error('web.baseUrl must not be empty')
+    }
+  }
+  if (config.server !== undefined) {
+    const server = record(config.server, 'server')
+    optionalString(server.command, 'server.command')
+    optionalString(server.url, 'server.url')
+  }
+  if (config.selection !== undefined) record(config.selection, 'selection')
+  if (config.execution !== undefined) record(config.execution, 'execution')
+  return config as unknown as PickleConfig
 }
 
 function removeJsonComments(source: string): string {
@@ -71,32 +115,19 @@ function removeJsonComments(source: string): string {
 }
 
 async function defaultConfigPath(): Promise<string | undefined> {
-  for (const candidate of ['pickle.config.jsonc', 'pickle.config.ts']) {
-    if (await Bun.file(candidate).exists()) return candidate
-  }
-  return undefined
+  return await Bun.file('pickle.config.jsonc').exists() ? 'pickle.config.jsonc' : undefined
 }
 
 export async function loadConfig(configPath?: string): Promise<PickleConfig> {
   const selectedPath = configPath ?? await defaultConfigPath()
-  if (!selectedPath) return {}
+  if (!selectedPath) return { schemaVersion: 1 }
+  if (!selectedPath.endsWith('.jsonc') && !selectedPath.endsWith('.json')) {
+    throw new Error('Configuration must use pickle.config.jsonc')
+  }
   const absolutePath = resolve(selectedPath)
   if (!(await Bun.file(absolutePath).exists())) {
     throw new Error(`Configuration file not found: ${selectedPath}`)
   }
 
-  const config = selectedPath.endsWith('.jsonc') || selectedPath.endsWith('.json')
-    ? JSON.parse(removeJsonComments(await Bun.file(absolutePath).text())) as PickleConfig
-    : ((await import(pathToFileURL(absolutePath).href)).default as PickleConfig)
-
-  if (config.concurrency !== undefined && (!Number.isInteger(config.concurrency) || config.concurrency < 1)) {
-    throw new Error('concurrency must be an integer greater than or equal to 1')
-  }
-  if (
-    config.execution?.infrastructureRetries !== undefined
-    && (!Number.isInteger(config.execution.infrastructureRetries) || config.execution.infrastructureRetries < 0)
-  ) {
-    throw new Error('execution.infrastructureRetries must be a non-negative integer')
-  }
-  return config
+  return validateConfig(JSON.parse(removeJsonComments(await Bun.file(absolutePath).text())))
 }

@@ -221,6 +221,7 @@ export function createWebAdapter(
   factory: WebAutomationFactory = stagehandFactory,
 ): ExecutionTargetAdapter {
   return {
+    capabilities: ['web', 'screenshots'],
     async openSession(input) {
       const automation = await factory.open({
         browser: options.browser ?? {},
@@ -299,7 +300,7 @@ export function createWebAdapter(
           const prompt = promptFor(step)
 
           try {
-            const navigation = step.type === 'context' ? prompt.match(navigationPattern) : null
+            const navigation = prompt.match(navigationPattern)
             if (navigation) {
               const url = navigationUrl(options.baseUrl, navigation[1]!.trim())
               await automation.navigate(url, operationSignal)

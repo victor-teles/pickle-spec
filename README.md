@@ -37,6 +37,7 @@ Create `pickle.config.jsonc` in the project root:
 
 ```jsonc
 {
+  "schemaVersion": 1,
   "specifications": "features/**/*.feature",
   "executionTargetProfile": {
     "id": "web"

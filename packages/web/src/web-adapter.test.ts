@@ -87,4 +87,40 @@ describe('createWebAdapter', () => {
     expect(verify).toHaveBeenCalledTimes(1)
     expect(close).toHaveBeenCalledTimes(1)
   })
+
+  test('gives explicit navigation precedence for an action step', async () => {
+    const navigate = mock(async () => {})
+    const observe = mock(async () => [])
+    const automation: WebAutomation = {
+      navigate,
+      observe,
+      async act() { return { success: true } },
+      async verify() { return { meetsExpectation: true, actualState: 'Ready' } },
+      async screenshot() { return new Uint8Array() },
+      async close() {},
+    }
+    const adapter = createWebAdapter({ baseUrl: 'https://example.test' }, {
+      async open() { return automation },
+    })
+    const session = await adapter.openSession({
+      executionTargetProfile: { id: 'web' },
+      specification,
+      scenario,
+    })
+
+    const result = await session.executeStep({
+      keyword: 'When',
+      text: 'I navigate to /checkout',
+      type: 'action',
+    })
+    await session.close()
+
+    expect(result).toMatchObject({
+      state: 'passed',
+      resolvedActions: [{ description: 'Navigate to https://example.test/checkout' }],
+    })
+    expect(navigate).toHaveBeenCalledTimes(1)
+    expect(navigate).toHaveBeenCalledWith('https://example.test/checkout', undefined)
+    expect(observe).not.toHaveBeenCalled()
+  })
 })

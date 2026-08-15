@@ -205,6 +205,7 @@ export default {
     Then pickle results are visible`)
     await Bun.write(join(workspace, 'pickle.config.jsonc'), `{
   // The CLI owns this declarative target configuration.
+  "schemaVersion": 1,
   "executionTargetProfile": { "id": "web" },
   "server": {
     "command": "exit 9",

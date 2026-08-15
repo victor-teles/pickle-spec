@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 
 import type { ExecutionTargetAdapter, ExecutionTargetProfile } from '@pickle-spec/runner'
-import { runScenarios } from '@pickle-spec/runner'
+import { resolveRunConfiguration, runScenarios } from '@pickle-spec/runner'
 import { parseSpecificationFile, selectScenarios, type SelectionOptions } from '@pickle-spec/spec'
 import {
   createWebAdapter,
@@ -169,22 +169,23 @@ async function run(argv: string[]): Promise<number> {
     if (selections.length === 0) throw new Error('No Scenarios match the current selection')
 
     const web = configuredWebOptions(config, args)
-    const profile = extensions.executionTargetProfile
-      ?? config.executionTargetProfile
-      ?? { id: web ? 'web' : 'custom' }
+    const resolvedConfiguration = resolveRunConfiguration({
+      schemaVersion: config.schemaVersion,
+      executionTargetProfile: config.executionTargetProfile ?? { id: web ? 'web' : 'custom' },
+      concurrency: args.concurrency ?? config.concurrency,
+      execution: {
+        infrastructureRetries: args.retries ?? config.execution?.infrastructureRetries,
+        stepTimeoutMs: args.stepTimeoutMs ?? config.execution?.stepTimeoutMs,
+        scenarioTimeoutMs: args.scenarioTimeoutMs ?? config.execution?.scenarioTimeoutMs,
+      },
+    }, {
+      adapter: configuredAdapter(extensions, web),
+      executionTargetProfile: extensions.executionTargetProfile,
+    })
     const runs = await runScenarios({
       selections,
-      executionTargetProfile: profile,
-      adapter: configuredAdapter(extensions, web),
-      concurrency: args.concurrency ?? config.concurrency ?? 1,
+      ...resolvedConfiguration,
       signal: controller.signal,
-      retry: {
-        infrastructureErrors: args.retries ?? config.execution?.infrastructureRetries ?? 0,
-      },
-      timeout: {
-        stepMs: args.stepTimeoutMs ?? config.execution?.stepTimeoutMs,
-        scenarioMs: args.scenarioTimeoutMs ?? config.execution?.scenarioTimeoutMs,
-      },
       onEvent(event) {
         console.log(JSON.stringify({ kind: 'run-event', event }))
       },
