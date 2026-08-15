@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import {
   selectScenarios,
+  validateSelectionOptions,
   type Scenario,
   type Specification,
 } from '../index'
@@ -47,7 +48,14 @@ describe('selectScenarios', () => {
 
   test('rejects invalid shard coordinates', () => {
     expect(() => selectScenarios([], { shard: { index: 2, total: 1 } }))
-      .toThrow('shard.index must be less than or equal to shard.total')
+      .toThrow('selection.shard.index must be less than or equal to selection.shard.total')
+  })
+
+  test('rejects unsupported characters in tag expressions', () => {
+    expect(() => validateSelectionOptions({ tagExpression: '@smoke !' }))
+      .toThrow('Unexpected character "!" in tag expression')
+    expect(() => validateSelectionOptions({ tagExpression: '@smoke,' }))
+      .toThrow('Unexpected character "," in tag expression')
   })
 
   test('does not assign ignored Scenarios to a shard or count them as shard positions', () => {

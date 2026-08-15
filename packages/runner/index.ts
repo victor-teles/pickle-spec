@@ -1,6 +1,10 @@
 export { runScenario } from './src/run-scenario'
 export { runScenarios } from './src/run-scenarios'
-export { resolveRunConfiguration } from './src/configuration'
+export {
+  resolveRunConfiguration,
+  validateProjectRunConfiguration,
+  validateRunConfiguration,
+} from './src/configuration'
 export type {
   ExecutionTargetAdapter,
   ExecutionTargetProfile,
@@ -21,5 +25,6 @@ export type { RunScenariosInput } from './src/run-scenarios'
 export type {
   ResolvedRunConfiguration,
   RunConfiguration,
+  RunExtensionManifest,
   RunExtensions,
 } from './src/configuration'

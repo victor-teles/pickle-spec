@@ -1,6 +1,10 @@
-import type { ExecutionTargetProfile } from '@pickle-spec/runner'
-import type { SelectionOptions } from '@pickle-spec/spec'
-import type { WebAdapterOptions } from '@pickle-spec/web'
+import {
+  validateRunConfiguration,
+  type ExecutionTargetProfile,
+  type RunConfiguration,
+} from '@pickle-spec/runner'
+import { validateSelectionOptions, type SelectionOptions } from '@pickle-spec/spec'
+import { validateWebAdapterOptions, type WebAdapterOptions } from '@pickle-spec/web'
 import { resolve } from 'node:path'
 
 export interface ServerConfig {
@@ -29,11 +33,26 @@ export interface PickleConfig {
   server?: ServerConfig
 }
 
+export function runConfigurationFrom(config: PickleConfig): RunConfiguration {
+  return {
+    schemaVersion: config.schemaVersion,
+    executionTargetProfile: config.executionTargetProfile ?? { id: config.web ? 'web' : 'custom' },
+    concurrency: config.concurrency,
+    execution: config.execution,
+  }
+}
+
 function record(value: unknown, field: string): Record<string, unknown> {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) {
     throw new Error(`${field} must be an object`)
   }
   return value as Record<string, unknown>
+}
+
+function knownFields(value: Record<string, unknown>, fields: readonly string[], parent: string): void {
+  for (const field of Object.keys(value)) {
+    if (!fields.includes(field)) throw new Error(`${parent}.${field} is not supported`)
+  }
 }
 
 function optionalString(value: unknown, field: string): void {
@@ -48,33 +67,33 @@ function optionalPositiveInteger(value: unknown, field: string): void {
   }
 }
 
-export function validateConfig(value: unknown): PickleConfig {
+function validateConfig(value: unknown): PickleConfig {
   const config = record(value, 'configuration')
-  if (config.schemaVersion !== 1) {
-    throw new Error(`Unsupported configuration schemaVersion: ${String(config.schemaVersion)}`)
-  }
+  knownFields(config, [
+    'schemaVersion', 'language', 'specifications', 'executionTargetProfile', 'web',
+    'selection', 'execution', 'concurrency', 'server',
+  ], 'configuration')
   optionalString(config.language, 'language')
-  if (
-    config.specifications !== undefined
-    && typeof config.specifications !== 'string'
-    && !(Array.isArray(config.specifications) && config.specifications.every(item => typeof item === 'string'))
-  ) {
+  if (typeof config.specifications === 'string' && !config.specifications.trim()) {
+    throw new Error('specifications paths must not be empty')
+  }
+  if (Array.isArray(config.specifications) && config.specifications.length === 0) {
+    throw new Error('specifications must contain at least one path')
+  }
+  if (config.specifications !== undefined && typeof config.specifications !== 'string'
+    && !(Array.isArray(config.specifications)
+      && config.specifications.every(item => typeof item === 'string' && item.trim()))) {
     throw new Error('specifications must be a string or an array of strings')
   }
-  if (config.executionTargetProfile !== undefined) {
-    const profile = record(config.executionTargetProfile, 'executionTargetProfile')
-    if (typeof profile.id !== 'string' || !profile.id.trim()) {
-      throw new Error('executionTargetProfile.id must not be empty')
-    }
-  }
   if (config.web !== undefined) {
-    const web = record(config.web, 'web')
-    if (typeof web.baseUrl !== 'string' || !web.baseUrl.trim()) {
-      throw new Error('web.baseUrl must not be empty')
-    }
+    validateWebAdapterOptions(config.web)
   }
   if (config.server !== undefined) {
     const server = record(config.server, 'server')
+    knownFields(server, [
+      'command', 'url', 'port', 'startupTimeoutMs', 'pollIntervalMs', 'readinessPath',
+      'reuseExisting',
+    ], 'server')
     optionalString(server.command, 'server.command')
     optionalString(server.url, 'server.url')
     optionalString(server.readinessPath, 'server.readinessPath')
@@ -84,19 +103,24 @@ export function validateConfig(value: unknown): PickleConfig {
     if (server.reuseExisting !== undefined && typeof server.reuseExisting !== 'boolean') {
       throw new Error('server.reuseExisting must be a boolean')
     }
-  }
-  if (config.selection !== undefined) record(config.selection, 'selection')
-  if (config.execution !== undefined) {
-    const execution = record(config.execution, 'execution')
-    optionalPositiveInteger(execution.scenarioTimeoutMs, 'execution.scenarioTimeoutMs')
-    optionalPositiveInteger(execution.stepTimeoutMs, 'execution.stepTimeoutMs')
-    const retries = execution.infrastructureRetries
-    if (retries !== undefined && (!Number.isInteger(retries) || (retries as number) < 0)) {
-      throw new Error('execution.infrastructureRetries must be a non-negative integer')
+    if (server.command && !server.url && !server.port) {
+      throw new Error('server.command requires server.url or server.port')
+    }
+    if (server.url !== undefined) {
+      try {
+        new URL(server.url as string)
+      } catch {
+        throw new Error('server.url must be a valid URL')
+      }
+    }
+    if (typeof server.port === 'number' && server.port > 65_535) {
+      throw new Error('server.port must be less than or equal to 65535')
     }
   }
-  optionalPositiveInteger(config.concurrency, 'concurrency')
-  return config as unknown as PickleConfig
+  if (config.selection !== undefined) validateSelectionOptions(config.selection)
+  const validatedConfig = config as unknown as PickleConfig
+  validateRunConfiguration(runConfigurationFrom(validatedConfig))
+  return validatedConfig
 }
 
 function removeJsonComments(source: string): string {

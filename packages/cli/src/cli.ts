@@ -1,24 +1,18 @@
 #!/usr/bin/env bun
 
-import type { ExecutionTargetAdapter, ExecutionTargetProfile } from '@pickle-spec/runner'
+import type { ExecutionTargetAdapter } from '@pickle-spec/runner'
 import { resolveRunConfiguration, runScenarios } from '@pickle-spec/runner'
 import { parseSpecificationFile, selectScenarios, type SelectionOptions } from '@pickle-spec/spec'
 import {
   createWebAdapter,
   type WebAdapterOptions,
-  type WebAutomationFactory,
 } from '@pickle-spec/web'
 import { resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { loadConfig, type PickleConfig } from './config'
+import type { Extensions } from './extensions'
 import { checkProject, initializeProject } from './project'
 import { startServer } from './server'
-
-interface Extensions {
-  adapter?: ExecutionTargetAdapter
-  executionTargetProfile?: ExecutionTargetProfile
-  webAutomationFactory?: WebAutomationFactory
-}
 
 interface RunArguments {
   pattern?: string
@@ -147,17 +141,12 @@ function configuredAdapter(
 async function run(argv: string[]): Promise<number> {
   const args = parseRunArguments(argv)
   const config = await loadConfig(args.configPath)
-  const extensions = await loadExtensions(args.extensionsPath)
   const controller = new AbortController()
   const onSigint = () => controller.abort()
   process.on('SIGINT', onSigint)
   let server: Awaited<ReturnType<typeof startServer>>
 
   try {
-    server = await startServer({
-      ...config.server,
-      ...(args.reuseServer ? { reuseExisting: true } : {}),
-    })
     const specifications = await discoverSpecifications(
       args.pattern ?? config.specifications ?? 'features/**/*.feature',
       args.language ?? config.language,
@@ -169,6 +158,7 @@ async function run(argv: string[]): Promise<number> {
     })
     if (selections.length === 0) throw new Error('No Scenarios match the current selection')
 
+    const extensions = await loadExtensions(args.extensionsPath)
     const web = configuredWebOptions(config, args)
     const resolvedConfiguration = resolveRunConfiguration({
       schemaVersion: config.schemaVersion,
@@ -181,7 +171,10 @@ async function run(argv: string[]): Promise<number> {
       },
     }, {
       adapter: configuredAdapter(extensions, web),
-      executionTargetProfile: extensions.executionTargetProfile,
+    })
+    server = await startServer({
+      ...config.server,
+      ...(args.reuseServer ? { reuseExisting: true } : {}),
     })
     const runs = await runScenarios({
       selections,
