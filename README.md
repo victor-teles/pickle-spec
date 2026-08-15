@@ -65,6 +65,10 @@ Create `pickle.config.jsonc` in the project root:
       }
     }
   },
+  "applicationRevision": "git:HEAD",
+  "policy": {
+    "adaptedResults": "reject"
+  },
   "execution": {
     "infrastructureRetries": 1,
     "scenarioTimeoutMs": 30000,
@@ -92,6 +96,29 @@ pickle run "features/**/*.feature" --screenshot on-step
 ```
 
 The command writes versioned run-event and test-result records as newline-delimited JSON.
+
+## Run Adaptive and Replay modes
+
+A Scenario without an applicable approved plan runs in Adaptive mode. Adaptive mode resolves actions while the Scenario runs and writes a candidate plan under `.pickle/candidates/`.
+
+An applicable approved plan runs in Replay mode. Replay mode uses the stored resolved actions and does not resolve actions with a model. Approved plans live under `.pickle/plans/` and belong in Git.
+
+A plan applies to one Scenario revision, execution target profile, plan-format version, and application revision. A plan for one execution target profile cannot run on another profile.
+
+If Replay cannot complete a Scenario and Adaptive mode then succeeds, the test result is `passed-with-adaptation`. That run writes a candidate plan. It does not change the approved plan.
+
+Set `applicationRevision` in `pickle.config.jsonc` or pass `--application-revision`. CI Replay requires that value. CI can reject adapted results:
+
+```jsonc
+{
+  "applicationRevision": "git:abc123",
+  "policy": {
+    "adaptedResults": "reject"
+  }
+}
+```
+
+`policy.adaptedResults` accepts `accept` or `reject`. The default is `accept`.
 
 ## Add a custom adapter
 

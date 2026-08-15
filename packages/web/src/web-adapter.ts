@@ -9,6 +9,7 @@ import {
 } from '@browserbasehq/stagehand'
 import type {
   ExecutionTargetAdapter,
+  ResolvedAction,
   StepExecution,
   TestArtifact,
 } from '@pickle-spec/runner'
@@ -401,6 +402,22 @@ function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
 }
 
+function replayPayload(handle: unknown): Record<string, unknown> | undefined {
+  if (!handle || typeof handle !== 'object') return undefined
+  try {
+    return JSON.parse(JSON.stringify(handle)) as Record<string, unknown>
+  } catch {
+    return undefined
+  }
+}
+
+function plannedAction(action: ResolvedAction): WebObservedAction {
+  return {
+    description: action.description,
+    handle: action.replay ?? {},
+  }
+}
+
 function providerApiKeyEnvNames(modelName: string | undefined): string[] {
   const provider = (modelName ?? 'anthropic/claude-sonnet-4-6').split('/')[0]
   switch (provider) {
@@ -464,10 +481,17 @@ export function createWebAdapter(
   const validatedOptions = validateWebAdapterOptions(options)
   return {
     capabilities: ['web', 'screenshots'],
+    planFormatVersion: 'web.1',
     async openSession(input) {
       const automation = await factory.open({
         browser: stagehandBrowserOptions(
-          validatedOptions.browser,
+          {
+            ...validatedOptions.browser,
+            selfHeal:
+              (input.mode ?? 'adaptive') === 'replay'
+                ? false
+                : (validatedOptions.browser?.selfHeal ?? true),
+          },
           factory === stagehandFactory,
         ),
         signal: input.signal,
@@ -475,6 +499,7 @@ export function createWebAdapter(
       let closed = false
       let navigated = false
       let stepIndex = 0
+      let executionMode = input.mode ?? 'adaptive'
 
       const close = async () => {
         if (closed) return
@@ -546,6 +571,65 @@ export function createWebAdapter(
         navigated = true
       }
 
+      async function resolveByObservation(
+        prompt: string,
+        signal?: AbortSignal,
+      ): Promise<StepExecution> {
+        let actions = await automation.observe(prompt, signal)
+        if (actions.length === 0)
+          actions = await automation.observe(prompt, signal)
+        if (actions.length === 0) {
+          return {
+            state: 'infrastructure-error',
+            resolvedActions: [],
+            message: 'Observe returned no actions',
+          }
+        }
+
+        const resolvedActions: ResolvedAction[] = []
+        for (const action of actions) {
+          const result = await automation.act(action, signal)
+          const replay = replayPayload(action.handle)
+          resolvedActions.push({
+            description: action.description,
+            ...(replay ? { replay } : {}),
+          })
+          if (!result.success) {
+            return {
+              state: 'infrastructure-error',
+              resolvedActions,
+              message: result.message ?? 'Web action failed',
+            }
+          }
+        }
+        return { state: 'passed', resolvedActions }
+      }
+
+      async function adapt(
+        prompt: string,
+        signal?: AbortSignal,
+      ): Promise<StepExecution> {
+        const adapted = await resolveByObservation(prompt, signal)
+        if (adapted.state !== 'passed') return adapted
+        executionMode = 'adaptive'
+        return { ...adapted, state: 'passed-with-adaptation' }
+      }
+
+      async function replayOrAdapt(
+        prompt: string,
+        planned: readonly ResolvedAction[],
+        signal?: AbortSignal,
+      ): Promise<StepExecution> {
+        if (planned.length === 0) return adapt(prompt, signal)
+        const resolvedActions: ResolvedAction[] = []
+        for (const action of planned) {
+          const result = await automation.act(plannedAction(action), signal)
+          resolvedActions.push(action)
+          if (!result.success) return adapt(prompt, signal)
+        }
+        return { state: 'passed', resolvedActions }
+      }
+
       return {
         async executeStep(step, signal) {
           stepIndex++
@@ -587,30 +671,21 @@ export function createWebAdapter(
               })
             }
 
-            let actions = await automation.observe(prompt, operationSignal)
-            if (actions.length === 0)
-              actions = await automation.observe(prompt, operationSignal)
-            if (actions.length === 0) {
-              return finish(step, {
-                state: 'infrastructure-error',
-                resolvedActions: [],
-                message: 'Observe returned no actions',
-              })
+            if (executionMode === 'replay') {
+              return finish(
+                step,
+                await replayOrAdapt(
+                  prompt,
+                  input.plan?.steps[stepIndex - 1]?.resolvedActions ?? [],
+                  operationSignal,
+                ),
+              )
             }
 
-            const resolvedActions = []
-            for (const action of actions) {
-              const result = await automation.act(action, operationSignal)
-              resolvedActions.push({ description: action.description })
-              if (!result.success) {
-                return finish(step, {
-                  state: 'infrastructure-error',
-                  resolvedActions,
-                  message: result.message ?? 'Web action failed',
-                })
-              }
-            }
-            return finish(step, { state: 'passed', resolvedActions })
+            return finish(
+              step,
+              await resolveByObservation(prompt, operationSignal),
+            )
           } catch (error) {
             if (
               operationSignal?.aborted ||

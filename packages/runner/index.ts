@@ -10,6 +10,17 @@ export {
   validateRunConfiguration,
 } from './src/configuration'
 export type {
+  ExecutionPlan,
+  ExecutionPlanStep,
+  ExecutionPlanStore,
+  PlanApplicability,
+} from './src/execution-plan'
+export {
+  createFilePlanStore,
+  planApplies,
+} from './src/execution-plan'
+export type {
+  ExecutionMode,
   ExecutionPolicy,
   ExecutionTargetAdapter,
   ExecutionTargetProfile,

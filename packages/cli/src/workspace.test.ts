@@ -1117,4 +1117,156 @@ export default { adapter: { async openSession() { throw new Error('no') } } }
       'Correct the value and run pickle check again',
     )
   })
+
+  test('runs Adaptive then Replay from reviewable plan files and rejects adapted results by policy', async () => {
+    const extensions = await Bun.file(
+      join(workspace, 'pickle.extensions.ts'),
+    ).text()
+    const project = await createCheckProject('execution-plans', {
+      config: {
+        schemaVersion: 1,
+        specifications: 'features/**/*.feature',
+        applicationRevision: 'app-1',
+        executionTargetProfiles: {
+          web: { adapter: 'custom' },
+          android: { adapter: 'custom' },
+        },
+        policy: { adaptedResults: 'accept' },
+      },
+      specification: {
+        path: 'features/purchase.feature',
+        source: `@pickle:id:specpurchaseaaaaaa @pickle:state:active
+Feature: Purchase
+  @pickle:id:scnpurchasebbbbbb
+  Scenario: Complete a purchase
+    Given a product is in the basket
+    Then the purchase succeeds`,
+      },
+      extensions,
+    })
+    const approvedPath = join(
+      project,
+      '.pickle',
+      'plans',
+      'web',
+      'scnpurchasebbbbbb.json',
+    )
+    const candidatePath = join(
+      project,
+      '.pickle',
+      'candidates',
+      'web',
+      'scnpurchasebbbbbb.json',
+    )
+
+    const first = Bun.spawnSync({
+      cmd: [pickleCommand, 'run', '--profile', 'web'],
+      cwd: project,
+      env: { ...Bun.env, PICKLE_TEST_OUTCOME: 'passed' },
+    })
+    const firstResult = JSON.parse(
+      first.stdout.toString().trim().split('\n').at(-1) ?? '{}',
+    )
+    expect(first.exitCode).toBe(0)
+    expect(firstResult).toMatchObject({
+      kind: 'test-result',
+      result: { state: 'passed', executionMode: 'adaptive' },
+    })
+    expect(await Bun.file(candidatePath).exists()).toBe(true)
+    expect(await Bun.file(approvedPath).exists()).toBe(false)
+
+    const candidate = JSON.parse(await Bun.file(candidatePath).text())
+    expect(candidate).toMatchObject({
+      schemaVersion: 1,
+      scenarioId: 'scnpurchasebbbbbb',
+      executionTargetProfileId: 'web',
+      applicationRevision: 'app-1',
+    })
+    expect(candidate.steps[0].resolvedActions.length).toBeGreaterThanOrEqual(1)
+    await mkdir(dirname(approvedPath), { recursive: true })
+    await Bun.write(approvedPath, `${JSON.stringify(candidate, null, 2)}\n`)
+    const approved = await Bun.file(approvedPath).text()
+    await Bun.write(candidatePath, 'stale-candidate')
+
+    const replay = Bun.spawnSync({
+      cmd: [pickleCommand, 'run', '--profile', 'web'],
+      cwd: project,
+      env: { ...Bun.env, PICKLE_TEST_OUTCOME: 'passed' },
+    })
+    expect(replay.exitCode).toBe(0)
+    expect(
+      JSON.parse(replay.stdout.toString().trim().split('\n').at(-1) ?? '{}'),
+    ).toMatchObject({
+      kind: 'test-result',
+      result: { state: 'passed', executionMode: 'replay' },
+    })
+    expect(await Bun.file(approvedPath).text()).toBe(approved)
+    expect(await Bun.file(candidatePath).text()).toBe('stale-candidate')
+
+    const otherProfile = Bun.spawnSync({
+      cmd: [pickleCommand, 'run', '--profile', 'android'],
+      cwd: project,
+      env: { ...Bun.env, PICKLE_TEST_OUTCOME: 'passed' },
+    })
+    expect(otherProfile.exitCode).toBe(0)
+    expect(
+      JSON.parse(
+        otherProfile.stdout.toString().trim().split('\n').at(-1) ?? '{}',
+      ),
+    ).toMatchObject({
+      kind: 'test-result',
+      result: {
+        state: 'passed',
+        executionMode: 'adaptive',
+        executionTargetProfile: { id: 'android' },
+      },
+    })
+    expect(await Bun.file(approvedPath).text()).toBe(approved)
+
+    await Bun.write(
+      join(project, 'pickle.config.jsonc'),
+      JSON.stringify({
+        schemaVersion: 1,
+        specifications: 'features/**/*.feature',
+        applicationRevision: 'app-1',
+        executionTargetProfiles: {
+          web: { adapter: 'custom' },
+        },
+        policy: { adaptedResults: 'reject' },
+      }),
+    )
+    const rejected = Bun.spawnSync({
+      cmd: [pickleCommand, 'run', '--profile', 'web'],
+      cwd: project,
+      env: { ...Bun.env, PICKLE_TEST_OUTCOME: 'passed-with-adaptation' },
+    })
+    expect(rejected.exitCode).toBe(1)
+    expect(
+      JSON.parse(rejected.stdout.toString().trim().split('\n').at(-1) ?? '{}'),
+    ).toMatchObject({
+      kind: 'test-result',
+      result: { state: 'passed-with-adaptation' },
+    })
+    expect(await Bun.file(approvedPath).text()).toBe(approved)
+  })
+
+  test('check rejects an unknown adapted-result policy', async () => {
+    const project = await createCheckProject('invalid-adapted-policy', {
+      config: {
+        ...defaultCheckConfig,
+        policy: { adaptedResults: 'ignore' },
+      },
+      specification: validSpecification,
+    })
+
+    const checked = runCheck(project)
+
+    expect(checked.exitCode).toBe(2)
+    expect(checked.stderr.toString()).toContain(
+      'policy.adaptedResults must be accept or reject',
+    )
+    expect(checked.stderr.toString()).toContain(
+      'Correct the value and run pickle check again',
+    )
+  })
 })
