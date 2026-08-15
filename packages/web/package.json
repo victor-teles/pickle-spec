@@ -15,13 +15,13 @@
     "test": "bun test"
   },
   "dependencies": {
-    "@browserbasehq/stagehand": "^4.0.1",
+    "@browserbasehq/stagehand": "catalog:",
     "@pickle-spec/runner": "workspace:*",
     "@pickle-spec/spec": "workspace:*",
-    "zod": "^4"
+    "zod": "catalog:"
   },
   "devDependencies": {
-    "@types/bun": "latest",
-    "typescript": "^5.9.3"
+    "@types/bun": "catalog:",
+    "typescript": "catalog:"
   }
 }
