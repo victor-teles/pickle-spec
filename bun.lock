@@ -20,6 +20,21 @@
         "typescript": "^5.9.3",
       },
     },
+    "packages/cli": {
+      "name": "@pickle-spec/cli",
+      "version": "1.0.2",
+      "bin": {
+        "pickle": "./src/cli.ts",
+      },
+      "dependencies": {
+        "@pickle-spec/runner": "workspace:*",
+        "@pickle-spec/spec": "workspace:*",
+      },
+      "devDependencies": {
+        "@types/bun": "latest",
+        "typescript": "^5.9.3",
+      },
+    },
     "packages/pickle-spec": {
       "name": "pickle-spec",
       "version": "1.0.2",
@@ -45,6 +60,29 @@
         "typescript": "^5.9.3",
       },
     },
+    "packages/runner": {
+      "name": "@pickle-spec/runner",
+      "version": "1.0.2",
+      "dependencies": {
+        "@pickle-spec/spec": "workspace:*",
+      },
+      "devDependencies": {
+        "@types/bun": "latest",
+        "typescript": "^5.9.3",
+      },
+    },
+    "packages/spec": {
+      "name": "@pickle-spec/spec",
+      "version": "1.0.2",
+      "dependencies": {
+        "@cucumber/gherkin": "^29.0.0",
+        "@cucumber/messages": "^26.0.1",
+      },
+      "devDependencies": {
+        "@types/bun": "latest",
+        "typescript": "^5.9.3",
+      },
+    },
   },
   "packages": {
     "@browserbasehq/sdk": ["@browserbasehq/sdk@2.18.0", "", { "dependencies": { "@types/node": "^18.11.18", "@types/node-fetch": "^2.6.4", "abort-controller": "^3.0.0", "agentkeepalive": "^4.2.1", "form-data-encoder": "1.7.2", "formdata-node": "^4.3.2", "node-fetch": "^2.6.7" } }, "sha512-uX1kiOB3lBWvt0sdIszGZkroLj+xvo7d6CC8ORn1mqPLq76Y4fJFDGdbdLWggDF3LxtnmwJCRVgSrLo3V9RctQ=="],
@@ -61,7 +99,13 @@
 
     "@opentelemetry/semantic-conventions": ["@opentelemetry/semantic-conventions@1.43.0", "", {}, "sha512-eSYWTm620tTk45EKSedaUL8MFYI8hW164hIXsgIHyxu3VobUB3fFCu5t0hQby6OoWRPsG1KkKUG2M5UadiLiVg=="],
 
+    "@pickle-spec/cli": ["@pickle-spec/cli@workspace:packages/cli"],
+
     "@pickle-spec/example": ["@pickle-spec/example@workspace:apps/example"],
+
+    "@pickle-spec/runner": ["@pickle-spec/runner@workspace:packages/runner"],
+
+    "@pickle-spec/spec": ["@pickle-spec/spec@workspace:packages/spec"],
 
     "@turbo/darwin-64": ["@turbo/darwin-64@2.10.10", "", { "os": "darwin", "cpu": "x64" }, "sha512-gFDD+wRP5hWxBRghGyEbjpbLOY7aIU/wvsnKdMM7odQcp/wHMrnI83p0FyxxMRZnFH9ZD+S59MvcpOC5b+nrCA=="],
 

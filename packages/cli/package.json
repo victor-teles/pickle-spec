@@ -1,0 +1,24 @@
+{
+  "name": "@pickle-spec/cli",
+  "version": "1.0.2",
+  "type": "module",
+  "bin": {
+    "pickle": "./src/cli.ts"
+  },
+  "files": [
+    "src/*.ts",
+    "!src/*.test.ts"
+  ],
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "bun test"
+  },
+  "dependencies": {
+    "@pickle-spec/runner": "workspace:*",
+    "@pickle-spec/spec": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "typescript": "^5.9.3"
+  }
+}
