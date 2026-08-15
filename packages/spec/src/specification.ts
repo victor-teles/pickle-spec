@@ -14,8 +14,11 @@ import type {
 } from '@cucumber/messages'
 import { IdGenerator, StepKeywordType } from '@cucumber/messages'
 import {
-  examplesRowId,
   identityFromTags,
+  resolveExamplesId,
+  resolveExamplesRowId,
+  resolveScenarioId,
+  resolveSpecificationId,
   type SpecificationState,
 } from './identity'
 
@@ -161,30 +164,56 @@ export function parseSpecification(
   }
 
   const infoByAstNodeId = collectStepInfo(document)
-  const scenariosById = new Map<string, { tags: string[] }>()
+  const scenariosById = new Map<string, { tags: string[]; name: string }>()
   const rowsById = new Map<
     string,
-    { header: string[]; cells: string[]; examplesTags: string[] }
+    {
+      header: string[]
+      cells: string[]
+      examplesTags: string[]
+      examplesName: string
+      scenarioName: string
+    }
   >()
   collectIdentityNodes(document, scenariosById, rowsById)
-  const featureIdentity = identityFromTags(feature.tags.map((tag) => tag.name))
+  const featureTags = feature.tags.map((tag) => tag.name)
+  const featureIdentity = identityFromTags(featureTags)
   const scenarios: Scenario[] = compile(document, input.uri, newId).map(
     (pickle) => {
-      const scenarioIdentity = identityFromTags(
-        scenariosById.get(pickle.astNodeIds[0] ?? '')?.tags ?? [],
-      )
+      const scenarioNode = scenariosById.get(pickle.astNodeIds[0] ?? '')
+      const scenarioTags = scenarioNode?.tags ?? []
       const row = rowsById.get(pickle.astNodeIds[1] ?? '')
-      const examplesIdentity = identityFromTags(row?.examplesTags ?? [])
-      const rowId = row ? examplesRowId(row.header, row.cells) : undefined
       const tags = pickle.tags.map(({ name }) => name)
       const requirements = capabilityRequirements(tags)
       return {
         name: pickle.name,
         tags,
         steps: pickle.steps.map((step) => mapStep(step, infoByAstNodeId)),
-        ...(scenarioIdentity.id ? { id: scenarioIdentity.id } : {}),
-        ...(examplesIdentity.id ? { examplesId: examplesIdentity.id } : {}),
-        ...(rowId ? { examplesRowId: rowId } : {}),
+        id: resolveScenarioId(
+          input.uri,
+          feature.name,
+          scenarioNode?.name ?? pickle.name,
+          scenarioTags,
+        ),
+        ...(row
+          ? {
+              examplesId: resolveExamplesId(
+                input.uri,
+                feature.name,
+                row.scenarioName,
+                row.examplesName,
+                row.examplesTags,
+              ),
+              examplesRowId: resolveExamplesRowId(
+                input.uri,
+                feature.name,
+                row.scenarioName,
+                row.examplesName,
+                row.header,
+                row.cells,
+              ),
+            }
+          : {}),
         ...(requirements ? { capabilityRequirements: requirements } : {}),
       }
     },
@@ -196,22 +225,28 @@ export function parseSpecification(
       uri: input.uri,
       language: feature.language,
     },
-    tags: feature.tags.map(({ name }) => name),
+    tags: featureTags,
     scenarios,
-    ...(featureIdentity.id ? { id: featureIdentity.id } : {}),
+    id: resolveSpecificationId(input.uri, feature.name, featureTags),
     ...(featureIdentity.state ? { state: featureIdentity.state } : {}),
   }
 }
 
 function collectIdentityNodes(
   document: GherkinDocument,
-  scenariosById: Map<string, { tags: string[] }>,
+  scenariosById: Map<string, { tags: string[]; name: string }>,
   rowsById: Map<
     string,
-    { header: string[]; cells: string[]; examplesTags: string[] }
+    {
+      header: string[]
+      cells: string[]
+      examplesTags: string[]
+      examplesName: string
+      scenarioName: string
+    }
   >,
 ): void {
-  function visitExamples(examples: Examples): void {
+  function visitExamples(scenarioName: string, examples: Examples): void {
     const header = examples.tableHeader?.cells.map((cell) => cell.value) ?? []
     const examplesTags = examples.tags.map((tag) => tag.name)
     for (const row of examples.tableBody) {
@@ -219,6 +254,8 @@ function collectIdentityNodes(
         header,
         cells: row.cells.map((cell) => cell.value),
         examplesTags,
+        examplesName: examples.name,
+        scenarioName,
       })
     }
   }
@@ -227,8 +264,10 @@ function collectIdentityNodes(
     if (child.scenario) {
       scenariosById.set(child.scenario.id, {
         tags: child.scenario.tags.map((tag) => tag.name),
+        name: child.scenario.name,
       })
-      for (const examples of child.scenario.examples) visitExamples(examples)
+      for (const examples of child.scenario.examples)
+        visitExamples(child.scenario.name, examples)
     }
     if ('rule' in child && child.rule) {
       for (const ruleChild of child.rule.children) visitChild(ruleChild)

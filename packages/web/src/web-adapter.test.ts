@@ -157,4 +157,118 @@ describe('createWebAdapter', () => {
     )
     expect(observe).not.toHaveBeenCalled()
   })
+
+  test('rejects an unsupported Stagehand model before opening a logical session', () => {
+    const open = mock(async () => {
+      throw new Error('logical session must not start')
+    })
+
+    expect(() =>
+      createWebAdapter(
+        {
+          baseUrl: 'https://example.test',
+          browser: { modelName: 'google/gemini-3.7-flash' },
+        },
+        { open },
+      ),
+    ).toThrow(
+      'web.browser.modelName "google/gemini-3.7-flash" is not a Stagehand-supported model',
+    )
+    expect(open).not.toHaveBeenCalled()
+  })
+
+  test('accepts a Stagehand-supported model name', () => {
+    expect(() =>
+      createWebAdapter({
+        baseUrl: 'https://example.test',
+        browser: { modelName: 'google/gemini-3.6-flash' },
+      }),
+    ).not.toThrow()
+  })
+
+  test('forwards GOOGLE_API_KEY to the automation factory for a Google model', async () => {
+    const names = [
+      'GOOGLE_API_KEY',
+      'GOOGLE_GENERATIVE_AI_API_KEY',
+      'GEMINI_API_KEY',
+    ]
+    const previous = Object.fromEntries(
+      names.map((name) => [name, process.env[name]]),
+    )
+    for (const name of names) delete process.env[name]
+    process.env.GOOGLE_API_KEY = 'test-google-key'
+    const open = mock(async () => ({
+      async navigate() {},
+      async observe() {
+        return []
+      },
+      async act() {
+        return { success: true }
+      },
+      async verify() {
+        return { meetsExpectation: true, actualState: 'Ready' }
+      },
+      async screenshot() {
+        return new Uint8Array()
+      },
+      async close() {},
+    }))
+    try {
+      const adapter = createWebAdapter(
+        {
+          baseUrl: 'https://example.test',
+          browser: { modelName: 'google/gemini-3.6-flash' },
+        },
+        { open },
+      )
+      const session = await adapter.openSession({
+        executionTargetProfile: { id: 'web' },
+        specification,
+        scenario,
+      })
+      await session.close()
+    } finally {
+      for (const name of names) {
+        if (previous[name] === undefined) delete process.env[name]
+        else process.env[name] = previous[name]
+      }
+    }
+
+    expect(open).toHaveBeenCalledWith(
+      expect.objectContaining({
+        browser: expect.objectContaining({ modelApiKey: 'test-google-key' }),
+      }),
+    )
+  })
+
+  test('rejects a local Stagehand session without a provider API key before launching a browser', async () => {
+    const previous = {
+      GOOGLE_API_KEY: process.env.GOOGLE_API_KEY,
+      GOOGLE_GENERATIVE_AI_API_KEY: process.env.GOOGLE_GENERATIVE_AI_API_KEY,
+      GEMINI_API_KEY: process.env.GEMINI_API_KEY,
+    }
+    delete process.env.GOOGLE_API_KEY
+    delete process.env.GOOGLE_GENERATIVE_AI_API_KEY
+    delete process.env.GEMINI_API_KEY
+    const adapter = createWebAdapter({
+      baseUrl: 'https://example.test',
+      browser: { modelName: 'google/gemini-3.6-flash' },
+    })
+    try {
+      await expect(
+        adapter.openSession({
+          executionTargetProfile: { id: 'web' },
+          specification,
+          scenario,
+        }),
+      ).rejects.toThrow(
+        'Model inference requires a provider API key or a Browserbase session',
+      )
+    } finally {
+      for (const [name, value] of Object.entries(previous)) {
+        if (value === undefined) delete process.env[name]
+        else process.env[name] = value
+      }
+    }
+  })
 })

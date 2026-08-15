@@ -3,7 +3,9 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "run:example": "pickle run"
+    "run:example": "pickle run",
+    "migrate": "pickle migrate",
+    "smoke": "pickle run --suite google --profile web"
   },
   "dependencies": {
     "@pickle-spec/cli": "workspace:*"

@@ -48,16 +48,15 @@ interface IdentityNode {
   line: number
   column: number
   tags: string[]
+  specificationName: string
+  scenarioName?: string
+  examplesName?: string
+  rowValues?: string[]
   rowIndex?: number
   pickleIdValue?: string
-  pickleIdColumnIndex?: number
-  headerLine?: number
 }
 
-type SourceEdit =
-  | { type: 'insert-line'; beforeLine: number; text: string }
-  | { type: 'insert-column'; line: number; value: string }
-  | { type: 'fill-cell'; line: number; columnIndex: number; value: string }
+type SourceEdit = { type: 'insert-line'; beforeLine: number; text: string }
 
 function parseDocument(source: string, language = 'en') {
   return new Parser(
@@ -105,6 +104,70 @@ export function examplesRowId(
   return value || undefined
 }
 
+function identifierDigest(parts: readonly string[]): string {
+  const hasher = new Bun.CryptoHasher('sha256')
+  hasher.update(parts.join('\0'))
+  return hasher.digest('hex').slice(0, 16)
+}
+
+function explicitId(tags: readonly string[]): string | undefined {
+  return idValues(tags)[0] || undefined
+}
+
+export function resolveSpecificationId(
+  uri: string,
+  name: string,
+  tags: readonly string[],
+): string {
+  return explicitId(tags) ?? identifierDigest(['specification', uri, name])
+}
+
+export function resolveScenarioId(
+  uri: string,
+  specificationName: string,
+  name: string,
+  tags: readonly string[],
+): string {
+  return (
+    explicitId(tags) ??
+    identifierDigest(['scenario', uri, specificationName, name])
+  )
+}
+
+export function resolveExamplesId(
+  uri: string,
+  specificationName: string,
+  scenarioName: string,
+  name: string,
+  tags: readonly string[],
+): string {
+  return (
+    explicitId(tags) ??
+    identifierDigest(['examples', uri, specificationName, scenarioName, name])
+  )
+}
+
+export function resolveExamplesRowId(
+  uri: string,
+  specificationName: string,
+  scenarioName: string,
+  examplesName: string,
+  header: readonly string[],
+  cells: readonly string[],
+): string {
+  const explicit = examplesRowId(header, cells)
+  if (explicit) return explicit
+  const values = cells.filter((_, index) => header[index] !== rowIdColumn)
+  return identifierDigest([
+    'examples-row',
+    uri,
+    specificationName,
+    scenarioName,
+    examplesName,
+    ...values,
+  ])
+}
+
 function nodeLabel(node: IdentityNode): string {
   switch (node.kind) {
     case 'feature':
@@ -124,61 +187,91 @@ function sourcePosition(
   return { line: location?.line ?? 1, column: location?.column ?? 1 }
 }
 
-function visitScenario(scenario: Scenario, nodes: IdentityNode[]): void {
+function visitScenario(
+  scenario: Scenario,
+  specificationName: string,
+  nodes: IdentityNode[],
+): void {
   nodes.push({
     kind: 'scenario',
     name: scenario.name,
+    specificationName,
+    scenarioName: scenario.name,
     ...sourcePosition(scenario.location),
     tags: scenario.tags.map((tag) => tag.name),
   })
-  for (const examples of scenario.examples) collectExamples(examples, nodes)
+  for (const examples of scenario.examples)
+    collectExamples(examples, specificationName, scenario.name, nodes)
 }
 
-function collectExamples(examples: Examples, nodes: IdentityNode[]): void {
+function collectExamples(
+  examples: Examples,
+  specificationName: string,
+  scenarioName: string,
+  nodes: IdentityNode[],
+): void {
   const header = examples.tableHeader?.cells.map((cell) => cell.value) ?? []
   const pickleIdColumnIndex = header.indexOf(rowIdColumn)
   nodes.push({
     kind: 'examples',
     name: examples.name,
+    specificationName,
+    scenarioName,
+    examplesName: examples.name,
     ...sourcePosition(examples.location),
     tags: examples.tags.map((tag) => tag.name),
-    headerLine: examples.tableHeader?.location.line,
-    pickleIdColumnIndex:
-      pickleIdColumnIndex >= 0 ? pickleIdColumnIndex : undefined,
   })
   for (const [index, row] of examples.tableBody.entries()) {
-    collectExamplesRow(row, index, pickleIdColumnIndex, nodes)
+    collectExamplesRow(
+      row,
+      index,
+      header,
+      pickleIdColumnIndex,
+      specificationName,
+      scenarioName,
+      examples.name,
+      nodes,
+    )
   }
 }
 
 function collectExamplesRow(
   row: TableRow,
   index: number,
+  header: readonly string[],
   pickleIdColumnIndex: number,
+  specificationName: string,
+  scenarioName: string,
+  examplesName: string,
   nodes: IdentityNode[],
 ): void {
+  const cells = row.cells.map((cell) => cell.value)
   const value =
-    pickleIdColumnIndex >= 0
-      ? (row.cells[pickleIdColumnIndex]?.value ?? '')
-      : ''
+    pickleIdColumnIndex >= 0 ? (cells[pickleIdColumnIndex] ?? '') : ''
   nodes.push({
     kind: 'examples-row',
+    specificationName,
+    scenarioName,
+    examplesName,
+    rowValues: cells.filter(
+      (_, cellIndex) => header[cellIndex] !== rowIdColumn,
+    ),
     ...sourcePosition(row.location),
     tags: [],
     rowIndex: index + 1,
     pickleIdValue: value,
-    pickleIdColumnIndex:
-      pickleIdColumnIndex >= 0 ? pickleIdColumnIndex : undefined,
   })
 }
 
 function visitChild(
   child: FeatureChild | RuleChild,
+  specificationName: string,
   nodes: IdentityNode[],
 ): void {
-  if (child.scenario) visitScenario(child.scenario, nodes)
+  if (child.scenario) visitScenario(child.scenario, specificationName, nodes)
   if ('rule' in child && child.rule) {
-    for (const ruleChild of child.rule.children) visitChild(ruleChild, nodes)
+    for (const ruleChild of child.rule.children)
+      visitChild(ruleChild, specificationName, nodes)
   }
 }
 
@@ -187,11 +280,12 @@ function identityNodes(feature: Feature): IdentityNode[] {
     {
       kind: 'feature',
       name: feature.name,
+      specificationName: feature.name,
       ...sourcePosition(feature.location),
       tags: feature.tags.map((tag) => tag.name),
     },
   ]
-  for (const child of feature.children) visitChild(child, nodes)
+  for (const child of feature.children) visitChild(child, feature.name, nodes)
   return nodes
 }
 
@@ -212,6 +306,39 @@ function recordIdentifier(
   seen.set(id, uri)
 }
 
+function resolvedNodeId(node: IdentityNode, uri: string): string {
+  if (node.kind === 'examples-row') {
+    const explicit = node.pickleIdValue?.trim()
+    if (explicit) return explicit
+    return identifierDigest([
+      'examples-row',
+      uri,
+      node.specificationName,
+      node.scenarioName ?? '',
+      node.examplesName ?? '',
+      ...(node.rowValues ?? []),
+    ])
+  }
+  if (node.kind === 'feature') {
+    return resolveSpecificationId(uri, node.specificationName, node.tags)
+  }
+  if (node.kind === 'scenario') {
+    return resolveScenarioId(
+      uri,
+      node.specificationName,
+      node.scenarioName ?? '',
+      node.tags,
+    )
+  }
+  return resolveExamplesId(
+    uri,
+    node.specificationName,
+    node.scenarioName ?? '',
+    node.examplesName ?? '',
+    node.tags,
+  )
+}
+
 function validateNode(
   node: IdentityNode,
   uri: string,
@@ -219,22 +346,15 @@ function validateNode(
   errors: string[],
 ): void {
   if (node.kind === 'examples-row') {
-    const id = node.pickleIdValue?.trim() ?? ''
-    if (!id) {
+    const explicit = node.pickleIdValue?.trim() ?? ''
+    if (explicit && !idPattern.test(explicit)) {
       errors.push(
-        `Invalid Specification ${uri}: Examples row ${node.rowIndex} is missing a pickle_id. ` +
-          'Run pickle migrate to add missing metadata.',
-      )
-      return
-    }
-    if (!idPattern.test(id)) {
-      errors.push(
-        `Invalid Specification ${uri}: Examples row ${node.rowIndex} has a malformed durable identifier "${id}". ` +
+        `Invalid Specification ${uri}: Examples row ${node.rowIndex} has a malformed durable identifier "${explicit}". ` +
           'Use letters, numbers, underscores, or hyphens and run pickle check again.',
       )
       return
     }
-    recordIdentifier(seen, id, uri, errors)
+    recordIdentifier(seen, resolvedNodeId(node, uri), uri, errors)
     return
   }
 
@@ -272,14 +392,7 @@ function validateNode(
     )
     return
   }
-  if (ids.length === 0) {
-    errors.push(
-      `Invalid Specification ${uri}: ${nodeLabel(node)} is missing a durable identifier. ` +
-        'Run pickle migrate to add missing metadata.',
-    )
-    return
-  }
-  if (!ids[0] || !idPattern.test(ids[0])) {
+  if (ids.length === 1 && (!ids[0] || !idPattern.test(ids[0]))) {
     errors.push(
       `Invalid Specification ${uri}: ${nodeLabel(node)} has a malformed durable identifier` +
         `${ids[0] ? ` "${ids[0]}"` : ''}. ` +
@@ -287,7 +400,7 @@ function validateNode(
     )
     return
   }
-  recordIdentifier(seen, ids[0], uri, errors)
+  recordIdentifier(seen, resolvedNodeId(node, uri), uri, errors)
 }
 
 export function validateSpecificationMetadata(
@@ -311,71 +424,16 @@ export function validateSpecificationMetadata(
   if (errors.length > 0) throw new Error(errors.join('\n'))
 }
 
-function createDurableId(existing: Set<string>): string {
-  for (;;) {
-    const id = Buffer.from(crypto.getRandomValues(new Uint8Array(8))).toString(
-      'hex',
-    )
-    if (!existing.has(id)) {
-      existing.add(id)
-      return id
-    }
-  }
-}
-
-function collectExistingIds(
-  features: readonly (Feature | undefined)[],
-): Set<string> {
-  const existing = new Set<string>()
-  for (const feature of features) {
-    if (!feature) continue
-    for (const node of identityNodes(feature)) {
-      for (const id of idValues(node.tags)) {
-        if (id) existing.add(id)
-      }
-      const rowId = node.pickleIdValue?.trim()
-      if (rowId) existing.add(rowId)
-    }
-  }
-  return existing
-}
-
 function splitSource(source: string): { lines: string[]; newline: string } {
   const newline = source.includes('\r\n') ? '\r\n' : '\n'
   return { lines: source.split(newline), newline }
 }
 
-function insertTableColumn(line: string, value: string): string {
-  const parts = line.split('|')
-  parts.splice(1, 0, ` ${value} `)
-  return parts.join('|')
-}
-
-function fillTableCell(
-  line: string,
-  columnIndex: number,
-  value: string,
-): string {
-  const parts = line.split('|')
-  parts[columnIndex + 1] = ` ${value} `
-  return parts.join('|')
-}
-
 function applyEdits(source: string, edits: readonly SourceEdit[]): string {
   const { lines, newline } = splitSource(source)
-  const lineEdits = edits
-    .filter((edit) => edit.type === 'insert-line')
-    .sort((left, right) => right.beforeLine - left.beforeLine)
-
-  for (const edit of edits) {
-    if (edit.type === 'insert-line') continue
-    const line = lines[edit.line - 1]
-    if (line === undefined) continue
-    if (edit.type === 'insert-column')
-      lines[edit.line - 1] = insertTableColumn(line, edit.value)
-    else
-      lines[edit.line - 1] = fillTableCell(line, edit.columnIndex, edit.value)
-  }
+  const lineEdits = [...edits].sort(
+    (left, right) => right.beforeLine - left.beforeLine,
+  )
   for (const edit of lineEdits) {
     lines.splice(edit.beforeLine - 1, 0, edit.text)
   }
@@ -389,7 +447,6 @@ function tagLine(column: number, tags: readonly string[]): string {
 function migrateFile(
   file: SpecificationSourceFile,
   feature: Feature | undefined,
-  existing: Set<string>,
 ): { nextSource: string; changes: SpecificationMigrationChange[] } {
   if (!feature) return { nextSource: file.source, changes: [] }
 
@@ -398,50 +455,9 @@ function migrateFile(
   const nodes = identityNodes(feature)
 
   for (const node of nodes) {
-    if (node.kind === 'examples-row') {
-      const current = node.pickleIdValue?.trim() ?? ''
-      if (current) continue
-      const id = createDurableId(existing)
-      if (node.pickleIdColumnIndex === undefined) {
-        edits.push({ type: 'insert-column', line: node.line, value: id })
-      } else {
-        edits.push({
-          type: 'fill-cell',
-          line: node.line,
-          columnIndex: node.pickleIdColumnIndex,
-          value: id,
-        })
-      }
-      changes.push({
-        uri: file.uri,
-        description: `Examples row ${node.rowIndex}: add pickle_id ${id}`,
-      })
-      continue
-    }
-
-    if (
-      node.kind === 'examples' &&
-      node.pickleIdColumnIndex === undefined &&
-      node.headerLine
-    ) {
-      edits.push({
-        type: 'insert-column',
-        line: node.headerLine,
-        value: rowIdColumn,
-      })
-    }
-
-    const tagsToAdd: string[] = []
-    const ids = idValues(node.tags)
-    const states = stateValues(node.tags)
-    if (ids.length === 0) {
-      const id = createDurableId(existing)
-      tagsToAdd.push(`${idTagPrefix}${id}`)
-    }
-    if (node.kind === 'feature' && states.length === 0) {
-      tagsToAdd.push(`${stateTagPrefix}active`)
-    }
-    if (tagsToAdd.length === 0) continue
+    if (node.kind !== 'feature') continue
+    if (stateValues(node.tags).length > 0) continue
+    const tagsToAdd = [`${stateTagPrefix}active`]
     edits.push({
       type: 'insert-line',
       beforeLine: node.line,
@@ -464,11 +480,10 @@ export function planSpecificationMigration(
     file,
     feature: parseDocument(file.source, language).feature,
   }))
-  const existing = collectExistingIds(parsed.map(({ feature }) => feature))
   const changes: SpecificationMigrationChange[] = []
   const nextFiles: SpecificationMigrationFile[] = []
   for (const { file, feature } of parsed) {
-    const migrated = migrateFile(file, feature, existing)
+    const migrated = migrateFile(file, feature)
     changes.push(...migrated.changes)
     nextFiles.push({
       uri: file.uri,

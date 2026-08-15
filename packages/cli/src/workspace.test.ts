@@ -390,6 +390,29 @@ export default { adapter: missingAdapter }
     )
   })
 
+  test('check rejects an unsupported Stagehand model before execution resources start', async () => {
+    const project = await createCheckProject('invalid-model-name', {
+      config: {
+        ...defaultCheckConfig,
+        web: {
+          baseUrl: 'https://example.com',
+          browser: { modelName: 'google/gemini-3.7-flash' },
+        },
+      },
+      specification: validSpecification,
+    })
+
+    const checked = runCheck(project)
+
+    expect(checked.exitCode).toBe(2)
+    expect(checked.stderr.toString()).toContain(
+      'web.browser.modelName "google/gemini-3.7-flash" is not a Stagehand-supported model',
+    )
+    expect(checked.stderr.toString()).toContain(
+      'Correct the value and run pickle check again',
+    )
+  })
+
   test('check rejects invalid Specifications before execution resources start', async () => {
     const project = await createCheckProject('invalid-specification', {
       config: defaultCheckConfig,
@@ -478,7 +501,7 @@ export default {}
     )
   })
 
-  test('migrate previews namespaced identifiers and writes only after confirmation', async () => {
+  test('migrate previews missing Specification state and writes only after confirmation', async () => {
     const source = `# keep this comment
 
 @smoke
@@ -498,12 +521,10 @@ Feature: Checkout
       env: { ...Bun.env },
     })
     expect(preview.exitCode).toBe(0)
-    expect(preview.stdout.toString()).toMatch(
-      /Feature "Checkout": add @pickle:id:[0-9a-f]{16} @pickle:state:active/,
+    expect(preview.stdout.toString()).toContain(
+      'Feature "Checkout": add @pickle:state:active',
     )
-    expect(preview.stdout.toString()).toMatch(
-      /Scenario "Complete a purchase": add @pickle:id:[0-9a-f]{16}/,
-    )
+    expect(preview.stdout.toString()).not.toContain('@pickle:id:')
     expect(preview.stdout.toString()).toContain(
       'Re-run pickle migrate --yes after reviewing the preview',
     )
@@ -520,14 +541,9 @@ Feature: Checkout
     )
     const migrated = await Bun.file(featurePath).text()
     expect(migrated).toContain('# keep this comment')
-    expect(migrated).toContain('\n@smoke\n@pickle:id:')
-    expect(migrated).toContain('@pickle:state:active')
+    expect(migrated).toContain('\n@smoke\n@pickle:state:active')
+    expect(migrated).not.toContain('@pickle:id:')
     expect(migrated).toContain('Then the purchase succeeds')
-    for (const id of applied.stdout
-      .toString()
-      .match(/@pickle:id:[0-9a-f]{16}/g) ?? []) {
-      expect(migrated).toContain(id)
-    }
 
     const checked = runCheck(project)
     expect(checked.exitCode).toBe(0)
@@ -558,7 +574,7 @@ Feature: Checkout
     const checked = runCheck(project)
 
     expect(checked.exitCode).toBe(2)
-    expect(checked.stderr.toString()).toContain('missing a durable identifier')
+    expect(checked.stderr.toString()).toContain('missing a Specification state')
     expect(checked.stderr.toString()).toContain(
       'Run pickle migrate to add missing metadata',
     )
@@ -620,7 +636,7 @@ Feature: Checkout
     })
 
     expect(run.exitCode).toBe(0)
-    expect(run.stderr.toString()).toContain('missing a durable identifier')
+    expect(run.stderr.toString()).toContain('missing a Specification state')
     expect(run.stderr.toString()).toContain(
       'Run pickle migrate to add missing metadata',
     )

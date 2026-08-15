@@ -74,7 +74,7 @@ Create `pickle.config.jsonc` in the project root:
 }
 ```
 
-Set the API key for the configured model provider. Bun loads environment variables from `.env`.
+Set the API key for the configured model provider. Bun loads environment variables from `.env`. For local Chrome, Stagehand needs that key on `model.apiKey`: set `web.browser.modelApiKey` or the provider env var (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GOOGLE_API_KEY`, `GEMINI_API_KEY`, or `GOOGLE_GENERATIVE_AI_API_KEY`). `web.browser.modelName` must be a Stagehand-supported `provider/model` value; Pickle Spec rejects unknown names before it starts browsers.
 
 ## Run Specifications
 

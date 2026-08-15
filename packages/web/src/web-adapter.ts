@@ -5,6 +5,7 @@ import {
   localBrowser,
   type ModelConfig,
   Stagehand,
+  StagehandCreateOptionsSchema,
 } from '@browserbasehq/stagehand'
 import type {
   ExecutionTargetAdapter,
@@ -79,6 +80,22 @@ function optionalPositiveInteger(value: unknown, field: string): void {
   }
 }
 
+function validateModelName(value: unknown): void {
+  optionalString(value, 'web.browser.modelName')
+  if (value === undefined) return
+  if (!(value as string).trim()) {
+    throw new Error('web.browser.modelName must not be empty')
+  }
+  const parsed = StagehandCreateOptionsSchema.shape.model.safeParse({
+    modelName: value,
+  })
+  if (!parsed.success) {
+    throw new Error(
+      `web.browser.modelName "${value}" is not a Stagehand-supported model`,
+    )
+  }
+}
+
 export function validateWebAdapterOptions(value: unknown): WebAdapterOptions {
   const web = record(value, 'web')
   knownFields(web, ['baseUrl', 'browser', 'screenshots'], 'web')
@@ -118,7 +135,7 @@ export function validateWebAdapterOptions(value: unknown): WebAdapterOptions {
     ) {
       throw new Error('web.browser.environment must be local or browserbase')
     }
-    optionalString(browser.modelName, 'web.browser.modelName')
+    validateModelName(browser.modelName)
     optionalString(browser.modelApiKey, 'web.browser.modelApiKey')
     optionalString(browser.browserbaseApiKey, 'web.browser.browserbaseApiKey')
     optionalString(
@@ -270,14 +287,22 @@ const stagehandFactory: WebAutomationFactory = {
         'anthropic/claude-sonnet-4-6') as ModelConfig['modelName'],
       ...(options.modelApiKey ? { apiKey: options.modelApiKey } : {}),
     }
-    const stagehand = await Stagehand.create({
-      browser,
-      model,
-      logging: { level: 'off', format: 'json' },
-      selfHeal: options.selfHeal ?? true,
-      domSettleTimeoutMs: options.domSettleTimeoutMs ?? 3_000,
-      ...(options.cache !== undefined ? { cache: options.cache } : {}),
-    })
+    let stagehand: Stagehand
+    try {
+      stagehand = await Stagehand.create({
+        browser,
+        model,
+        logging: { level: 'off', format: 'json' },
+        selfHeal: options.selfHeal ?? true,
+        domSettleTimeoutMs: options.domSettleTimeoutMs ?? 3_000,
+        ...(options.cache !== undefined ? { cache: options.cache } : {}),
+      })
+    } catch (error) {
+      try {
+        await browser.close()
+      } catch {}
+      throw error
+    }
 
     return {
       async navigate(url, operationSignal) {
@@ -376,6 +401,62 @@ function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
 }
 
+function providerApiKeyEnvNames(modelName: string | undefined): string[] {
+  const provider = (modelName ?? 'anthropic/claude-sonnet-4-6').split('/')[0]
+  switch (provider) {
+    case 'openai':
+      return ['OPENAI_API_KEY']
+    case 'anthropic':
+      return ['ANTHROPIC_API_KEY']
+    case 'google':
+      return [
+        'GOOGLE_GENERATIVE_AI_API_KEY',
+        'GOOGLE_API_KEY',
+        'GEMINI_API_KEY',
+      ]
+    case 'groq':
+      return ['GROQ_API_KEY']
+    case 'cerebras':
+      return ['CEREBRAS_API_KEY']
+    default:
+      return []
+  }
+}
+
+function resolveModelApiKey(
+  browser: BrowserOptions | undefined,
+): string | undefined {
+  const configured = browser?.modelApiKey?.trim()
+  if (configured) return configured
+  for (const name of providerApiKeyEnvNames(browser?.modelName)) {
+    const value = process.env[name]?.trim()
+    if (value) return value
+  }
+}
+
+function stagehandBrowserOptions(
+  browser: BrowserOptions | undefined,
+  requireProviderApiKey: boolean,
+): BrowserOptions {
+  const modelApiKey = resolveModelApiKey(browser)
+  const next = {
+    ...browser,
+    ...(modelApiKey ? { modelApiKey } : {}),
+  }
+  if (
+    requireProviderApiKey &&
+    next.environment !== 'browserbase' &&
+    !next.modelApiKey
+  ) {
+    const envNames = providerApiKeyEnvNames(next.modelName)
+    throw new Error(
+      'Model inference requires a provider API key or a Browserbase session. ' +
+        `Set ${envNames.join(', ')}, or web.browser.modelApiKey.`,
+    )
+  }
+  return next
+}
+
 export function createWebAdapter(
   options: WebAdapterOptions,
   factory: WebAutomationFactory = stagehandFactory,
@@ -385,7 +466,10 @@ export function createWebAdapter(
     capabilities: ['web', 'screenshots'],
     async openSession(input) {
       const automation = await factory.open({
-        browser: validatedOptions.browser ?? {},
+        browser: stagehandBrowserOptions(
+          validatedOptions.browser,
+          factory === stagehandFactory,
+        ),
         signal: input.signal,
       })
       let closed = false
