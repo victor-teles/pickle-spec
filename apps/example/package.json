@@ -1,0 +1,16 @@
+{
+  "name": "@pickle-spec/example",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "run:example": "pickle run"
+  },
+  "dependencies": {
+    "pickle-spec": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "typescript": "^5.9.3"
+  }
+}

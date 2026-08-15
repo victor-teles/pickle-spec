@@ -4,6 +4,13 @@ globs: "*.ts, *.tsx, *.html, *.css, *.js, *.jsx, package.json"
 alwaysApply: false
 ---
 
+This repository is a Bun + Turborepo monorepo:
+
+- `packages/pickle-spec` — published CLI and library
+- `apps/example` — sample feature files
+
+Use `bun run typecheck` and `bun run test` from the repo root. Those scripts run through Turborepo.
+
 Default to using Bun instead of Node.js.
 
 - Use `bun <file>` instead of `node <file>` or `ts-node <file>`
@@ -109,3 +116,17 @@ bun --hot ./index.ts
 ```
 
 For more information, read the Bun API docs in `node_modules/bun-types/docs/**.mdx`.
+
+## Agent skills
+
+### Issue tracker
+
+Issues are tracked in GitHub Issues for `victor-teles/pickle-spec`. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Triage uses the five default canonical labels. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Domain documentation uses the single-context layout. See `docs/agents/domain.md`.
