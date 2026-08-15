@@ -74,9 +74,7 @@ function resolveTargets(input: RunScenariosInput): readonly RunTarget[] {
       },
     ]
   }
-  throw new Error(
-    'A test run must select at least one execution target profile',
-  )
+  return []
 }
 
 export async function runScenarios(
@@ -113,7 +111,7 @@ export async function runScenarios(
         retry: input.retry,
         timeout: input.timeout,
         onEvent: input.onEvent
-          ? (event) => input.onEvent!(event, selection)
+          ? (event) => input.onEvent?.(event, selection)
           : undefined,
       })
     }

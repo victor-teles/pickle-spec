@@ -158,6 +158,27 @@ function assertProfileCapabilities(
   }
 }
 
+function validateExecution(value: unknown): RunConfiguration['execution'] {
+  const execution = record(value, 'execution')
+  knownFields(
+    execution,
+    ['infrastructureRetries', 'scenarioTimeoutMs', 'stepTimeoutMs'],
+    'execution',
+  )
+  positiveInteger(execution.scenarioTimeoutMs, 'execution.scenarioTimeoutMs')
+  positiveInteger(execution.stepTimeoutMs, 'execution.stepTimeoutMs')
+  const retries = execution.infrastructureRetries
+  if (
+    retries !== undefined &&
+    (!Number.isInteger(retries) || (retries as number) < 0)
+  ) {
+    throw new Error(
+      'execution.infrastructureRetries must be a non-negative integer',
+    )
+  }
+  return execution
+}
+
 export function validateRunConfiguration(value: unknown): RunConfiguration {
   const configuration = record(value, 'run configuration')
   knownFields(
@@ -216,23 +237,7 @@ export function validateRunConfiguration(value: unknown): RunConfiguration {
   }
   positiveInteger(configuration.concurrency, 'concurrency')
   if (configuration.execution !== undefined) {
-    const execution = record(configuration.execution, 'execution')
-    knownFields(
-      execution,
-      ['infrastructureRetries', 'scenarioTimeoutMs', 'stepTimeoutMs'],
-      'execution',
-    )
-    positiveInteger(execution.scenarioTimeoutMs, 'execution.scenarioTimeoutMs')
-    positiveInteger(execution.stepTimeoutMs, 'execution.stepTimeoutMs')
-    const retries = execution.infrastructureRetries
-    if (
-      retries !== undefined &&
-      (!Number.isInteger(retries) || (retries as number) < 0)
-    ) {
-      throw new Error(
-        'execution.infrastructureRetries must be a non-negative integer',
-      )
-    }
+    configuration.execution = validateExecution(configuration.execution)
   }
   return configuration as unknown as RunConfiguration
 }

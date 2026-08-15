@@ -71,9 +71,9 @@ function isExecutionPlan(value: unknown): value is ExecutionPlan {
 export function createFilePlanStore(root: string): ExecutionPlanStore {
   return {
     async findApproved(query) {
-      const path = planPath(root, 'plans', query)
-      if (!(await Bun.file(path).exists())) return undefined
-      const parsed: unknown = JSON.parse(await Bun.file(path).text())
+      const file = Bun.file(planPath(root, 'plans', query))
+      if (!(await file.exists())) return undefined
+      const parsed: unknown = JSON.parse(await file.text())
       if (!isExecutionPlan(parsed) || !planApplies(parsed, query)) {
         return undefined
       }
