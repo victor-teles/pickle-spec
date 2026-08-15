@@ -8,16 +8,71 @@ import {
   type ScenarioRun,
 } from './run-scenario'
 
-export interface RunScenariosInput extends ExecutionPolicy {
-  selections: readonly ScenarioSelection[]
+export interface RunTarget {
   executionTargetProfile: ExecutionTargetProfile
   adapter: ExecutionTargetAdapter
+}
+
+export interface RunScenariosInput extends ExecutionPolicy {
+  selections: readonly ScenarioSelection[]
+  targets?: readonly RunTarget[]
+  executionTargetProfile?: ExecutionTargetProfile
+  adapter?: ExecutionTargetAdapter
   concurrency?: number
   signal?: AbortSignal
   onEvent?: (
     event: RunEvent,
     selection: ScenarioSelection,
   ) => void | Promise<void>
+}
+
+function availableCapabilities(target: RunTarget): Set<string> {
+  return new Set(
+    target.executionTargetProfile.capabilities ??
+      target.adapter.capabilities ??
+      [],
+  )
+}
+
+export function validateTargetSelection(
+  selections: readonly ScenarioSelection[],
+  targets: readonly RunTarget[],
+): void {
+  if (targets.length === 0) {
+    throw new Error(
+      'A test run must select at least one execution target profile',
+    )
+  }
+
+  for (const target of targets) {
+    const capabilities = availableCapabilities(target)
+    for (const { scenario } of selections) {
+      const missing = (scenario.capabilityRequirements ?? []).filter(
+        (requirement) => !capabilities.has(requirement),
+      )
+      if (missing.length > 0) {
+        throw new Error(
+          `Execution target profile "${target.executionTargetProfile.id}" lacks required capabilities ` +
+            `for Scenario "${scenario.name}": ${missing.join(', ')}`,
+        )
+      }
+    }
+  }
+}
+
+function resolveTargets(input: RunScenariosInput): readonly RunTarget[] {
+  if (input.targets) return input.targets
+  if (input.executionTargetProfile && input.adapter) {
+    return [
+      {
+        executionTargetProfile: input.executionTargetProfile,
+        adapter: input.adapter,
+      },
+    ]
+  }
+  throw new Error(
+    'A test run must select at least one execution target profile',
+  )
 }
 
 export async function runScenarios(
@@ -28,32 +83,25 @@ export async function runScenarios(
     throw new Error('concurrency must be an integer greater than or equal to 1')
   }
 
-  const capabilities = new Set(input.adapter.capabilities ?? [])
-  for (const { scenario } of input.selections) {
-    const missing = (scenario.capabilityRequirements ?? []).filter(
-      (requirement) => !capabilities.has(requirement),
-    )
-    if (missing.length > 0) {
-      throw new Error(
-        `Execution target profile "${input.executionTargetProfile.id}" lacks required capabilities ` +
-          `for Scenario "${scenario.name}": ${missing.join(', ')}`,
-      )
-    }
-  }
+  const targets = resolveTargets(input)
+  validateTargetSelection(input.selections, targets)
 
-  const runs = new Array<ScenarioRun>(input.selections.length)
+  const scenarioTargets = input.selections.flatMap((selection) =>
+    targets.map((target) => ({ selection, target })),
+  )
+  const runs = new Array<ScenarioRun>(scenarioTargets.length)
   let nextIndex = 0
-  const workerCount = Math.min(concurrency, input.selections.length)
+  const workerCount = Math.min(concurrency, scenarioTargets.length)
 
   async function work(): Promise<void> {
-    while (nextIndex < input.selections.length) {
+    while (nextIndex < scenarioTargets.length) {
       const index = nextIndex++
-      const selection = input.selections[index]!
+      const { selection, target } = scenarioTargets[index]!
       runs[index] = await runScenario({
         specification: selection.specification,
         scenario: selection.scenario,
-        executionTargetProfile: input.executionTargetProfile,
-        adapter: input.adapter,
+        executionTargetProfile: target.executionTargetProfile,
+        adapter: target.adapter,
         signal: input.signal,
         retry: input.retry,
         timeout: input.timeout,

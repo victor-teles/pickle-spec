@@ -1,3 +1,4 @@
+import type { SpecificationState } from './identity'
 import type { Scenario, Specification } from './specification'
 
 export interface Shard {
@@ -6,10 +7,14 @@ export interface Shard {
 }
 
 export interface SelectionOptions {
+  paths?: string | readonly string[]
   scenarioName?: string
   tagExpression?: string
+  states?: readonly SpecificationState[]
   shard?: Shard
 }
+
+const specificationStates = ['draft', 'active', 'deprecated'] as const
 
 export interface ScenarioSelection {
   specification: Specification
@@ -159,11 +164,80 @@ function validateShard(value: unknown): void {
   }
 }
 
+function globToRegExp(pattern: string): RegExp {
+  let regex = '^'
+  for (let index = 0; index < pattern.length; index++) {
+    const character = pattern[index]!
+    if (character === '*') {
+      if (pattern[index + 1] === '*') {
+        regex += '.*'
+        index++
+        continue
+      }
+      regex += '[^/]*'
+      continue
+    }
+    if ('\\^$+{}()|[]?'.includes(character) || character === '.') {
+      regex += `\\${character}`
+      continue
+    }
+    regex += character
+  }
+  return new RegExp(`${regex}$`)
+}
+
+function normalizePaths(value: unknown): string[] {
+  if (typeof value === 'string') {
+    if (!value.trim()) {
+      throw new Error('selection.paths must contain at least one path')
+    }
+    return [value]
+  }
+  if (!Array.isArray(value) || value.length === 0) {
+    throw new Error('selection.paths must contain at least one path')
+  }
+  if (!value.every((path) => typeof path === 'string' && path.trim())) {
+    throw new Error('selection.paths must not contain an empty path')
+  }
+  return value
+}
+
+function matchesPath(uri: string, pattern: string): boolean {
+  return globToRegExp(pattern.replaceAll('\\', '/')).test(
+    uri.replaceAll('\\', '/'),
+  )
+}
+
+function validateStates(value: unknown): SpecificationState[] {
+  if (!Array.isArray(value) || value.length === 0) {
+    throw new Error(
+      'selection.states must contain at least one Specification state',
+    )
+  }
+  if (
+    !value.every(
+      (state) =>
+        typeof state === 'string' &&
+        specificationStates.includes(state as SpecificationState),
+    )
+  ) {
+    throw new Error('selection.states must be draft, active, or deprecated')
+  }
+  return value as SpecificationState[]
+}
+
 export function validateSelectionOptions(value: unknown): SelectionOptions {
   const options = record(value, 'selection')
-  knownFields(options, ['scenarioName', 'tagExpression', 'shard'], 'selection')
+  knownFields(
+    options,
+    ['paths', 'scenarioName', 'tagExpression', 'states', 'shard'],
+    'selection',
+  )
   optionalString(options.scenarioName, 'selection.scenarioName')
   optionalString(options.tagExpression, 'selection.tagExpression')
+  if (options.paths !== undefined) options.paths = normalizePaths(options.paths)
+  if (options.states !== undefined)
+    options.states = validateStates(options.states)
   if (options.tagExpression) parseTagExpression(options.tagExpression as string)
   if (options.shard !== undefined) validateShard(options.shard)
   return options as unknown as SelectionOptions
@@ -179,8 +253,19 @@ export function selectScenarios(
     ? parseTagExpression(validatedOptions.tagExpression)
     : undefined
 
+  const paths = validatedOptions.paths ? [validatedOptions.paths].flat() : []
+  const states = new Set<SpecificationState>(
+    validatedOptions.states ?? ['active'],
+  )
+
   const selected = [...specifications]
     .sort((left, right) => left.source.uri.localeCompare(right.source.uri))
+    .filter(
+      (specification) =>
+        paths.length === 0 ||
+        paths.some((path) => matchesPath(specification.source.uri, path)),
+    )
+    .filter((specification) => states.has(specification.state ?? 'active'))
     .flatMap((specification) =>
       specification.scenarios.map((scenario) => ({ specification, scenario })),
     )

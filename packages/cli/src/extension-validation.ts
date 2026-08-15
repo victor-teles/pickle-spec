@@ -57,11 +57,28 @@ function extensionProvidesAdapter(
     adapter &&
     typeChecker.getTypeOfSymbolAtLocation(adapter, adapterDeclaration)
 
+  const adapters = extensionType.getProperty('adapters')
+  const adaptersDeclaration =
+    adapters?.valueDeclaration ?? adapters?.declarations?.[0] ?? sourceFile
+  const adaptersType =
+    adapters &&
+    typeChecker.getTypeOfSymbolAtLocation(adapters, adaptersDeclaration)
+  const namedAdapters = Boolean(
+    adapters &&
+      adaptersType &&
+      !(adapters.flags & ts.SymbolFlags.Optional) &&
+      !(adaptersType.flags & ts.TypeFlags.Undefined) &&
+      adaptersType
+        .getProperties()
+        .some((property) => property.name !== '__index'),
+  )
+
   return Boolean(
-    adapter &&
+    (adapter &&
       !(adapter.flags & ts.SymbolFlags.Optional) &&
       adapterType &&
-      !(adapterType.flags & ts.TypeFlags.Undefined),
+      !(adapterType.flags & ts.TypeFlags.Undefined)) ||
+      namedAdapters,
   )
 }
 

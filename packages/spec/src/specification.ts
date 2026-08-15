@@ -59,7 +59,21 @@ export interface ParseSpecificationInput {
   language?: string
 }
 
+const requiresTagPrefix = '@pickle:requires:'
+
 type ScenarioStepType = ScenarioStep['type']
+
+function capabilityRequirements(tags: readonly string[]): string[] | undefined {
+  const required = [
+    ...new Set(
+      tags
+        .filter((tag) => tag.startsWith(requiresTagPrefix))
+        .map((tag) => tag.slice(requiresTagPrefix.length))
+        .filter((value) => value.length > 0),
+    ),
+  ]
+  return required.length > 0 ? required : undefined
+}
 
 function stepType(
   keywordType: StepKeywordType | undefined,
@@ -162,13 +176,16 @@ export function parseSpecification(
       const row = rowsById.get(pickle.astNodeIds[1] ?? '')
       const examplesIdentity = identityFromTags(row?.examplesTags ?? [])
       const rowId = row ? examplesRowId(row.header, row.cells) : undefined
+      const tags = pickle.tags.map(({ name }) => name)
+      const requirements = capabilityRequirements(tags)
       return {
         name: pickle.name,
-        tags: pickle.tags.map(({ name }) => name),
+        tags,
         steps: pickle.steps.map((step) => mapStep(step, infoByAstNodeId)),
         ...(scenarioIdentity.id ? { id: scenarioIdentity.id } : {}),
         ...(examplesIdentity.id ? { examplesId: examplesIdentity.id } : {}),
         ...(rowId ? { examplesRowId: rowId } : {}),
+        ...(requirements ? { capabilityRequirements: requirements } : {}),
       }
     },
   )

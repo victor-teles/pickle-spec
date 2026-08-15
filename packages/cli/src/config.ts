@@ -23,10 +23,18 @@ export interface ServerConfig {
   reuseExisting?: boolean
 }
 
+export interface ProjectExecutionTargetProfile {
+  adapter: string
+  capabilities?: readonly string[]
+  web?: WebAdapterOptions
+}
+
 export interface PickleConfig {
   schemaVersion: 1
   language?: string
   specifications?: string | string[]
+  suites?: Record<string, SelectionOptions>
+  executionTargetProfiles?: Record<string, ProjectExecutionTargetProfile>
   executionTargetProfile?: ExecutionTargetProfile
   web?: WebAdapterOptions
   selection?: SelectionOptions
@@ -39,12 +47,54 @@ export interface PickleConfig {
   server?: ServerConfig
 }
 
-export function runConfigurationFrom(config: PickleConfig): RunConfiguration {
+function selectedExecutionTargetProfiles(
+  config: PickleConfig,
+  profileIds?: readonly string[],
+): ExecutionTargetProfile[] {
+  if (config.executionTargetProfiles) {
+    const ids = profileIds?.length
+      ? profileIds
+      : Object.keys(config.executionTargetProfiles)
+    return ids.map((id) => {
+      const profile = config.executionTargetProfiles?.[id]
+      if (!profile) {
+        throw new Error(`Unknown execution target profile "${id}"`)
+      }
+      return {
+        id,
+        adapter: profile.adapter,
+        ...(profile.capabilities ? { capabilities: profile.capabilities } : {}),
+      }
+    })
+  }
+  if (profileIds?.length) {
+    throw new Error(`Unknown execution target profile "${profileIds[0]}"`)
+  }
+  return [
+    {
+      id: config.executionTargetProfile?.id ?? (config.web ? 'web' : 'custom'),
+      ...(config.executionTargetProfile?.adapter
+        ? { adapter: config.executionTargetProfile.adapter }
+        : {}),
+      ...(config.executionTargetProfile?.capabilities
+        ? { capabilities: config.executionTargetProfile.capabilities }
+        : {}),
+    },
+  ]
+}
+
+export function runConfigurationFrom(
+  config: PickleConfig,
+  profileIds?: readonly string[],
+): RunConfiguration {
+  const executionTargetProfiles = selectedExecutionTargetProfiles(
+    config,
+    profileIds,
+  )
   return {
     schemaVersion: config.schemaVersion,
-    executionTargetProfile: config.executionTargetProfile ?? {
-      id: config.web ? 'web' : 'custom',
-    },
+    executionTargetProfile: executionTargetProfiles[0],
+    executionTargetProfiles,
     concurrency: config.concurrency,
     execution: config.execution,
   }
@@ -83,6 +133,68 @@ function optionalPositiveInteger(value: unknown, field: string): void {
   }
 }
 
+function validateCapabilities(
+  value: unknown,
+  field: string,
+): readonly string[] {
+  if (!Array.isArray(value) || value.length === 0) {
+    throw new Error(`${field} must contain at least one capability`)
+  }
+  if (!value.every((item) => typeof item === 'string' && item.trim())) {
+    throw new Error(`${field} must not contain an empty capability`)
+  }
+  return value
+}
+
+function validateSuites(value: unknown): Record<string, SelectionOptions> {
+  const suites = record(value, 'suites')
+  const result: Record<string, SelectionOptions> = {}
+  for (const [name, query] of Object.entries(suites)) {
+    if (!name.trim()) throw new Error('suites keys must not be empty')
+    const options = validateSelectionOptions(query)
+    if (options.shard) {
+      throw new Error(`suites.${name}.shard is not supported`)
+    }
+    result[name] = options
+  }
+  return result
+}
+
+function validateProjectProfiles(
+  value: unknown,
+): Record<string, ProjectExecutionTargetProfile> {
+  const profiles = record(value, 'executionTargetProfiles')
+  const ids = Object.keys(profiles)
+  if (ids.length === 0) {
+    throw new Error(
+      'executionTargetProfiles must contain at least one execution target profile',
+    )
+  }
+  const result: Record<string, ProjectExecutionTargetProfile> = {}
+  for (const id of ids) {
+    if (!id.trim()) {
+      throw new Error('executionTargetProfiles keys must not be empty')
+    }
+    const field = `executionTargetProfiles.${id}`
+    const profile = record(profiles[id], field)
+    knownFields(profile, ['adapter', 'capabilities', 'web'], field)
+    if (typeof profile.adapter !== 'string' || !profile.adapter.trim()) {
+      throw new Error(`${field}.adapter must not be empty`)
+    }
+    if (profile.capabilities !== undefined) {
+      profile.capabilities = validateCapabilities(
+        profile.capabilities,
+        `${field}.capabilities`,
+      )
+    }
+    if (profile.web !== undefined) {
+      profile.web = validateWebAdapterOptions(profile.web)
+    }
+    result[id] = profile as unknown as ProjectExecutionTargetProfile
+  }
+  return result
+}
+
 function validateConfig(value: unknown): PickleConfig {
   const config = record(value, 'configuration')
   knownFields(
@@ -91,6 +203,8 @@ function validateConfig(value: unknown): PickleConfig {
       'schemaVersion',
       'language',
       'specifications',
+      'suites',
+      'executionTargetProfiles',
       'executionTargetProfile',
       'web',
       'selection',
@@ -170,6 +284,12 @@ function validateConfig(value: unknown): PickleConfig {
     }
   }
   if (config.selection !== undefined) validateSelectionOptions(config.selection)
+  if (config.suites !== undefined) config.suites = validateSuites(config.suites)
+  if (config.executionTargetProfiles !== undefined) {
+    config.executionTargetProfiles = validateProjectProfiles(
+      config.executionTargetProfiles,
+    )
+  }
   const validatedConfig = config as unknown as PickleConfig
   validateRunConfiguration(runConfigurationFrom(validatedConfig))
   return validatedConfig

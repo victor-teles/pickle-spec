@@ -37,6 +37,12 @@ test('combines versioned configuration and extensions into validated runner inpu
   expect(resolved).toEqual({
     adapter,
     executionTargetProfile: { id: 'configured-web' },
+    targets: [
+      {
+        executionTargetProfile: { id: 'configured-web' },
+        adapter,
+      },
+    ],
     concurrency: 3,
     retry: { infrastructureErrors: 2 },
     timeout: { scenarioMs: 30_000, stepMs: 5_000 },
@@ -93,4 +99,109 @@ test('combines project configuration with the extension manifest before executio
   ).toThrow(
     'Configure web.baseUrl or export an adapter from pickle.extensions.ts',
   )
+})
+
+test('resolves named execution target profiles with adapter configuration and capabilities', () => {
+  const webAdapter: ExecutionTargetAdapter = {
+    ...adapter,
+    capabilities: ['screenshots', 'web'],
+  }
+  const customAdapter: ExecutionTargetAdapter = {
+    ...adapter,
+    capabilities: ['filesystem'],
+  }
+
+  const resolved = resolveRunConfiguration(
+    {
+      schemaVersion: 1,
+      executionTargetProfiles: [
+        { id: 'web', adapter: 'web', capabilities: ['screenshots'] },
+        { id: 'desktop', adapter: 'custom', capabilities: ['filesystem'] },
+      ],
+    },
+    {
+      adapters: {
+        web: webAdapter,
+        custom: customAdapter,
+      },
+    },
+  )
+
+  expect(resolved.targets).toEqual([
+    {
+      executionTargetProfile: {
+        id: 'web',
+        adapter: 'web',
+        capabilities: ['screenshots'],
+      },
+      adapter: webAdapter,
+    },
+    {
+      executionTargetProfile: {
+        id: 'desktop',
+        adapter: 'custom',
+        capabilities: ['filesystem'],
+      },
+      adapter: customAdapter,
+    },
+  ])
+})
+
+test('rejects a profile that names an adapter the extensions did not import', () => {
+  expect(() =>
+    resolveRunConfiguration(
+      {
+        schemaVersion: 1,
+        executionTargetProfiles: [
+          { id: 'android', adapter: 'android', capabilities: ['geolocation'] },
+        ],
+      },
+      { adapters: { web: adapter } },
+    ),
+  ).toThrow(
+    'Execution target profile "android" requires adapter "android". Import it from pickle.extensions.ts.',
+  )
+})
+
+test('rejects a profile that claims a capability its adapter does not provide', () => {
+  expect(() =>
+    resolveRunConfiguration(
+      {
+        schemaVersion: 1,
+        executionTargetProfiles: [
+          { id: 'web', adapter: 'web', capabilities: ['geolocation'] },
+        ],
+      },
+      { adapters: { web: { ...adapter, capabilities: ['screenshots'] } } },
+    ),
+  ).toThrow(
+    'Execution target profile "web" declares capabilities the adapter does not provide: geolocation',
+  )
+})
+
+test('binds adapter configuration per execution target profile', () => {
+  const staging: ExecutionTargetAdapter = {
+    ...adapter,
+    capabilities: ['screenshots'],
+  }
+  const production: ExecutionTargetAdapter = {
+    ...adapter,
+    capabilities: ['screenshots'],
+  }
+
+  const resolved = resolveRunConfiguration(
+    {
+      schemaVersion: 1,
+      executionTargetProfiles: [
+        { id: 'staging', adapter: 'web', capabilities: ['screenshots'] },
+        { id: 'production', adapter: 'web', capabilities: ['screenshots'] },
+      ],
+    },
+    { adapters: { staging, production } },
+  )
+
+  expect(resolved.targets.map((target) => target.adapter)).toEqual([
+    staging,
+    production,
+  ])
 })

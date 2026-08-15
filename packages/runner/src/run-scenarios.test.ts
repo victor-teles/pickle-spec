@@ -88,3 +88,99 @@ test('rejects a target that lacks a Scenario capability requirement before openi
   )
   expect(openSession).not.toHaveBeenCalled()
 })
+
+test('produces one test result per Scenario and execution target profile', async () => {
+  const webOpen = mock(async () => ({
+    async executeStep() {
+      return { state: 'passed' as const, resolvedActions: [] }
+    },
+    async close() {},
+  }))
+  const mobileOpen = mock(async () => ({
+    async executeStep() {
+      return { state: 'passed' as const, resolvedActions: [] }
+    },
+    async close() {},
+  }))
+
+  const runs = await runScenarios({
+    selections: [selections[0]!, selections[2]!],
+    targets: [
+      {
+        executionTargetProfile: {
+          id: 'web',
+          adapter: 'web',
+          capabilities: ['screenshots'],
+        },
+        adapter: { capabilities: ['screenshots', 'web'], openSession: webOpen },
+      },
+      {
+        executionTargetProfile: {
+          id: 'android',
+          adapter: 'android',
+          capabilities: ['geolocation'],
+        },
+        adapter: {
+          capabilities: ['geolocation'],
+          openSession: mobileOpen,
+        },
+      },
+    ],
+  })
+
+  expect(
+    runs.map((run) => [
+      run.result.scenario.name,
+      run.result.executionTargetProfile.id,
+      run.result.state,
+    ]),
+  ).toEqual([
+    ['First', 'web', 'passed'],
+    ['First', 'android', 'passed'],
+    ['Third', 'web', 'passed'],
+    ['Third', 'android', 'passed'],
+  ])
+  expect(webOpen).toHaveBeenCalledTimes(2)
+  expect(mobileOpen).toHaveBeenCalledTimes(2)
+})
+
+test('fails validation for an incompatible target instead of skipping the Scenario', async () => {
+  const openSession = mock(async () => {
+    throw new Error('must not open')
+  })
+
+  await expect(
+    runScenarios({
+      selections: [
+        {
+          ...selections[0]!,
+          scenario: {
+            ...selections[0]!.scenario,
+            capabilityRequirements: ['geolocation'],
+          },
+        },
+      ],
+      targets: [
+        {
+          executionTargetProfile: {
+            id: 'web',
+            adapter: 'web',
+            capabilities: ['screenshots'],
+          },
+          adapter: { capabilities: ['screenshots', 'web'], openSession },
+        },
+        {
+          executionTargetProfile: {
+            id: 'android',
+            adapter: 'android',
+            capabilities: ['geolocation'],
+          },
+          adapter: { capabilities: ['geolocation'], openSession },
+        },
+      ],
+    }),
+  ).rejects.toThrow(
+    'Execution target profile "web" lacks required capabilities for Scenario "First": geolocation',
+  )
+  expect(openSession).not.toHaveBeenCalled()
+})

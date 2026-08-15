@@ -170,6 +170,27 @@ Feature: Search
     ])
   })
 
+  test('collects adapter-neutral capability requirements without naming an adapter', () => {
+    const specification = parseSpecification({
+      uri: 'features/location.feature',
+      source: `@pickle:requires:camera
+Feature: Nearby stores
+  @pickle:requires:geolocation
+  Scenario: Show stores near the customer
+    When the customer shares their location
+    Then nearby stores are listed`,
+    })
+
+    expect(specification.scenarios[0]?.capabilityRequirements).toEqual([
+      'camera',
+      'geolocation',
+    ])
+    expect(JSON.stringify(specification)).not.toContain('adapter')
+    expect(JSON.stringify(specification.scenarios[0])).not.toMatch(
+      /stagehand|agent-device/i,
+    )
+  })
+
   test('expands Scenario Outlines and exposes adapter-neutral step types', () => {
     const specification = parseSpecification({
       uri: 'features/search.feature',
