@@ -108,6 +108,41 @@ export default {
     expect(stdout).not.toContain('Stagehand')
   })
 
+  test('initializes a project without overwriting files and checks it without opening a session', async () => {
+    const project = join(workspace, 'initialized-project')
+    await mkdir(join(project, 'features'), { recursive: true })
+    await Bun.write(join(project, 'features', 'example.feature'), `Feature: Example\n  Scenario: Safe check\n    Then validation is offline`)
+
+    const first = Bun.spawnSync({ cmd: [pickleCommand, 'init'], cwd: project, env: { ...Bun.env } })
+    expect(first.exitCode).toBe(0)
+    expect(first.stdout.toString()).toContain('Created pickle.config.jsonc')
+    expect(first.stdout.toString()).toContain('Created pickle.extensions.ts')
+
+    const originalExtensions = await Bun.file(join(project, 'pickle.extensions.ts')).text()
+    const second = Bun.spawnSync({ cmd: [pickleCommand, 'init'], cwd: project, env: { ...Bun.env } })
+    expect(second.exitCode).toBe(0)
+    expect(second.stdout.toString()).toContain('Skipped pickle.config.jsonc: file already exists')
+    expect(second.stdout.toString()).toContain('Skipped pickle.extensions.ts: file already exists')
+    expect(await Bun.file(join(project, 'pickle.extensions.ts')).text()).toBe(originalExtensions)
+
+    const checked = Bun.spawnSync({ cmd: [pickleCommand, 'check'], cwd: project, env: { ...Bun.env } })
+    expect(checked.exitCode).toBe(0)
+    expect(checked.stdout.toString()).toContain('Project is valid')
+    expect(checked.stderr.toString()).toBe('')
+  })
+
+  test('check reports the reason and corrective action for validation failures', async () => {
+    const project = join(workspace, 'invalid-project')
+    await mkdir(project, { recursive: true })
+    await Bun.write(join(project, 'pickle.config.jsonc'), '{ "schemaVersion": 99 }')
+    await Bun.write(join(project, 'pickle.extensions.ts'), 'export default {}')
+
+    const checked = Bun.spawnSync({ cmd: [pickleCommand, 'check'], cwd: project, env: { ...Bun.env } })
+    expect(checked.exitCode).toBe(2)
+    expect(checked.stderr.toString()).toContain('Unsupported configuration schemaVersion: 99')
+    expect(checked.stderr.toString()).toContain('Correct the value and run pickle check again')
+  })
+
   test('the deterministic adapter models every kernel outcome', async () => {
     const cases = [
       { outcome: 'passed', exitCode: 0 },

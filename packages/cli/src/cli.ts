@@ -11,6 +11,7 @@ import {
 import { resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { loadConfig, type PickleConfig } from './config'
+import { checkProject, initializeProject } from './project'
 import { startServer } from './server'
 
 interface Extensions {
@@ -205,8 +206,32 @@ async function run(argv: string[]): Promise<number> {
   }
 }
 
+function projectOptions(argv: string[]): { configPath?: string; extensionsPath?: string } {
+  const options: { configPath?: string; extensionsPath?: string } = {}
+  for (let index = 1; index < argv.length; index++) {
+    const flag = argv[index]!
+    if (flag === '--config') options.configPath = valueAfter(argv, index++)
+    else if (flag === '--extensions') options.extensionsPath = valueAfter(argv, index++)
+    else throw new Error(`Unknown option: ${flag}`)
+  }
+  return options
+}
+
+async function main(argv: string[]): Promise<number> {
+  if (argv[0] === 'init') {
+    if (argv.length > 1) throw new Error('Usage: pickle init')
+    await initializeProject()
+    return 0
+  }
+  if (argv[0] === 'check') {
+    await checkProject({ ...projectOptions(argv), report: console.log })
+    return 0
+  }
+  return run(argv)
+}
+
 try {
-  process.exitCode = await run(Bun.argv.slice(2))
+  process.exitCode = await main(Bun.argv.slice(2))
 } catch (error) {
   console.error(error instanceof Error ? error.message : String(error))
   process.exitCode = 2

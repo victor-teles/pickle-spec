@@ -42,7 +42,13 @@ function optionalString(value: unknown, field: string): void {
   }
 }
 
-function validateConfig(value: unknown): PickleConfig {
+function optionalPositiveInteger(value: unknown, field: string): void {
+  if (value !== undefined && (!Number.isInteger(value) || (value as number) < 1)) {
+    throw new Error(`${field} must be an integer greater than or equal to 1`)
+  }
+}
+
+export function validateConfig(value: unknown): PickleConfig {
   const config = record(value, 'configuration')
   if (config.schemaVersion !== 1) {
     throw new Error(`Unsupported configuration schemaVersion: ${String(config.schemaVersion)}`)
@@ -71,9 +77,25 @@ function validateConfig(value: unknown): PickleConfig {
     const server = record(config.server, 'server')
     optionalString(server.command, 'server.command')
     optionalString(server.url, 'server.url')
+    optionalString(server.readinessPath, 'server.readinessPath')
+    optionalPositiveInteger(server.port, 'server.port')
+    optionalPositiveInteger(server.startupTimeoutMs, 'server.startupTimeoutMs')
+    optionalPositiveInteger(server.pollIntervalMs, 'server.pollIntervalMs')
+    if (server.reuseExisting !== undefined && typeof server.reuseExisting !== 'boolean') {
+      throw new Error('server.reuseExisting must be a boolean')
+    }
   }
   if (config.selection !== undefined) record(config.selection, 'selection')
-  if (config.execution !== undefined) record(config.execution, 'execution')
+  if (config.execution !== undefined) {
+    const execution = record(config.execution, 'execution')
+    optionalPositiveInteger(execution.scenarioTimeoutMs, 'execution.scenarioTimeoutMs')
+    optionalPositiveInteger(execution.stepTimeoutMs, 'execution.stepTimeoutMs')
+    const retries = execution.infrastructureRetries
+    if (retries !== undefined && (!Number.isInteger(retries) || (retries as number) < 0)) {
+      throw new Error('execution.infrastructureRetries must be a non-negative integer')
+    }
+  }
+  optionalPositiveInteger(config.concurrency, 'concurrency')
   return config as unknown as PickleConfig
 }
 
@@ -129,5 +151,10 @@ export async function loadConfig(configPath?: string): Promise<PickleConfig> {
     throw new Error(`Configuration file not found: ${selectedPath}`)
   }
 
-  return validateConfig(JSON.parse(removeJsonComments(await Bun.file(absolutePath).text())))
+  try {
+    return validateConfig(JSON.parse(removeJsonComments(await Bun.file(absolutePath).text())))
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : String(error)
+    throw new Error(`Invalid configuration ${selectedPath}: ${reason}. Correct the value and run pickle check again.`)
+  }
 }
