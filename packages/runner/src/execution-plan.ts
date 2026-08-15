@@ -37,18 +37,6 @@ export function planApplies(
   )
 }
 
-export function createMemoryPlanStore(
-  approved: readonly ExecutionPlan[] = [],
-): ExecutionPlanStore {
-  const plans = [...approved]
-  return {
-    async findApproved(query) {
-      return plans.find((plan) => planApplies(plan, query))
-    },
-    async saveCandidate() {},
-  }
-}
-
 function planFileName(value: string): string {
   return value.replace(/[^A-Za-z0-9._-]+/g, '-') || 'plan'
 }

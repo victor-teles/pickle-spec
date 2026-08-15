@@ -21,6 +21,7 @@ export interface RunScenariosInput extends ExecutionPolicy {
   adapter?: ExecutionTargetAdapter
   plans?: ExecutionPlanStore
   applicationRevision?: string
+  ci?: boolean
   concurrency?: number
   signal?: AbortSignal
   onEvent?: (
@@ -107,6 +108,7 @@ export async function runScenarios(
         adapter: target.adapter,
         plans: input.plans,
         applicationRevision: input.applicationRevision,
+        ci: input.ci,
         signal: input.signal,
         retry: input.retry,
         timeout: input.timeout,

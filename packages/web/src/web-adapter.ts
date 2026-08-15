@@ -499,7 +499,7 @@ export function createWebAdapter(
       let closed = false
       let navigated = false
       let stepIndex = 0
-      let mode = input.mode ?? 'adaptive'
+      let executionMode = input.mode ?? 'adaptive'
 
       const close = async () => {
         if (closed) return
@@ -605,23 +605,27 @@ export function createWebAdapter(
         return { state: 'passed', resolvedActions }
       }
 
+      async function adapt(
+        prompt: string,
+        signal?: AbortSignal,
+      ): Promise<StepExecution> {
+        const adapted = await resolveByObservation(prompt, signal)
+        if (adapted.state !== 'passed') return adapted
+        executionMode = 'adaptive'
+        return { ...adapted, state: 'passed-with-adaptation' }
+      }
+
       async function replayOrAdapt(
         prompt: string,
         planned: readonly ResolvedAction[],
         signal?: AbortSignal,
       ): Promise<StepExecution> {
+        if (planned.length === 0) return adapt(prompt, signal)
         const resolvedActions: ResolvedAction[] = []
         for (const action of planned) {
           const result = await automation.act(plannedAction(action), signal)
           resolvedActions.push(action)
-          if (!result.success) {
-            const adapted = await resolveByObservation(prompt, signal)
-            if (adapted.state === 'passed') {
-              mode = 'adaptive'
-              return { ...adapted, state: 'passed-with-adaptation' }
-            }
-            return adapted
-          }
+          if (!result.success) return adapt(prompt, signal)
         }
         return { state: 'passed', resolvedActions }
       }
@@ -667,27 +671,15 @@ export function createWebAdapter(
               })
             }
 
-            if (mode === 'replay') {
-              const planned =
-                input.plan?.steps[stepIndex - 1]?.resolvedActions ?? []
-              if (planned.length > 0) {
-                return finish(
-                  step,
-                  await replayOrAdapt(prompt, planned, operationSignal),
-                )
-              }
-              const adapted = await resolveByObservation(
-                prompt,
-                operationSignal,
+            if (executionMode === 'replay') {
+              return finish(
+                step,
+                await replayOrAdapt(
+                  prompt,
+                  input.plan?.steps[stepIndex - 1]?.resolvedActions ?? [],
+                  operationSignal,
+                ),
               )
-              if (adapted.state === 'passed') {
-                mode = 'adaptive'
-                return finish(step, {
-                  ...adapted,
-                  state: 'passed-with-adaptation',
-                })
-              }
-              return finish(step, adapted)
             }
 
             return finish(

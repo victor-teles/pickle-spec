@@ -17,7 +17,6 @@ export type {
 } from './src/execution-plan'
 export {
   createFilePlanStore,
-  createMemoryPlanStore,
   planApplies,
 } from './src/execution-plan'
 export type {

@@ -594,37 +594,31 @@ describe('runScenario', () => {
   })
 
   test('refuses Replay in CI when the application revision is missing', async () => {
-    const previous = process.env.CI
-    process.env.CI = 'true'
     const openSession = mock(async () => {
       throw new Error('must not open a logical session')
     })
-    try {
-      await expect(
-        runScenario({
-          specification,
-          scenario: { ...scenario, id: 'purchase' },
-          executionTargetProfile: { id: 'web' },
-          adapter: { planFormatVersion: 'web.1', openSession },
-          plans: {
-            async findApproved() {
-              return {
-                schemaVersion: 1,
-                scenarioId: 'purchase',
-                scenarioRevision: scenarioRevision(scenario),
-                executionTargetProfileId: 'web',
-                planFormatVersion: 'web.1',
-                steps: [{ resolvedActions: [] }],
-              }
-            },
-            async saveCandidate() {},
+    await expect(
+      runScenario({
+        specification,
+        scenario: { ...scenario, id: 'purchase' },
+        executionTargetProfile: { id: 'web' },
+        adapter: { planFormatVersion: 'web.1', openSession },
+        ci: true,
+        plans: {
+          async findApproved() {
+            return {
+              schemaVersion: 1,
+              scenarioId: 'purchase',
+              scenarioRevision: scenarioRevision(scenario),
+              executionTargetProfileId: 'web',
+              planFormatVersion: 'web.1',
+              steps: [{ resolvedActions: [] }],
+            }
           },
-        }),
-      ).rejects.toThrow('CI Replay requires applicationRevision')
-    } finally {
-      if (previous === undefined) delete process.env.CI
-      else process.env.CI = previous
-    }
+          async saveCandidate() {},
+        },
+      }),
+    ).rejects.toThrow('CI Replay requires applicationRevision')
     expect(openSession).not.toHaveBeenCalled()
   })
 })

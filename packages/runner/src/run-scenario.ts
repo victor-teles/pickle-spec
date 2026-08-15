@@ -131,6 +131,7 @@ export interface RunScenarioInput extends ExecutionPolicy {
   adapter: ExecutionTargetAdapter
   plans?: ExecutionPlanStore
   applicationRevision?: string
+  ci?: boolean
   signal?: AbortSignal
   onEvent?: (event: RunEvent) => void | Promise<void>
 }
@@ -213,7 +214,7 @@ async function selectPlan(input: RunScenarioInput): Promise<{
   const query = planQuery(input)
   const found = await input.plans?.findApproved(query)
   const plan = found && planApplies(found, query) ? found : undefined
-  if (plan && input.applicationRevision === undefined && process.env.CI) {
+  if (plan && input.applicationRevision === undefined && input.ci) {
     throw new Error(
       'CI Replay requires applicationRevision. Set applicationRevision or --application-revision.',
     )

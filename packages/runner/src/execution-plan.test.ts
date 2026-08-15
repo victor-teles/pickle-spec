@@ -4,8 +4,8 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
   createFilePlanStore,
-  createMemoryPlanStore,
   type ExecutionPlan,
+  type ExecutionPlanStore,
   planApplies,
 } from '../index'
 
@@ -88,7 +88,12 @@ describe('execution plan store', () => {
   })
 
   test('returns only an approved plan that applies to the current query', async () => {
-    const store = createMemoryPlanStore([applicable])
+    const store: ExecutionPlanStore = {
+      async findApproved(query) {
+        return planApplies(applicable, query) ? applicable : undefined
+      },
+      async saveCandidate() {},
+    }
     const found = await store.findApproved({
       scenarioId: 'scnbbbbbbbbbbbb',
       scenarioRevision: 'rev-a',

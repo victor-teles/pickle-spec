@@ -325,6 +325,7 @@ async function run(argv: string[]): Promise<number> {
       selections,
       ...resolvedConfiguration,
       plans: createFilePlanStore(process.cwd()),
+      ci: Boolean(process.env.CI),
       signal: controller.signal,
       onEvent(event) {
         console.log(JSON.stringify({ kind: 'run-event', event }))
@@ -336,15 +337,13 @@ async function run(argv: string[]): Promise<number> {
         JSON.stringify({ kind: 'test-result', result: scenarioRun.result }),
       )
     }
-    if (runs.some(({ result }) => result.state === 'cancelled')) return 130
+    const states = runs.map(({ result }) => result.state)
+    if (states.includes('cancelled')) return 130
     if (
-      runs.some(
-        ({ result }) =>
-          result.state === 'failed' ||
-          result.state === 'infrastructure-error' ||
-          (result.state === 'passed-with-adaptation' &&
-            config.policy?.adaptedResults === 'reject'),
-      )
+      states.includes('failed') ||
+      states.includes('infrastructure-error') ||
+      (config.policy?.adaptedResults === 'reject' &&
+        states.includes('passed-with-adaptation'))
     ) {
       return 1
     }
