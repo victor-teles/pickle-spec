@@ -163,11 +163,19 @@ export async function runScenario(input: RunScenarioInput): Promise<ScenarioRun>
     return { events, result }
   }
   const steps: TestStepResult[] = []
-  let state: TestResultState = 'passed'
-  let message: string | undefined
+  let state: TestResultState = input.signal?.aborted ? 'cancelled' : 'passed'
+  let message: string | undefined = input.signal?.aborted
+    ? 'Scenario cancelled before step execution started'
+    : undefined
 
   try {
     for (const step of input.scenario.steps) {
+      if (input.signal?.aborted) {
+        state = 'cancelled'
+        message = 'Scenario cancelled before the next step started'
+        break
+      }
+
       await emit({ type: 'step-started', step })
       let execution: StepExecution
       try {
@@ -185,6 +193,21 @@ export async function runScenario(input: RunScenarioInput): Promise<ScenarioRun>
         await emit({ type: 'step-finished', result })
         break
       }
+
+      if (input.signal?.aborted) {
+        state = 'cancelled'
+        message = 'Scenario cancelled during step execution'
+        const result: TestStepResult = {
+          step,
+          state,
+          resolvedActions: execution.resolvedActions,
+          message,
+        }
+        steps.push(result)
+        await emit({ type: 'step-finished', result })
+        break
+      }
+
       const result: TestStepResult = {
         step,
         state: execution.state,

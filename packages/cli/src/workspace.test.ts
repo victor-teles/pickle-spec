@@ -28,13 +28,29 @@ export default {
   adapter: {
     async openSession() {
       return {
-        async executeStep(step) {
+        async executeStep(step, signal) {
+          if (process.env.PICKLE_TEST_STEP_MARKER) {
+            await Bun.write(process.env.PICKLE_TEST_STEP_MARKER, 'started')
+          }
+          if (process.env.PICKLE_TEST_WAIT_FOR_ABORT === 'true') {
+            await new Promise((resolve, reject) => {
+              const onAbort = () => {
+                signal?.removeEventListener('abort', onAbort)
+                reject(new DOMException('Scenario cancelled', 'AbortError'))
+              }
+              signal?.addEventListener('abort', onAbort, { once: true })
+            })
+          }
           return {
             state,
             resolvedActions: [{ description: \`Deterministic action: \${step.text}\` }],
           }
         },
-        async close() {},
+        async close() {
+          if (process.env.PICKLE_TEST_CLOSE_MARKER) {
+            await Bun.write(process.env.PICKLE_TEST_CLOSE_MARKER, 'closed')
+          }
+        },
       }
     },
   },
@@ -132,5 +148,50 @@ export default {
         },
       })
     }
+  })
+
+  test('SIGINT emits a cancelled result and closes the logical session', async () => {
+    const stepMarker = join(workspace, 'step-started.txt')
+    const closeMarker = join(workspace, 'session-closed.txt')
+    const child = Bun.spawn({
+      cmd: [
+        pickleCommand,
+        'run',
+        'purchase.feature',
+        '--extensions',
+        'pickle.extensions.ts',
+      ],
+      cwd: workspace,
+      env: {
+        ...Bun.env,
+        PICKLE_TEST_OUTCOME: 'passed',
+        PICKLE_TEST_WAIT_FOR_ABORT: 'true',
+        PICKLE_TEST_STEP_MARKER: stepMarker,
+        PICKLE_TEST_CLOSE_MARKER: closeMarker,
+      },
+      stdout: 'pipe',
+      stderr: 'pipe',
+    })
+
+    for (let attempt = 0; attempt < 200 && !(await Bun.file(stepMarker).exists()); attempt++) {
+      await Bun.sleep(5)
+    }
+    expect(await Bun.file(stepMarker).exists()).toBe(true)
+
+    child.kill('SIGINT')
+    const [exitCode, stdout, stderr] = await Promise.all([
+      child.exited,
+      new Response(child.stdout).text(),
+      new Response(child.stderr).text(),
+    ])
+    const records = stdout.trim().split('\n').map(line => JSON.parse(line))
+
+    expect(stderr).toBe('')
+    expect(exitCode).toBe(130)
+    expect(records.at(-1)).toMatchObject({
+      kind: 'test-result',
+      result: { state: 'cancelled' },
+    })
+    expect(await Bun.file(closeMarker).text()).toBe('closed')
   })
 })

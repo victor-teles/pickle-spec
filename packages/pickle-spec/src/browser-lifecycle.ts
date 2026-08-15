@@ -106,10 +106,15 @@ export async function createStagehandAndNavigate(
   reporter: ReporterContext,
 ): Promise<Stagehand> {
   const stagehand = await createStagehand(browserConfig, verbose, reporter)
-  const page = await getActivePage(stagehand)
-  if (verbose) reporter.verbose(`Navigating to ${baseUrl}`)
-  await navigateAndSimplify(page, baseUrl, { waitUntil: 'domcontentloaded', timeout: navTimeout }, browserConfig.domSimplification ?? true)
-  return stagehand
+  try {
+    const page = await getActivePage(stagehand)
+    if (verbose) reporter.verbose(`Navigating to ${baseUrl}`)
+    await navigateAndSimplify(page, baseUrl, { waitUntil: 'domcontentloaded', timeout: navTimeout }, browserConfig.domSimplification ?? true)
+    return stagehand
+  } catch (error) {
+    await closeStagehand(stagehand)
+    throw error
+  }
 }
 
 export async function closeStagehand(stagehand: Stagehand): Promise<void> {

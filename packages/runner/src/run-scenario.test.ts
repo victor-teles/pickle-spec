@@ -133,6 +133,45 @@ describe('runScenario', () => {
     expect(openSession).not.toHaveBeenCalled()
   })
 
+  test('materializes cancellation when the signal aborts while a step resolves normally', async () => {
+    const controller = new AbortController()
+    const close = mock(async () => {})
+
+    const run = await runScenario({
+      specification,
+      scenario,
+      executionTargetProfile: { id: 'deterministic' },
+      adapter: {
+        async openSession() {
+          return {
+            async executeStep() {
+              controller.abort()
+              return {
+                state: 'passed',
+                resolvedActions: [{ description: 'Completed after cancellation' }],
+              }
+            },
+            close,
+          }
+        },
+      },
+      signal: controller.signal,
+    })
+
+    expect(run.result).toMatchObject({
+      state: 'cancelled',
+      message: 'Scenario cancelled during step execution',
+      steps: [{ state: 'cancelled' }],
+    })
+    expect(run.events.map(event => event.type)).toEqual([
+      'scenario-started',
+      'step-started',
+      'step-finished',
+      'scenario-finished',
+    ])
+    expect(close).toHaveBeenCalledTimes(1)
+  })
+
   test('materializes an infrastructure error when the adapter cannot open a logical session', async () => {
     const run = await runScenario({
       specification,

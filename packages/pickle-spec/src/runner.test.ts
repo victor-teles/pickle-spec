@@ -4,6 +4,7 @@ const state = {
   createStagehandCalls: 0,
   closeStagehandCalls: 0,
   resetBrowserStateCalls: 0,
+  captureScreenshotCalls: 0,
   startServerCalls: 0,
   stopServerCalls: 0,
   scenarioStarts: [] as string[],
@@ -150,6 +151,9 @@ await mock.module('./reporter', () => ({
     state.scenarioIgnored.push(name)
   },
   reportFeatureStart: () => {},
+  reportServerReady: () => {},
+  reportServerReused: () => {},
+  reportServerStarting: () => {},
   reportVerbose: () => {},
   suppressThirdPartyLogs: () => () => {},
   createDirectReporter: () => ({
@@ -185,7 +189,10 @@ await mock.module('./reporter', () => ({
 }))
 
 await mock.module('./screenshots', () => ({
-  captureScreenshot: async () => undefined,
+  captureScreenshot: async () => {
+    state.captureScreenshotCalls++
+    return undefined
+  },
   sanitize: (value: string) => value,
 }))
 
@@ -215,6 +222,7 @@ describe('runFeatures', () => {
     state.createStagehandCalls = 0
     state.closeStagehandCalls = 0
     state.resetBrowserStateCalls = 0
+    state.captureScreenshotCalls = 0
     state.startServerCalls = 0
     state.stopServerCalls = 0
     state.scenarioStarts = []
@@ -464,6 +472,39 @@ describe('runFeatures', () => {
     const scenario = result.features[0]!.scenarios[0]!
     expect(scenario.failureKind).toBe('infrastructure')
     expect(scenario.error).toContain('Step timed out')
+  })
+
+  test('prevents a timed-out step from capturing artifacts after the result is final', async () => {
+    const step = makeStep('step-1', 'I click the slow button')
+    state.stepInfoMap.set(step.astNodeIds[0]!, { keyword: 'When ', type: 'Action' })
+    state.stagehands.push(createFakeStagehand({ actDelayMs: 20 }))
+
+    const result = await runFeatures([
+      makeFeature('Timeout Isolation Feature', [
+        makePickle('Slow action', [step]),
+      ]),
+    ], {
+      browser: {
+        env: 'LOCAL',
+        modelName: 'custom-provider/model-1',
+        headless: true,
+      },
+      screenshots: {
+        mode: 'on-step',
+      },
+      concurrency: 1,
+      execution: {
+        stepTimeoutMs: 1,
+        retryOn: 'infrastructure',
+      },
+    }, {
+      verbose: false,
+    })
+
+    expect(result.features[0]!.scenarios[0]!.failureKind).toBe('infrastructure')
+    expect(state.closeStagehandCalls).toBeGreaterThan(0)
+    await Bun.sleep(30)
+    expect(state.captureScreenshotCalls).toBe(0)
   })
 
   test('returns infrastructure failures when the managed server never starts', async () => {

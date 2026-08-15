@@ -57,6 +57,13 @@ class TimeoutError extends Error {
   }
 }
 
+class StepExecutionAbortedError extends Error {
+  constructor() {
+    super('Step execution aborted')
+    this.name = 'StepExecutionAbortedError'
+  }
+}
+
 function makeFailedStepResult(
   step: PickleStep,
   startTime: number,
@@ -105,15 +112,25 @@ function shouldRetryScenario(result: ScenarioResult, config: PickleSpecConfig, a
   return result.status === 'failed' && result.failureKind === 'infrastructure'
 }
 
-function withTimeout<T>(promise: Promise<T>, timeoutMs: number | undefined, error: TimeoutError): Promise<T> {
+function withTimeout<T>(
+  promise: Promise<T>,
+  timeoutMs: number | undefined,
+  error: TimeoutError,
+  onTimeout: () => Promise<void>,
+): Promise<T> {
   if (!timeoutMs) return promise
 
   return Promise.race([
     promise,
-    Bun.sleep(timeoutMs).then(() => {
+    Bun.sleep(timeoutMs).then(async () => {
+      await onTimeout()
       throw error
     }),
   ])
+}
+
+function throwIfStepExecutionAborted(signal?: AbortSignal): void {
+  if (signal?.aborted) throw new StepExecutionAbortedError()
 }
 
 async function maybeScreenshot(
@@ -213,18 +230,22 @@ async function executeWithObserveAct(
   reporter: ReporterContext,
   observeTimeout = 10000,
   actTimeoutMs = 15000,
+  signal?: AbortSignal,
 ): Promise<{ success: boolean; error?: string }[]> {
+  throwIfStepExecutionAborted(signal)
   if (verbose) reporter.verbose(`Observing: "${prompt}"`)
 
   let { data: actions } = await withCancellation(
     stagehand.observe(prompt, { timeout: observeTimeout }),
   )
+  throwIfStepExecutionAborted(signal)
 
   if (actions.length === 0) {
     if (verbose) reporter.verbose('Observe returned no actions, retrying once')
     ;({ data: actions } = await withCancellation(
       stagehand.observe(prompt, { timeout: observeTimeout }),
     ))
+    throwIfStepExecutionAborted(signal)
   }
 
   if (actions.length === 0) {
@@ -234,17 +255,20 @@ async function executeWithObserveAct(
   const executedActions: { success: boolean; error?: string }[] = []
 
   for (const action of actions) {
+    throwIfStepExecutionAborted(signal)
     if (isCancelled()) throw new CancellationError()
     if (verbose) reporter.verbose(`Acting: ${action.description}`)
     try {
       const result = await withCancellation(
         stagehand.act(action, { timeout: actTimeoutMs }),
       )
+      throwIfStepExecutionAborted(signal)
       executedActions.push({
         success: result.data.success,
         error: result.data.success ? undefined : result.data.message,
       })
     } catch (err) {
+      if (err instanceof StepExecutionAbortedError) throw err
       rethrowIfCancellation(err)
       if (verbose) reporter.verbose(`Act threw error`)
       executedActions.push({ success: false, error: err instanceof Error ? err.message : String(err) })
@@ -267,16 +291,20 @@ async function executeStep(
   domSimplification = true,
   observeTimeout = 10000,
   actTimeoutMs = 15000,
+  signal?: AbortSignal,
 ): Promise<StepResult> {
   const startTime = Date.now()
   const prompt = buildStepPrompt(step)
+  throwIfStepExecutionAborted(signal)
 
   let recorder: TraceRecorder | null = null
   if (traceCtx) {
     try { recorder = await startStepTrace(stagehand) } catch { }
+    throwIfStepExecutionAborted(signal)
   }
 
   async function finalize(result: StepResult): Promise<StepResult> {
+    throwIfStepExecutionAborted(signal)
     if (recorder && traceCtx) {
       try {
         await recorder.stop()
@@ -294,6 +322,7 @@ async function executeStep(
 
       if (navMatch && effectiveType === 'Context') {
         const page = await getActivePage(stagehand)
+        throwIfStepExecutionAborted(signal)
         const target = navMatch[1]!.trim()
         const url = target.startsWith('/') ? `${baseUrl}${target}` : target
 
@@ -306,7 +335,7 @@ async function executeStep(
         }
       } else {
         const execResults = await executeWithObserveAct(
-          stagehand, prompt, verbose, reporter, observeTimeout, actTimeoutMs,
+          stagehand, prompt, verbose, reporter, observeTimeout, actTimeoutMs, signal,
         )
         for (const execResult of execResults) {
           if (!execResult.success) {
@@ -325,6 +354,7 @@ async function executeStep(
     const { data: verification } = await withCancellation(
       stagehand.extract(verificationPrompt, VerificationSchema),
     )
+    throwIfStepExecutionAborted(signal)
 
     if (!verification.meetsExpectation) {
       const error = `Expected: "${prompt}" | Actual: ${verification.actualState}`
@@ -333,6 +363,7 @@ async function executeStep(
 
     return await finalize({ step, status: 'passed', durationMs: Date.now() - startTime })
   } catch (err) {
+    if (err instanceof StepExecutionAbortedError) throw err
     rethrowIfCancellation(err)
     const result = makeFailedStepResult(step, startTime, err instanceof Error ? err.message : String(err), 'infrastructure')
     if (!isCancelled()) return await finalize(result)
@@ -418,6 +449,7 @@ async function executeScenarioAttempt(
       : `Step timed out after ${effectiveStepTimeout}ms`
 
     try {
+      const stepController = new AbortController()
       const result = await withTimeout(
         executeStep(
           stagehand, step, effectiveType, baseUrl, navTimeout,
@@ -425,9 +457,14 @@ async function executeScenarioAttempt(
           config.browser?.domSimplification ?? true,
           config.browser?.observeTimeout ?? 10000,
           config.browser?.actTimeoutMs ?? 15000,
+          stepController.signal,
         ),
         effectiveStepTimeout,
         new TimeoutError(timeoutMessage, timeoutKind),
+        async () => {
+          stepController.abort()
+          await closeStagehand(stagehand)
+        },
       )
       stepResults.push(result)
       reporter.stepResult(keyword, step.text, result)

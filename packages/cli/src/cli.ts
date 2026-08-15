@@ -48,34 +48,43 @@ async function loadExtensions(filePath: string): Promise<Extensions> {
 }
 
 async function main(argv: string[]): Promise<number> {
-  const args = parseRunArguments(argv)
-  const specification = await parseSpecificationFile(resolve(args.featurePath))
-  const scenario = specification.scenarios[0]
+  const controller = new AbortController()
+  const onSigint = () => controller.abort()
+  process.on('SIGINT', onSigint)
 
-  if (!scenario) {
-    throw new Error(`Specification "${specification.name}" does not contain a Scenario`)
+  try {
+    const args = parseRunArguments(argv)
+    const specification = await parseSpecificationFile(resolve(args.featurePath))
+    const scenario = specification.scenarios[0]
+
+    if (!scenario) {
+      throw new Error(`Specification "${specification.name}" does not contain a Scenario`)
+    }
+
+    const extensions = await loadExtensions(resolve(args.extensionsPath))
+    const run = await runScenario({
+      specification,
+      scenario,
+      executionTargetProfile: extensions.executionTargetProfile,
+      adapter: extensions.adapter,
+      signal: controller.signal,
+      onEvent(event) {
+        console.log(JSON.stringify({ kind: 'run-event', event }))
+      },
+    })
+
+    console.log(JSON.stringify({ kind: 'test-result', result: run.result }))
+
+    if (
+      run.result.state === 'passed'
+      || run.result.state === 'passed-with-adaptation'
+      || run.result.state === 'skipped'
+    ) return 0
+    if (run.result.state === 'cancelled') return 130
+    return 1
+  } finally {
+    process.off('SIGINT', onSigint)
   }
-
-  const extensions = await loadExtensions(resolve(args.extensionsPath))
-  const run = await runScenario({
-    specification,
-    scenario,
-    executionTargetProfile: extensions.executionTargetProfile,
-    adapter: extensions.adapter,
-    onEvent(event) {
-      console.log(JSON.stringify({ kind: 'run-event', event }))
-    },
-  })
-
-  console.log(JSON.stringify({ kind: 'test-result', result: run.result }))
-
-  if (
-    run.result.state === 'passed'
-    || run.result.state === 'passed-with-adaptation'
-    || run.result.state === 'skipped'
-  ) return 0
-  if (run.result.state === 'cancelled') return 130
-  return 1
 }
 
 try {
