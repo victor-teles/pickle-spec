@@ -12,7 +12,7 @@ This repository is a Bun + Turborepo monorepo:
 - `packages/cli` — executable package composition
 - `apps/example` — sample Specifications
 
-Use `bun run typecheck` and `bun run test` from the repo root. Those scripts run through Turborepo.
+Use `bun run lint`, `bun run typecheck`, and `bun run test` from the repo root. Typecheck and test run through Turborepo. Lint and format use Biome from the repo root.
 
 Default to using Bun instead of Node.js.
 
@@ -42,9 +42,24 @@ Use `bun test` to run tests.
 import { test, expect } from "bun:test";
 
 test("hello world", () => {
-  expect(1).toBe(1);
+ expect(1).toBe(1);
 });
 ```
+
+## Lint and format
+
+Use Biome from the repo root. Do not add ESLint or Prettier.
+
+```sh
+bun run lint
+bun run format
+```
+
+`bun run lint` checks formatting, import order, and lint rules. `bun run format` applies safe fixes. Configuration lives in `biome.json`.
+
+Write new TypeScript with 2-space indent, single quotes, and semicolons only when needed. Name variables in camelCase. Do not declare `SCREAMING_SNAKE_CASE` constants. Object keys may use CONSTANT_CASE when they match external names such as environment variables.
+
+After you change TypeScript or JSON files, run `bun run lint` before you finish.
 
 ## Frontend
 

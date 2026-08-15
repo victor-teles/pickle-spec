@@ -1,23 +1,31 @@
 import { expect, mock, test } from 'bun:test'
 import type { ScenarioSelection } from '@pickle-spec/spec'
-import { runScenarios, type ExecutionTargetAdapter } from '../index'
+import { type ExecutionTargetAdapter, runScenarios } from '../index'
 
-const selections: ScenarioSelection[] = ['First', 'Ignored', 'Third'].map((name, index) => {
-  const scenario = {
-    name,
-    tags: index === 1 ? ['@ignore'] : [],
-    steps: [{ keyword: 'Then', text: `${name} completes`, type: 'outcome' as const }],
-  }
-  return {
-    specification: {
-      name: 'Scheduling',
-      source: { uri: 'features/scheduling.feature', language: 'en' },
-      tags: [],
-      scenarios: [scenario],
-    },
-    scenario,
-  }
-})
+const selections: ScenarioSelection[] = ['First', 'Ignored', 'Third'].map(
+  (name, index) => {
+    const scenario = {
+      name,
+      tags: index === 1 ? ['@ignore'] : [],
+      steps: [
+        {
+          keyword: 'Then',
+          text: `${name} completes`,
+          type: 'outcome' as const,
+        },
+      ],
+    }
+    return {
+      specification: {
+        name: 'Scheduling',
+        source: { uri: 'features/scheduling.feature', language: 'en' },
+        tags: [],
+        scenarios: [scenario],
+      },
+      scenario,
+    }
+  },
+)
 
 test('runs selected Scenarios concurrently while preserving stable test-result order', async () => {
   let active = 0
@@ -30,7 +38,9 @@ test('runs selected Scenarios concurrently while preserving stable test-result o
         await Bun.sleep(step.text.startsWith('First') ? 20 : 1)
         return { state: 'passed' as const, resolvedActions: [] }
       },
-      async close() { active-- },
+      async close() {
+        active--
+      },
     }
   })
   const adapter: ExecutionTargetAdapter = { openSession }
@@ -42,7 +52,9 @@ test('runs selected Scenarios concurrently while preserving stable test-result o
     concurrency: 2,
   })
 
-  expect(runs.map(run => [run.result.scenario.name, run.result.state])).toEqual([
+  expect(
+    runs.map((run) => [run.result.scenario.name, run.result.state]),
+  ).toEqual([
     ['First', 'passed'],
     ['Ignored', 'skipped'],
     ['Third', 'passed'],
@@ -57,14 +69,21 @@ test('rejects a target that lacks a Scenario capability requirement before openi
   })
   const selection = selections[0]!
 
-  await expect(runScenarios({
-    selections: [{
-      ...selection,
-      scenario: { ...selection.scenario, capabilityRequirements: ['geolocation'] },
-    }],
-    executionTargetProfile: { id: 'web' },
-    adapter: { capabilities: ['screenshots'], openSession },
-  })).rejects.toThrow(
+  await expect(
+    runScenarios({
+      selections: [
+        {
+          ...selection,
+          scenario: {
+            ...selection.scenario,
+            capabilityRequirements: ['geolocation'],
+          },
+        },
+      ],
+      executionTargetProfile: { id: 'web' },
+      adapter: { capabilities: ['screenshots'], openSession },
+    }),
+  ).rejects.toThrow(
     'Execution target profile "web" lacks required capabilities for Scenario "First": geolocation',
   )
   expect(openSession).not.toHaveBeenCalled()

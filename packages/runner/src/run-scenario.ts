@@ -124,7 +124,10 @@ function errorMessage(error: unknown): string {
 }
 
 function isCancellation(error: unknown, signal?: AbortSignal): boolean {
-  return Boolean(signal?.aborted) || (error instanceof Error && error.name === 'AbortError')
+  return (
+    Boolean(signal?.aborted) ||
+    (error instanceof Error && error.name === 'AbortError')
+  )
 }
 
 function executeWithDeadline<T>(
@@ -146,10 +149,12 @@ function executeWithDeadline<T>(
       controller.abort()
       reject(new ExecutionDeadlineError(timeoutMessage))
     }, timeoutMs)
-    operation(controller.signal).then(resolve, reject).finally(() => {
-      clearTimeout(timer)
-      signal?.removeEventListener('abort', onAbort)
-    })
+    operation(controller.signal)
+      .then(resolve, reject)
+      .finally(() => {
+        clearTimeout(timer)
+        signal?.removeEventListener('abort', onAbort)
+      })
   })
 }
 
@@ -173,7 +178,9 @@ function createTestResult(
   }
 }
 
-async function runScenarioAttempt(input: RunScenarioInput): Promise<ScenarioRun> {
+async function runScenarioAttempt(
+  input: RunScenarioInput,
+): Promise<ScenarioRun> {
   const scenarioStartedAt = Date.now()
   const events: RunEvent[] = []
   let sequence = 0
@@ -193,7 +200,12 @@ async function runScenarioAttempt(input: RunScenarioInput): Promise<ScenarioRun>
   })
 
   if (input.scenario.tags.includes('@ignore')) {
-    const result = createTestResult(input, 'skipped', [], 'Scenario is tagged @ignore')
+    const result = createTestResult(
+      input,
+      'skipped',
+      [],
+      'Scenario is tagged @ignore',
+    )
     await emit({ type: 'scenario-finished', result })
     return { events, result }
   }
@@ -220,7 +232,9 @@ async function runScenarioAttempt(input: RunScenarioInput): Promise<ScenarioRun>
   } catch (error) {
     const result = createTestResult(
       input,
-      isCancellation(error, input.signal) ? 'cancelled' : 'infrastructure-error',
+      isCancellation(error, input.signal)
+        ? 'cancelled'
+        : 'infrastructure-error',
       [],
       errorMessage(error),
     )
@@ -244,23 +258,30 @@ async function runScenarioAttempt(input: RunScenarioInput): Promise<ScenarioRun>
       await emit({ type: 'step-started', step })
       let execution: StepExecution
       try {
-        const scenarioRemaining = input.timeout?.scenarioMs === undefined
-          ? undefined
-          : input.timeout.scenarioMs - (Date.now() - scenarioStartedAt)
-        const usesScenarioDeadline = scenarioRemaining !== undefined
-          && (input.timeout?.stepMs === undefined || scenarioRemaining <= input.timeout.stepMs)
-        const timeoutMs = usesScenarioDeadline ? Math.max(0, scenarioRemaining) : input.timeout?.stepMs
+        const scenarioRemaining =
+          input.timeout?.scenarioMs === undefined
+            ? undefined
+            : input.timeout.scenarioMs - (Date.now() - scenarioStartedAt)
+        const usesScenarioDeadline =
+          scenarioRemaining !== undefined &&
+          (input.timeout?.stepMs === undefined ||
+            scenarioRemaining <= input.timeout.stepMs)
+        const timeoutMs = usesScenarioDeadline
+          ? Math.max(0, scenarioRemaining)
+          : input.timeout?.stepMs
         const timeoutMessage = usesScenarioDeadline
           ? `Scenario exceeded its ${input.timeout?.scenarioMs}ms deadline`
           : `Step exceeded its ${input.timeout?.stepMs}ms deadline`
         execution = await executeWithDeadline(
-          operationSignal => session.executeStep(step, operationSignal),
+          (operationSignal) => session.executeStep(step, operationSignal),
           input.signal,
           timeoutMs,
           timeoutMessage,
         )
       } catch (error) {
-        state = isCancellation(error, input.signal) ? 'cancelled' : 'infrastructure-error'
+        state = isCancellation(error, input.signal)
+          ? 'cancelled'
+          : 'infrastructure-error'
         message = errorMessage(error)
         const result: TestStepResult = {
           step,
@@ -292,7 +313,9 @@ async function runScenarioAttempt(input: RunScenarioInput): Promise<ScenarioRun>
         state: execution.state,
         resolvedActions: execution.resolvedActions,
         ...(execution.message ? { message: execution.message } : {}),
-        ...(execution.artifacts?.length ? { artifacts: execution.artifacts } : {}),
+        ...(execution.artifacts?.length
+          ? { artifacts: execution.artifacts }
+          : {}),
       }
       steps.push(result)
       await emit({ type: 'step-finished', result })
@@ -324,29 +347,41 @@ async function runScenarioAttempt(input: RunScenarioInput): Promise<ScenarioRun>
   return { events, result }
 }
 
-export async function runScenario(input: RunScenarioInput): Promise<ScenarioRun> {
+export async function runScenario(
+  input: RunScenarioInput,
+): Promise<ScenarioRun> {
   const events: RunEvent[] = []
   const maximumAttempts = (input.retry?.infrastructureErrors ?? 0) + 1
 
   for (let attempt = 1; attempt <= maximumAttempts; attempt++) {
-    const run = await runScenarioAttempt({ ...input, onEvent: undefined, retry: undefined })
-    const shouldRetry = run.result.state === 'infrastructure-error'
-      && attempt < maximumAttempts
-      && !input.signal?.aborted
+    const run = await runScenarioAttempt({
+      ...input,
+      onEvent: undefined,
+      retry: undefined,
+    })
+    const shouldRetry =
+      run.result.state === 'infrastructure-error' &&
+      attempt < maximumAttempts &&
+      !input.signal?.aborted
 
-    const result: TestResult = attempt === 1
-      ? run.result
-      : {
-          ...run.result,
-          attempts: attempt,
-          flaky: run.result.state === 'passed' || run.result.state === 'passed-with-adaptation',
-        }
+    const result: TestResult =
+      attempt === 1
+        ? run.result
+        : {
+            ...run.result,
+            attempts: attempt,
+            flaky:
+              run.result.state === 'passed' ||
+              run.result.state === 'passed-with-adaptation',
+          }
 
     for (const event of run.events) {
       const versionedEvent = {
         ...event,
         sequence: events.length + 1,
-        ...(event.type === 'scenario-finished' && !shouldRetry ? { result } : {}),
+        ...(event.type === 'scenario-finished' && !shouldRetry
+          ? { result }
+          : {}),
       } as RunEvent
       events.push(versionedEvent)
       await input.onEvent?.(versionedEvent)

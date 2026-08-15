@@ -1,10 +1,10 @@
 import type { ScenarioSelection } from '@pickle-spec/spec'
 import {
-  runScenario,
+  type ExecutionPolicy,
   type ExecutionTargetAdapter,
   type ExecutionTargetProfile,
-  type ExecutionPolicy,
   type RunEvent,
+  runScenario,
   type ScenarioRun,
 } from './run-scenario'
 
@@ -20,7 +20,9 @@ export interface RunScenariosInput extends ExecutionPolicy {
   ) => void | Promise<void>
 }
 
-export async function runScenarios(input: RunScenariosInput): Promise<ScenarioRun[]> {
+export async function runScenarios(
+  input: RunScenariosInput,
+): Promise<ScenarioRun[]> {
   const concurrency = input.concurrency ?? 1
   if (!Number.isInteger(concurrency) || concurrency < 1) {
     throw new Error('concurrency must be an integer greater than or equal to 1')
@@ -28,8 +30,9 @@ export async function runScenarios(input: RunScenariosInput): Promise<ScenarioRu
 
   const capabilities = new Set(input.adapter.capabilities ?? [])
   for (const { scenario } of input.selections) {
-    const missing = (scenario.capabilityRequirements ?? [])
-      .filter(requirement => !capabilities.has(requirement))
+    const missing = (scenario.capabilityRequirements ?? []).filter(
+      (requirement) => !capabilities.has(requirement),
+    )
     if (missing.length > 0) {
       throw new Error(
         `Execution target profile "${input.executionTargetProfile.id}" lacks required capabilities ` +
@@ -55,7 +58,7 @@ export async function runScenarios(input: RunScenariosInput): Promise<ScenarioRu
         retry: input.retry,
         timeout: input.timeout,
         onEvent: input.onEvent
-          ? event => input.onEvent!(event, selection)
+          ? (event) => input.onEvent!(event, selection)
           : undefined,
       })
     }

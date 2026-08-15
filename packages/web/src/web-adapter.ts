@@ -1,8 +1,10 @@
+import { mkdir } from 'node:fs/promises'
+import { join, resolve } from 'node:path'
 import {
-  Stagehand,
   browserbase,
   localBrowser,
   type ModelConfig,
+  Stagehand,
 } from '@browserbasehq/stagehand'
 import type {
   ExecutionTargetAdapter,
@@ -10,8 +12,6 @@ import type {
   TestArtifact,
 } from '@pickle-spec/runner'
 import type { ScenarioStep } from '@pickle-spec/spec'
-import { mkdir } from 'node:fs/promises'
-import { join, resolve } from 'node:path'
 import { z } from 'zod'
 
 export interface BrowserOptions {
@@ -49,22 +49,32 @@ function record(value: unknown, field: string): Record<string, unknown> {
   return value as Record<string, unknown>
 }
 
-function knownFields(value: Record<string, unknown>, fields: readonly string[], parent: string): void {
+function knownFields(
+  value: Record<string, unknown>,
+  fields: readonly string[],
+  parent: string,
+): void {
   for (const field of Object.keys(value)) {
-    if (!fields.includes(field)) throw new Error(`${parent}.${field} is not supported`)
+    if (!fields.includes(field))
+      throw new Error(`${parent}.${field} is not supported`)
   }
 }
 
 function optionalString(value: unknown, field: string): void {
-  if (value !== undefined && typeof value !== 'string') throw new Error(`${field} must be a string`)
+  if (value !== undefined && typeof value !== 'string')
+    throw new Error(`${field} must be a string`)
 }
 
 function optionalBoolean(value: unknown, field: string): void {
-  if (value !== undefined && typeof value !== 'boolean') throw new Error(`${field} must be a boolean`)
+  if (value !== undefined && typeof value !== 'boolean')
+    throw new Error(`${field} must be a boolean`)
 }
 
 function optionalPositiveInteger(value: unknown, field: string): void {
-  if (value !== undefined && (!Number.isInteger(value) || (value as number) < 1)) {
+  if (
+    value !== undefined &&
+    (!Number.isInteger(value) || (value as number) < 1)
+  ) {
     throw new Error(`${field} must be an integer greater than or equal to 1`)
   }
 }
@@ -83,35 +93,77 @@ export function validateWebAdapterOptions(value: unknown): WebAdapterOptions {
 
   if (web.browser !== undefined) {
     const browser = record(web.browser, 'web.browser')
-    knownFields(browser, [
-      'environment', 'modelName', 'modelApiKey', 'headless', 'browserbaseApiKey',
-      'browserbaseProjectId', 'cache', 'selfHeal', 'domSettleTimeoutMs', 'observeTimeoutMs',
-      'actTimeoutMs', 'navigationTimeoutMs',
-    ], 'web.browser')
-    if (browser.environment !== undefined && browser.environment !== 'local' && browser.environment !== 'browserbase') {
+    knownFields(
+      browser,
+      [
+        'environment',
+        'modelName',
+        'modelApiKey',
+        'headless',
+        'browserbaseApiKey',
+        'browserbaseProjectId',
+        'cache',
+        'selfHeal',
+        'domSettleTimeoutMs',
+        'observeTimeoutMs',
+        'actTimeoutMs',
+        'navigationTimeoutMs',
+      ],
+      'web.browser',
+    )
+    if (
+      browser.environment !== undefined &&
+      browser.environment !== 'local' &&
+      browser.environment !== 'browserbase'
+    ) {
       throw new Error('web.browser.environment must be local or browserbase')
     }
     optionalString(browser.modelName, 'web.browser.modelName')
     optionalString(browser.modelApiKey, 'web.browser.modelApiKey')
     optionalString(browser.browserbaseApiKey, 'web.browser.browserbaseApiKey')
-    optionalString(browser.browserbaseProjectId, 'web.browser.browserbaseProjectId')
+    optionalString(
+      browser.browserbaseProjectId,
+      'web.browser.browserbaseProjectId',
+    )
     optionalBoolean(browser.headless, 'web.browser.headless')
     optionalBoolean(browser.cache, 'web.browser.cache')
     optionalBoolean(browser.selfHeal, 'web.browser.selfHeal')
-    optionalPositiveInteger(browser.domSettleTimeoutMs, 'web.browser.domSettleTimeoutMs')
-    optionalPositiveInteger(browser.observeTimeoutMs, 'web.browser.observeTimeoutMs')
+    optionalPositiveInteger(
+      browser.domSettleTimeoutMs,
+      'web.browser.domSettleTimeoutMs',
+    )
+    optionalPositiveInteger(
+      browser.observeTimeoutMs,
+      'web.browser.observeTimeoutMs',
+    )
     optionalPositiveInteger(browser.actTimeoutMs, 'web.browser.actTimeoutMs')
-    optionalPositiveInteger(browser.navigationTimeoutMs, 'web.browser.navigationTimeoutMs')
+    optionalPositiveInteger(
+      browser.navigationTimeoutMs,
+      'web.browser.navigationTimeoutMs',
+    )
   }
 
   if (web.screenshots !== undefined) {
     const screenshots = record(web.screenshots, 'web.screenshots')
-    knownFields(screenshots, ['mode', 'outputDir', 'format', 'fullPage'], 'web.screenshots')
-    if (screenshots.mode !== undefined && !['off', 'on-failure', 'on-step'].includes(screenshots.mode as string)) {
-      throw new Error('web.screenshots.mode must be off, on-failure, or on-step')
+    knownFields(
+      screenshots,
+      ['mode', 'outputDir', 'format', 'fullPage'],
+      'web.screenshots',
+    )
+    if (
+      screenshots.mode !== undefined &&
+      !['off', 'on-failure', 'on-step'].includes(screenshots.mode as string)
+    ) {
+      throw new Error(
+        'web.screenshots.mode must be off, on-failure, or on-step',
+      )
     }
     optionalString(screenshots.outputDir, 'web.screenshots.outputDir')
-    if (screenshots.format !== undefined && screenshots.format !== 'png' && screenshots.format !== 'jpeg') {
+    if (
+      screenshots.format !== undefined &&
+      screenshots.format !== 'png' &&
+      screenshots.format !== 'jpeg'
+    ) {
       throw new Error('web.screenshots.format must be png or jpeg')
     }
     optionalBoolean(screenshots.fullPage, 'web.screenshots.fullPage')
@@ -128,17 +180,29 @@ export interface WebObservedAction {
 export interface WebAutomation {
   navigate(url: string, signal?: AbortSignal): Promise<void>
   observe(prompt: string, signal?: AbortSignal): Promise<WebObservedAction[]>
-  act(action: WebObservedAction, signal?: AbortSignal): Promise<{ success: boolean; message?: string }>
-  verify(prompt: string, signal?: AbortSignal): Promise<{
+  act(
+    action: WebObservedAction,
+    signal?: AbortSignal,
+  ): Promise<{ success: boolean; message?: string }>
+  verify(
+    prompt: string,
+    signal?: AbortSignal,
+  ): Promise<{
     meetsExpectation: boolean
     actualState: string
   }>
-  screenshot(options: { format: 'png' | 'jpeg'; fullPage: boolean }): Promise<Uint8Array>
+  screenshot(options: {
+    format: 'png' | 'jpeg'
+    fullPage: boolean
+  }): Promise<Uint8Array>
   close(): Promise<void>
 }
 
 export interface WebAutomationFactory {
-  open(input: { browser: BrowserOptions; signal?: AbortSignal }): Promise<WebAutomation>
+  open(input: {
+    browser: BrowserOptions
+    signal?: AbortSignal
+  }): Promise<WebAutomation>
 }
 
 const verificationSchema = z.object({
@@ -152,9 +216,9 @@ const navigationPattern = new RegExp(
     '|(?:eu )?(?:navego para|visito|abro|estou em)' +
     '|(?:yo )?(?:navego a|visito|abro|estoy en)' +
     '|(?:je )?(?:navigue vers|visite|ouvre|suis sur)' +
-  ')' +
-  '\\s+(?:(?:the|a|o|la|le|el|à)\\s+)?' +
-  '["\']?(.+?)["\']?\\s*$',
+    ')' +
+    '\\s+(?:(?:the|a|o|la|le|el|à)\\s+)?' +
+    '["\']?(.+?)["\']?\\s*$',
   'i',
 )
 
@@ -170,11 +234,11 @@ function withAbort<T>(operation: Promise<T>, signal?: AbortSignal): Promise<T> {
     const onAbort = () => reject(abortError())
     signal.addEventListener('abort', onAbort, { once: true })
     operation.then(
-      value => {
+      (value) => {
         signal.removeEventListener('abort', onAbort)
         resolvePromise(value)
       },
-      error => {
+      (error) => {
         signal.removeEventListener('abort', onAbort)
         reject(error)
       },
@@ -191,14 +255,19 @@ async function activePage(stagehand: Stagehand) {
 const stagehandFactory: WebAutomationFactory = {
   async open({ browser: options, signal }) {
     if (signal?.aborted) throw abortError()
-    const browser = options.environment === 'browserbase'
-      ? await browserbase.launch({
-          apiKey: options.browserbaseApiKey ?? process.env.BROWSERBASE_API_KEY!,
-          projectId: options.browserbaseProjectId ?? process.env.BROWSERBASE_PROJECT_ID!,
-        })
-      : await localBrowser.launch({ headless: options.headless ?? true })
+    const browser =
+      options.environment === 'browserbase'
+        ? await browserbase.launch({
+            apiKey:
+              options.browserbaseApiKey ?? process.env.BROWSERBASE_API_KEY!,
+            projectId:
+              options.browserbaseProjectId ??
+              process.env.BROWSERBASE_PROJECT_ID!,
+          })
+        : await localBrowser.launch({ headless: options.headless ?? true })
     const model: ModelConfig = {
-      modelName: (options.modelName ?? 'anthropic/claude-sonnet-4-6') as ModelConfig['modelName'],
+      modelName: (options.modelName ??
+        'anthropic/claude-sonnet-4-6') as ModelConfig['modelName'],
       ...(options.modelApiKey ? { apiKey: options.modelApiKey } : {}),
     }
     const stagehand = await Stagehand.create({
@@ -213,17 +282,24 @@ const stagehandFactory: WebAutomationFactory = {
     return {
       async navigate(url, operationSignal) {
         const page = await activePage(stagehand)
-        await withAbort(page.goto(url, {
-          waitUntil: 'domcontentloaded',
-          timeout: options.navigationTimeoutMs ?? 15_000,
-        }).then(() => undefined), operationSignal)
+        await withAbort(
+          page
+            .goto(url, {
+              waitUntil: 'domcontentloaded',
+              timeout: options.navigationTimeoutMs ?? 15_000,
+            })
+            .then(() => undefined),
+          operationSignal,
+        )
       },
       async observe(prompt, operationSignal) {
         const result = await withAbort(
-          stagehand.observe(prompt, { timeout: options.observeTimeoutMs ?? 10_000 }),
+          stagehand.observe(prompt, {
+            timeout: options.observeTimeoutMs ?? 10_000,
+          }),
           operationSignal,
         )
-        return result.data.map(action => ({
+        return result.data.map((action) => ({
           description: action.description,
           handle: action,
         }))
@@ -253,14 +329,20 @@ const stagehandFactory: WebAutomationFactory = {
       },
       async screenshot(screenshotOptions) {
         const page = await activePage(stagehand)
-        return new Uint8Array(await page.screenshot({
-          type: screenshotOptions.format,
-          fullPage: screenshotOptions.fullPage,
-        }))
+        return new Uint8Array(
+          await page.screenshot({
+            type: screenshotOptions.format,
+            fullPage: screenshotOptions.fullPage,
+          }),
+        )
       },
       async close() {
-        try { await stagehand.close() } catch {}
-        try { await stagehand.browser.close() } catch {}
+        try {
+          await stagehand.close()
+        } catch {}
+        try {
+          await stagehand.browser.close()
+        } catch {}
       },
     }
   },
@@ -270,7 +352,7 @@ function promptFor(step: ScenarioStep): string {
   let prompt = step.text
   if (step.argument?.dataTable) {
     prompt += '\n\nWith the following data:\n'
-    prompt += step.argument.dataTable.map(row => row.join(' | ')).join('\n')
+    prompt += step.argument.dataTable.map((row) => row.join(' | ')).join('\n')
   }
   if (step.argument?.docString) prompt += `\n\n${step.argument.docString}`
   return prompt
@@ -316,7 +398,9 @@ export function createWebAdapter(
         input.signal?.removeEventListener('abort', onAbort)
         await automation.close()
       }
-      const onAbort = () => { void close() }
+      const onAbort = () => {
+        void close()
+      }
       input.signal?.addEventListener('abort', onAbort, { once: true })
 
       async function screenshot(
@@ -326,7 +410,11 @@ export function createWebAdapter(
         const screenshotOptions = validatedOptions.screenshots
         const mode = screenshotOptions?.mode ?? 'off'
         if (mode === 'off') return undefined
-        if (mode === 'on-failure' && state !== 'failed' && state !== 'infrastructure-error') {
+        if (
+          mode === 'on-failure' &&
+          state !== 'failed' &&
+          state !== 'infrastructure-error'
+        ) {
           return undefined
         }
         if (state === 'cancelled' || state === 'skipped') return undefined
@@ -343,10 +431,13 @@ export function createWebAdapter(
             directory,
             `step-${String(stepIndex).padStart(2, '0')}-${state}-${safeName(step.text).slice(0, 40)}.${format}`,
           )
-          await Bun.write(path, await automation.screenshot({
-            format,
-            fullPage: screenshotOptions?.fullPage ?? false,
-          }))
+          await Bun.write(
+            path,
+            await automation.screenshot({
+              format,
+              fullPage: screenshotOptions?.fullPage ?? false,
+            }),
+          )
           return {
             kind: 'screenshot',
             path,
@@ -381,7 +472,10 @@ export function createWebAdapter(
           try {
             const navigation = prompt.match(navigationPattern)
             if (navigation) {
-              const url = navigationUrl(validatedOptions.baseUrl, navigation[1]!.trim())
+              const url = navigationUrl(
+                validatedOptions.baseUrl,
+                navigation[1]!.trim(),
+              )
               await automation.navigate(url, operationSignal)
               navigated = true
               return finish(step, {
@@ -392,7 +486,10 @@ export function createWebAdapter(
 
             await ensureNavigation(operationSignal)
             if (step.type === 'outcome') {
-              const verification = await automation.verify(prompt, operationSignal)
+              const verification = await automation.verify(
+                prompt,
+                operationSignal,
+              )
               if (!verification.meetsExpectation) {
                 return finish(step, {
                   state: 'failed',
@@ -407,7 +504,8 @@ export function createWebAdapter(
             }
 
             let actions = await automation.observe(prompt, operationSignal)
-            if (actions.length === 0) actions = await automation.observe(prompt, operationSignal)
+            if (actions.length === 0)
+              actions = await automation.observe(prompt, operationSignal)
             if (actions.length === 0) {
               return finish(step, {
                 state: 'infrastructure-error',
@@ -430,7 +528,10 @@ export function createWebAdapter(
             }
             return finish(step, { state: 'passed', resolvedActions })
           } catch (error) {
-            if (operationSignal?.aborted || (error instanceof Error && error.name === 'AbortError')) {
+            if (
+              operationSignal?.aborted ||
+              (error instanceof Error && error.name === 'AbortError')
+            ) {
               throw abortError()
             }
             return finish(step, {

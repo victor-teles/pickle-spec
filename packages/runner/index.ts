@@ -1,14 +1,18 @@
-export { runScenario } from './src/run-scenario'
-export { runScenarios } from './src/run-scenarios'
+export type {
+  ResolvedRunConfiguration,
+  RunConfiguration,
+  RunExtensionManifest,
+  RunExtensions,
+} from './src/configuration'
 export {
   resolveRunConfiguration,
   validateProjectRunConfiguration,
   validateRunConfiguration,
 } from './src/configuration'
 export type {
+  ExecutionPolicy,
   ExecutionTargetAdapter,
   ExecutionTargetProfile,
-  ExecutionPolicy,
   ExecutionTimeouts,
   OpenSessionInput,
   ResolvedAction,
@@ -21,10 +25,6 @@ export type {
   TestResult,
   TestResultState,
 } from './src/run-scenario'
+export { runScenario } from './src/run-scenario'
 export type { RunScenariosInput } from './src/run-scenarios'
-export type {
-  ResolvedRunConfiguration,
-  RunConfiguration,
-  RunExtensionManifest,
-  RunExtensions,
-} from './src/configuration'
+export { runScenarios } from './src/run-scenarios'

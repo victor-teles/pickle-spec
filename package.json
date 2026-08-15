@@ -1,13 +1,19 @@
 {
   "name": "pickle-spec-monorepo",
   "private": true,
-  "workspaces": ["apps/*", "packages/*"],
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
   "scripts": {
     "typecheck": "turbo run typecheck",
     "test": "turbo run test",
+    "lint": "biome check .",
+    "format": "biome check --write .",
     "run:example": "turbo run run:example --filter=@pickle-spec/example"
   },
   "devDependencies": {
+    "@biomejs/biome": "2.5.8",
     "@types/bun": "latest",
     "turbo": "^2.8.1",
     "typescript": "^5.9.3"
