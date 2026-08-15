@@ -21,6 +21,7 @@ To install dependencies and run the repository checks, use:
 
 ```bash
 bun install --frozen-lockfile
+bun run lint
 bun run typecheck
 bun run test
 ```

@@ -27,7 +27,10 @@ Feature: Example
     Then validation succeeds`,
   }
 
-  async function createCheckProject(name: string, fixture: CheckProjectFixture): Promise<string> {
+  async function createCheckProject(
+    name: string,
+    fixture: CheckProjectFixture,
+  ): Promise<string> {
     const project = join(workspace, name)
     await mkdir(project, { recursive: true })
     if (fixture.specification) {
@@ -35,7 +38,10 @@ Feature: Example
       await mkdir(dirname(path), { recursive: true })
       await Bun.write(path, fixture.specification.source)
     }
-    await Bun.write(join(project, 'pickle.config.jsonc'), JSON.stringify(fixture.config))
+    await Bun.write(
+      join(project, 'pickle.config.jsonc'),
+      JSON.stringify(fixture.config),
+    )
     await Bun.write(
       join(project, 'pickle.extensions.ts'),
       fixture.extensions ?? 'export default {}',
@@ -44,29 +50,46 @@ Feature: Example
   }
 
   function runCheck(project: string) {
-    return Bun.spawnSync({ cmd: [pickleCommand, 'check'], cwd: project, env: { ...Bun.env } })
+    return Bun.spawnSync({
+      cmd: [pickleCommand, 'check'],
+      cwd: project,
+      env: { ...Bun.env },
+    })
   }
 
   beforeAll(async () => {
     workspace = await mkdtemp(join(tmpdir(), 'pickle-spec-workspace-'))
     const packageDirectory = resolve(import.meta.dir, '..')
-    const packageManifest = await Bun.file(join(packageDirectory, 'package.json')).json() as {
+    const packageManifest = (await Bun.file(
+      join(packageDirectory, 'package.json'),
+    ).json()) as {
       bin: { pickle: string }
     }
     pickleCommand = join(workspace, 'node_modules', '.bin', 'pickle')
     await mkdir(join(workspace, 'node_modules', '.bin'), { recursive: true })
-    await symlink(resolve(packageDirectory, packageManifest.bin.pickle), pickleCommand)
-    await Bun.write(join(workspace, 'purchase.feature'), `@pickle:id:specpurchaseaaaaaa @pickle:state:active
+    await symlink(
+      resolve(packageDirectory, packageManifest.bin.pickle),
+      pickleCommand,
+    )
+    await Bun.write(
+      join(workspace, 'purchase.feature'),
+      `@pickle:id:specpurchaseaaaaaa @pickle:state:active
 Feature: Purchase
   @pickle:id:scnpurchasebbbbbb
   Scenario: Complete a purchase
     Given a product is in the basket
-    Then the purchase succeeds`)
-    await Bun.write(join(workspace, 'deterministic.config.jsonc'), JSON.stringify({
-      schemaVersion: 1,
-      executionTargetProfile: { id: 'deterministic' },
-    }))
-    await Bun.write(join(workspace, 'pickle.extensions.ts'), `
+    Then the purchase succeeds`,
+    )
+    await Bun.write(
+      join(workspace, 'deterministic.config.jsonc'),
+      JSON.stringify({
+        schemaVersion: 1,
+        executionTargetProfile: { id: 'deterministic' },
+      }),
+    )
+    await Bun.write(
+      join(workspace, 'pickle.extensions.ts'),
+      `
 const state = process.env.PICKLE_TEST_OUTCOME ?? 'passed'
 
 export default {
@@ -100,7 +123,8 @@ export default {
     },
   },
 }
-`)
+`,
+    )
   })
 
   afterAll(async () => {
@@ -132,8 +156,15 @@ export default {
 
     expect(stderr).toBe('')
     expect(exitCode).toBe(0)
-    const records = stdout.trim().split('\n').map(line => JSON.parse(line))
-    expect(records.filter(record => record.kind === 'run-event').map(record => record.event.type)).toEqual([
+    const records = stdout
+      .trim()
+      .split('\n')
+      .map((line) => JSON.parse(line))
+    expect(
+      records
+        .filter((record) => record.kind === 'run-event')
+        .map((record) => record.event.type),
+    ).toEqual([
       'scenario-started',
       'step-started',
       'step-finished',
@@ -158,25 +189,48 @@ export default {
   test('initializes a project without overwriting files and checks it without opening a session', async () => {
     const project = join(workspace, 'initialized-project')
     await mkdir(join(project, 'features'), { recursive: true })
-    await Bun.write(join(project, 'features', 'example.feature'), `@pickle:id:specaaaaaaaaaaaa @pickle:state:active
+    await Bun.write(
+      join(project, 'features', 'example.feature'),
+      `@pickle:id:specaaaaaaaaaaaa @pickle:state:active
 Feature: Example
   @pickle:id:scnbbbbbbbbbbbb
   Scenario: Safe check
-    Then validation is offline`)
+    Then validation is offline`,
+    )
 
-    const first = Bun.spawnSync({ cmd: [pickleCommand, 'init'], cwd: project, env: { ...Bun.env } })
+    const first = Bun.spawnSync({
+      cmd: [pickleCommand, 'init'],
+      cwd: project,
+      env: { ...Bun.env },
+    })
     expect(first.exitCode).toBe(0)
     expect(first.stdout.toString()).toContain('Created pickle.config.jsonc')
     expect(first.stdout.toString()).toContain('Created pickle.extensions.ts')
 
-    const originalExtensions = await Bun.file(join(project, 'pickle.extensions.ts')).text()
-    const second = Bun.spawnSync({ cmd: [pickleCommand, 'init'], cwd: project, env: { ...Bun.env } })
+    const originalExtensions = await Bun.file(
+      join(project, 'pickle.extensions.ts'),
+    ).text()
+    const second = Bun.spawnSync({
+      cmd: [pickleCommand, 'init'],
+      cwd: project,
+      env: { ...Bun.env },
+    })
     expect(second.exitCode).toBe(0)
-    expect(second.stdout.toString()).toContain('Skipped pickle.config.jsonc: file already exists')
-    expect(second.stdout.toString()).toContain('Skipped pickle.extensions.ts: file already exists')
-    expect(await Bun.file(join(project, 'pickle.extensions.ts')).text()).toBe(originalExtensions)
+    expect(second.stdout.toString()).toContain(
+      'Skipped pickle.config.jsonc: file already exists',
+    )
+    expect(second.stdout.toString()).toContain(
+      'Skipped pickle.extensions.ts: file already exists',
+    )
+    expect(await Bun.file(join(project, 'pickle.extensions.ts')).text()).toBe(
+      originalExtensions,
+    )
 
-    const checked = Bun.spawnSync({ cmd: [pickleCommand, 'check'], cwd: project, env: { ...Bun.env } })
+    const checked = Bun.spawnSync({
+      cmd: [pickleCommand, 'check'],
+      cwd: project,
+      env: { ...Bun.env },
+    })
     expect(checked.exitCode).toBe(0)
     expect(checked.stdout.toString()).toContain('Project is valid')
     expect(checked.stderr.toString()).toBe('')
@@ -199,9 +253,13 @@ export default {}
     const checked = runCheck(project)
 
     expect(checked.exitCode).toBe(2)
-    expect(checked.stderr.toString()).toContain('Cannot validate pickle.extensions.ts')
+    expect(checked.stderr.toString()).toContain(
+      'Cannot validate pickle.extensions.ts',
+    )
     expect(checked.stderr.toString()).toContain('missing-adapter.ts')
-    expect(checked.stderr.toString()).toContain('Fix its imports or syntax and run pickle check again')
+    expect(checked.stderr.toString()).toContain(
+      'Fix its imports or syntax and run pickle check again',
+    )
     expect(await Bun.file(marker).exists()).toBe(false)
   })
 
@@ -223,8 +281,12 @@ export default { adapter: missingAdapter }
     const checked = runCheck(project)
 
     expect(checked.exitCode).toBe(2)
-    expect(checked.stderr.toString()).toContain("has no exported member 'missingAdapter'")
-    expect(checked.stderr.toString()).toContain('Fix its imports or syntax and run pickle check again')
+    expect(checked.stderr.toString()).toContain(
+      "has no exported member 'missingAdapter'",
+    )
+    expect(checked.stderr.toString()).toContain(
+      'Fix its imports or syntax and run pickle check again',
+    )
     expect(await Bun.file(marker).exists()).toBe(false)
   })
 
@@ -240,8 +302,9 @@ export default { adapter: missingAdapter }
     const checked = runCheck(project)
 
     expect(checked.exitCode).toBe(2)
-    expect(checked.stderr.toString())
-      .toContain('Configure web.baseUrl or export an adapter from pickle.extensions.ts')
+    expect(checked.stderr.toString()).toContain(
+      'Configure web.baseUrl or export an adapter from pickle.extensions.ts',
+    )
   })
 
   test('check requires an extension default export without evaluating it', async () => {
@@ -254,8 +317,12 @@ export default { adapter: missingAdapter }
     const checked = runCheck(project)
 
     expect(checked.exitCode).toBe(2)
-    expect(checked.stderr.toString()).toContain('pickle.extensions.ts must provide a default export')
-    expect(checked.stderr.toString()).toContain('Export the extension object as default and run pickle check again')
+    expect(checked.stderr.toString()).toContain(
+      'pickle.extensions.ts must provide a default export',
+    )
+    expect(checked.stderr.toString()).toContain(
+      'Export the extension object as default and run pickle check again',
+    )
   })
 
   test('check rejects an invalid extension adapter without evaluating it', async () => {
@@ -271,9 +338,13 @@ export default { adapter: missingAdapter }
     const checked = runCheck(project)
 
     expect(checked.exitCode).toBe(2)
-    expect(checked.stderr.toString()).toContain("Property 'openSession' is missing")
+    expect(checked.stderr.toString()).toContain(
+      "Property 'openSession' is missing",
+    )
     expect(checked.stderr.toString()).toContain('executionTargetProfile')
-    expect(checked.stderr.toString()).toContain('Correct the extension default export and run pickle check again')
+    expect(checked.stderr.toString()).toContain(
+      'Correct the extension default export and run pickle check again',
+    )
   })
 
   test('check rejects invalid selection policies', async () => {
@@ -288,8 +359,12 @@ export default { adapter: missingAdapter }
     const checked = runCheck(project)
 
     expect(checked.exitCode).toBe(2)
-    expect(checked.stderr.toString()).toContain('selection.shard.index must be less than or equal to selection.shard.total')
-    expect(checked.stderr.toString()).toContain('Correct the value and run pickle check again')
+    expect(checked.stderr.toString()).toContain(
+      'selection.shard.index must be less than or equal to selection.shard.total',
+    )
+    expect(checked.stderr.toString()).toContain(
+      'Correct the value and run pickle check again',
+    )
   })
 
   test('check rejects invalid web adapter policies', async () => {
@@ -307,8 +382,12 @@ export default { adapter: missingAdapter }
     const checked = runCheck(project)
 
     expect(checked.exitCode).toBe(2)
-    expect(checked.stderr.toString()).toContain('web.browser.environment must be local or browserbase')
-    expect(checked.stderr.toString()).toContain('Correct the value and run pickle check again')
+    expect(checked.stderr.toString()).toContain(
+      'web.browser.environment must be local or browserbase',
+    )
+    expect(checked.stderr.toString()).toContain(
+      'Correct the value and run pickle check again',
+    )
   })
 
   test('check rejects invalid Specifications before execution resources start', async () => {
@@ -323,8 +402,12 @@ export default { adapter: missingAdapter }
     const checked = runCheck(project)
 
     expect(checked.exitCode).toBe(2)
-    expect(checked.stderr.toString()).toContain('Invalid Specification features/invalid.feature')
-    expect(checked.stderr.toString()).toContain('Correct the Specification and run pickle check again')
+    expect(checked.stderr.toString()).toContain(
+      'Invalid Specification features/invalid.feature',
+    )
+    expect(checked.stderr.toString()).toContain(
+      'Correct the Specification and run pickle check again',
+    )
   })
 
   test('run validates Specifications before starting the configured application server', async () => {
@@ -352,7 +435,11 @@ export default {}
 `,
     })
 
-    const run = Bun.spawnSync({ cmd: [pickleCommand, 'run'], cwd: project, env: { ...Bun.env } })
+    const run = Bun.spawnSync({
+      cmd: [pickleCommand, 'run'],
+      cwd: project,
+      env: { ...Bun.env },
+    })
 
     expect(run.exitCode).toBe(2)
     expect(run.stderr.toString()).toContain('Parser errors')
@@ -368,8 +455,12 @@ export default {}
     const checked = runCheck(project)
 
     expect(checked.exitCode).toBe(2)
-    expect(checked.stderr.toString()).toContain('specifications must contain at least one path')
-    expect(checked.stderr.toString()).toContain('Correct the value and run pickle check again')
+    expect(checked.stderr.toString()).toContain(
+      'specifications must contain at least one path',
+    )
+    expect(checked.stderr.toString()).toContain(
+      'Correct the value and run pickle check again',
+    )
   })
 
   test('check reports the reason and corrective action for validation failures', async () => {
@@ -379,8 +470,12 @@ export default {}
 
     const checked = runCheck(project)
     expect(checked.exitCode).toBe(2)
-    expect(checked.stderr.toString()).toContain('Unsupported configuration schemaVersion: 99')
-    expect(checked.stderr.toString()).toContain('Correct the value and run pickle check again')
+    expect(checked.stderr.toString()).toContain(
+      'Unsupported configuration schemaVersion: 99',
+    )
+    expect(checked.stderr.toString()).toContain(
+      'Correct the value and run pickle check again',
+    )
   })
 
   test('migrate previews namespaced identifiers and writes only after confirmation', async () => {
@@ -397,22 +492,40 @@ Feature: Checkout
     })
     const featurePath = join(project, 'features', 'checkout.feature')
 
-    const preview = Bun.spawnSync({ cmd: [pickleCommand, 'migrate'], cwd: project, env: { ...Bun.env } })
+    const preview = Bun.spawnSync({
+      cmd: [pickleCommand, 'migrate'],
+      cwd: project,
+      env: { ...Bun.env },
+    })
     expect(preview.exitCode).toBe(0)
-    expect(preview.stdout.toString()).toMatch(/Feature "Checkout": add @pickle:id:[0-9a-f]{16} @pickle:state:active/)
-    expect(preview.stdout.toString()).toMatch(/Scenario "Complete a purchase": add @pickle:id:[0-9a-f]{16}/)
-    expect(preview.stdout.toString()).toContain('Re-run pickle migrate --yes after reviewing the preview')
+    expect(preview.stdout.toString()).toMatch(
+      /Feature "Checkout": add @pickle:id:[0-9a-f]{16} @pickle:state:active/,
+    )
+    expect(preview.stdout.toString()).toMatch(
+      /Scenario "Complete a purchase": add @pickle:id:[0-9a-f]{16}/,
+    )
+    expect(preview.stdout.toString()).toContain(
+      'Re-run pickle migrate --yes after reviewing the preview',
+    )
     expect(await Bun.file(featurePath).text()).toBe(source)
 
-    const applied = Bun.spawnSync({ cmd: [pickleCommand, 'migrate', '--yes'], cwd: project, env: { ...Bun.env } })
+    const applied = Bun.spawnSync({
+      cmd: [pickleCommand, 'migrate', '--yes'],
+      cwd: project,
+      env: { ...Bun.env },
+    })
     expect(applied.exitCode).toBe(0)
-    expect(applied.stdout.toString()).toContain('Updated 1 Specification file(s)')
+    expect(applied.stdout.toString()).toContain(
+      'Updated 1 Specification file(s)',
+    )
     const migrated = await Bun.file(featurePath).text()
     expect(migrated).toContain('# keep this comment')
     expect(migrated).toContain('\n@smoke\n@pickle:id:')
     expect(migrated).toContain('@pickle:state:active')
     expect(migrated).toContain('Then the purchase succeeds')
-    for (const id of applied.stdout.toString().match(/@pickle:id:[0-9a-f]{16}/g) ?? []) {
+    for (const id of applied.stdout
+      .toString()
+      .match(/@pickle:id:[0-9a-f]{16}/g) ?? []) {
       expect(migrated).toContain(id)
     }
 
@@ -420,9 +533,15 @@ Feature: Checkout
     expect(checked.exitCode).toBe(0)
     expect(checked.stdout.toString()).toContain('Project is valid')
 
-    const again = Bun.spawnSync({ cmd: [pickleCommand, 'migrate', '--yes'], cwd: project, env: { ...Bun.env } })
+    const again = Bun.spawnSync({
+      cmd: [pickleCommand, 'migrate', '--yes'],
+      cwd: project,
+      env: { ...Bun.env },
+    })
     expect(again.exitCode).toBe(0)
-    expect(again.stdout.toString()).toContain('No Specification metadata changes needed')
+    expect(again.stdout.toString()).toContain(
+      'No Specification metadata changes needed',
+    )
     expect(await Bun.file(featurePath).text()).toBe(migrated)
   })
 
@@ -431,7 +550,8 @@ Feature: Checkout
       config: defaultCheckConfig,
       specification: {
         path: 'features/missing.feature',
-        source: 'Feature: Missing\n  Scenario: Needs identity\n    Then validation fails',
+        source:
+          'Feature: Missing\n  Scenario: Needs identity\n    Then validation fails',
       },
     })
 
@@ -439,11 +559,14 @@ Feature: Checkout
 
     expect(checked.exitCode).toBe(2)
     expect(checked.stderr.toString()).toContain('missing a durable identifier')
-    expect(checked.stderr.toString()).toContain('Run pickle migrate to add missing metadata')
+    expect(checked.stderr.toString()).toContain(
+      'Run pickle migrate to add missing metadata',
+    )
   })
 
   test('check and run never modify Specification source', async () => {
-    const source = 'Feature: Unchanged\n  Scenario: Stay put\n    Then nothing writes'
+    const source =
+      'Feature: Unchanged\n  Scenario: Stay put\n    Then nothing writes'
     const project = await createCheckProject('no-write', {
       config: defaultCheckConfig,
       specification: { path: 'features/unchanged.feature', source },
@@ -484,7 +607,9 @@ Feature: Checkout
         specifications: 'features/**/*.feature',
       },
       specification: { path: 'features/unreported.feature', source },
-      extensions: await Bun.file(join(workspace, 'pickle.extensions.ts')).text(),
+      extensions: await Bun.file(
+        join(workspace, 'pickle.extensions.ts'),
+      ).text(),
     })
     const featurePath = join(project, 'features', 'unreported.feature')
 
@@ -496,7 +621,9 @@ Feature: Checkout
 
     expect(run.exitCode).toBe(0)
     expect(run.stderr.toString()).toContain('missing a durable identifier')
-    expect(run.stderr.toString()).toContain('Run pickle migrate to add missing metadata')
+    expect(run.stderr.toString()).toContain(
+      'Run pickle migrate to add missing metadata',
+    )
     expect(await Bun.file(featurePath).text()).toBe(source)
   })
 
@@ -530,7 +657,10 @@ Feature: Checkout
         new Response(process.stdout).text(),
         new Response(process.stderr).text(),
       ])
-      const records = stdout.trim().split('\n').map(line => JSON.parse(line))
+      const records = stdout
+        .trim()
+        .split('\n')
+        .map((line) => JSON.parse(line))
 
       expect(stderr).toBe('')
       expect(exitCode).toBe(expected.exitCode)
@@ -569,7 +699,11 @@ Feature: Checkout
       stderr: 'pipe',
     })
 
-    for (let attempt = 0; attempt < 200 && !(await Bun.file(stepMarker).exists()); attempt++) {
+    for (
+      let attempt = 0;
+      attempt < 200 && !(await Bun.file(stepMarker).exists());
+      attempt++
+    ) {
       await Bun.sleep(5)
     }
     expect(await Bun.file(stepMarker).exists()).toBe(true)
@@ -580,7 +714,10 @@ Feature: Checkout
       new Response(child.stdout).text(),
       new Response(child.stderr).text(),
     ])
-    const records = stdout.trim().split('\n').map(line => JSON.parse(line))
+    const records = stdout
+      .trim()
+      .split('\n')
+      .map((line) => JSON.parse(line))
 
     expect(stderr).toBe('')
     expect(exitCode).toBe(130)
@@ -593,15 +730,21 @@ Feature: Checkout
 
   test('runs a real web Scenario through the public web adapter composition', async () => {
     const artifactDirectory = join(workspace, 'web-artifacts')
-    const applicationUrl = 'data:text/html,<button id="search">Search</button><div id="results"></div>'
-    await Bun.write(join(workspace, 'web.feature'), `@pickle:id:specwebaaaaaaaaaa @pickle:state:active
+    const applicationUrl =
+      'data:text/html,<button id="search">Search</button><div id="results"></div>'
+    await Bun.write(
+      join(workspace, 'web.feature'),
+      `@pickle:id:specwebaaaaaaaaaa @pickle:state:active
 Feature: Web search
   @pickle:id:scnwebbbbbbbbbbb
   Scenario: Search from the application
     Given I navigate to the main page
     When I search for pickles
-    Then pickle results are visible`)
-    await Bun.write(join(workspace, 'pickle.config.jsonc'), `{
+    Then pickle results are visible`,
+    )
+    await Bun.write(
+      join(workspace, 'pickle.config.jsonc'),
+      `{
   // The CLI owns this declarative target configuration.
   "schemaVersion": 1,
   "executionTargetProfile": { "id": "web" },
@@ -617,8 +760,11 @@ Feature: Web search
       "outputDir": ${JSON.stringify(artifactDirectory)}
     }
   }
-}`)
-    await Bun.write(join(workspace, 'web.extensions.ts'), `
+}`,
+    )
+    await Bun.write(
+      join(workspace, 'web.extensions.ts'),
+      `
 export default {
   webAutomationFactory: {
     async open() {
@@ -644,7 +790,8 @@ export default {
     },
   },
 }
-`)
+`,
+    )
 
     const process = Bun.spawn({
       cmd: [
@@ -669,7 +816,10 @@ export default {
 
     expect(stderr).toBe('')
     expect(exitCode).toBe(0)
-    const records = stdout.trim().split('\n').map(line => JSON.parse(line))
+    const records = stdout
+      .trim()
+      .split('\n')
+      .map((line) => JSON.parse(line))
     expect(records.at(-1)).toMatchObject({
       kind: 'test-result',
       result: {
@@ -685,7 +835,9 @@ export default {
         ],
       },
     })
-    const screenshots = new Bun.Glob('**/*.png').scanSync({ cwd: artifactDirectory })
+    const screenshots = new Bun.Glob('**/*.png').scanSync({
+      cwd: artifactDirectory,
+    })
     expect([...screenshots]).toHaveLength(3)
     expect(stdout).not.toContain('Stagehand')
     expect(stdout).not.toContain('gherkinDocument')

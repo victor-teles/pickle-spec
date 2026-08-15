@@ -1,11 +1,17 @@
+import { resolve } from 'node:path'
 import {
-  validateRunConfiguration,
   type ExecutionTargetProfile,
   type RunConfiguration,
+  validateRunConfiguration,
 } from '@pickle-spec/runner'
-import { validateSelectionOptions, type SelectionOptions } from '@pickle-spec/spec'
-import { validateWebAdapterOptions, type WebAdapterOptions } from '@pickle-spec/web'
-import { resolve } from 'node:path'
+import {
+  type SelectionOptions,
+  validateSelectionOptions,
+} from '@pickle-spec/spec'
+import {
+  validateWebAdapterOptions,
+  type WebAdapterOptions,
+} from '@pickle-spec/web'
 
 export interface ServerConfig {
   command?: string
@@ -36,7 +42,9 @@ export interface PickleConfig {
 export function runConfigurationFrom(config: PickleConfig): RunConfiguration {
   return {
     schemaVersion: config.schemaVersion,
-    executionTargetProfile: config.executionTargetProfile ?? { id: config.web ? 'web' : 'custom' },
+    executionTargetProfile: config.executionTargetProfile ?? {
+      id: config.web ? 'web' : 'custom',
+    },
     concurrency: config.concurrency,
     execution: config.execution,
   }
@@ -49,9 +57,14 @@ function record(value: unknown, field: string): Record<string, unknown> {
   return value as Record<string, unknown>
 }
 
-function knownFields(value: Record<string, unknown>, fields: readonly string[], parent: string): void {
+function knownFields(
+  value: Record<string, unknown>,
+  fields: readonly string[],
+  parent: string,
+): void {
   for (const field of Object.keys(value)) {
-    if (!fields.includes(field)) throw new Error(`${parent}.${field} is not supported`)
+    if (!fields.includes(field))
+      throw new Error(`${parent}.${field} is not supported`)
   }
 }
 
@@ -62,27 +75,54 @@ function optionalString(value: unknown, field: string): void {
 }
 
 function optionalPositiveInteger(value: unknown, field: string): void {
-  if (value !== undefined && (!Number.isInteger(value) || (value as number) < 1)) {
+  if (
+    value !== undefined &&
+    (!Number.isInteger(value) || (value as number) < 1)
+  ) {
     throw new Error(`${field} must be an integer greater than or equal to 1`)
   }
 }
 
 function validateConfig(value: unknown): PickleConfig {
   const config = record(value, 'configuration')
-  knownFields(config, [
-    'schemaVersion', 'language', 'specifications', 'executionTargetProfile', 'web',
-    'selection', 'execution', 'concurrency', 'server',
-  ], 'configuration')
+  knownFields(
+    config,
+    [
+      'schemaVersion',
+      'language',
+      'specifications',
+      'executionTargetProfile',
+      'web',
+      'selection',
+      'execution',
+      'concurrency',
+      'server',
+    ],
+    'configuration',
+  )
   optionalString(config.language, 'language')
-  if (typeof config.specifications === 'string' && !config.specifications.trim()) {
+  if (
+    typeof config.specifications === 'string' &&
+    !config.specifications.trim()
+  ) {
     throw new Error('specifications paths must not be empty')
   }
-  if (Array.isArray(config.specifications) && config.specifications.length === 0) {
+  if (
+    Array.isArray(config.specifications) &&
+    config.specifications.length === 0
+  ) {
     throw new Error('specifications must contain at least one path')
   }
-  if (config.specifications !== undefined && typeof config.specifications !== 'string'
-    && !(Array.isArray(config.specifications)
-      && config.specifications.every(item => typeof item === 'string' && item.trim()))) {
+  if (
+    config.specifications !== undefined &&
+    typeof config.specifications !== 'string' &&
+    !(
+      Array.isArray(config.specifications) &&
+      config.specifications.every(
+        (item) => typeof item === 'string' && item.trim(),
+      )
+    )
+  ) {
     throw new Error('specifications must be a string or an array of strings')
   }
   if (config.web !== undefined) {
@@ -90,17 +130,29 @@ function validateConfig(value: unknown): PickleConfig {
   }
   if (config.server !== undefined) {
     const server = record(config.server, 'server')
-    knownFields(server, [
-      'command', 'url', 'port', 'startupTimeoutMs', 'pollIntervalMs', 'readinessPath',
-      'reuseExisting',
-    ], 'server')
+    knownFields(
+      server,
+      [
+        'command',
+        'url',
+        'port',
+        'startupTimeoutMs',
+        'pollIntervalMs',
+        'readinessPath',
+        'reuseExisting',
+      ],
+      'server',
+    )
     optionalString(server.command, 'server.command')
     optionalString(server.url, 'server.url')
     optionalString(server.readinessPath, 'server.readinessPath')
     optionalPositiveInteger(server.port, 'server.port')
     optionalPositiveInteger(server.startupTimeoutMs, 'server.startupTimeoutMs')
     optionalPositiveInteger(server.pollIntervalMs, 'server.pollIntervalMs')
-    if (server.reuseExisting !== undefined && typeof server.reuseExisting !== 'boolean') {
+    if (
+      server.reuseExisting !== undefined &&
+      typeof server.reuseExisting !== 'boolean'
+    ) {
       throw new Error('server.reuseExisting must be a boolean')
     }
     if (server.command && !server.url && !server.port) {
@@ -150,7 +202,11 @@ function removeJsonComments(source: string): string {
     }
     if (character === '/' && next === '*') {
       index += 2
-      while (index < source.length && !(source[index] === '*' && source[index + 1] === '/')) index++
+      while (
+        index < source.length &&
+        !(source[index] === '*' && source[index + 1] === '/')
+      )
+        index++
       index++
       continue
     }
@@ -161,11 +217,13 @@ function removeJsonComments(source: string): string {
 }
 
 async function defaultConfigPath(): Promise<string | undefined> {
-  return await Bun.file('pickle.config.jsonc').exists() ? 'pickle.config.jsonc' : undefined
+  return (await Bun.file('pickle.config.jsonc').exists())
+    ? 'pickle.config.jsonc'
+    : undefined
 }
 
 export async function loadConfig(configPath?: string): Promise<PickleConfig> {
-  const selectedPath = configPath ?? await defaultConfigPath()
+  const selectedPath = configPath ?? (await defaultConfigPath())
   if (!selectedPath) return { schemaVersion: 1 }
   if (!selectedPath.endsWith('.jsonc') && !selectedPath.endsWith('.json')) {
     throw new Error('Configuration must use pickle.config.jsonc')
@@ -176,9 +234,13 @@ export async function loadConfig(configPath?: string): Promise<PickleConfig> {
   }
 
   try {
-    return validateConfig(JSON.parse(removeJsonComments(await Bun.file(absolutePath).text())))
+    return validateConfig(
+      JSON.parse(removeJsonComments(await Bun.file(absolutePath).text())),
+    )
   } catch (error) {
     const reason = error instanceof Error ? error.message : String(error)
-    throw new Error(`Invalid configuration ${selectedPath}: ${reason}. Correct the value and run pickle check again.`)
+    throw new Error(
+      `Invalid configuration ${selectedPath}: ${reason}. Correct the value and run pickle check again.`,
+    )
   }
 }

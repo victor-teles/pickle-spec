@@ -1,14 +1,16 @@
 #!/usr/bin/env bun
 
-import type { ExecutionTargetAdapter } from '@pickle-spec/runner'
-import { resolveRunConfiguration, runScenarios } from '@pickle-spec/runner'
-import { parseSpecification, selectScenarios, validateSpecificationMetadata, type SelectionOptions } from '@pickle-spec/spec'
-import {
-  createWebAdapter,
-  type WebAdapterOptions,
-} from '@pickle-spec/web'
 import { relative, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
+import type { ExecutionTargetAdapter } from '@pickle-spec/runner'
+import { resolveRunConfiguration, runScenarios } from '@pickle-spec/runner'
+import {
+  parseSpecification,
+  type SelectionOptions,
+  selectScenarios,
+  validateSpecificationMetadata,
+} from '@pickle-spec/spec'
+import { createWebAdapter, type WebAdapterOptions } from '@pickle-spec/web'
 import { loadConfig, type PickleConfig } from './config'
 import type { Extensions } from './extensions'
 import { checkProject, initializeProject, migrateProject } from './project'
@@ -32,14 +34,17 @@ interface RunArguments {
 function integer(value: string, flag: string, minimum: number): number {
   const parsed = Number(value)
   if (!Number.isSafeInteger(parsed) || parsed < minimum) {
-    throw new Error(`${flag} requires an integer greater than or equal to ${minimum}`)
+    throw new Error(
+      `${flag} requires an integer greater than or equal to ${minimum}`,
+    )
   }
   return parsed
 }
 
 function valueAfter(argv: string[], index: number): string {
   const value = argv[index + 1]
-  if (!value || value.startsWith('--')) throw new Error(`${argv[index]} requires a value`)
+  if (!value || value.startsWith('--'))
+    throw new Error(`${argv[index]} requires a value`)
   return value
 }
 
@@ -50,7 +55,8 @@ function parseShard(value: string): { index: number; total: number } {
 }
 
 function parseRunArguments(argv: string[]): RunArguments {
-  if (argv[0] !== 'run') throw new Error('Usage: pickle run [specifications] [options]')
+  if (argv[0] !== 'run')
+    throw new Error('Usage: pickle run [specifications] [options]')
   const args: RunArguments = { selection: {} }
   let index = 1
   if (argv[index] && !argv[index]!.startsWith('-')) args.pattern = argv[index++]
@@ -58,24 +64,46 @@ function parseRunArguments(argv: string[]): RunArguments {
   while (index < argv.length) {
     const flag = argv[index]!
     switch (flag) {
-      case '--config': args.configPath = valueAfter(argv, index++); break
-      case '--extensions': args.extensionsPath = valueAfter(argv, index++); break
-      case '--scenario': args.selection.scenarioName = valueAfter(argv, index++); break
+      case '--config':
+        args.configPath = valueAfter(argv, index++)
+        break
+      case '--extensions':
+        args.extensionsPath = valueAfter(argv, index++)
+        break
+      case '--scenario':
+        args.selection.scenarioName = valueAfter(argv, index++)
+        break
       case '--tag':
-      case '-t': args.selection.tagExpression = valueAfter(argv, index++); break
-      case '--shard': args.selection.shard = parseShard(valueAfter(argv, index++)); break
-      case '--retries': args.retries = integer(valueAfter(argv, index++), flag, 0); break
+      case '-t':
+        args.selection.tagExpression = valueAfter(argv, index++)
+        break
+      case '--shard':
+        args.selection.shard = parseShard(valueAfter(argv, index++))
+        break
+      case '--retries':
+        args.retries = integer(valueAfter(argv, index++), flag, 0)
+        break
       case '--concurrency':
-      case '-j': args.concurrency = integer(valueAfter(argv, index++), flag, 1); break
+      case '-j':
+        args.concurrency = integer(valueAfter(argv, index++), flag, 1)
+        break
       case '--language':
-      case '-l': args.language = valueAfter(argv, index++); break
+      case '-l':
+        args.language = valueAfter(argv, index++)
+        break
       case '--scenario-timeout': {
         args.scenarioTimeoutMs = integer(valueAfter(argv, index++), flag, 1)
         break
       }
-      case '--step-timeout': args.stepTimeoutMs = integer(valueAfter(argv, index++), flag, 1); break
-      case '--reuse-server': args.reuseServer = true; break
-      case '--headed': args.headed = true; break
+      case '--step-timeout':
+        args.stepTimeoutMs = integer(valueAfter(argv, index++), flag, 1)
+        break
+      case '--reuse-server':
+        args.reuseServer = true
+        break
+      case '--headed':
+        args.headed = true
+        break
       case '--screenshot': {
         const mode = valueAfter(argv, index++)
         if (!['off', 'on-failure', 'on-step'].includes(mode)) {
@@ -84,7 +112,8 @@ function parseRunArguments(argv: string[]): RunArguments {
         args.screenshotMode = mode as RunArguments['screenshotMode']
         break
       }
-      default: throw new Error(`Unknown option: ${flag}`)
+      default:
+        throw new Error(`Unknown option: ${flag}`)
     }
     index++
   }
@@ -98,36 +127,48 @@ async function loadExtensions(path?: string): Promise<Extensions> {
     if (!path) return {}
     throw new Error(`Extensions file not found: ${selectedPath}`)
   }
-  return ((await import(pathToFileURL(absolutePath).href)).default ?? {}) as Extensions
+  return ((await import(pathToFileURL(absolutePath).href)).default ??
+    {}) as Extensions
 }
 
-async function discoverSpecifications(patterns: string | string[], language?: string) {
+async function discoverSpecifications(
+  patterns: string | string[],
+  language?: string,
+) {
   const paths = new Set<string>()
   for (const pattern of Array.isArray(patterns) ? patterns : [patterns]) {
     const glob = new Bun.Glob(pattern)
-    for await (const path of glob.scan({ cwd: process.cwd(), absolute: true })) paths.add(path)
+    for await (const path of glob.scan({ cwd: process.cwd(), absolute: true }))
+      paths.add(path)
   }
   if (paths.size === 0) {
     const description = Array.isArray(patterns) ? patterns.join(', ') : patterns
     throw new Error(`No specifications found matching: ${description}`)
   }
-  const files = await Promise.all([...paths].sort().map(async path => ({
-    uri: relative(process.cwd(), path),
-    source: await Bun.file(path).text(),
-  })))
+  const files = await Promise.all(
+    [...paths].sort().map(async (path) => ({
+      uri: relative(process.cwd(), path),
+      source: await Bun.file(path).text(),
+    })),
+  )
   try {
     validateSpecificationMetadata(files, language)
   } catch (error) {
     console.error(error instanceof Error ? error.message : String(error))
   }
-  return files.map(file => parseSpecification({
-    source: file.source,
-    uri: file.uri,
-    language,
-  }))
+  return files.map((file) =>
+    parseSpecification({
+      source: file.source,
+      uri: file.uri,
+      language,
+    }),
+  )
 }
 
-function configuredWebOptions(config: PickleConfig, args: RunArguments): WebAdapterOptions | undefined {
+function configuredWebOptions(
+  config: PickleConfig,
+  args: RunArguments,
+): WebAdapterOptions | undefined {
   if (!config.web) return undefined
   return {
     ...config.web,
@@ -147,7 +188,10 @@ function configuredAdapter(
   web: WebAdapterOptions | undefined,
 ): ExecutionTargetAdapter {
   if (extensions.adapter) return extensions.adapter
-  if (!web) throw new Error('Configure web.baseUrl or export an adapter from pickle.extensions.ts')
+  if (!web)
+    throw new Error(
+      'Configure web.baseUrl or export an adapter from pickle.extensions.ts',
+    )
   return createWebAdapter(web, extensions.webAutomationFactory)
 }
 
@@ -169,22 +213,30 @@ async function run(argv: string[]): Promise<number> {
       ...args.selection,
       shard: args.selection.shard ?? config.selection?.shard,
     })
-    if (selections.length === 0) throw new Error('No Scenarios match the current selection')
+    if (selections.length === 0)
+      throw new Error('No Scenarios match the current selection')
 
     const extensions = await loadExtensions(args.extensionsPath)
     const web = configuredWebOptions(config, args)
-    const resolvedConfiguration = resolveRunConfiguration({
-      schemaVersion: config.schemaVersion,
-      executionTargetProfile: config.executionTargetProfile ?? { id: web ? 'web' : 'custom' },
-      concurrency: args.concurrency ?? config.concurrency,
-      execution: {
-        infrastructureRetries: args.retries ?? config.execution?.infrastructureRetries,
-        stepTimeoutMs: args.stepTimeoutMs ?? config.execution?.stepTimeoutMs,
-        scenarioTimeoutMs: args.scenarioTimeoutMs ?? config.execution?.scenarioTimeoutMs,
+    const resolvedConfiguration = resolveRunConfiguration(
+      {
+        schemaVersion: config.schemaVersion,
+        executionTargetProfile: config.executionTargetProfile ?? {
+          id: web ? 'web' : 'custom',
+        },
+        concurrency: args.concurrency ?? config.concurrency,
+        execution: {
+          infrastructureRetries:
+            args.retries ?? config.execution?.infrastructureRetries,
+          stepTimeoutMs: args.stepTimeoutMs ?? config.execution?.stepTimeoutMs,
+          scenarioTimeoutMs:
+            args.scenarioTimeoutMs ?? config.execution?.scenarioTimeoutMs,
+        },
       },
-    }, {
-      adapter: configuredAdapter(extensions, web),
-    })
+      {
+        adapter: configuredAdapter(extensions, web),
+      },
+    )
     server = await startServer({
       ...config.server,
       ...(args.reuseServer ? { reuseExisting: true } : {}),
@@ -199,10 +251,17 @@ async function run(argv: string[]): Promise<number> {
     })
 
     for (const scenarioRun of runs) {
-      console.log(JSON.stringify({ kind: 'test-result', result: scenarioRun.result }))
+      console.log(
+        JSON.stringify({ kind: 'test-result', result: scenarioRun.result }),
+      )
     }
     if (runs.some(({ result }) => result.state === 'cancelled')) return 130
-    if (runs.some(({ result }) => result.state === 'failed' || result.state === 'infrastructure-error')) {
+    if (
+      runs.some(
+        ({ result }) =>
+          result.state === 'failed' || result.state === 'infrastructure-error',
+      )
+    ) {
       return 1
     }
     return 0
@@ -212,18 +271,25 @@ async function run(argv: string[]): Promise<number> {
   }
 }
 
-function projectOptions(argv: string[]): { configPath?: string; extensionsPath?: string } {
+function projectOptions(argv: string[]): {
+  configPath?: string
+  extensionsPath?: string
+} {
   const options: { configPath?: string; extensionsPath?: string } = {}
   for (let index = 1; index < argv.length; index++) {
     const flag = argv[index]!
     if (flag === '--config') options.configPath = valueAfter(argv, index++)
-    else if (flag === '--extensions') options.extensionsPath = valueAfter(argv, index++)
+    else if (flag === '--extensions')
+      options.extensionsPath = valueAfter(argv, index++)
     else throw new Error(`Unknown option: ${flag}`)
   }
   return options
 }
 
-function migrateOptions(argv: string[]): { configPath?: string; yes?: boolean } {
+function migrateOptions(argv: string[]): {
+  configPath?: string
+  yes?: boolean
+} {
   const options: { configPath?: string; yes?: boolean } = {}
   for (let index = 1; index < argv.length; index++) {
     const flag = argv[index]!

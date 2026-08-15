@@ -1,5 +1,9 @@
-import { AstBuilder, compile, GherkinClassicTokenMatcher, Parser } from '@cucumber/gherkin'
-import { IdGenerator, StepKeywordType } from '@cucumber/messages'
+import {
+  AstBuilder,
+  compile,
+  GherkinClassicTokenMatcher,
+  Parser,
+} from '@cucumber/gherkin'
 import type {
   Examples,
   FeatureChild,
@@ -8,7 +12,12 @@ import type {
   RuleChild,
   Step,
 } from '@cucumber/messages'
-import { examplesRowId, identityFromTags, type SpecificationState } from './identity'
+import { IdGenerator, StepKeywordType } from '@cucumber/messages'
+import {
+  examplesRowId,
+  identityFromTags,
+  type SpecificationState,
+} from './identity'
 
 export interface SpecificationSource {
   uri: string
@@ -52,7 +61,10 @@ export interface ParseSpecificationInput {
 
 type ScenarioStepType = ScenarioStep['type']
 
-function stepType(keywordType: StepKeywordType | undefined, previous: ScenarioStepType): ScenarioStepType {
+function stepType(
+  keywordType: StepKeywordType | undefined,
+  previous: ScenarioStepType,
+): ScenarioStepType {
   switch (keywordType) {
     case StepKeywordType.CONTEXT:
       return 'context'
@@ -60,14 +72,14 @@ function stepType(keywordType: StepKeywordType | undefined, previous: ScenarioSt
       return 'action'
     case StepKeywordType.OUTCOME:
       return 'outcome'
-    case StepKeywordType.CONJUNCTION:
-    case StepKeywordType.UNKNOWN:
     default:
       return previous
   }
 }
 
-function collectStepInfo(document: GherkinDocument): Map<string, Pick<ScenarioStep, 'keyword' | 'type'>> {
+function collectStepInfo(
+  document: GherkinDocument,
+): Map<string, Pick<ScenarioStep, 'keyword' | 'type'>> {
   const result = new Map<string, Pick<ScenarioStep, 'keyword' | 'type'>>()
 
   function addSteps(steps: readonly Step[]): void {
@@ -93,7 +105,9 @@ function collectStepInfo(document: GherkinDocument): Map<string, Pick<ScenarioSt
 function mapArgument(step: PickleStep): ScenarioStep['argument'] {
   if (step.argument?.dataTable) {
     return {
-      dataTable: step.argument.dataTable.rows.map(row => row.cells.map(cell => cell.value)),
+      dataTable: step.argument.dataTable.rows.map((row) =>
+        row.cells.map((cell) => cell.value),
+      ),
     }
   }
   if (step.argument?.docString) {
@@ -116,7 +130,9 @@ function mapStep(
   }
 }
 
-export function parseSpecification(input: ParseSpecificationInput): Specification {
+export function parseSpecification(
+  input: ParseSpecificationInput,
+): Specification {
   const language = input.language ?? 'en'
   const newId = IdGenerator.incrementing()
   const parser = new Parser(
@@ -132,23 +148,30 @@ export function parseSpecification(input: ParseSpecificationInput): Specificatio
 
   const infoByAstNodeId = collectStepInfo(document)
   const scenariosById = new Map<string, { tags: string[] }>()
-  const rowsById = new Map<string, { header: string[]; cells: string[]; examplesTags: string[] }>()
+  const rowsById = new Map<
+    string,
+    { header: string[]; cells: string[]; examplesTags: string[] }
+  >()
   collectIdentityNodes(document, scenariosById, rowsById)
-  const featureIdentity = identityFromTags(feature.tags.map(tag => tag.name))
-  const scenarios: Scenario[] = compile(document, input.uri, newId).map(pickle => {
-    const scenarioIdentity = identityFromTags(scenariosById.get(pickle.astNodeIds[0] ?? '')?.tags ?? [])
-    const row = rowsById.get(pickle.astNodeIds[1] ?? '')
-    const examplesIdentity = identityFromTags(row?.examplesTags ?? [])
-    const rowId = row ? examplesRowId(row.header, row.cells) : undefined
-    return {
-      name: pickle.name,
-      tags: pickle.tags.map(({ name }) => name),
-      steps: pickle.steps.map(step => mapStep(step, infoByAstNodeId)),
-      ...(scenarioIdentity.id ? { id: scenarioIdentity.id } : {}),
-      ...(examplesIdentity.id ? { examplesId: examplesIdentity.id } : {}),
-      ...(rowId ? { examplesRowId: rowId } : {}),
-    }
-  })
+  const featureIdentity = identityFromTags(feature.tags.map((tag) => tag.name))
+  const scenarios: Scenario[] = compile(document, input.uri, newId).map(
+    (pickle) => {
+      const scenarioIdentity = identityFromTags(
+        scenariosById.get(pickle.astNodeIds[0] ?? '')?.tags ?? [],
+      )
+      const row = rowsById.get(pickle.astNodeIds[1] ?? '')
+      const examplesIdentity = identityFromTags(row?.examplesTags ?? [])
+      const rowId = row ? examplesRowId(row.header, row.cells) : undefined
+      return {
+        name: pickle.name,
+        tags: pickle.tags.map(({ name }) => name),
+        steps: pickle.steps.map((step) => mapStep(step, infoByAstNodeId)),
+        ...(scenarioIdentity.id ? { id: scenarioIdentity.id } : {}),
+        ...(examplesIdentity.id ? { examplesId: examplesIdentity.id } : {}),
+        ...(rowId ? { examplesRowId: rowId } : {}),
+      }
+    },
+  )
 
   return {
     name: feature.name,
@@ -166,15 +189,18 @@ export function parseSpecification(input: ParseSpecificationInput): Specificatio
 function collectIdentityNodes(
   document: GherkinDocument,
   scenariosById: Map<string, { tags: string[] }>,
-  rowsById: Map<string, { header: string[]; cells: string[]; examplesTags: string[] }>,
+  rowsById: Map<
+    string,
+    { header: string[]; cells: string[]; examplesTags: string[] }
+  >,
 ): void {
   function visitExamples(examples: Examples): void {
-    const header = examples.tableHeader?.cells.map(cell => cell.value) ?? []
-    const examplesTags = examples.tags.map(tag => tag.name)
+    const header = examples.tableHeader?.cells.map((cell) => cell.value) ?? []
+    const examplesTags = examples.tags.map((tag) => tag.name)
     for (const row of examples.tableBody) {
       rowsById.set(row.id, {
         header,
-        cells: row.cells.map(cell => cell.value),
+        cells: row.cells.map((cell) => cell.value),
         examplesTags,
       })
     }
@@ -182,7 +208,9 @@ function collectIdentityNodes(
 
   function visitChild(child: FeatureChild | RuleChild): void {
     if (child.scenario) {
-      scenariosById.set(child.scenario.id, { tags: child.scenario.tags.map(tag => tag.name) })
+      scenariosById.set(child.scenario.id, {
+        tags: child.scenario.tags.map((tag) => tag.name),
+      })
       for (const examples of child.scenario.examples) visitExamples(examples)
     }
     if ('rule' in child && child.rule) {
@@ -193,7 +221,10 @@ function collectIdentityNodes(
   for (const child of document.feature?.children ?? []) visitChild(child)
 }
 
-export async function parseSpecificationFile(filePath: string, language?: string): Promise<Specification> {
+export async function parseSpecificationFile(
+  filePath: string,
+  language?: string,
+): Promise<Specification> {
   return parseSpecification({
     source: await Bun.file(filePath).text(),
     uri: filePath,

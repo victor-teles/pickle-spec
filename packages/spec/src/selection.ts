@@ -34,7 +34,10 @@ function tagExpressionTokens(expression: string): string[] {
     if (index === expression.length) break
     tokenPattern.lastIndex = index
     const match = tokenPattern.exec(expression)
-    if (!match) throw new Error(`Unexpected character "${expression[index]}" in tag expression`)
+    if (!match)
+      throw new Error(
+        `Unexpected character "${expression[index]}" in tag expression`,
+      )
     tokens.push(match[0])
     index = tokenPattern.lastIndex
   }
@@ -90,14 +93,25 @@ function parseTagExpression(expression: string): TagExpressionNode {
   return result
 }
 
-function matchesTagExpression(node: TagExpressionNode, tags: readonly string[]): boolean {
+function matchesTagExpression(
+  node: TagExpressionNode,
+  tags: readonly string[],
+): boolean {
   switch (node.type) {
-    case 'tag': return tags.includes(node.value)
-    case 'not': return !matchesTagExpression(node.child, tags)
+    case 'tag':
+      return tags.includes(node.value)
+    case 'not':
+      return !matchesTagExpression(node.child, tags)
     case 'and':
-      return matchesTagExpression(node.left, tags) && matchesTagExpression(node.right, tags)
+      return (
+        matchesTagExpression(node.left, tags) &&
+        matchesTagExpression(node.right, tags)
+      )
     case 'or':
-      return matchesTagExpression(node.left, tags) || matchesTagExpression(node.right, tags)
+      return (
+        matchesTagExpression(node.left, tags) ||
+        matchesTagExpression(node.right, tags)
+      )
   }
 }
 
@@ -108,9 +122,14 @@ function record(value: unknown, field: string): Record<string, unknown> {
   return value as Record<string, unknown>
 }
 
-function knownFields(value: Record<string, unknown>, fields: readonly string[], parent: string): void {
+function knownFields(
+  value: Record<string, unknown>,
+  fields: readonly string[],
+  parent: string,
+): void {
   for (const field of Object.keys(value)) {
-    if (!fields.includes(field)) throw new Error(`${parent}.${field} is not supported`)
+    if (!fields.includes(field))
+      throw new Error(`${parent}.${field} is not supported`)
   }
 }
 
@@ -124,13 +143,19 @@ function validateShard(value: unknown): void {
   const shard = record(value, 'selection.shard')
   knownFields(shard, ['index', 'total'], 'selection.shard')
   if (!Number.isInteger(shard.index) || (shard.index as number) < 1) {
-    throw new Error('selection.shard.index must be an integer greater than or equal to 1')
+    throw new Error(
+      'selection.shard.index must be an integer greater than or equal to 1',
+    )
   }
   if (!Number.isInteger(shard.total) || (shard.total as number) < 1) {
-    throw new Error('selection.shard.total must be an integer greater than or equal to 1')
+    throw new Error(
+      'selection.shard.total must be an integer greater than or equal to 1',
+    )
   }
   if ((shard.index as number) > (shard.total as number)) {
-    throw new Error('selection.shard.index must be less than or equal to selection.shard.total')
+    throw new Error(
+      'selection.shard.index must be less than or equal to selection.shard.total',
+    )
   }
 }
 
@@ -156,13 +181,24 @@ export function selectScenarios(
 
   const selected = [...specifications]
     .sort((left, right) => left.source.uri.localeCompare(right.source.uri))
-    .flatMap(specification => specification.scenarios.map(scenario => ({ specification, scenario })))
-    .filter(({ scenario }) => !name || scenario.name.toLowerCase().includes(name))
-    .filter(({ scenario }) => !tagExpression || matchesTagExpression(tagExpression, scenario.tags))
+    .flatMap((specification) =>
+      specification.scenarios.map((scenario) => ({ specification, scenario })),
+    )
+    .filter(
+      ({ scenario }) => !name || scenario.name.toLowerCase().includes(name),
+    )
+    .filter(
+      ({ scenario }) =>
+        !tagExpression || matchesTagExpression(tagExpression, scenario.tags),
+    )
 
   if (!validatedOptions.shard) return selected
 
   return selected
     .filter(({ scenario }) => !scenario.tags.includes('@ignore'))
-    .filter((_, index) => index % validatedOptions.shard!.total === validatedOptions.shard!.index - 1)
+    .filter(
+      (_, index) =>
+        index % validatedOptions.shard!.total ===
+        validatedOptions.shard!.index - 1,
+    )
 }

@@ -1,5 +1,5 @@
-import type { ServerConfig } from './config'
 import type { Subprocess } from 'bun'
+import type { ServerConfig } from './config'
 
 export interface ManagedServer {
   mode: 'spawned' | 'reused'
@@ -22,7 +22,8 @@ function commandForShell(command: string): string[] {
 }
 
 function serverUrl(config: ServerConfig): string {
-  const url = config.url ?? (config.port ? `http://localhost:${config.port}` : undefined)
+  const url =
+    config.url ?? (config.port ? `http://localhost:${config.port}` : undefined)
   if (!url) throw new Error('server.command requires server.url or server.port')
   return url
 }
@@ -61,18 +62,28 @@ export async function startServer(
   const timeoutMs = config.startupTimeoutMs ?? 30_000
   const deadline = Date.now() + timeoutMs
 
-  if (config.reuseExisting && await isHealthy(config, url, deadline, serverRuntime)) {
+  if (
+    config.reuseExisting &&
+    (await isHealthy(config, url, deadline, serverRuntime))
+  ) {
     return { mode: 'reused', url, stop() {} }
   }
 
-  const child: Subprocess = serverRuntime.spawn(commandForShell(config.command), {
-    cwd: process.cwd(), stdout: 'ignore', stderr: 'pipe',
-  })
+  const child: Subprocess = serverRuntime.spawn(
+    commandForShell(config.command),
+    {
+      cwd: process.cwd(),
+      stdout: 'ignore',
+      stderr: 'pipe',
+    },
+  )
   while (Date.now() < deadline) {
     if (await isHealthy(config, url, deadline, serverRuntime)) {
       return { mode: 'spawned', url, stop: () => child.kill() }
     }
-    await serverRuntime.sleep(Math.min(config.pollIntervalMs ?? 500, deadline - Date.now()))
+    await serverRuntime.sleep(
+      Math.min(config.pollIntervalMs ?? 500, deadline - Date.now()),
+    )
   }
 
   child.kill()

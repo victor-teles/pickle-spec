@@ -1,6 +1,6 @@
 import { describe, expect, mock, test } from 'bun:test'
 import type { Scenario, Specification } from '@pickle-spec/spec'
-import { runScenario, type ExecutionTargetAdapter } from '../index'
+import { type ExecutionTargetAdapter, runScenario } from '../index'
 
 const scenario: Scenario = {
   name: 'Complete a purchase',
@@ -42,7 +42,13 @@ describe('runScenario', () => {
       adapter,
     })
 
-    expect(run.events.map(event => [event.schemaVersion, event.sequence, event.type])).toEqual([
+    expect(
+      run.events.map((event) => [
+        event.schemaVersion,
+        event.sequence,
+        event.type,
+      ]),
+    ).toEqual([
       [1, 1, 'scenario-started'],
       [1, 2, 'step-started'],
       [1, 3, 'step-finished'],
@@ -61,14 +67,26 @@ describe('runScenario', () => {
       state: 'passed',
       steps: [
         {
-          step: { keyword: 'Given', text: 'a product is in the basket', type: 'context' },
+          step: {
+            keyword: 'Given',
+            text: 'a product is in the basket',
+            type: 'context',
+          },
           state: 'passed',
-          resolvedActions: [{ description: 'Performed: a product is in the basket' }],
+          resolvedActions: [
+            { description: 'Performed: a product is in the basket' },
+          ],
         },
         {
-          step: { keyword: 'Then', text: 'the purchase succeeds', type: 'outcome' },
+          step: {
+            keyword: 'Then',
+            text: 'the purchase succeeds',
+            type: 'outcome',
+          },
           state: 'passed',
-          resolvedActions: [{ description: 'Performed: the purchase succeeds' }],
+          resolvedActions: [
+            { description: 'Performed: the purchase succeeds' },
+          ],
         },
       ],
     })
@@ -126,7 +144,7 @@ describe('runScenario', () => {
       steps: [],
       message: 'Scenario cancelled before the logical session started',
     })
-    expect(run.events.map(event => event.type)).toEqual([
+    expect(run.events.map((event) => event.type)).toEqual([
       'scenario-started',
       'scenario-finished',
     ])
@@ -148,7 +166,9 @@ describe('runScenario', () => {
               controller.abort()
               return {
                 state: 'passed',
-                resolvedActions: [{ description: 'Completed after cancellation' }],
+                resolvedActions: [
+                  { description: 'Completed after cancellation' },
+                ],
               }
             },
             close,
@@ -163,7 +183,7 @@ describe('runScenario', () => {
       message: 'Scenario cancelled during step execution',
       steps: [{ state: 'cancelled' }],
     })
-    expect(run.events.map(event => event.type)).toEqual([
+    expect(run.events.map((event) => event.type)).toEqual([
       'scenario-started',
       'step-started',
       'step-finished',
@@ -191,7 +211,7 @@ describe('runScenario', () => {
       steps: [],
       message: 'Execution target is unavailable',
     })
-    expect(run.events.map(event => event.type)).toEqual([
+    expect(run.events.map((event) => event.type)).toEqual([
       'scenario-started',
       'scenario-finished',
     ])
@@ -209,8 +229,13 @@ describe('runScenario', () => {
             async executeStep() {
               step += 1
               return {
-                state: step === 1 ? 'passed-with-adaptation' as const : 'passed' as const,
-                resolvedActions: [{ description: 'Completed deterministic action' }],
+                state:
+                  step === 1
+                    ? ('passed-with-adaptation' as const)
+                    : ('passed' as const),
+                resolvedActions: [
+                  { description: 'Completed deterministic action' },
+                ],
               }
             },
             async close() {},
@@ -244,9 +269,14 @@ describe('runScenario', () => {
     expect(run.result).toMatchObject({
       state: 'infrastructure-error',
       message: 'Target connection was lost',
-      steps: [{ state: 'infrastructure-error', message: 'Target connection was lost' }],
+      steps: [
+        {
+          state: 'infrastructure-error',
+          message: 'Target connection was lost',
+        },
+      ],
     })
-    expect(run.events.map(event => event.type)).toEqual([
+    expect(run.events.map((event) => event.type)).toEqual([
       'scenario-started',
       'step-started',
       'step-finished',
@@ -325,10 +355,14 @@ describe('runScenario', () => {
         async openSession() {
           return {
             async executeStep(_step, signal) {
-              await new Promise((resolve, reject) => {
-                signal?.addEventListener('abort', () => reject(new DOMException('Aborted', 'AbortError')), {
-                  once: true,
-                })
+              await new Promise((_resolve, reject) => {
+                signal?.addEventListener(
+                  'abort',
+                  () => reject(new DOMException('Aborted', 'AbortError')),
+                  {
+                    once: true,
+                  },
+                )
               })
               return { state: 'passed', resolvedActions: [] }
             },

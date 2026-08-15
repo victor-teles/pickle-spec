@@ -37,14 +37,22 @@ function record(value: unknown, field: string): Record<string, unknown> {
   return value as Record<string, unknown>
 }
 
-function knownFields(value: Record<string, unknown>, fields: readonly string[], parent: string): void {
+function knownFields(
+  value: Record<string, unknown>,
+  fields: readonly string[],
+  parent: string,
+): void {
   for (const field of Object.keys(value)) {
-    if (!fields.includes(field)) throw new Error(`${parent}.${field} is not supported`)
+    if (!fields.includes(field))
+      throw new Error(`${parent}.${field} is not supported`)
   }
 }
 
 function positiveInteger(value: unknown, field: string): void {
-  if (value !== undefined && (!Number.isInteger(value) || (value as number) < 1)) {
+  if (
+    value !== undefined &&
+    (!Number.isInteger(value) || (value as number) < 1)
+  ) {
     throw new Error(`${field} must be an integer greater than or equal to 1`)
   }
 }
@@ -59,24 +67,35 @@ function validateExecutionTargetProfile(value: unknown): void {
 
 export function validateRunConfiguration(value: unknown): RunConfiguration {
   const configuration = record(value, 'run configuration')
-  knownFields(configuration, [
-    'schemaVersion', 'executionTargetProfile', 'concurrency', 'execution',
-  ], 'run configuration')
+  knownFields(
+    configuration,
+    ['schemaVersion', 'executionTargetProfile', 'concurrency', 'execution'],
+    'run configuration',
+  )
   if (configuration.schemaVersion !== 1) {
-    throw new Error(`Unsupported configuration schemaVersion: ${String(configuration.schemaVersion)}`)
+    throw new Error(
+      `Unsupported configuration schemaVersion: ${String(configuration.schemaVersion)}`,
+    )
   }
   validateExecutionTargetProfile(configuration.executionTargetProfile)
   positiveInteger(configuration.concurrency, 'concurrency')
   if (configuration.execution !== undefined) {
     const execution = record(configuration.execution, 'execution')
-    knownFields(execution, [
-      'infrastructureRetries', 'scenarioTimeoutMs', 'stepTimeoutMs',
-    ], 'execution')
+    knownFields(
+      execution,
+      ['infrastructureRetries', 'scenarioTimeoutMs', 'stepTimeoutMs'],
+      'execution',
+    )
     positiveInteger(execution.scenarioTimeoutMs, 'execution.scenarioTimeoutMs')
     positiveInteger(execution.stepTimeoutMs, 'execution.stepTimeoutMs')
     const retries = execution.infrastructureRetries
-    if (retries !== undefined && (!Number.isInteger(retries) || (retries as number) < 0)) {
-      throw new Error('execution.infrastructureRetries must be a non-negative integer')
+    if (
+      retries !== undefined &&
+      (!Number.isInteger(retries) || (retries as number) < 0)
+    ) {
+      throw new Error(
+        'execution.infrastructureRetries must be a non-negative integer',
+      )
     }
   }
   return configuration as unknown as RunConfiguration
@@ -89,8 +108,8 @@ export function validateProjectRunConfiguration(
   const validatedConfiguration = validateRunConfiguration(configuration)
   if (!extensions.adapterAvailable && !extensions.fallbackAdapterAvailable) {
     throw new Error(
-      'No execution target is configured. '
-      + 'Configure web.baseUrl or export an adapter from pickle.extensions.ts.',
+      'No execution target is configured. ' +
+        'Configure web.baseUrl or export an adapter from pickle.extensions.ts.',
     )
   }
   return validatedConfiguration
@@ -101,8 +120,11 @@ export function resolveRunConfiguration(
   extensions: RunExtensions,
 ): ResolvedRunConfiguration {
   const validatedConfiguration = validateRunConfiguration(configuration)
-  if (typeof extensions.adapter !== 'object' || extensions.adapter === null
-    || typeof extensions.adapter.openSession !== 'function') {
+  if (
+    typeof extensions.adapter !== 'object' ||
+    extensions.adapter === null ||
+    typeof extensions.adapter.openSession !== 'function'
+  ) {
     throw new Error('extensions.adapter must provide openSession')
   }
   const retries = validatedConfiguration.execution?.infrastructureRetries

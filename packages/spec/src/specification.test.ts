@@ -25,8 +25,16 @@ Feature: Checkout
           name: 'Complete a purchase',
           tags: ['@smoke'],
           steps: [
-            { keyword: 'Given', text: 'a product is in the basket', type: 'context' },
-            { keyword: 'When', text: 'the customer confirms the order', type: 'action' },
+            {
+              keyword: 'Given',
+              text: 'a product is in the basket',
+              type: 'context',
+            },
+            {
+              keyword: 'When',
+              text: 'the customer confirms the order',
+              type: 'action',
+            },
             { keyword: 'Then', text: 'the purchase succeeds', type: 'outcome' },
           ],
         },
@@ -63,10 +71,23 @@ Feature: Search
         id: 'scnbbbbbbbbbbbb',
         examplesId: 'exscccccccccccccccc',
         examplesRowId: 'rowdddddddddddddd',
-        tags: ['@pickle:id:specaaaaaaaaaaaa', '@pickle:state:draft', '@pickle:id:scnbbbbbbbbbbbb', '@pickle:id:exscccccccccccccccc'],
+        tags: [
+          '@pickle:id:specaaaaaaaaaaaa',
+          '@pickle:state:draft',
+          '@pickle:id:scnbbbbbbbbbbbb',
+          '@pickle:id:exscccccccccccccccc',
+        ],
         steps: [
-          { keyword: 'When', text: 'the customer searches for Pickles', type: 'action' },
-          { keyword: 'Then', text: 'the product page shows Pickles', type: 'outcome' },
+          {
+            keyword: 'When',
+            text: 'the customer searches for Pickles',
+            type: 'action',
+          },
+          {
+            keyword: 'Then',
+            text: 'the product page shows Pickles',
+            type: 'outcome',
+          },
         ],
       },
       {
@@ -74,10 +95,23 @@ Feature: Search
         id: 'scnbbbbbbbbbbbb',
         examplesId: 'exscccccccccccccccc',
         examplesRowId: 'roweeeeeeeeeeeeee',
-        tags: ['@pickle:id:specaaaaaaaaaaaa', '@pickle:state:draft', '@pickle:id:scnbbbbbbbbbbbb', '@pickle:id:exscccccccccccccccc'],
+        tags: [
+          '@pickle:id:specaaaaaaaaaaaa',
+          '@pickle:state:draft',
+          '@pickle:id:scnbbbbbbbbbbbb',
+          '@pickle:id:exscccccccccccccccc',
+        ],
         steps: [
-          { keyword: 'When', text: 'the customer searches for Olives', type: 'action' },
-          { keyword: 'Then', text: 'the product page shows Olives', type: 'outcome' },
+          {
+            keyword: 'When',
+            text: 'the customer searches for Olives',
+            type: 'action',
+          },
+          {
+            keyword: 'Then',
+            text: 'the product page shows Olives',
+            type: 'outcome',
+          },
         ],
       },
     ])
@@ -111,7 +145,11 @@ Feature: Search
         tags: [],
         steps: [
           { keyword: 'Given', text: 'an account exists', type: 'context' },
-          { keyword: 'When', text: 'the customer opens the account', type: 'action' },
+          {
+            keyword: 'When',
+            text: 'the customer opens the account',
+            type: 'action',
+          },
           { keyword: 'Then', text: 'the balance is visible', type: 'outcome' },
         ],
       },
@@ -121,7 +159,11 @@ Feature: Search
         steps: [
           { keyword: 'Given', text: 'an account exists', type: 'context' },
           { keyword: 'Given', text: 'the account is locked', type: 'context' },
-          { keyword: 'When', text: 'the customer opens the account', type: 'action' },
+          {
+            keyword: 'When',
+            text: 'the customer opens the account',
+            type: 'action',
+          },
           { keyword: 'Then', text: 'access is denied', type: 'outcome' },
         ],
       },
@@ -152,20 +194,44 @@ Feature: Search
         name: 'Find a product',
         tags: ['@web'],
         steps: [
-          { keyword: 'Given', text: 'the search page is open', type: 'context' },
-          { keyword: 'When', text: 'the customer searches for Pickles', type: 'action' },
+          {
+            keyword: 'Given',
+            text: 'the search page is open',
+            type: 'context',
+          },
+          {
+            keyword: 'When',
+            text: 'the customer searches for Pickles',
+            type: 'action',
+          },
           { keyword: 'And', text: 'opens the first result', type: 'action' },
-          { keyword: 'Then', text: 'the product page shows Pickles', type: 'outcome' },
+          {
+            keyword: 'Then',
+            text: 'the product page shows Pickles',
+            type: 'outcome',
+          },
         ],
       },
       {
         name: 'Find a product',
         tags: ['@web'],
         steps: [
-          { keyword: 'Given', text: 'the search page is open', type: 'context' },
-          { keyword: 'When', text: 'the customer searches for Olives', type: 'action' },
+          {
+            keyword: 'Given',
+            text: 'the search page is open',
+            type: 'context',
+          },
+          {
+            keyword: 'When',
+            text: 'the customer searches for Olives',
+            type: 'action',
+          },
           { keyword: 'And', text: 'opens the first result', type: 'action' },
-          { keyword: 'Then', text: 'the product page shows Olives', type: 'outcome' },
+          {
+            keyword: 'Then',
+            text: 'the product page shows Olives',
+            type: 'outcome',
+          },
         ],
       },
     ])
