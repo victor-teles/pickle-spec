@@ -185,4 +185,46 @@ describe('generateHtmlReport', () => {
     expect(html).toContain('Failed step: I should see success')
     expect(html).toContain('Expected success banner')
   })
+
+  test('summarizes cancelled scenarios when every step is skipped', async () => {
+    const result = makeResult({
+      features: [{
+        featureFile: '/tmp/example.feature',
+        featureName: 'Cancelled Feature',
+        durationMs: 20,
+        scenarios: [{
+          pickle: {
+            id: 'pickle-cancelled',
+            name: 'Cancelled Scenario',
+            language: 'en',
+            uri: 'file:///tmp/example.feature',
+            steps: [makeStep('step-cancelled', 'I finish checkout')],
+            tags: [],
+            astNodeIds: ['pickle-cancelled-ast'],
+          },
+          status: 'failed',
+          durationMs: 20,
+          error: 'Run cancelled by user',
+          failureKind: 'cancellation',
+          steps: [{
+            step: makeStep('step-cancelled', 'I finish checkout'),
+            status: 'skipped',
+            durationMs: 0,
+          }],
+        }],
+      }],
+      passed: 0,
+      failed: 1,
+      cancelled: true,
+    })
+
+    const reportPath = await generateHtmlReport(result)
+    const html = await Bun.file(reportPath).text()
+
+    expect(html).toContain('Failure Summary')
+    expect(html).toContain('Cancelled Feature / Cancelled Scenario')
+    expect(html).toContain('Failed step: I finish checkout')
+    expect(html).toContain('Run cancelled by user')
+    expect(html).toContain('<details class="scenario failed" open>')
+  })
 })

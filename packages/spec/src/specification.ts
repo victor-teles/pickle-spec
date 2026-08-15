@@ -1,5 +1,11 @@
 import { AstBuilder, GherkinClassicTokenMatcher, Parser } from '@cucumber/gherkin'
 import { IdGenerator } from '@cucumber/messages'
+import type {
+  Background,
+  Rule,
+  Scenario as GherkinScenario,
+  Step as GherkinStep,
+} from '@cucumber/messages'
 
 export interface SpecificationSource {
   uri: string
@@ -30,6 +36,37 @@ export interface ParseSpecificationInput {
   language?: string
 }
 
+function mapSteps(steps: readonly GherkinStep[]): ScenarioStep[] {
+  return steps.map(step => ({
+    keyword: step.keyword.trim(),
+    text: step.text,
+  }))
+}
+
+function mapScenario(
+  scenario: GherkinScenario,
+  backgrounds: readonly Background[],
+  inheritedTags: readonly string[] = [],
+): Scenario {
+  return {
+    name: scenario.name,
+    tags: [...inheritedTags, ...scenario.tags.map(({ name }) => name)],
+    steps: [
+      ...backgrounds.flatMap(background => mapSteps(background.steps)),
+      ...mapSteps(scenario.steps),
+    ],
+  }
+}
+
+function mapRule(rule: Rule, featureBackgrounds: readonly Background[]): Scenario[] {
+  const ruleBackgrounds = rule.children.flatMap(child => child.background ? [child.background] : [])
+  const ruleTags = rule.tags.map(({ name }) => name)
+
+  return rule.children.flatMap(child => child.scenario
+    ? [mapScenario(child.scenario, [...featureBackgrounds, ...ruleBackgrounds], ruleTags)]
+    : [])
+}
+
 export function parseSpecification(input: ParseSpecificationInput): Specification {
   const language = input.language ?? 'en'
   const parser = new Parser(
@@ -43,17 +80,11 @@ export function parseSpecification(input: ParseSpecificationInput): Specificatio
     throw new Error(`Specification "${input.uri}" does not contain a Feature`)
   }
 
-  const scenarios: Scenario[] = feature.children.flatMap(({ scenario }) => {
-    if (!scenario) return []
-
-    return [{
-      name: scenario.name,
-      tags: scenario.tags.map(({ name }) => name),
-      steps: scenario.steps.map(step => ({
-        keyword: step.keyword.trim(),
-        text: step.text,
-      })),
-    }]
+  const featureBackgrounds = feature.children.flatMap(child => child.background ? [child.background] : [])
+  const scenarios: Scenario[] = feature.children.flatMap((child) => {
+    if (child.scenario) return [mapScenario(child.scenario, featureBackgrounds)]
+    if (child.rule) return mapRule(child.rule, featureBackgrounds)
+    return []
   })
 
   return {

@@ -1,5 +1,8 @@
-import { beforeEach, describe, expect, mock, test } from 'bun:test'
-import { runCommandAction, resolveReportOpenModeFromArgv } from './cli-app'
+import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test'
+import { mkdtempSync, rmSync } from 'fs'
+import { join } from 'path'
+import { tmpdir } from 'os'
+import { createProgram, initCommandAction, runCommandAction, resolveReportOpenModeFromArgv } from './cli-app'
 import type { ParsedFeature } from './parser'
 import type { PickleSpecConfig, RunResult } from './types'
 
@@ -48,6 +51,83 @@ describe('resolveReportOpenModeFromArgv', () => {
     expect(resolveReportOpenModeFromArgv(['pickle', 'run', '--open-report'])).toBe('always')
     expect(resolveReportOpenModeFromArgv(['pickle', 'run', '--no-open-report'])).toBe('never')
     expect(resolveReportOpenModeFromArgv(['pickle', 'run', '--open-report', '--no-open-report'])).toBe('never')
+  })
+})
+
+describe('createProgram', () => {
+  afterEach(() => {
+    process.exitCode = 0
+  })
+
+  for (const option of ['--retries', '--scenario-timeout', '--step-timeout', '--concurrency']) {
+    test(`rejects trailing characters in ${option}`, async () => {
+      const program = createProgram('test')
+        .exitOverride()
+        .configureOutput({ writeErr: () => {} })
+      program.commands.find(command => command.name() === 'run')!
+        .exitOverride()
+        .configureOutput({ writeErr: () => {} })
+
+      await expect(program.parseAsync([
+        'run',
+        option,
+        '3000oops',
+      ], { from: 'user' })).rejects.toThrow('not a valid integer')
+    })
+  }
+})
+
+describe('initCommandAction', () => {
+  test('removes the generated config when package installation fails', async () => {
+    const originalCwd = process.cwd()
+    const fixtureDir = mkdtempSync(join(tmpdir(), 'pickle-init-'))
+    const reportError = mock(() => {})
+
+    try {
+      process.chdir(fixtureDir)
+      const exitCode = await initCommandAction({
+        detectPackageManager: mock(async () => 'bun' as const),
+        getAddCommand: mock(() => 'bun add'),
+        getRunCommand: mock(() => 'bun run'),
+        log: mock(() => {}),
+        reportError,
+        spawn: mock(() => ({ exited: Promise.resolve(1) })) as any,
+      })
+
+      expect(exitCode).toBe(1)
+      expect(reportError).toHaveBeenCalledWith('Failed to install pickle-spec (exit code 1)')
+      expect(await Bun.file(join(fixtureDir, 'pickle.config.ts')).exists()).toBe(false)
+    } finally {
+      process.chdir(originalCwd)
+      rmSync(fixtureDir, { recursive: true, force: true })
+    }
+  })
+
+  test('removes the generated config when the installer cannot start', async () => {
+    const originalCwd = process.cwd()
+    const fixtureDir = mkdtempSync(join(tmpdir(), 'pickle-init-spawn-'))
+    const reportError = mock(() => {})
+
+    try {
+      process.chdir(fixtureDir)
+      const exitCode = await initCommandAction({
+        detectPackageManager: mock(async () => 'bun' as const),
+        getAddCommand: mock(() => 'bun add'),
+        getRunCommand: mock(() => 'bun run'),
+        log: mock(() => {}),
+        reportError,
+        spawn: mock(() => {
+          throw new Error('installer unavailable')
+        }) as any,
+      })
+
+      expect(exitCode).toBe(1)
+      expect(reportError).toHaveBeenCalledWith('Failed to install pickle-spec: installer unavailable')
+      expect(await Bun.file(join(fixtureDir, 'pickle.config.ts')).exists()).toBe(false)
+    } finally {
+      process.chdir(originalCwd)
+      rmSync(fixtureDir, { recursive: true, force: true })
+    }
   })
 })
 

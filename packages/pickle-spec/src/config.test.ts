@@ -251,11 +251,24 @@ describe('normalizeConfig', () => {
   })
 
   test('validates browserbase credentials', () => {
-    expect(() => normalizeConfig({
-      browser: {
-        env: 'BROWSERBASE',
-      },
-    })).toThrow('BROWSERBASE_API_KEY')
+    const originalApiKey = process.env.BROWSERBASE_API_KEY
+    const originalProjectId = process.env.BROWSERBASE_PROJECT_ID
+    delete process.env.BROWSERBASE_API_KEY
+    delete process.env.BROWSERBASE_PROJECT_ID
+
+    try {
+      expect(() => normalizeConfig({
+        browser: {
+          env: 'BROWSERBASE',
+        },
+      })).toThrow('BROWSERBASE_API_KEY')
+    } finally {
+      if (originalApiKey === undefined) delete process.env.BROWSERBASE_API_KEY
+      else process.env.BROWSERBASE_API_KEY = originalApiKey
+
+      if (originalProjectId === undefined) delete process.env.BROWSERBASE_PROJECT_ID
+      else process.env.BROWSERBASE_PROJECT_ID = originalProjectId
+    }
   })
 
   test('validates server command requires url or port', () => {

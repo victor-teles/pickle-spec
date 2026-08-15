@@ -1,4 +1,5 @@
-import { Command } from 'commander'
+import { Command, InvalidArgumentError } from 'commander'
+import { unlink } from 'node:fs/promises'
 import pc from 'picocolors'
 import { loadConfig, normalizeConfig } from './config'
 import { parseFeatureFiles } from './parser'
@@ -103,6 +104,19 @@ export function resolveReportOpenModeFromArgv(argv: string[]): ReportOpenMode | 
   }
 
   return mode
+}
+
+function parseIntegerOption(value: string): number {
+  if (!/^[+-]?\d+$/.test(value)) {
+    throw new InvalidArgumentError(`"${value}" is not a valid integer`)
+  }
+
+  const parsed = Number(value)
+  if (!Number.isSafeInteger(parsed)) {
+    throw new InvalidArgumentError(`"${value}" is not a valid integer`)
+  }
+
+  return parsed
 }
 
 function applyRunOverrides(config: PickleSpecConfig, opts: RunCommandOptions): PickleSpecConfig {
@@ -314,20 +328,51 @@ export default defineConfig({
 
   deps.log('\nInstalling pickle-spec...')
   const addCmd = deps.getAddCommand(pm)
-  const proc = deps.spawn(addCmd.split(' ').concat('pickle-spec'), {
-    stdout: 'inherit',
-    stderr: 'inherit',
-    cwd: process.cwd(),
-  })
-  const exitCode = await proc.exited
+  let exitCode: number
+
+  try {
+    const proc = deps.spawn(addCmd.split(' ').concat('pickle-spec'), {
+      stdout: 'inherit',
+      stderr: 'inherit',
+      cwd: process.cwd(),
+    })
+    exitCode = await proc.exited
+  } catch (error) {
+    return reportInstallFailureAndRollback(
+      configPath,
+      `Failed to install pickle-spec: ${error instanceof Error ? error.message : String(error)}`,
+      deps,
+    )
+  }
 
   if (exitCode !== 0) {
-    deps.reportError(`Failed to install pickle-spec (exit code ${exitCode})`)
-    return 1
+    return reportInstallFailureAndRollback(
+      configPath,
+      `Failed to install pickle-spec (exit code ${exitCode})`,
+      deps,
+    )
   }
 
   deps.log(pc.green('\nPickle-spec is ready!'))
   return 0
+}
+
+async function reportInstallFailureAndRollback(
+  configPath: string,
+  message: string,
+  deps: InitCommandDependencies,
+): Promise<number> {
+  try {
+    await unlink(configPath)
+  } catch (error) {
+    deps.reportError(
+      `${message}. Could not remove ${configPath}: ${error instanceof Error ? error.message : String(error)}`,
+    )
+    return 1
+  }
+
+  deps.reportError(message)
+  return 1
 }
 
 export function createProgram(version: string): Command {
@@ -352,13 +397,13 @@ export function createProgram(version: string): Command {
     .option('--screenshot <mode>', 'Screenshot mode: off, on-failure, on-step')
     .option('--json <path>', 'Write machine-readable JSON output to the given path')
     .option('--junit <path>', 'Write JUnit XML output to the given path')
-    .option('--retries <n>', 'Retry infrastructure failures this many times', parseInt)
-    .option('--scenario-timeout <ms>', 'Fail a scenario attempt if it exceeds this timeout', parseInt)
-    .option('--step-timeout <ms>', 'Fail a step if it exceeds this timeout', parseInt)
+    .option('--retries <n>', 'Retry infrastructure failures this many times', parseIntegerOption)
+    .option('--scenario-timeout <ms>', 'Fail a scenario attempt if it exceeds this timeout', parseIntegerOption)
+    .option('--step-timeout <ms>', 'Fail a step if it exceeds this timeout', parseIntegerOption)
     .option('--reuse-server', 'Reuse an already-running healthy server when server.url is configured')
     .option('--open-report', 'Always open the generated HTML report')
     .option('--no-open-report', 'Never open the generated HTML report')
-    .option('-j, --concurrency <n>', 'Max parallel scenarios per feature', parseInt)
+    .option('-j, --concurrency <n>', 'Max parallel scenarios per feature', parseIntegerOption)
     .action(async (glob: string | undefined, opts: Omit<RunCommandOptions, 'reportOpenMode'>) => {
       const exitCode = await runCommandAction(glob, {
         ...opts,

@@ -36,4 +36,49 @@ Feature: Checkout
     expect(JSON.stringify(specification)).not.toContain('gherkinDocument')
     expect(JSON.stringify(specification)).not.toContain('pickle')
   })
+
+  test('includes feature and rule backgrounds in nested scenarios', () => {
+    const specification = parseSpecification({
+      uri: 'features/account.feature',
+      source: `Feature: Account access
+  Background:
+    Given an account exists
+
+  Scenario: View the account
+    When the customer opens the account
+    Then the balance is visible
+
+  @locked
+  Rule: Locked accounts
+    Background:
+      Given the account is locked
+
+    @security
+    Scenario: Reject access
+      When the customer opens the account
+      Then access is denied`,
+    })
+
+    expect(specification.scenarios).toEqual([
+      {
+        name: 'View the account',
+        tags: [],
+        steps: [
+          { keyword: 'Given', text: 'an account exists' },
+          { keyword: 'When', text: 'the customer opens the account' },
+          { keyword: 'Then', text: 'the balance is visible' },
+        ],
+      },
+      {
+        name: 'Reject access',
+        tags: ['@locked', '@security'],
+        steps: [
+          { keyword: 'Given', text: 'an account exists' },
+          { keyword: 'Given', text: 'the account is locked' },
+          { keyword: 'When', text: 'the customer opens the account' },
+          { keyword: 'Then', text: 'access is denied' },
+        ],
+      },
+    ])
+  })
 })

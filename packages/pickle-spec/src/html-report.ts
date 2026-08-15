@@ -40,6 +40,7 @@ function statusIcon(status: string): string {
 }
 
 function scenarioStatus(scenario: ScenarioResult): string {
+  if (scenario.status === 'failed') return 'failed'
   if (scenario.steps.some(s => s.status === 'failed')) return 'failed'
   if (scenario.steps.every(s => s.status === 'skipped')) return 'skipped'
   return scenario.status
@@ -69,12 +70,15 @@ function buildFailureSummary(result: RunResult): string {
   for (const feature of result.features) {
     for (const scenario of feature.scenarios) {
       const failingStep = scenario.steps.find(step => step.status === 'failed')
-      if (!failingStep) continue
+      if (scenario.status !== 'failed') continue
+      const summaryStep = failingStep ?? scenario.steps.find(step => step.status === 'skipped')
       failures.push({
         featureName: feature.featureName,
         scenarioName: scenario.pickle.name,
-        stepText: failingStep.step.text,
-        error: failingStep.error ?? 'Unknown failure',
+        stepText: summaryStep?.step.text ?? 'Scenario',
+        error: scenario.error
+          ?? failingStep?.error
+          ?? (scenario.failureKind === 'cancellation' ? 'Run cancelled by user' : 'Unknown failure'),
         assets: getScenarioDebugAssets(scenario),
       })
     }

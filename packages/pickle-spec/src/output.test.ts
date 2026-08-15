@@ -115,6 +115,20 @@ describe('writeStructuredOutputs', () => {
     expect(json.reportPath).toBe('/tmp/report.html')
     expect(await Bun.file(junitPath).text()).toContain('<testsuite name="Feature One"')
   })
+
+  test('rejects duplicate resolved output paths before writing either format', async () => {
+    const outputPath = join(fixtureDir, 'duplicate-output')
+    rmSync(outputPath, { force: true })
+
+    await expect(writeStructuredOutputs(makeResult(), {
+      output: {
+        json: { path: outputPath },
+        junit: { path: `${fixtureDir}/nested/../duplicate-output` },
+      },
+    })).rejects.toThrow('JSON and JUnit output paths must be different')
+
+    expect(await Bun.file(outputPath).exists()).toBe(false)
+  })
 })
 
 describe('buildJunitOutput', () => {
@@ -172,5 +186,31 @@ describe('buildJunitOutput', () => {
     expect(xml).toContain('<failure message="Expected banner">')
     expect(xml).toContain('<error message="browser crashed">')
     expect(xml).toContain('Attempt 1: failed (infrastructure): net::ERR_ABORTED')
+  })
+
+  test('removes XML-invalid characters before escaping JUnit values', () => {
+    const result = makeResult({
+      features: [{
+        featureFile: '/tmp/feature.feature',
+        featureName: 'Feature\u0000 One',
+        durationMs: 25,
+        scenarios: [makeScenario('Scenario\u000b One', {
+          status: 'failed',
+          error: 'Bad\u000c value & <detail>',
+          failureKind: 'infrastructure',
+        })],
+      }],
+      passed: 0,
+      failed: 1,
+    })
+
+    const xml = buildJunitOutput(result)
+
+    expect(xml).not.toContain('\u0000')
+    expect(xml).not.toContain('\u000b')
+    expect(xml).not.toContain('\u000c')
+    expect(xml).toContain('Feature One')
+    expect(xml).toContain('Scenario One')
+    expect(xml).toContain('Bad value &amp; &lt;detail&gt;')
   })
 })

@@ -1,11 +1,21 @@
-import { dirname, join } from 'path'
+import { dirname, join, resolve } from 'path'
 import { mkdir } from 'node:fs/promises'
 import type { FailureKind, PickleSpecConfig, RunResult, ScenarioResult, StepResult } from './types'
 
 const DEFAULT_OUTPUT_DIR = '.pickle/results'
 
 function escapeXml(value: string): string {
-  return value
+  return Array.from(value)
+    .filter((character) => {
+      const codePoint = character.codePointAt(0)!
+      return codePoint === 0x09
+        || codePoint === 0x0a
+        || codePoint === 0x0d
+        || (codePoint >= 0x20 && codePoint <= 0xd7ff)
+        || (codePoint >= 0xe000 && codePoint <= 0xfffd)
+        || (codePoint >= 0x10000 && codePoint <= 0x10ffff)
+    })
+    .join('')
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
@@ -104,6 +114,10 @@ export function buildJunitOutput(result: RunResult): string {
 export async function writeStructuredOutputs(result: RunResult, config: PickleSpecConfig): Promise<string[]> {
   const paths = resolveOutputPaths(config)
   const written: string[] = []
+
+  if (paths.json && paths.junit && resolve(paths.json) === resolve(paths.junit)) {
+    throw new Error('JSON and JUnit output paths must be different')
+  }
 
   if (paths.json) {
     await mkdir(dirname(paths.json), { recursive: true })
