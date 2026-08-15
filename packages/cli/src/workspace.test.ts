@@ -1,11 +1,47 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
 import { mkdir, mkdtemp, rm, symlink } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join, resolve } from 'node:path'
+import { dirname, join, resolve } from 'node:path'
 
 describe('public CLI workspace seam', () => {
   let workspace: string
   let pickleCommand: string
+
+  interface CheckProjectFixture {
+    config: unknown
+    extensions?: string
+    specification?: { path: string; source: string }
+  }
+
+  const defaultCheckConfig = {
+    schemaVersion: 1,
+    specifications: 'features/**/*.feature',
+    web: { baseUrl: 'https://example.com' },
+  }
+  const validSpecification = {
+    path: 'features/example.feature',
+    source: 'Feature: Example\n  Scenario: Validate project\n    Then validation succeeds',
+  }
+
+  async function createCheckProject(name: string, fixture: CheckProjectFixture): Promise<string> {
+    const project = join(workspace, name)
+    await mkdir(project, { recursive: true })
+    if (fixture.specification) {
+      const path = join(project, fixture.specification.path)
+      await mkdir(dirname(path), { recursive: true })
+      await Bun.write(path, fixture.specification.source)
+    }
+    await Bun.write(join(project, 'pickle.config.jsonc'), JSON.stringify(fixture.config))
+    await Bun.write(
+      join(project, 'pickle.extensions.ts'),
+      fixture.extensions ?? 'export default {}',
+    )
+    return project
+  }
+
+  function runCheck(project: string) {
+    return Bun.spawnSync({ cmd: [pickleCommand, 'check'], cwd: project, env: { ...Bun.env } })
+  }
 
   beforeAll(async () => {
     workspace = await mkdtemp(join(tmpdir(), 'pickle-spec-workspace-'))
@@ -20,11 +56,14 @@ describe('public CLI workspace seam', () => {
   Scenario: Complete a purchase
     Given a product is in the basket
     Then the purchase succeeds`)
+    await Bun.write(join(workspace, 'deterministic.config.jsonc'), JSON.stringify({
+      schemaVersion: 1,
+      executionTargetProfile: { id: 'deterministic' },
+    }))
     await Bun.write(join(workspace, 'pickle.extensions.ts'), `
 const state = process.env.PICKLE_TEST_OUTCOME ?? 'passed'
 
 export default {
-  executionTargetProfile: { id: 'deterministic' },
   adapter: {
     async openSession() {
       return {
@@ -68,6 +107,8 @@ export default {
         pickleCommand,
         'run',
         'purchase.feature',
+        '--config',
+        'deterministic.config.jsonc',
         '--extensions',
         'pickle.extensions.ts',
       ],
@@ -108,6 +149,230 @@ export default {
     expect(stdout).not.toContain('Stagehand')
   })
 
+  test('initializes a project without overwriting files and checks it without opening a session', async () => {
+    const project = join(workspace, 'initialized-project')
+    await mkdir(join(project, 'features'), { recursive: true })
+    await Bun.write(join(project, 'features', 'example.feature'), `Feature: Example\n  Scenario: Safe check\n    Then validation is offline`)
+
+    const first = Bun.spawnSync({ cmd: [pickleCommand, 'init'], cwd: project, env: { ...Bun.env } })
+    expect(first.exitCode).toBe(0)
+    expect(first.stdout.toString()).toContain('Created pickle.config.jsonc')
+    expect(first.stdout.toString()).toContain('Created pickle.extensions.ts')
+
+    const originalExtensions = await Bun.file(join(project, 'pickle.extensions.ts')).text()
+    const second = Bun.spawnSync({ cmd: [pickleCommand, 'init'], cwd: project, env: { ...Bun.env } })
+    expect(second.exitCode).toBe(0)
+    expect(second.stdout.toString()).toContain('Skipped pickle.config.jsonc: file already exists')
+    expect(second.stdout.toString()).toContain('Skipped pickle.extensions.ts: file already exists')
+    expect(await Bun.file(join(project, 'pickle.extensions.ts')).text()).toBe(originalExtensions)
+
+    const checked = Bun.spawnSync({ cmd: [pickleCommand, 'check'], cwd: project, env: { ...Bun.env } })
+    expect(checked.exitCode).toBe(0)
+    expect(checked.stdout.toString()).toContain('Project is valid')
+    expect(checked.stderr.toString()).toBe('')
+  })
+
+  test('check validates extension imports without evaluating extension code', async () => {
+    const projectName = 'side-effect-free-check'
+    const projectPath = join(workspace, projectName)
+    const marker = join(projectPath, 'extension-evaluated.txt')
+    const project = await createCheckProject(projectName, {
+      config: defaultCheckConfig,
+      specification: validSpecification,
+      extensions: `
+await Bun.write(${JSON.stringify(marker)}, 'executed')
+await import('./missing-adapter.ts')
+export default {}
+`,
+    })
+
+    const checked = runCheck(project)
+
+    expect(checked.exitCode).toBe(2)
+    expect(checked.stderr.toString()).toContain('Cannot validate pickle.extensions.ts')
+    expect(checked.stderr.toString()).toContain('missing-adapter.ts')
+    expect(checked.stderr.toString()).toContain('Fix its imports or syntax and run pickle check again')
+    expect(await Bun.file(marker).exists()).toBe(false)
+  })
+
+  test('check rejects invalid imported bindings without evaluating extension code', async () => {
+    const projectName = 'invalid-extension-binding'
+    const projectPath = join(workspace, projectName)
+    const marker = join(projectPath, 'extension-evaluated.txt')
+    const project = await createCheckProject(projectName, {
+      config: defaultCheckConfig,
+      specification: validSpecification,
+      extensions: `
+import { missingAdapter } from './adapter.ts'
+await Bun.write(${JSON.stringify(marker)}, 'executed')
+export default { adapter: missingAdapter }
+`,
+    })
+    await Bun.write(join(project, 'adapter.ts'), 'export const adapter = {}')
+
+    const checked = runCheck(project)
+
+    expect(checked.exitCode).toBe(2)
+    expect(checked.stderr.toString()).toContain("has no exported member 'missingAdapter'")
+    expect(checked.stderr.toString()).toContain('Fix its imports or syntax and run pickle check again')
+    expect(await Bun.file(marker).exists()).toBe(false)
+  })
+
+  test('runner rejects a project without an extension or configured fallback adapter', async () => {
+    const project = await createCheckProject('missing-project-adapter', {
+      config: {
+        schemaVersion: 1,
+        specifications: 'features/**/*.feature',
+      },
+      specification: validSpecification,
+    })
+
+    const checked = runCheck(project)
+
+    expect(checked.exitCode).toBe(2)
+    expect(checked.stderr.toString())
+      .toContain('Configure web.baseUrl or export an adapter from pickle.extensions.ts')
+  })
+
+  test('check requires an extension default export without evaluating it', async () => {
+    const project = await createCheckProject('missing-extension-export', {
+      config: defaultCheckConfig,
+      specification: validSpecification,
+      extensions: 'export const hooks = {}',
+    })
+
+    const checked = runCheck(project)
+
+    expect(checked.exitCode).toBe(2)
+    expect(checked.stderr.toString()).toContain('pickle.extensions.ts must provide a default export')
+    expect(checked.stderr.toString()).toContain('Export the extension object as default and run pickle check again')
+  })
+
+  test('check rejects an invalid extension adapter without evaluating it', async () => {
+    const project = await createCheckProject('invalid-extension-adapter', {
+      config: defaultCheckConfig,
+      specification: validSpecification,
+      extensions: `export default {
+  adapter: {},
+  executionTargetProfile: { id: '' },
+}`,
+    })
+
+    const checked = runCheck(project)
+
+    expect(checked.exitCode).toBe(2)
+    expect(checked.stderr.toString()).toContain("Property 'openSession' is missing")
+    expect(checked.stderr.toString()).toContain('executionTargetProfile')
+    expect(checked.stderr.toString()).toContain('Correct the extension default export and run pickle check again')
+  })
+
+  test('check rejects invalid selection policies', async () => {
+    const project = await createCheckProject('invalid-selection-policy', {
+      config: {
+        ...defaultCheckConfig,
+        selection: { shard: { index: 2, total: 1 } },
+      },
+      specification: validSpecification,
+    })
+
+    const checked = runCheck(project)
+
+    expect(checked.exitCode).toBe(2)
+    expect(checked.stderr.toString()).toContain('selection.shard.index must be less than or equal to selection.shard.total')
+    expect(checked.stderr.toString()).toContain('Correct the value and run pickle check again')
+  })
+
+  test('check rejects invalid web adapter policies', async () => {
+    const project = await createCheckProject('invalid-web-policy', {
+      config: {
+        ...defaultCheckConfig,
+        web: {
+          baseUrl: 'https://example.com',
+          browser: { environment: 'invalid' },
+        },
+      },
+      specification: validSpecification,
+    })
+
+    const checked = runCheck(project)
+
+    expect(checked.exitCode).toBe(2)
+    expect(checked.stderr.toString()).toContain('web.browser.environment must be local or browserbase')
+    expect(checked.stderr.toString()).toContain('Correct the value and run pickle check again')
+  })
+
+  test('check rejects invalid Specifications before execution resources start', async () => {
+    const project = await createCheckProject('invalid-specification', {
+      config: defaultCheckConfig,
+      specification: {
+        path: 'features/invalid.feature',
+        source: 'this is not a valid Specification',
+      },
+    })
+
+    const checked = runCheck(project)
+
+    expect(checked.exitCode).toBe(2)
+    expect(checked.stderr.toString()).toContain('Invalid Specification features/invalid.feature')
+    expect(checked.stderr.toString()).toContain('Correct the Specification and run pickle check again')
+  })
+
+  test('run validates Specifications before starting the configured application server', async () => {
+    const projectName = 'run-validates-before-server'
+    const projectPath = join(workspace, projectName)
+    const marker = join(projectPath, 'server-started.txt')
+    const extensionMarker = join(projectPath, 'extension-evaluated.txt')
+    const project = await createCheckProject(projectName, {
+      config: {
+        ...defaultCheckConfig,
+        server: {
+          command: `bun -e "await Bun.write('${marker}', 'started')"`,
+          url: 'http://127.0.0.1:1',
+          startupTimeoutMs: 50,
+          pollIntervalMs: 10,
+        },
+      },
+      specification: {
+        path: 'features/invalid.feature',
+        source: 'this is not a valid Specification',
+      },
+      extensions: `
+await Bun.write(${JSON.stringify(extensionMarker)}, 'evaluated')
+export default {}
+`,
+    })
+
+    const run = Bun.spawnSync({ cmd: [pickleCommand, 'run'], cwd: project, env: { ...Bun.env } })
+
+    expect(run.exitCode).toBe(2)
+    expect(run.stderr.toString()).toContain('Parser errors')
+    expect(await Bun.file(marker).exists()).toBe(false)
+    expect(await Bun.file(extensionMarker).exists()).toBe(false)
+  })
+
+  test('check rejects an empty Specification path set', async () => {
+    const project = await createCheckProject('empty-specification-paths', {
+      config: { ...defaultCheckConfig, specifications: [] },
+    })
+
+    const checked = runCheck(project)
+
+    expect(checked.exitCode).toBe(2)
+    expect(checked.stderr.toString()).toContain('specifications must contain at least one path')
+    expect(checked.stderr.toString()).toContain('Correct the value and run pickle check again')
+  })
+
+  test('check reports the reason and corrective action for validation failures', async () => {
+    const project = await createCheckProject('invalid-project', {
+      config: { schemaVersion: 99 },
+    })
+
+    const checked = runCheck(project)
+    expect(checked.exitCode).toBe(2)
+    expect(checked.stderr.toString()).toContain('Unsupported configuration schemaVersion: 99')
+    expect(checked.stderr.toString()).toContain('Correct the value and run pickle check again')
+  })
+
   test('the deterministic adapter models every kernel outcome', async () => {
     const cases = [
       { outcome: 'passed', exitCode: 0 },
@@ -123,6 +388,8 @@ export default {
           pickleCommand,
           'run',
           'purchase.feature',
+          '--config',
+          'deterministic.config.jsonc',
           '--extensions',
           'pickle.extensions.ts',
         ],
@@ -158,6 +425,8 @@ export default {
         pickleCommand,
         'run',
         'purchase.feature',
+        '--config',
+        'deterministic.config.jsonc',
         '--extensions',
         'pickle.extensions.ts',
       ],
@@ -268,10 +537,10 @@ export default {
       new Response(process.stdout).text(),
       new Response(process.stderr).text(),
     ])
-    const records = stdout.trim().split('\n').map(line => JSON.parse(line))
 
     expect(stderr).toBe('')
     expect(exitCode).toBe(0)
+    const records = stdout.trim().split('\n').map(line => JSON.parse(line))
     expect(records.at(-1)).toMatchObject({
       kind: 'test-result',
       result: {

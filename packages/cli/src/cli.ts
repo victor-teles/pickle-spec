@@ -1,23 +1,18 @@
 #!/usr/bin/env bun
 
-import type { ExecutionTargetAdapter, ExecutionTargetProfile } from '@pickle-spec/runner'
+import type { ExecutionTargetAdapter } from '@pickle-spec/runner'
 import { resolveRunConfiguration, runScenarios } from '@pickle-spec/runner'
 import { parseSpecificationFile, selectScenarios, type SelectionOptions } from '@pickle-spec/spec'
 import {
   createWebAdapter,
   type WebAdapterOptions,
-  type WebAutomationFactory,
 } from '@pickle-spec/web'
 import { resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { loadConfig, type PickleConfig } from './config'
+import type { Extensions } from './extensions'
+import { checkProject, initializeProject } from './project'
 import { startServer } from './server'
-
-interface Extensions {
-  adapter?: ExecutionTargetAdapter
-  executionTargetProfile?: ExecutionTargetProfile
-  webAutomationFactory?: WebAutomationFactory
-}
 
 interface RunArguments {
   pattern?: string
@@ -146,17 +141,12 @@ function configuredAdapter(
 async function run(argv: string[]): Promise<number> {
   const args = parseRunArguments(argv)
   const config = await loadConfig(args.configPath)
-  const extensions = await loadExtensions(args.extensionsPath)
   const controller = new AbortController()
   const onSigint = () => controller.abort()
   process.on('SIGINT', onSigint)
   let server: Awaited<ReturnType<typeof startServer>>
 
   try {
-    server = await startServer({
-      ...config.server,
-      ...(args.reuseServer ? { reuseExisting: true } : {}),
-    })
     const specifications = await discoverSpecifications(
       args.pattern ?? config.specifications ?? 'features/**/*.feature',
       args.language ?? config.language,
@@ -168,6 +158,7 @@ async function run(argv: string[]): Promise<number> {
     })
     if (selections.length === 0) throw new Error('No Scenarios match the current selection')
 
+    const extensions = await loadExtensions(args.extensionsPath)
     const web = configuredWebOptions(config, args)
     const resolvedConfiguration = resolveRunConfiguration({
       schemaVersion: config.schemaVersion,
@@ -180,7 +171,10 @@ async function run(argv: string[]): Promise<number> {
       },
     }, {
       adapter: configuredAdapter(extensions, web),
-      executionTargetProfile: extensions.executionTargetProfile,
+    })
+    server = await startServer({
+      ...config.server,
+      ...(args.reuseServer ? { reuseExisting: true } : {}),
     })
     const runs = await runScenarios({
       selections,
@@ -205,8 +199,32 @@ async function run(argv: string[]): Promise<number> {
   }
 }
 
+function projectOptions(argv: string[]): { configPath?: string; extensionsPath?: string } {
+  const options: { configPath?: string; extensionsPath?: string } = {}
+  for (let index = 1; index < argv.length; index++) {
+    const flag = argv[index]!
+    if (flag === '--config') options.configPath = valueAfter(argv, index++)
+    else if (flag === '--extensions') options.extensionsPath = valueAfter(argv, index++)
+    else throw new Error(`Unknown option: ${flag}`)
+  }
+  return options
+}
+
+async function main(argv: string[]): Promise<number> {
+  if (argv[0] === 'init') {
+    if (argv.length > 1) throw new Error('Usage: pickle init')
+    await initializeProject()
+    return 0
+  }
+  if (argv[0] === 'check') {
+    await checkProject({ ...projectOptions(argv), report: console.log })
+    return 0
+  }
+  return run(argv)
+}
+
 try {
-  process.exitCode = await run(Bun.argv.slice(2))
+  process.exitCode = await main(Bun.argv.slice(2))
 } catch (error) {
   console.error(error instanceof Error ? error.message : String(error))
   process.exitCode = 2

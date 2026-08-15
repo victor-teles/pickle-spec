@@ -1,4 +1,4 @@
-export { createWebAdapter } from './src/web-adapter'
+export { createWebAdapter, validateWebAdapterOptions } from './src/web-adapter'
 export type {
   BrowserOptions,
   ScreenshotOptions,

@@ -25,8 +25,24 @@ function normalizedTag(tag: string): string {
   return tag.startsWith('@') ? tag : `@${tag}`
 }
 
+function tagExpressionTokens(expression: string): string[] {
+  const tokens: string[] = []
+  const tokenPattern = /\(|\)|(?:and|or|not)\b|@?[A-Za-z0-9:_-]+/iy
+  let index = 0
+  while (index < expression.length) {
+    while (index < expression.length && /\s/.test(expression[index]!)) index++
+    if (index === expression.length) break
+    tokenPattern.lastIndex = index
+    const match = tokenPattern.exec(expression)
+    if (!match) throw new Error(`Unexpected character "${expression[index]}" in tag expression`)
+    tokens.push(match[0])
+    index = tokenPattern.lastIndex
+  }
+  return tokens
+}
+
 function parseTagExpression(expression: string): TagExpressionNode {
-  const tokens = expression.match(/\(|\)|\b(?:and|or|not)\b|@?[A-Za-z0-9:_-]+/gi) ?? []
+  const tokens = tagExpressionTokens(expression)
   let index = 0
 
   function consume(): string {
@@ -85,25 +101,57 @@ function matchesTagExpression(node: TagExpressionNode, tags: readonly string[]):
   }
 }
 
-function validateShard(shard: Shard): void {
-  if (!Number.isInteger(shard.index) || shard.index < 1) {
-    throw new Error('shard.index must be an integer greater than or equal to 1')
+function record(value: unknown, field: string): Record<string, unknown> {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    throw new Error(`${field} must be an object`)
   }
-  if (!Number.isInteger(shard.total) || shard.total < 1) {
-    throw new Error('shard.total must be an integer greater than or equal to 1')
+  return value as Record<string, unknown>
+}
+
+function knownFields(value: Record<string, unknown>, fields: readonly string[], parent: string): void {
+  for (const field of Object.keys(value)) {
+    if (!fields.includes(field)) throw new Error(`${parent}.${field} is not supported`)
   }
-  if (shard.index > shard.total) {
-    throw new Error('shard.index must be less than or equal to shard.total')
+}
+
+function optionalString(value: unknown, field: string): void {
+  if (value !== undefined && typeof value !== 'string') {
+    throw new Error(`${field} must be a string`)
   }
+}
+
+function validateShard(value: unknown): void {
+  const shard = record(value, 'selection.shard')
+  knownFields(shard, ['index', 'total'], 'selection.shard')
+  if (!Number.isInteger(shard.index) || (shard.index as number) < 1) {
+    throw new Error('selection.shard.index must be an integer greater than or equal to 1')
+  }
+  if (!Number.isInteger(shard.total) || (shard.total as number) < 1) {
+    throw new Error('selection.shard.total must be an integer greater than or equal to 1')
+  }
+  if ((shard.index as number) > (shard.total as number)) {
+    throw new Error('selection.shard.index must be less than or equal to selection.shard.total')
+  }
+}
+
+export function validateSelectionOptions(value: unknown): SelectionOptions {
+  const options = record(value, 'selection')
+  knownFields(options, ['scenarioName', 'tagExpression', 'shard'], 'selection')
+  optionalString(options.scenarioName, 'selection.scenarioName')
+  optionalString(options.tagExpression, 'selection.tagExpression')
+  if (options.tagExpression) parseTagExpression(options.tagExpression as string)
+  if (options.shard !== undefined) validateShard(options.shard)
+  return options as unknown as SelectionOptions
 }
 
 export function selectScenarios(
   specifications: readonly Specification[],
   options: SelectionOptions = {},
 ): ScenarioSelection[] {
-  const name = options.scenarioName?.trim().toLowerCase()
-  const tagExpression = options.tagExpression
-    ? parseTagExpression(options.tagExpression)
+  const validatedOptions = validateSelectionOptions(options)
+  const name = validatedOptions.scenarioName?.trim().toLowerCase()
+  const tagExpression = validatedOptions.tagExpression
+    ? parseTagExpression(validatedOptions.tagExpression)
     : undefined
 
   const selected = [...specifications]
@@ -112,10 +160,9 @@ export function selectScenarios(
     .filter(({ scenario }) => !name || scenario.name.toLowerCase().includes(name))
     .filter(({ scenario }) => !tagExpression || matchesTagExpression(tagExpression, scenario.tags))
 
-  if (!options.shard) return selected
-  validateShard(options.shard)
+  if (!validatedOptions.shard) return selected
 
   return selected
     .filter(({ scenario }) => !scenario.tags.includes('@ignore'))
-    .filter((_, index) => index % options.shard!.total === options.shard!.index - 1)
+    .filter((_, index) => index % validatedOptions.shard!.total === validatedOptions.shard!.index - 1)
 }

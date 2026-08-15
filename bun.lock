@@ -26,8 +26,6 @@
         "@pickle-spec/runner": "workspace:*",
         "@pickle-spec/spec": "workspace:*",
         "@pickle-spec/web": "workspace:*",
-      },
-      "devDependencies": {
         "@types/bun": "latest",
         "typescript": "^5.9.3",
       },

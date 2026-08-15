@@ -1,5 +1,5 @@
 export { parseSpecification, parseSpecificationFile } from './src/specification'
-export { selectScenarios } from './src/selection'
+export { selectScenarios, validateSelectionOptions } from './src/selection'
 export type {
   ParseSpecificationInput,
   Scenario,

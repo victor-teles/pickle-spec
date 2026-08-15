@@ -42,6 +42,84 @@ export interface WebAdapterOptions {
   screenshots?: ScreenshotOptions
 }
 
+function record(value: unknown, field: string): Record<string, unknown> {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    throw new Error(`${field} must be an object`)
+  }
+  return value as Record<string, unknown>
+}
+
+function knownFields(value: Record<string, unknown>, fields: readonly string[], parent: string): void {
+  for (const field of Object.keys(value)) {
+    if (!fields.includes(field)) throw new Error(`${parent}.${field} is not supported`)
+  }
+}
+
+function optionalString(value: unknown, field: string): void {
+  if (value !== undefined && typeof value !== 'string') throw new Error(`${field} must be a string`)
+}
+
+function optionalBoolean(value: unknown, field: string): void {
+  if (value !== undefined && typeof value !== 'boolean') throw new Error(`${field} must be a boolean`)
+}
+
+function optionalPositiveInteger(value: unknown, field: string): void {
+  if (value !== undefined && (!Number.isInteger(value) || (value as number) < 1)) {
+    throw new Error(`${field} must be an integer greater than or equal to 1`)
+  }
+}
+
+export function validateWebAdapterOptions(value: unknown): WebAdapterOptions {
+  const web = record(value, 'web')
+  knownFields(web, ['baseUrl', 'browser', 'screenshots'], 'web')
+  if (typeof web.baseUrl !== 'string' || !web.baseUrl.trim()) {
+    throw new Error('web.baseUrl must not be empty')
+  }
+  try {
+    new URL(web.baseUrl)
+  } catch {
+    throw new Error('web.baseUrl must be a valid URL')
+  }
+
+  if (web.browser !== undefined) {
+    const browser = record(web.browser, 'web.browser')
+    knownFields(browser, [
+      'environment', 'modelName', 'modelApiKey', 'headless', 'browserbaseApiKey',
+      'browserbaseProjectId', 'cache', 'selfHeal', 'domSettleTimeoutMs', 'observeTimeoutMs',
+      'actTimeoutMs', 'navigationTimeoutMs',
+    ], 'web.browser')
+    if (browser.environment !== undefined && browser.environment !== 'local' && browser.environment !== 'browserbase') {
+      throw new Error('web.browser.environment must be local or browserbase')
+    }
+    optionalString(browser.modelName, 'web.browser.modelName')
+    optionalString(browser.modelApiKey, 'web.browser.modelApiKey')
+    optionalString(browser.browserbaseApiKey, 'web.browser.browserbaseApiKey')
+    optionalString(browser.browserbaseProjectId, 'web.browser.browserbaseProjectId')
+    optionalBoolean(browser.headless, 'web.browser.headless')
+    optionalBoolean(browser.cache, 'web.browser.cache')
+    optionalBoolean(browser.selfHeal, 'web.browser.selfHeal')
+    optionalPositiveInteger(browser.domSettleTimeoutMs, 'web.browser.domSettleTimeoutMs')
+    optionalPositiveInteger(browser.observeTimeoutMs, 'web.browser.observeTimeoutMs')
+    optionalPositiveInteger(browser.actTimeoutMs, 'web.browser.actTimeoutMs')
+    optionalPositiveInteger(browser.navigationTimeoutMs, 'web.browser.navigationTimeoutMs')
+  }
+
+  if (web.screenshots !== undefined) {
+    const screenshots = record(web.screenshots, 'web.screenshots')
+    knownFields(screenshots, ['mode', 'outputDir', 'format', 'fullPage'], 'web.screenshots')
+    if (screenshots.mode !== undefined && !['off', 'on-failure', 'on-step'].includes(screenshots.mode as string)) {
+      throw new Error('web.screenshots.mode must be off, on-failure, or on-step')
+    }
+    optionalString(screenshots.outputDir, 'web.screenshots.outputDir')
+    if (screenshots.format !== undefined && screenshots.format !== 'png' && screenshots.format !== 'jpeg') {
+      throw new Error('web.screenshots.format must be png or jpeg')
+    }
+    optionalBoolean(screenshots.fullPage, 'web.screenshots.fullPage')
+  }
+
+  return web as unknown as WebAdapterOptions
+}
+
 export interface WebObservedAction {
   description: string
   handle: unknown
@@ -220,11 +298,12 @@ export function createWebAdapter(
   options: WebAdapterOptions,
   factory: WebAutomationFactory = stagehandFactory,
 ): ExecutionTargetAdapter {
+  const validatedOptions = validateWebAdapterOptions(options)
   return {
     capabilities: ['web', 'screenshots'],
     async openSession(input) {
       const automation = await factory.open({
-        browser: options.browser ?? {},
+        browser: validatedOptions.browser ?? {},
         signal: input.signal,
       })
       let closed = false
@@ -244,7 +323,7 @@ export function createWebAdapter(
         step: ScenarioStep,
         state: StepExecution['state'],
       ): Promise<TestArtifact | undefined> {
-        const screenshotOptions = options.screenshots
+        const screenshotOptions = validatedOptions.screenshots
         const mode = screenshotOptions?.mode ?? 'off'
         if (mode === 'off') return undefined
         if (mode === 'on-failure' && state !== 'failed' && state !== 'infrastructure-error') {
@@ -288,7 +367,7 @@ export function createWebAdapter(
 
       async function ensureNavigation(signal?: AbortSignal): Promise<void> {
         if (navigated) return
-        await automation.navigate(options.baseUrl, signal)
+        await automation.navigate(validatedOptions.baseUrl, signal)
         navigated = true
       }
 
@@ -302,7 +381,7 @@ export function createWebAdapter(
           try {
             const navigation = prompt.match(navigationPattern)
             if (navigation) {
-              const url = navigationUrl(options.baseUrl, navigation[1]!.trim())
+              const url = navigationUrl(validatedOptions.baseUrl, navigation[1]!.trim())
               await automation.navigate(url, operationSignal)
               navigated = true
               return finish(step, {
