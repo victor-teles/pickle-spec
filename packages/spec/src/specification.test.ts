@@ -37,6 +37,52 @@ Feature: Checkout
     expect(JSON.stringify(specification)).not.toContain('pickle')
   })
 
+  test('maps namespaced identity tags and Examples row identifiers onto the Specification', () => {
+    const specification = parseSpecification({
+      uri: 'features/search.feature',
+      source: `@pickle:id:specaaaaaaaaaaaa @pickle:state:draft
+Feature: Search
+  @pickle:id:scnbbbbbbbbbbbb
+  Scenario Outline: Find a product
+    When the customer searches for <product>
+    Then the product page shows <product>
+
+    @pickle:id:exscccccccccccccccc
+    Examples:
+      | pickle_id | product |
+      | rowdddddddddddddd | Pickles |
+      | roweeeeeeeeeeeeee | Olives  |
+`,
+    })
+
+    expect(specification.id).toBe('specaaaaaaaaaaaa')
+    expect(specification.state).toBe('draft')
+    expect(specification.scenarios).toEqual([
+      {
+        name: 'Find a product',
+        id: 'scnbbbbbbbbbbbb',
+        examplesId: 'exscccccccccccccccc',
+        examplesRowId: 'rowdddddddddddddd',
+        tags: ['@pickle:id:specaaaaaaaaaaaa', '@pickle:state:draft', '@pickle:id:scnbbbbbbbbbbbb', '@pickle:id:exscccccccccccccccc'],
+        steps: [
+          { keyword: 'When', text: 'the customer searches for Pickles', type: 'action' },
+          { keyword: 'Then', text: 'the product page shows Pickles', type: 'outcome' },
+        ],
+      },
+      {
+        name: 'Find a product',
+        id: 'scnbbbbbbbbbbbb',
+        examplesId: 'exscccccccccccccccc',
+        examplesRowId: 'roweeeeeeeeeeeeee',
+        tags: ['@pickle:id:specaaaaaaaaaaaa', '@pickle:state:draft', '@pickle:id:scnbbbbbbbbbbbb', '@pickle:id:exscccccccccccccccc'],
+        steps: [
+          { keyword: 'When', text: 'the customer searches for Olives', type: 'action' },
+          { keyword: 'Then', text: 'the product page shows Olives', type: 'outcome' },
+        ],
+      },
+    ])
+  })
+
   test('includes feature and rule backgrounds in nested scenarios', () => {
     const specification = parseSpecification({
       uri: 'features/account.feature',

@@ -2,16 +2,16 @@
 
 import type { ExecutionTargetAdapter } from '@pickle-spec/runner'
 import { resolveRunConfiguration, runScenarios } from '@pickle-spec/runner'
-import { parseSpecificationFile, selectScenarios, type SelectionOptions } from '@pickle-spec/spec'
+import { parseSpecification, selectScenarios, validateSpecificationMetadata, type SelectionOptions } from '@pickle-spec/spec'
 import {
   createWebAdapter,
   type WebAdapterOptions,
 } from '@pickle-spec/web'
-import { resolve } from 'node:path'
+import { relative, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { loadConfig, type PickleConfig } from './config'
 import type { Extensions } from './extensions'
-import { checkProject, initializeProject } from './project'
+import { checkProject, initializeProject, migrateProject } from './project'
 import { startServer } from './server'
 
 interface RunArguments {
@@ -111,7 +111,20 @@ async function discoverSpecifications(patterns: string | string[], language?: st
     const description = Array.isArray(patterns) ? patterns.join(', ') : patterns
     throw new Error(`No specifications found matching: ${description}`)
   }
-  return Promise.all([...paths].sort().map(path => parseSpecificationFile(path, language)))
+  const files = await Promise.all([...paths].sort().map(async path => ({
+    uri: relative(process.cwd(), path),
+    source: await Bun.file(path).text(),
+  })))
+  try {
+    validateSpecificationMetadata(files, language)
+  } catch (error) {
+    console.error(error instanceof Error ? error.message : String(error))
+  }
+  return files.map(file => parseSpecification({
+    source: file.source,
+    uri: file.uri,
+    language,
+  }))
 }
 
 function configuredWebOptions(config: PickleConfig, args: RunArguments): WebAdapterOptions | undefined {
@@ -210,6 +223,17 @@ function projectOptions(argv: string[]): { configPath?: string; extensionsPath?:
   return options
 }
 
+function migrateOptions(argv: string[]): { configPath?: string; yes?: boolean } {
+  const options: { configPath?: string; yes?: boolean } = {}
+  for (let index = 1; index < argv.length; index++) {
+    const flag = argv[index]!
+    if (flag === '--config') options.configPath = valueAfter(argv, index++)
+    else if (flag === '--yes' || flag === '-y') options.yes = true
+    else throw new Error(`Unknown option: ${flag}`)
+  }
+  return options
+}
+
 async function main(argv: string[]): Promise<number> {
   if (argv[0] === 'init') {
     if (argv.length > 1) throw new Error('Usage: pickle init')
@@ -218,6 +242,10 @@ async function main(argv: string[]): Promise<number> {
   }
   if (argv[0] === 'check') {
     await checkProject({ ...projectOptions(argv), report: console.log })
+    return 0
+  }
+  if (argv[0] === 'migrate') {
+    await migrateProject({ ...migrateOptions(argv), report: console.log })
     return 0
   }
   return run(argv)

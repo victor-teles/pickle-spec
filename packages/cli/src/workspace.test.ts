@@ -20,7 +20,11 @@ describe('public CLI workspace seam', () => {
   }
   const validSpecification = {
     path: 'features/example.feature',
-    source: 'Feature: Example\n  Scenario: Validate project\n    Then validation succeeds',
+    source: `@pickle:id:specaaaaaaaaaaaa @pickle:state:active
+Feature: Example
+  @pickle:id:scnbbbbbbbbbbbb
+  Scenario: Validate project
+    Then validation succeeds`,
   }
 
   async function createCheckProject(name: string, fixture: CheckProjectFixture): Promise<string> {
@@ -52,7 +56,9 @@ describe('public CLI workspace seam', () => {
     pickleCommand = join(workspace, 'node_modules', '.bin', 'pickle')
     await mkdir(join(workspace, 'node_modules', '.bin'), { recursive: true })
     await symlink(resolve(packageDirectory, packageManifest.bin.pickle), pickleCommand)
-    await Bun.write(join(workspace, 'purchase.feature'), `Feature: Purchase
+    await Bun.write(join(workspace, 'purchase.feature'), `@pickle:id:specpurchaseaaaaaa @pickle:state:active
+Feature: Purchase
+  @pickle:id:scnpurchasebbbbbb
   Scenario: Complete a purchase
     Given a product is in the basket
     Then the purchase succeeds`)
@@ -152,7 +158,11 @@ export default {
   test('initializes a project without overwriting files and checks it without opening a session', async () => {
     const project = join(workspace, 'initialized-project')
     await mkdir(join(project, 'features'), { recursive: true })
-    await Bun.write(join(project, 'features', 'example.feature'), `Feature: Example\n  Scenario: Safe check\n    Then validation is offline`)
+    await Bun.write(join(project, 'features', 'example.feature'), `@pickle:id:specaaaaaaaaaaaa @pickle:state:active
+Feature: Example
+  @pickle:id:scnbbbbbbbbbbbb
+  Scenario: Safe check
+    Then validation is offline`)
 
     const first = Bun.spawnSync({ cmd: [pickleCommand, 'init'], cwd: project, env: { ...Bun.env } })
     expect(first.exitCode).toBe(0)
@@ -373,6 +383,123 @@ export default {}
     expect(checked.stderr.toString()).toContain('Correct the value and run pickle check again')
   })
 
+  test('migrate previews namespaced identifiers and writes only after confirmation', async () => {
+    const source = `# keep this comment
+
+@smoke
+Feature: Checkout
+  Scenario: Complete a purchase
+    Then the purchase succeeds
+`
+    const project = await createCheckProject('migrate-preview', {
+      config: defaultCheckConfig,
+      specification: { path: 'features/checkout.feature', source },
+    })
+    const featurePath = join(project, 'features', 'checkout.feature')
+
+    const preview = Bun.spawnSync({ cmd: [pickleCommand, 'migrate'], cwd: project, env: { ...Bun.env } })
+    expect(preview.exitCode).toBe(0)
+    expect(preview.stdout.toString()).toMatch(/Feature "Checkout": add @pickle:id:[0-9a-f]{16} @pickle:state:active/)
+    expect(preview.stdout.toString()).toMatch(/Scenario "Complete a purchase": add @pickle:id:[0-9a-f]{16}/)
+    expect(preview.stdout.toString()).toContain('Re-run pickle migrate --yes after reviewing the preview')
+    expect(await Bun.file(featurePath).text()).toBe(source)
+
+    const applied = Bun.spawnSync({ cmd: [pickleCommand, 'migrate', '--yes'], cwd: project, env: { ...Bun.env } })
+    expect(applied.exitCode).toBe(0)
+    expect(applied.stdout.toString()).toContain('Updated 1 Specification file(s)')
+    const migrated = await Bun.file(featurePath).text()
+    expect(migrated).toContain('# keep this comment')
+    expect(migrated).toContain('\n@smoke\n@pickle:id:')
+    expect(migrated).toContain('@pickle:state:active')
+    expect(migrated).toContain('Then the purchase succeeds')
+    for (const id of applied.stdout.toString().match(/@pickle:id:[0-9a-f]{16}/g) ?? []) {
+      expect(migrated).toContain(id)
+    }
+
+    const checked = runCheck(project)
+    expect(checked.exitCode).toBe(0)
+    expect(checked.stdout.toString()).toContain('Project is valid')
+
+    const again = Bun.spawnSync({ cmd: [pickleCommand, 'migrate', '--yes'], cwd: project, env: { ...Bun.env } })
+    expect(again.exitCode).toBe(0)
+    expect(again.stdout.toString()).toContain('No Specification metadata changes needed')
+    expect(await Bun.file(featurePath).text()).toBe(migrated)
+  })
+
+  test('check rejects missing Specification metadata without starting execution resources', async () => {
+    const project = await createCheckProject('missing-metadata', {
+      config: defaultCheckConfig,
+      specification: {
+        path: 'features/missing.feature',
+        source: 'Feature: Missing\n  Scenario: Needs identity\n    Then validation fails',
+      },
+    })
+
+    const checked = runCheck(project)
+
+    expect(checked.exitCode).toBe(2)
+    expect(checked.stderr.toString()).toContain('missing a durable identifier')
+    expect(checked.stderr.toString()).toContain('Run pickle migrate to add missing metadata')
+  })
+
+  test('check and run never modify Specification source', async () => {
+    const source = 'Feature: Unchanged\n  Scenario: Stay put\n    Then nothing writes'
+    const project = await createCheckProject('no-write', {
+      config: defaultCheckConfig,
+      specification: { path: 'features/unchanged.feature', source },
+    })
+    const featurePath = join(project, 'features', 'unchanged.feature')
+
+    const checked = runCheck(project)
+    expect(checked.exitCode).toBe(2)
+    expect(await Bun.file(featurePath).text()).toBe(source)
+
+    const purchasePath = join(workspace, 'purchase.feature')
+    const purchaseSource = await Bun.file(purchasePath).text()
+    const run = Bun.spawnSync({
+      cmd: [
+        pickleCommand,
+        'run',
+        'purchase.feature',
+        '--config',
+        'deterministic.config.jsonc',
+        '--extensions',
+        'pickle.extensions.ts',
+      ],
+      cwd: workspace,
+      env: { ...Bun.env, PICKLE_TEST_OUTCOME: 'passed' },
+    })
+    expect(run.exitCode).toBe(0)
+    expect(await Bun.file(purchasePath).text()).toBe(purchaseSource)
+  })
+
+  test('run reports missing Specification metadata without modifying source', async () => {
+    const source = `Feature: Unreported
+  Scenario: Still runs
+    Then the purchase succeeds`
+    const project = await createCheckProject('run-reports-metadata', {
+      config: {
+        schemaVersion: 1,
+        executionTargetProfile: { id: 'deterministic' },
+        specifications: 'features/**/*.feature',
+      },
+      specification: { path: 'features/unreported.feature', source },
+      extensions: await Bun.file(join(workspace, 'pickle.extensions.ts')).text(),
+    })
+    const featurePath = join(project, 'features', 'unreported.feature')
+
+    const run = Bun.spawnSync({
+      cmd: [pickleCommand, 'run'],
+      cwd: project,
+      env: { ...Bun.env, PICKLE_TEST_OUTCOME: 'passed' },
+    })
+
+    expect(run.exitCode).toBe(0)
+    expect(run.stderr.toString()).toContain('missing a durable identifier')
+    expect(run.stderr.toString()).toContain('Run pickle migrate to add missing metadata')
+    expect(await Bun.file(featurePath).text()).toBe(source)
+  })
+
   test('the deterministic adapter models every kernel outcome', async () => {
     const cases = [
       { outcome: 'passed', exitCode: 0 },
@@ -467,7 +594,9 @@ export default {}
   test('runs a real web Scenario through the public web adapter composition', async () => {
     const artifactDirectory = join(workspace, 'web-artifacts')
     const applicationUrl = 'data:text/html,<button id="search">Search</button><div id="results"></div>'
-    await Bun.write(join(workspace, 'web.feature'), `Feature: Web search
+    await Bun.write(join(workspace, 'web.feature'), `@pickle:id:specwebaaaaaaaaaa @pickle:state:active
+Feature: Web search
+  @pickle:id:scnwebbbbbbbbbbb
   Scenario: Search from the application
     Given I navigate to the main page
     When I search for pickles
