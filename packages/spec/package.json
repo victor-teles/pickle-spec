@@ -15,11 +15,11 @@
     "test": "bun test"
   },
   "dependencies": {
-    "@cucumber/gherkin": "^29.0.0",
-    "@cucumber/messages": "^26.0.1"
+    "@cucumber/gherkin": "catalog:",
+    "@cucumber/messages": "catalog:"
   },
   "devDependencies": {
-    "@types/bun": "latest",
-    "typescript": "^5.9.3"
+    "@types/bun": "catalog:",
+    "typescript": "catalog:"
   }
 }

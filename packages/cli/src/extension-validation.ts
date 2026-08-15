@@ -1,6 +1,7 @@
 import { dirname, relative, resolve } from 'node:path'
 import type { RunExtensionManifest } from '@pickle-spec/runner'
-import ts from 'typescript'
+// TypeScript 7 has no compiler API yet; keep 6.x for extension type-checking.
+import ts from '@typescript/typescript6'
 
 function extensionModuleSpecifier(from: string, to: string): string {
   const path = relative(dirname(from), to).replaceAll('\\', '/')

@@ -18,7 +18,7 @@
     "@pickle-spec/spec": "workspace:*"
   },
   "devDependencies": {
-    "@types/bun": "latest",
-    "typescript": "^5.9.3"
+    "@types/bun": "catalog:",
+    "typescript": "catalog:"
   }
 }
