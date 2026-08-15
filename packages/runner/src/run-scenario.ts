@@ -1,4 +1,16 @@
-import type { Scenario, ScenarioStep, Specification } from '@pickle-spec/spec'
+import {
+  resolveScenarioId,
+  type Scenario,
+  type ScenarioStep,
+  type Specification,
+  scenarioRevision,
+} from '@pickle-spec/spec'
+import {
+  type ExecutionPlan,
+  type ExecutionPlanStore,
+  type PlanApplicability,
+  planApplies,
+} from './execution-plan'
 
 export type TestResultState =
   | 'passed'
@@ -8,6 +20,8 @@ export type TestResultState =
   | 'cancelled'
   | 'infrastructure-error'
 
+export type ExecutionMode = 'adaptive' | 'replay'
+
 export interface ExecutionTargetProfile {
   id: string
   adapter?: string
@@ -16,6 +30,7 @@ export interface ExecutionTargetProfile {
 
 export interface ResolvedAction {
   description: string
+  replay?: Record<string, unknown>
 }
 
 export interface TestArtifact {
@@ -40,11 +55,14 @@ export interface OpenSessionInput {
   executionTargetProfile: ExecutionTargetProfile
   specification: Specification
   scenario: Scenario
+  mode?: ExecutionMode
+  plan?: ExecutionPlan
   signal?: AbortSignal
 }
 
 export interface ExecutionTargetAdapter {
   capabilities?: readonly string[]
+  planFormatVersion?: string
   openSession(input: OpenSessionInput): Promise<TargetSession>
 }
 
@@ -68,6 +86,7 @@ export interface TestResult {
   executionTargetProfile: ExecutionTargetProfile
   state: TestResultState
   steps: TestStepResult[]
+  executionMode?: ExecutionMode
   message?: string
   attempts?: number
   flaky?: boolean
@@ -110,6 +129,8 @@ export interface RunScenarioInput extends ExecutionPolicy {
   scenario: Scenario
   executionTargetProfile: ExecutionTargetProfile
   adapter: ExecutionTargetAdapter
+  plans?: ExecutionPlanStore
+  applicationRevision?: string
   signal?: AbortSignal
   onEvent?: (event: RunEvent) => void | Promise<void>
 }
@@ -160,8 +181,73 @@ function executeWithDeadline<T>(
   })
 }
 
+interface ScenarioAttemptInput extends RunScenarioInput {
+  mode: ExecutionMode
+  plan?: ExecutionPlan
+}
+
+function planQuery(input: RunScenarioInput): PlanApplicability {
+  return {
+    scenarioId:
+      input.scenario.id ??
+      resolveScenarioId(
+        input.specification.source.uri,
+        input.specification.name,
+        input.scenario.name,
+        input.scenario.tags,
+      ),
+    scenarioRevision: scenarioRevision(input.scenario),
+    executionTargetProfileId: input.executionTargetProfile.id,
+    planFormatVersion: input.adapter.planFormatVersion ?? '1',
+    ...(input.applicationRevision !== undefined
+      ? { applicationRevision: input.applicationRevision }
+      : {}),
+  }
+}
+
+async function selectPlan(input: RunScenarioInput): Promise<{
+  mode: ExecutionMode
+  plan?: ExecutionPlan
+  query: PlanApplicability
+}> {
+  const query = planQuery(input)
+  const found = await input.plans?.findApproved(query)
+  const plan = found && planApplies(found, query) ? found : undefined
+  if (plan && input.applicationRevision === undefined && process.env.CI) {
+    throw new Error(
+      'CI Replay requires applicationRevision. Set applicationRevision or --application-revision.',
+    )
+  }
+  return {
+    mode: plan ? 'replay' : 'adaptive',
+    ...(plan ? { plan } : {}),
+    query,
+  }
+}
+
+function candidatePlan(
+  query: PlanApplicability,
+  steps: TestStepResult[],
+): ExecutionPlan {
+  return {
+    schemaVersion: 1,
+    ...query,
+    steps: steps.map((step) => ({ resolvedActions: step.resolvedActions })),
+  }
+}
+
+function shouldSaveCandidate(
+  state: TestResultState,
+  mode: ExecutionMode,
+): boolean {
+  return (
+    state === 'passed-with-adaptation' ||
+    (state === 'passed' && mode === 'adaptive')
+  )
+}
+
 function createTestResult(
-  input: RunScenarioInput,
+  input: ScenarioAttemptInput,
   state: TestResultState,
   steps: TestStepResult[],
   message?: string,
@@ -176,12 +262,13 @@ function createTestResult(
     executionTargetProfile: input.executionTargetProfile,
     state,
     steps,
+    executionMode: input.mode,
     ...(message !== undefined ? { message } : {}),
   }
 }
 
 async function runScenarioAttempt(
-  input: RunScenarioInput,
+  input: ScenarioAttemptInput,
 ): Promise<ScenarioRun> {
   const scenarioStartedAt = Date.now()
   const events: RunEvent[] = []
@@ -229,6 +316,8 @@ async function runScenarioAttempt(
       executionTargetProfile: input.executionTargetProfile,
       specification: input.specification,
       scenario: input.scenario,
+      mode: input.mode,
+      ...(input.plan ? { plan: input.plan } : {}),
       signal: input.signal,
     })
   } catch (error) {
@@ -354,10 +443,13 @@ export async function runScenario(
 ): Promise<ScenarioRun> {
   const events: RunEvent[] = []
   const maximumAttempts = (input.retry?.infrastructureErrors ?? 0) + 1
+  const selected = await selectPlan(input)
 
   for (let attempt = 1; attempt <= maximumAttempts; attempt++) {
     const run = await runScenarioAttempt({
       ...input,
+      mode: selected.mode,
+      ...(selected.plan ? { plan: selected.plan } : {}),
       onEvent: undefined,
       retry: undefined,
     })
@@ -389,7 +481,13 @@ export async function runScenario(
       await input.onEvent?.(versionedEvent)
     }
 
-    if (!shouldRetry) return { events, result }
+    if (shouldRetry) continue
+    if (input.plans && shouldSaveCandidate(result.state, selected.mode)) {
+      await input.plans.saveCandidate(
+        candidatePlan(selected.query, result.steps),
+      )
+    }
+    return { events, result }
   }
 
   throw new Error('Runner exhausted attempts without producing a test result')

@@ -1,4 +1,5 @@
 import type { ScenarioSelection } from '@pickle-spec/spec'
+import type { ExecutionPlanStore } from './execution-plan'
 import {
   type ExecutionPolicy,
   type ExecutionTargetAdapter,
@@ -18,6 +19,8 @@ export interface RunScenariosInput extends ExecutionPolicy {
   targets?: readonly RunTarget[]
   executionTargetProfile?: ExecutionTargetProfile
   adapter?: ExecutionTargetAdapter
+  plans?: ExecutionPlanStore
+  applicationRevision?: string
   concurrency?: number
   signal?: AbortSignal
   onEvent?: (
@@ -102,6 +105,8 @@ export async function runScenarios(
         scenario: selection.scenario,
         executionTargetProfile: target.executionTargetProfile,
         adapter: target.adapter,
+        plans: input.plans,
+        applicationRevision: input.applicationRevision,
         signal: input.signal,
         retry: input.retry,
         timeout: input.timeout,

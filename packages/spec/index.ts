@@ -8,8 +8,10 @@ export type {
 export {
   formatMigrationPreview,
   planSpecificationMigration,
+  resolveScenarioId,
   validateSpecificationMetadata,
 } from './src/identity'
+export { scenarioRevision } from './src/revision'
 export type {
   ScenarioSelection,
   SelectionOptions,

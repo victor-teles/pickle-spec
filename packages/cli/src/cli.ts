@@ -8,6 +8,7 @@ import type {
   RunExtensions,
 } from '@pickle-spec/runner'
 import {
+  createFilePlanStore,
   resolveRunConfiguration,
   runScenarios,
   validateTargetSelection,
@@ -40,6 +41,7 @@ interface RunArguments {
   reuseServer?: boolean
   headed?: boolean
   screenshotMode?: NonNullable<WebAdapterOptions['screenshots']>['mode']
+  applicationRevision?: string
 }
 
 function integer(value: string, flag: string, minimum: number): number {
@@ -137,6 +139,9 @@ function parseRunArguments(argv: string[]): RunArguments {
         args.screenshotMode = mode as RunArguments['screenshotMode']
         break
       }
+      case '--application-revision':
+        args.applicationRevision = valueAfter(argv, index++)
+        break
       default:
         throw new Error(`Unknown option: ${flag}`)
     }
@@ -292,6 +297,8 @@ async function run(argv: string[]): Promise<number> {
     const runConfiguration = {
       ...runConfigurationFrom(config, args.profiles),
       concurrency: args.concurrency ?? config.concurrency,
+      applicationRevision:
+        args.applicationRevision ?? config.applicationRevision,
       execution: {
         infrastructureRetries:
           args.retries ?? config.execution?.infrastructureRetries,
@@ -317,6 +324,7 @@ async function run(argv: string[]): Promise<number> {
     const runs = await runScenarios({
       selections,
       ...resolvedConfiguration,
+      plans: createFilePlanStore(process.cwd()),
       signal: controller.signal,
       onEvent(event) {
         console.log(JSON.stringify({ kind: 'run-event', event }))
@@ -332,7 +340,10 @@ async function run(argv: string[]): Promise<number> {
     if (
       runs.some(
         ({ result }) =>
-          result.state === 'failed' || result.state === 'infrastructure-error',
+          result.state === 'failed' ||
+          result.state === 'infrastructure-error' ||
+          (result.state === 'passed-with-adaptation' &&
+            config.policy?.adaptedResults === 'reject'),
       )
     ) {
       return 1

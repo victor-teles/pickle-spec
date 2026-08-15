@@ -9,6 +9,7 @@ export interface RunConfiguration {
   schemaVersion: 1
   executionTargetProfile?: ExecutionTargetProfile
   executionTargetProfiles?: ExecutionTargetProfile[]
+  applicationRevision?: string
   concurrency?: number
   execution?: {
     infrastructureRetries?: number
@@ -32,6 +33,7 @@ export interface ResolvedRunConfiguration extends ExecutionPolicy {
   executionTargetProfile: ExecutionTargetProfile
   targets: RunTarget[]
   concurrency: number
+  applicationRevision?: string
 }
 
 function record(value: unknown, field: string): Record<string, unknown> {
@@ -164,6 +166,7 @@ export function validateRunConfiguration(value: unknown): RunConfiguration {
       'schemaVersion',
       'executionTargetProfile',
       'executionTargetProfiles',
+      'applicationRevision',
       'concurrency',
       'execution',
     ],
@@ -203,6 +206,13 @@ export function validateRunConfiguration(value: unknown): RunConfiguration {
     throw new Error(
       'executionTargetProfile or executionTargetProfiles is required',
     )
+  }
+  if (
+    configuration.applicationRevision !== undefined &&
+    (typeof configuration.applicationRevision !== 'string' ||
+      !configuration.applicationRevision.trim())
+  ) {
+    throw new Error('applicationRevision must not be empty')
   }
   positiveInteger(configuration.concurrency, 'concurrency')
   if (configuration.execution !== undefined) {
@@ -265,5 +275,8 @@ export function resolveRunConfiguration(
       scenarioMs: validatedConfiguration.execution?.scenarioTimeoutMs,
       stepMs: validatedConfiguration.execution?.stepTimeoutMs,
     },
+    ...(validatedConfiguration.applicationRevision
+      ? { applicationRevision: validatedConfiguration.applicationRevision }
+      : {}),
   }
 }

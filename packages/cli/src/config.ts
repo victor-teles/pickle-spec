@@ -29,6 +29,10 @@ export interface ProjectExecutionTargetProfile {
   web?: WebAdapterOptions
 }
 
+export interface ProjectPolicy {
+  adaptedResults?: 'accept' | 'reject'
+}
+
 export interface PickleConfig {
   schemaVersion: 1
   language?: string
@@ -36,6 +40,8 @@ export interface PickleConfig {
   suites?: Record<string, SelectionOptions>
   executionTargetProfiles?: Record<string, ProjectExecutionTargetProfile>
   executionTargetProfile?: ExecutionTargetProfile
+  applicationRevision?: string
+  policy?: ProjectPolicy
   web?: WebAdapterOptions
   selection?: SelectionOptions
   execution?: {
@@ -101,6 +107,9 @@ export function runConfigurationFrom(
     executionTargetProfiles,
     concurrency: config.concurrency,
     execution: config.execution,
+    ...(config.applicationRevision
+      ? { applicationRevision: config.applicationRevision }
+      : {}),
   }
 }
 
@@ -210,6 +219,8 @@ function validateConfig(value: unknown): PickleConfig {
       'suites',
       'executionTargetProfiles',
       'executionTargetProfile',
+      'applicationRevision',
+      'policy',
       'web',
       'selection',
       'execution',
@@ -285,6 +296,24 @@ function validateConfig(value: unknown): PickleConfig {
     }
     if (typeof server.port === 'number' && server.port > 65_535) {
       throw new Error('server.port must be less than or equal to 65535')
+    }
+  }
+  if (
+    config.applicationRevision !== undefined &&
+    (typeof config.applicationRevision !== 'string' ||
+      !config.applicationRevision.trim())
+  ) {
+    throw new Error('applicationRevision must not be empty')
+  }
+  if (config.policy !== undefined) {
+    const policy = record(config.policy, 'policy')
+    knownFields(policy, ['adaptedResults'], 'policy')
+    if (
+      policy.adaptedResults !== undefined &&
+      policy.adaptedResults !== 'accept' &&
+      policy.adaptedResults !== 'reject'
+    ) {
+      throw new Error('policy.adaptedResults must be accept or reject')
     }
   }
   if (config.selection !== undefined) validateSelectionOptions(config.selection)

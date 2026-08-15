@@ -205,3 +205,16 @@ test('binds adapter configuration per execution target profile', () => {
     production,
   ])
 })
+
+test('carries the application revision into the resolved run', () => {
+  const resolved = resolveRunConfiguration(
+    {
+      schemaVersion: 1,
+      executionTargetProfile: { id: 'web' },
+      applicationRevision: 'app-1',
+    },
+    { adapter },
+  )
+
+  expect(resolved.applicationRevision).toBe('app-1')
+})
