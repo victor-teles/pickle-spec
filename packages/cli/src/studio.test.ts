@@ -45,6 +45,9 @@ describe('Studio browser seam', () => {
       JSON.stringify({
         schemaVersion: 1,
         specifications: 'features/**/*.feature',
+        links: {
+          jira: 'https://example.test/browse/{id}',
+        },
         executionTargetProfiles: {
           chrome: { adapter: 'custom' },
           firefox: { adapter: 'custom' },
@@ -208,11 +211,12 @@ Feature: Search
       expect(
         await page.getByRole('link', { name: 'Plans', disabled: true }).count(),
       ).toBe(1)
+      expect(await page.getByRole('link', { name: 'Settings' }).count()).toBe(1)
       expect(
         await page
           .getByRole('link', { name: 'Settings', disabled: true })
           .count(),
-      ).toBe(1)
+      ).toBe(0)
       expect(
         await page.getByRole('status').filter({ hasText: 'Ready' }).count(),
       ).toBe(1)
@@ -599,6 +603,323 @@ Feature: Disk edit
       await outline.waitFor()
       expect(await outline.textContent()).toContain('Search')
       expect(await outline.textContent()).toContain('@pickle:state:draft')
+    } finally {
+      await page.close()
+      child.kill()
+      await child.exited
+    }
+  }, 60_000)
+
+  test('Studio edits Specification state, tags, and external links', async () => {
+    const project = await createStudioProject('manage-metadata')
+    const { child, url } = await startStudio(project)
+    const page = await browser.newPage()
+    try {
+      await page.goto(url)
+      await page
+        .getByRole('region', { name: 'Specification metadata' })
+        .waitFor()
+      await page.getByRole('button', { name: 'Edit metadata' }).click()
+      await page.getByRole('button', { name: 'draft', exact: true }).click()
+      await page.getByLabel('Specification tags').fill('@checkout @regression')
+      await page.getByLabel('Link namespace').fill('jira')
+      await page.getByLabel('Link id').fill('PROJ-12')
+      await page.getByRole('button', { name: 'Add link' }).click()
+      await page.getByRole('button', { name: 'Save metadata' }).click()
+      const dialog = page.getByRole('dialog', {
+        name: 'Review Specification metadata',
+      })
+      await dialog.waitFor()
+      expect(
+        await page.getByRole('region', { name: 'Source diff' }).textContent(),
+      ).toContain('@pickle:state:draft')
+      await dialog.getByRole('button', { name: 'Save metadata' }).click()
+      const deadline = Date.now() + 10_000
+      let written = ''
+      while (Date.now() < deadline) {
+        written = await Bun.file(
+          join(project, 'features', 'checkout.feature'),
+        ).text()
+        if (written.includes('@pickle:state:draft')) break
+        await Bun.sleep(50)
+      }
+      expect(written).toContain('# keep this comment')
+      expect(written).toContain('@pickle:state:draft')
+      expect(written).not.toContain('@pickle:state:active')
+      expect(written).toContain('@checkout')
+      expect(written).toContain('@regression')
+      expect(written).toContain('@jira:PROJ-12')
+    } finally {
+      await page.close()
+      child.kill()
+      await child.exited
+    }
+  }, 60_000)
+
+  test('Studio creates named test suites and execution target profiles', async () => {
+    const project = await createStudioProject('manage-config')
+    const { child, url } = await startStudio(project)
+    const page = await browser.newPage()
+    try {
+      await page.goto(url)
+      await page.getByRole('link', { name: 'Settings' }).click()
+      await page.getByRole('heading', { name: 'Test suites' }).waitFor()
+      await page.getByLabel('Suite name').fill('smoke')
+      await page.getByLabel('Suite paths').fill('features/**/*.feature')
+      await page.getByLabel('Suite tag expression').fill('@smoke')
+      await page.getByLabel('Suite states').fill('active, draft')
+      await page.getByRole('button', { name: 'Save test suite' }).click()
+      await page.getByRole('button', { name: 'New test suite' }).click()
+      await page.getByLabel('Suite name').fill('checkout')
+      await page.getByLabel('Suite paths').fill('features/checkout.feature')
+      await page.getByRole('button', { name: 'Save test suite' }).click()
+      await page.getByLabel('Profile id').fill('safari')
+      await page.getByLabel('Profile adapter').fill('custom')
+      await page.getByLabel('Profile capabilities').fill('geolocation')
+      await page
+        .getByRole('button', { name: 'Save execution target profile' })
+        .click()
+      const deadline = Date.now() + 10_000
+      let config = ''
+      while (Date.now() < deadline) {
+        config = await Bun.file(join(project, 'pickle.config.jsonc')).text()
+        if (
+          config.includes('"smoke"') &&
+          config.includes('"checkout"') &&
+          config.includes('"safari"')
+        )
+          break
+        await Bun.sleep(50)
+      }
+      expect(config).toContain('"smoke"')
+      expect(config).toContain('"checkout"')
+      expect(config).toContain('"tagExpression": "@smoke"')
+      expect(config).toContain('"safari"')
+      expect(config).toContain('"geolocation"')
+    } finally {
+      await page.close()
+      child.kill()
+      await child.exited
+    }
+  }, 60_000)
+
+  test('Studio withholds the test-run action until the selection is valid', async () => {
+    const project = await createStudioProject('validate-run')
+    await Bun.write(
+      join(project, 'features', 'checkout.feature'),
+      `# keep this comment
+@pickle:id:speccheckaaaaaaaa @pickle:state:active
+Feature: Checkout
+  @pickle:id:scnpaybbbbbbbbbb @pickle:requires:geolocation
+  Scenario: Pay for the order
+    Then payment is captured
+`,
+    )
+    const { child, url } = await startStudio(project)
+    const page = await browser.newPage()
+    try {
+      await page.goto(url)
+      await page.getByRole('heading', { name: 'Checkout' }).waitFor()
+      expect(
+        await page.getByRole('button', { name: 'Run Specification' }).count(),
+      ).toBe(0)
+      expect(
+        await page
+          .getByRole('status')
+          .filter({ hasText: 'geolocation' })
+          .count(),
+      ).toBeGreaterThan(0)
+      await page.getByRole('link', { name: 'Settings' }).click()
+      await page.getByRole('button', { name: 'chrome' }).click()
+      await page.getByLabel('Profile capabilities').fill('geolocation')
+      await page
+        .getByRole('button', { name: 'Save execution target profile' })
+        .click()
+      await page.getByRole('button', { name: 'firefox' }).click()
+      await page.getByLabel('Profile capabilities').fill('geolocation')
+      await page
+        .getByRole('button', { name: 'Save execution target profile' })
+        .click()
+      await page.getByRole('link', { name: 'Specifications' }).click()
+      await page.getByRole('button', { name: 'Run Specification' }).waitFor({
+        timeout: 10_000,
+      })
+    } finally {
+      await page.close()
+      child.kill()
+      await child.exited
+    }
+  }, 60_000)
+
+  test('Studio stores credentials in a keychain store and keeps references in project configuration', async () => {
+    const project = await createStudioProject('manage-secrets')
+    const keychain = join(project, 'keychain')
+    const { child, url } = await startStudio(project, {
+      PICKLE_KEYCHAIN_DIR: keychain,
+    })
+    const page = await browser.newPage()
+    try {
+      await page.goto(url)
+      await page.getByRole('link', { name: 'Settings' }).click()
+      await page.getByLabel('Credential name').fill('ANTHROPIC_API_KEY')
+      await page.getByLabel('Credential secret').fill('sk-test-secret')
+      await page.getByRole('button', { name: 'Save credential' }).click()
+      await page.getByText('ANTHROPIC_API_KEY (present)').waitFor({
+        timeout: 10_000,
+      })
+      const config = await Bun.file(join(project, 'pickle.config.jsonc')).text()
+      expect(config).toContain('ANTHROPIC_API_KEY')
+      expect(config).toContain('keychain')
+      expect(config).not.toContain('sk-test-secret')
+      expect(await Bun.file(join(keychain, 'ANTHROPIC_API_KEY')).text()).toBe(
+        'sk-test-secret',
+      )
+    } finally {
+      await page.close()
+      child.kill()
+      await child.exited
+    }
+  }, 60_000)
+
+  test('Studio shows Git diffs, commits after confirmation, and never pushes', async () => {
+    const project = await createStudioProject('manage-git')
+    const remote = join(workspace, 'manage-git-remote.git')
+    await Bun.spawnSync({ cmd: ['git', 'init', '--bare', remote] })
+    await Bun.spawnSync({
+      cmd: ['git', 'init'],
+      cwd: project,
+    })
+    await Bun.spawnSync({
+      cmd: ['git', 'config', 'user.email', 'studio@example.test'],
+      cwd: project,
+    })
+    await Bun.spawnSync({
+      cmd: ['git', 'config', 'user.name', 'Studio Test'],
+      cwd: project,
+    })
+    await Bun.spawnSync({
+      cmd: ['git', 'add', 'features/checkout.feature', 'pickle.config.jsonc'],
+      cwd: project,
+    })
+    await Bun.spawnSync({
+      cmd: ['git', 'commit', '-m', 'initial'],
+      cwd: project,
+    })
+    await Bun.spawnSync({
+      cmd: ['git', 'remote', 'add', 'origin', remote],
+      cwd: project,
+    })
+    await Bun.spawnSync({
+      cmd: [
+        'git',
+        'remote',
+        'add',
+        'github',
+        'git@github.com:example/pickle-spec.git',
+      ],
+      cwd: project,
+    })
+    const branch =
+      Bun.spawnSync({
+        cmd: ['git', 'branch', '--show-current'],
+        cwd: project,
+      })
+        .stdout.toString()
+        .trim() || 'main'
+    await Bun.spawnSync({
+      cmd: ['git', 'update-ref', `refs/remotes/github/${branch}`, 'HEAD'],
+      cwd: project,
+    })
+    await Bun.spawnSync({
+      cmd: ['git', 'branch', `--set-upstream-to=github/${branch}`],
+      cwd: project,
+    })
+    await Bun.write(
+      join(project, 'features', 'checkout.feature'),
+      `# keep this comment
+@pickle:id:speccheckaaaaaaaa @pickle:state:active
+Feature: Basket
+  @pickle:id:scnpaybbbbbbbbbb
+  Scenario: Pay for the order
+    Then payment is captured
+`,
+    )
+    const ghLog = join(project, 'gh.log')
+    const gh = join(project, 'bin', 'gh')
+    await mkdir(join(project, 'bin'), { recursive: true })
+    await Bun.write(
+      gh,
+      `#!/bin/sh
+echo "$@" >> "$GH_LOG"
+if echo " $* " | grep -q " push "; then exit 1; fi
+if [ "$1" = "pr" ]; then
+  echo "https://github.com/example/pickle-spec/pull/1"
+  exit 0
+fi
+exit 0
+`,
+    )
+    await Bun.spawnSync({ cmd: ['chmod', '+x', gh] })
+    const { child, url } = await startStudio(project, {
+      PATH: `${join(project, 'bin')}:${Bun.env.PATH ?? ''}`,
+      GH_LOG: ghLog,
+    })
+    const page = await browser.newPage()
+    try {
+      await page.goto(url)
+      await page.getByRole('link', { name: 'Settings' }).click()
+      await page.getByRole('heading', { name: 'Repository' }).waitFor()
+      const changed = page
+        .getByRole('listitem')
+        .filter({ hasText: 'features/checkout.feature' })
+      await changed.waitFor()
+      await changed.getByRole('button', { name: 'Show diff' }).click()
+      expect(
+        await changed
+          .getByRole('region', { name: 'features/checkout.feature diff' })
+          .textContent(),
+      ).toContain('Basket')
+      await changed
+        .getByRole('checkbox', { name: 'features/checkout.feature' })
+        .click()
+      await page.getByRole('button', { name: 'Stage selected' }).click()
+      await changed.getByText('staged').waitFor()
+      await page.getByLabel('Commit message').fill('Update Checkout')
+      await page
+        .getByRole('button', { name: 'Commit selected changes' })
+        .click()
+      await page
+        .getByRole('dialog', { name: 'Commit selected changes?' })
+        .waitFor()
+      await page.getByRole('button', { name: 'Confirm commit' }).click()
+      const deadline = Date.now() + 10_000
+      let log = ''
+      while (Date.now() < deadline) {
+        const result = Bun.spawnSync({
+          cmd: ['git', 'log', '-1', '--pretty=%s'],
+          cwd: project,
+        })
+        log = result.stdout.toString().trim()
+        if (log === 'Update Checkout') break
+        await Bun.sleep(50)
+      }
+      expect(log).toBe('Update Checkout')
+      const remoteHeads = Bun.spawnSync({
+        cmd: ['git', 'ls-remote', remote, 'HEAD'],
+      })
+      expect(remoteHeads.stdout.toString().trim()).toBe('')
+      await page.getByRole('button', { name: 'Create pull request' }).click()
+      const ghDeadline = Date.now() + 10_000
+      let ghInvoked = ''
+      while (Date.now() < ghDeadline) {
+        if (await Bun.file(ghLog).exists()) {
+          ghInvoked = await Bun.file(ghLog).text()
+          if (ghInvoked.includes('pr create --web')) break
+        }
+        await Bun.sleep(50)
+      }
+      expect(ghInvoked).toContain('pr create --web')
+      expect(ghInvoked).not.toContain('push')
     } finally {
       await page.close()
       child.kill()

@@ -1,10 +1,12 @@
 import { watch } from 'node:fs'
 import { relative, resolve, sep } from 'node:path'
 import {
+  applySpecificationMetadata,
   applySpecificationSource,
   applyStructuredSpecification,
   ensureSpecificationState,
   readSpecificationDocument,
+  type SpecificationMetadata,
   type StructuredSpecification,
   specificationSourceDiff,
 } from '@pickle-spec/spec'
@@ -65,6 +67,7 @@ export interface SpecificationWorkspace {
     uri: string
     source: string
     specification?: StructuredSpecification
+    metadata?: SpecificationMetadata
     diffAgainst?: string
   }): SpecificationPreview
   write(input: {
@@ -144,18 +147,20 @@ export function createSpecificationWorkspace(
     },
 
     preview(input) {
-      const next = input.specification
-        ? applyStructuredSpecification({
-            uri: input.uri,
-            source: input.source,
-            language,
-            specification: input.specification,
-          })
-        : applySpecificationSource({
-            uri: input.uri,
-            source: input.source,
-            language,
-          })
+      const next = input.metadata
+        ? applySpecificationMetadata(input.source, input.metadata, language)
+        : input.specification
+          ? applyStructuredSpecification({
+              uri: input.uri,
+              source: input.source,
+              language,
+              specification: input.specification,
+            })
+          : applySpecificationSource({
+              uri: input.uri,
+              source: input.source,
+              language,
+            })
       return {
         ...buffer(input.uri, next),
         diff: specificationSourceDiff(input.diffAgainst ?? input.source, next),

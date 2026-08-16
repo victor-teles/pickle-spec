@@ -2,10 +2,11 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { basename, join, resolve } from 'node:path'
 import type { RunEvent, TestRunManifest } from '@pickle-spec/runner'
-import {
-  type StructuredSpecification,
-  specificationSourceDiff,
+import type {
+  SpecificationMetadata,
+  StructuredSpecification,
 } from '@pickle-spec/spec'
+import { specificationSourceDiff } from '@pickle-spec/spec'
 import tailwind from 'bun-plugin-tailwind'
 import {
   createSpecificationWorkspace,
@@ -13,17 +14,71 @@ import {
   DocumentConflictError,
   type SpecificationWorkspace,
 } from './documents'
+import { createGitWorkspace, type GitWorkspace } from './git'
 
 export interface StudioScenario {
   id: string
   name: string
+  canRun?: boolean
+}
+
+export interface StudioExternalLink {
+  namespace: string
+  id: string
 }
 
 export interface StudioSpecification {
   id: string
   name: string
   uri: string
+  state?: 'draft' | 'active' | 'deprecated'
+  tags?: readonly string[]
+  links?: readonly StudioExternalLink[]
+  canRun?: boolean
+  runReasons?: readonly string[]
   scenarios: readonly StudioScenario[]
+}
+
+export interface StudioSuite {
+  name: string
+  paths?: string | readonly string[]
+  tagExpression?: string
+  states?: readonly ('draft' | 'active' | 'deprecated')[]
+  scenarioName?: string
+}
+
+export interface StudioProfile {
+  id: string
+  adapter: string
+  capabilities?: readonly string[]
+}
+
+export interface StudioCredential {
+  name: string
+  present: boolean
+}
+
+export interface StudioRunReadiness {
+  ready: boolean
+  reasons: readonly string[]
+}
+
+export interface StudioConfigPatch {
+  suites?: Record<
+    string,
+    {
+      paths?: string | readonly string[]
+      tagExpression?: string
+      states?: readonly ('draft' | 'active' | 'deprecated')[]
+      scenarioName?: string
+    }
+  >
+  executionTargetProfiles?: Record<
+    string,
+    { adapter: string; capabilities?: readonly string[] }
+  >
+  links?: Record<string, string>
+  secrets?: Record<string, { keychain: string }>
 }
 
 export interface StudioAuthoringModel {
@@ -38,6 +93,11 @@ export interface StudioProject {
   suites: readonly string[]
   specifications: readonly StudioSpecification[]
   model?: StudioAuthoringModel
+  links?: Readonly<Record<string, string>>
+  suiteDetails?: readonly StudioSuite[]
+  profileDetails?: readonly StudioProfile[]
+  secrets?: readonly StudioCredential[]
+  readiness?: StudioRunReadiness
 }
 
 export interface StudioRunRequest {
@@ -70,12 +130,23 @@ export interface StudioAuthoringGateway {
   }) => Promise<{ source: string }>
 }
 
+export interface StudioManagementGateway {
+  saveConfig(patch: StudioConfigPatch): Promise<StudioProject>
+  saveCredential(input: {
+    name: string
+    secret: string
+  }): Promise<StudioProject>
+  readiness(request?: StudioRunRequest): Promise<StudioRunReadiness>
+}
+
 export interface StudioOptions {
   project: StudioProject
   loadProject?: () => Promise<StudioProject> | StudioProject
   gateway?: StudioRunGateway
   documents?: SpecificationWorkspace
   authoring?: StudioAuthoringGateway
+  management?: StudioManagementGateway
+  git?: GitWorkspace
   specificationGlobs?: string | readonly string[]
   language?: string
   hostname?: string
@@ -113,10 +184,26 @@ type StudioSocketData =
       listener?: (event: WorkspaceStreamEvent) => void
     }
 
+type CredentialWriteRequest = {
+  name?: string
+  secret?: string
+}
+
+type GitPathsRequest = {
+  paths?: string[]
+}
+
+type GitCommitRequest = {
+  message?: string
+  confirmed?: boolean
+  paths?: string[]
+}
+
 type DocumentPreviewRequest = {
   uri: string
   source: string
   specification?: StructuredSpecification
+  metadata?: SpecificationMetadata
   diffAgainst?: string
 }
 
@@ -210,6 +297,7 @@ export async function startStudio(
       globs: options.specificationGlobs ?? 'features/**/*.feature',
       language: options.language,
     })
+  const git = options.git ?? createGitWorkspace(options.project.root)
   const listeners = new Map<string, Set<(event: StudioStreamEvent) => void>>()
   const buffers = new Map<string, StudioStreamEvent[]>()
   const workspaceListeners = new Set<(event: WorkspaceStreamEvent) => void>()
@@ -319,6 +407,86 @@ export async function startStudio(
       if (url.pathname === '/api/project' && request.method === 'GET') {
         return Response.json(await currentProject())
       }
+      if (url.pathname === '/api/config' && request.method === 'PUT') {
+        if (!options.management) {
+          return new Response('Project configuration is unavailable', {
+            status: 501,
+          })
+        }
+        try {
+          const patch = (await request.json()) as StudioConfigPatch
+          return Response.json(await options.management.saveConfig(patch))
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error)
+          return new Response(message, { status: 400 })
+        }
+      }
+      if (url.pathname === '/api/credentials' && request.method === 'PUT') {
+        if (!options.management) {
+          return new Response('Credentials are unavailable', { status: 501 })
+        }
+        try {
+          const body = (await request.json()) as CredentialWriteRequest
+          return Response.json(
+            await options.management.saveCredential({
+              name: body.name ?? '',
+              secret: body.secret ?? '',
+            }),
+          )
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error)
+          return new Response(message, { status: 400 })
+        }
+      }
+      if (url.pathname === '/api/run-readiness' && request.method === 'POST') {
+        if (!options.management) {
+          return Response.json(
+            (await currentProject()).readiness ?? { ready: true, reasons: [] },
+          )
+        }
+        const body = (await request
+          .json()
+          .catch(() => ({}))) as StudioRunRequest
+        return Response.json(await options.management.readiness(body))
+      }
+      if (url.pathname === '/api/git' && request.method === 'GET') {
+        return Response.json(await git.status())
+      }
+      if (url.pathname === '/api/git/stage' && request.method === 'POST') {
+        const body = (await request.json()) as GitPathsRequest
+        try {
+          return Response.json(await git.stage(body.paths ?? []))
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error)
+          return new Response(message, { status: 400 })
+        }
+      }
+      if (url.pathname === '/api/git/commit' && request.method === 'POST') {
+        const body = (await request.json()) as GitCommitRequest
+        try {
+          return Response.json(
+            await git.commit({
+              message: body.message ?? '',
+              confirmed: Boolean(body.confirmed),
+              paths: body.paths ?? [],
+            }),
+          )
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error)
+          return new Response(message, { status: 400 })
+        }
+      }
+      if (
+        url.pathname === '/api/git/pull-request' &&
+        request.method === 'POST'
+      ) {
+        try {
+          return Response.json(await git.pullRequest())
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error)
+          return new Response(message, { status: 400 })
+        }
+      }
       if (url.pathname === '/api/documents' && request.method === 'GET') {
         const uri = url.searchParams.get('uri')
         if (!uri) return new Response('Missing uri', { status: 400 })
@@ -346,6 +514,7 @@ export async function startStudio(
               uri: body.uri,
               source: body.source,
               specification: body.specification,
+              metadata: body.metadata,
               diffAgainst: body.diffAgainst,
             }),
           )
