@@ -78,7 +78,7 @@ export async function loadExtensions(
     {}) as Extensions
 }
 
-async function discoverSpecifications(
+export async function loadProjectSpecifications(
   patterns: string | string[],
   language: string | undefined,
   root: string,
@@ -93,10 +93,7 @@ async function discoverSpecifications(
     }))
       paths.add(path)
   }
-  if (paths.size === 0) {
-    const description = Array.isArray(patterns) ? patterns.join(', ') : patterns
-    throw new Error(`No specifications found matching: ${description}`)
-  }
+  if (paths.size === 0) return []
   const files = await Promise.all(
     [...paths].sort().map(async (path) => ({
       uri: relative(root, path),
@@ -111,6 +108,23 @@ async function discoverSpecifications(
       language,
     }),
   )
+}
+
+async function discoverSpecifications(
+  patterns: string | string[],
+  language: string | undefined,
+  root: string,
+) {
+  const specifications = await loadProjectSpecifications(
+    patterns,
+    language,
+    root,
+  )
+  if (specifications.length === 0) {
+    const description = Array.isArray(patterns) ? patterns.join(', ') : patterns
+    throw new Error(`No specifications found matching: ${description}`)
+  }
+  return specifications
 }
 
 function configuredWebOptions(

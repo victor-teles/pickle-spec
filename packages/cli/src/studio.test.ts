@@ -148,6 +148,14 @@ export default {
 
   test('pickle studio starts a local application and opens the configured project', async () => {
     const project = await createStudioProject('opened-project')
+    await Bun.write(
+      join(project, 'features', 'search.feature'),
+      `@pickle:id:specsearchaaaaaaa @pickle:state:active
+Feature: Search
+  @pickle:id:scnquerybbbbbbbb
+  Scenario: Query the catalog
+    Then results are shown`,
+    )
     const { child, url } = await startStudio(project)
     const page = await browser.newPage()
     try {
@@ -160,9 +168,56 @@ export default {
       expect(
         await page.getByRole('link', { name: 'Specifications' }).count(),
       ).toBe(1)
-      expect(await page.getByRole('link', { name: 'Runs' }).count()).toBe(1)
-      expect(await page.getByRole('link', { name: 'Plans' }).count()).toBe(1)
-      expect(await page.getByRole('link', { name: 'Settings' }).count()).toBe(1)
+      expect(
+        await page.getByRole('link', { name: 'Runs', disabled: true }).count(),
+      ).toBe(1)
+      expect(
+        await page.getByRole('link', { name: 'Plans', disabled: true }).count(),
+      ).toBe(1)
+      expect(
+        await page
+          .getByRole('link', { name: 'Settings', disabled: true })
+          .count(),
+      ).toBe(1)
+      expect(
+        await page.getByRole('status').filter({ hasText: 'Ready' }).count(),
+      ).toBe(1)
+      const catalog = page.getByRole('navigation', { name: 'Specifications' })
+      expect(
+        await catalog.getByRole('button', { name: 'Checkout' }).count(),
+      ).toBe(1)
+      expect(
+        await catalog.getByRole('button', { name: 'Search' }).count(),
+      ).toBe(1)
+      expect(
+        await page.getByRole('heading', { name: 'Checkout' }).count(),
+      ).toBe(1)
+      expect(
+        await page.getByRole('button', { name: 'Run Specification' }).count(),
+      ).toBe(1)
+      expect(
+        await page.getByRole('button', { name: 'Start test run' }).count(),
+      ).toBe(0)
+      expect(
+        await page.getByRole('heading', { name: 'Needs attention' }).count(),
+      ).toBe(0)
+      const scenarios = page.getByRole('table', { name: 'Scenarios' })
+      expect(
+        await scenarios.getByRole('columnheader', { name: 'chrome' }).count(),
+      ).toBe(1)
+      expect(
+        await scenarios.getByRole('columnheader', { name: 'firefox' }).count(),
+      ).toBe(1)
+      expect(
+        await scenarios
+          .getByRole('rowheader', { name: 'Pay for the order' })
+          .count(),
+      ).toBe(1)
+      expect(
+        await page
+          .getByRole('button', { name: 'Run Scenario Pay for the order' })
+          .count(),
+      ).toBe(1)
       expect(new URL(url).hostname).toBe('127.0.0.1')
     } finally {
       await page.close()
@@ -182,63 +237,139 @@ export default {
     const page = await browser.newPage()
     try {
       await page.goto(url)
-      await page.getByRole('button', { name: 'Start test run' }).click()
-      await page.getByRole('status').filter({ hasText: 'running' }).waitFor()
+      await page.getByRole('button', { name: 'Run Specification' }).click()
+      const running = page.getByRole('status').filter({ hasText: 'running' })
+      await running.waitFor()
+      expect(await running.locator('[data-slot="spinner"]').count()).toBe(1)
+      await page.getByRole('button', { name: 'Cancel test run' }).waitFor()
       await page
         .getByRole('button', { name: 'Pay for the order chrome running' })
         .waitFor()
-      expect(await finishedManifestCount(project)).toBe(0)
-      await page
-        .getByRole('button', { name: 'Pay for the order chrome running' })
-        .click()
       expect(
-        await page.getByRole('list', { name: 'Step timeline' }).textContent(),
-      ).toContain('Then payment is captured')
+        await page
+          .getByRole('button', { name: 'Pay for the order chrome running' })
+          .locator('[data-slot="spinner"]')
+          .count(),
+      ).toBe(1)
+      expect(await finishedManifestCount(project)).toBe(0)
       await Bun.write(gate, 'continue')
-      await page.getByRole('status').filter({ hasText: 'failed' }).waitFor({
+      const failed = page.getByRole('status').filter({ hasText: 'failed' })
+      await failed.waitFor({
         timeout: 20_000,
       })
+      expect(await failed.locator('svg').count()).toBe(1)
+      expect(
+        await page
+          .getByRole('button', { name: 'Pay for the order chrome failed' })
+          .locator('svg')
+          .count(),
+      ).toBe(1)
       const attention = page.getByRole('list', { name: 'Needs attention' })
       const items = attention.getByRole('listitem')
       expect(await items.count()).toBe(2)
       expect(await items.nth(0).textContent()).toContain('Pay for the order')
       expect(await items.nth(0).textContent()).toContain('failed')
+      expect(await items.nth(0).textContent()).toContain('Open step timeline')
       expect(await items.nth(1).textContent()).toContain('Adapt the purchase')
       expect(await items.nth(1).textContent()).toContain(
         'passed-with-adaptation',
       )
-      const matrix = page.getByRole('table', { name: 'Target matrix' })
+      const timeline = page.getByRole('list', { name: 'Step timeline' })
+      expect(await timeline.textContent()).toContain('Then payment is captured')
+      expect(await timeline.textContent()).toContain('Payment was declined')
+      const scenarios = page.getByRole('table', { name: 'Scenarios' })
       expect(
-        await matrix.getByRole('columnheader', { name: 'chrome' }).count(),
+        await scenarios.getByRole('columnheader', { name: 'chrome' }).count(),
       ).toBe(1)
       expect(
-        await matrix.getByRole('columnheader', { name: 'firefox' }).count(),
+        await scenarios.getByRole('columnheader', { name: 'firefox' }).count(),
       ).toBe(1)
       expect(
-        await matrix
+        await scenarios
           .getByRole('rowheader', { name: 'Pay for the order' })
           .count(),
       ).toBe(1)
       expect(
-        await matrix
+        await scenarios
           .getByRole('rowheader', { name: 'Adapt the purchase' })
           .count(),
       ).toBe(1)
       expect(
-        await matrix
+        await scenarios
           .getByRole('rowheader', { name: 'Complete a purchase' })
           .count(),
       ).toBe(1)
       await page
         .getByRole('button', { name: 'Pay for the order chrome failed' })
         .click()
-      const timeline = page.getByRole('list', { name: 'Step timeline' })
       expect(await timeline.textContent()).toContain('Then payment is captured')
       expect(await timeline.textContent()).toContain('Click pay on chrome')
       expect(await timeline.textContent()).toContain('Payment was declined')
-      expect(await page.getByRole('img', { name: 'screenshot' }).count()).toBe(
+      expect(await page.getByRole('img', { name: /screenshot/ }).count()).toBe(
         1,
       )
+    } finally {
+      await page.close()
+      child.kill()
+      await child.exited
+    }
+  }, 60_000)
+
+  test('Studio cancels a live test run without starting another', async () => {
+    const project = await createStudioProject('cancel-run')
+    const marker = join(project, 'step-started.txt')
+    const gate = join(project, 'continue.txt')
+    const { child, url } = await startStudio(project, {
+      PICKLE_STUDIO_STEP_MARKER: marker,
+      PICKLE_STUDIO_CONTINUE: gate,
+    })
+    const page = await browser.newPage()
+    try {
+      await page.goto(url)
+      await page.getByRole('button', { name: 'Run Specification' }).click()
+      await page.getByRole('button', { name: 'Cancel test run' }).waitFor()
+      await page.getByRole('button', { name: 'Run Specification' }).waitFor({
+        state: 'hidden',
+      })
+      await page.getByRole('button', { name: 'Cancel test run' }).click()
+      await page.getByRole('button', { name: 'Run Specification' }).waitFor({
+        timeout: 20_000,
+      })
+    } finally {
+      await page.close()
+      child.kill()
+      await child.exited
+    }
+  }, 60_000)
+
+  test('Studio runs a single Scenario without the rest of the Specification', async () => {
+    const project = await createStudioProject('single-scenario')
+    const marker = join(project, 'step-started.txt')
+    const gate = join(project, 'continue.txt')
+    const { child, url } = await startStudio(project, {
+      PICKLE_STUDIO_STEP_MARKER: marker,
+      PICKLE_STUDIO_CONTINUE: gate,
+    })
+    const page = await browser.newPage()
+    try {
+      await page.goto(url)
+      await page
+        .getByRole('button', { name: 'Run Scenario Pay for the order' })
+        .click()
+      await page.getByRole('status').filter({ hasText: 'running' }).waitFor()
+      await page
+        .getByRole('button', { name: 'Pay for the order chrome running' })
+        .waitFor()
+      await Bun.write(gate, 'continue')
+      await page.getByRole('status').filter({ hasText: 'failed' }).waitFor({
+        timeout: 20_000,
+      })
+      const attention = page.getByRole('list', { name: 'Needs attention' })
+      expect(await attention.getByRole('listitem').count()).toBe(1)
+      expect(await attention.textContent()).toContain('Pay for the order')
+      expect(await attention.textContent()).not.toContain('Adapt the purchase')
+      const scenarios = page.getByRole('table', { name: 'Scenarios' })
+      expect(await scenarios.textContent()).toContain('pending')
     } finally {
       await page.close()
       child.kill()

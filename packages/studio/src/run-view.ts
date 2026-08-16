@@ -59,10 +59,11 @@ export type RunView = {
   activity: string[]
   cells: MatrixCell[]
   selected?: MatrixCell
+  pinned: boolean
 }
 
 export function emptyRunView(): RunView {
-  return { phase: 'idle', activity: [], cells: [] }
+  return { phase: 'idle', activity: [], cells: [], pinned: false }
 }
 
 export function cellKey(scenarioId: string, profileId: string) {
@@ -122,6 +123,26 @@ export function statusLabel(
   return worst?.state ?? 'idle'
 }
 
+export function pinCell(view: RunView, cell: MatrixCell): RunView {
+  const current =
+    view.cells.find(
+      (item) =>
+        item.scenarioId === cell.scenarioId &&
+        item.profileId === cell.profileId,
+    ) ?? cell
+  return { ...view, selected: current, pinned: true }
+}
+
+export function isSelectedCell(
+  selected: MatrixCell | undefined,
+  cell: MatrixCell,
+) {
+  return (
+    selected?.scenarioId === cell.scenarioId &&
+    selected?.profileId === cell.profileId
+  )
+}
+
 export function reduceRun(view: RunView, event: ClientEvent): RunView {
   if (event.type === 'run-finished') return { ...view, phase: 'finished' }
   if (event.type === 'scenario-started')
@@ -132,6 +153,41 @@ export function reduceRun(view: RunView, event: ClientEvent): RunView {
     return applyScenarioFinished(view, event)
   }
   return view
+}
+
+function followSelection(
+  view: RunView,
+  cells: MatrixCell[],
+): MatrixCell | undefined {
+  if (view.pinned && view.selected) {
+    return (
+      cells.find(
+        (cell) =>
+          cell.scenarioId === view.selected?.scenarioId &&
+          cell.profileId === view.selected?.profileId,
+      ) ?? view.selected
+    )
+  }
+  const [worst] = attentionCells(cells)
+  if (worst) return worst
+  if (view.selected) {
+    const current = cells.find(
+      (cell) =>
+        cell.scenarioId === view.selected?.scenarioId &&
+        cell.profileId === view.selected?.profileId,
+    )
+    if (current) return current
+  }
+  return cells.find((cell) => cell.state === 'running') ?? view.selected
+}
+
+function withCells(
+  view: RunView,
+  cells: MatrixCell[],
+  extras: Partial<RunView> = {},
+): RunView {
+  const next = { ...view, cells, ...extras }
+  return { ...next, selected: followSelection(next, cells) }
 }
 
 function scenarioIdOf(scenario: ScenarioRef) {
@@ -162,17 +218,6 @@ function findCell(
   )
 }
 
-function selectCell(view: RunView, cell: MatrixCell): MatrixCell {
-  if (!view.selected) return cell
-  if (
-    view.selected.scenarioId === cell.scenarioId &&
-    view.selected.profileId === cell.profileId
-  ) {
-    return cell
-  }
-  return view.selected
-}
-
 function applyScenarioStarted(
   view: RunView,
   event: Extract<ClientEvent, { type: 'scenario-started' }>,
@@ -194,13 +239,7 @@ function applyScenarioStarted(
       steps: existing?.result?.steps ?? [],
     },
   }
-  const cells = replaceCell(view.cells, cell)
-  return {
-    ...view,
-    activity,
-    cells,
-    selected: selectCell({ ...view, cells }, cell),
-  }
+  return withCells(view, replaceCell(view.cells, cell), { activity })
 }
 
 function applyStepStarted(
@@ -236,8 +275,7 @@ function applyStepStarted(
       ],
     },
   }
-  const cells = replaceCell(view.cells, next)
-  return { ...view, cells, selected: selectCell(view, next) }
+  return withCells(view, replaceCell(view.cells, next))
 }
 
 function applyStepFinished(
@@ -263,8 +301,7 @@ function applyStepFinished(
     ...cell,
     result: { ...cell.result, steps },
   }
-  const cells = replaceCell(view.cells, next)
-  return { ...view, cells, selected: selectCell(view, next) }
+  return withCells(view, replaceCell(view.cells, next))
 }
 
 function applyScenarioFinished(
@@ -278,11 +315,7 @@ function applyScenarioFinished(
     state: event.result.state,
     result: event.result,
   }
-  const cells = replaceCell(view.cells, cell)
-  return {
-    ...view,
+  return withCells(view, replaceCell(view.cells, cell), {
     activity: rememberActivity(view.activity, event.result.scenario.name),
-    cells,
-    selected: selectCell({ ...view, cells }, cell),
-  }
+  })
 }

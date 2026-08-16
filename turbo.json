@@ -8,6 +8,10 @@
     "run:example": {
       "cache": false,
       "persistent": false
+    },
+    "studio": {
+      "cache": false,
+      "persistent": false
     }
   }
 }

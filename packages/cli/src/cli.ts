@@ -11,11 +11,20 @@ import {
   openTestRunStore,
   writeRunArchive,
 } from '@pickle-spec/runner'
-import type { SelectionOptions, SpecificationState } from '@pickle-spec/spec'
+import type {
+  SelectionOptions,
+  Specification,
+  SpecificationState,
+} from '@pickle-spec/spec'
+import type { StudioRunRequest, StudioSpecification } from '@pickle-spec/studio'
 import { startStudio } from '@pickle-spec/studio'
 import { screenshotModes, type WebAdapterOptions } from '@pickle-spec/web'
-import { loadConfig } from './config'
-import { loadPersistedRun, startProjectRun } from './execute-run'
+import { defaultSpecificationGlob, loadConfig } from './config'
+import {
+  loadPersistedRun,
+  loadProjectSpecifications,
+  startProjectRun,
+} from './execute-run'
 import { checkProject, initializeProject, migrateProject } from './project'
 
 interface RunArguments {
@@ -335,6 +344,30 @@ async function exportRun(argv: string[]): Promise<number> {
   return 0
 }
 
+function studioCatalog(
+  specifications: readonly Specification[],
+): StudioSpecification[] {
+  return specifications.map((specification) => ({
+    id: specification.id ?? specification.source.uri,
+    name: specification.name,
+    uri: specification.source.uri,
+    scenarios: specification.scenarios.map((scenario) => ({
+      id: scenario.id ?? scenario.name,
+      name: scenario.name,
+    })),
+  }))
+}
+
+function studioRunSelection(
+  request: StudioRunRequest | undefined,
+): SelectionOptions | undefined {
+  if (!request?.paths?.length && !request?.scenarioName) return undefined
+  return {
+    ...(request.paths?.length ? { paths: [...request.paths] } : {}),
+    ...(request.scenarioName ? { scenarioName: request.scenarioName } : {}),
+  }
+}
+
 function parseStudioArguments(argv: string[]): {
   configPath?: string
   extensionsPath?: string
@@ -368,16 +401,30 @@ async function studio(argv: string[]): Promise<number> {
   const profiles = config.executionTargetProfiles
     ? Object.keys(config.executionTargetProfiles)
     : [config.executionTargetProfile?.id ?? (config.web ? 'web' : 'custom')]
+  const specifications = studioCatalog(
+    await loadProjectSpecifications(
+      config.specifications ?? defaultSpecificationGlob,
+      config.language,
+      root,
+    ),
+  )
   const controller = new AbortController()
+  const activeRuns = new Map<string, AbortController>()
   const server = await startStudio({
     project: {
       name: basename(root),
       root,
       profiles,
       suites: Object.keys(config.suites ?? {}),
+      specifications,
     },
     gateway: {
       async start(request, onEvent) {
+        const runController = new AbortController()
+        const onProcessAbort = () => runController.abort()
+        controller.signal.addEventListener('abort', onProcessAbort, {
+          once: true,
+        })
         const started = await startProjectRun({
           root,
           config,
@@ -385,18 +432,30 @@ async function studio(argv: string[]): Promise<number> {
             extensionsPath: args.extensionsPath,
             suite: request?.suite,
             profiles: request?.profiles ? [...request.profiles] : undefined,
+            selection: studioRunSelection(request),
           },
-          signal: controller.signal,
+          signal: runController.signal,
           onEvent,
         })
-        void started.done.catch((error) => {
-          console.error(error instanceof Error ? error.message : String(error))
-        })
+        activeRuns.set(started.id, runController)
+        void started.done
+          .catch((error) => {
+            console.error(
+              error instanceof Error ? error.message : String(error),
+            )
+          })
+          .finally(() => {
+            activeRuns.delete(started.id)
+            controller.signal.removeEventListener('abort', onProcessAbort)
+          })
         return { id: started.id, done: started.done }
       },
       async snapshot(id) {
         const { events, manifest } = await loadPersistedRun(root, id)
         return { id, events, manifest }
+      },
+      async cancel(id) {
+        activeRuns.get(id)?.abort()
       },
     },
     open: args.open,

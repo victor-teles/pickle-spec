@@ -4,16 +4,31 @@ import { basename, join, resolve } from 'node:path'
 import type { RunEvent, TestRunManifest } from '@pickle-spec/runner'
 import tailwind from 'bun-plugin-tailwind'
 
+export interface StudioScenario {
+  id: string
+  name: string
+}
+
+export interface StudioSpecification {
+  id: string
+  name: string
+  uri: string
+  scenarios: readonly StudioScenario[]
+}
+
 export interface StudioProject {
   name: string
   root: string
   profiles: readonly string[]
   suites: readonly string[]
+  specifications: readonly StudioSpecification[]
 }
 
 export interface StudioRunRequest {
   suite?: string
   profiles?: readonly string[]
+  paths?: readonly string[]
+  scenarioName?: string
 }
 
 export interface StudioRunSnapshot {
@@ -28,6 +43,7 @@ export interface StudioRunGateway {
     onEvent: (event: RunEvent) => void,
   ): Promise<{ id: string; done?: Promise<unknown> }>
   snapshot(id: string): Promise<StudioRunSnapshot>
+  cancel(id: string): Promise<void>
 }
 
 export interface StudioOptions {
@@ -232,6 +248,14 @@ export async function startStudio(
         if (!(await file.exists()))
           return new Response('Not found', { status: 404 })
         return new Response(file)
+      }
+      const cancelMatch = url.pathname.match(/^\/api\/runs\/([^/]+)\/cancel$/)
+      if (cancelMatch && request.method === 'POST') {
+        if (!options.gateway) {
+          return new Response('Test runs are unavailable', { status: 501 })
+        }
+        await options.gateway.cancel(decodeURIComponent(cancelMatch[1]!))
+        return new Response(null, { status: 204 })
       }
       const eventsMatch = url.pathname.match(/^\/api\/runs\/([^/]+)\/events$/)
       if (eventsMatch && request.method === 'GET') {

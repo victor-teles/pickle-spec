@@ -2,29 +2,56 @@ import { StrictMode, useEffect, useMemo, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import { Badge } from './components/ui/badge'
 import { Button } from './components/ui/button'
+import { LoadingState } from './components/ui/loading-state'
+import { ResultMark } from './components/ui/result-mark'
+import { cn } from './lib/utils'
 import {
   attentionCells,
   type ClientEvent,
   cellKey,
   emptyRunView,
+  isSelectedCell,
   type MatrixCell,
+  pinCell,
   type RunView,
   reduceRun,
-  scenarioRows,
   statusLabel,
   type TestResultState,
 } from './run-view'
 import './styles.css'
+
+type StudioScenario = {
+  id: string
+  name: string
+}
+
+type StudioSpecification = {
+  id: string
+  name: string
+  uri: string
+  scenarios: StudioScenario[]
+}
 
 type StudioProject = {
   name: string
   root: string
   profiles: string[]
   suites: string[]
+  specifications: StudioSpecification[]
+}
+
+type StudioRunRequest = {
+  paths?: string[]
+  scenarioName?: string
 }
 
 const token = new URLSearchParams(location.search).get('token') ?? ''
-const areas = ['Specifications', 'Runs', 'Plans', 'Settings'] as const
+const areas = [
+  { name: 'Specifications', available: true },
+  { name: 'Runs', available: false },
+  { name: 'Plans', available: false },
+  { name: 'Settings', available: false },
+] as const
 
 async function api<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(path, {
@@ -48,21 +75,60 @@ function badgeVariant(state: StatusBadgeState) {
   return 'default'
 }
 
+function statusText(state: StatusBadgeState) {
+  return state === 'idle' ? 'Ready' : state
+}
+
+function StatusBadge(props: { state: StatusBadgeState }) {
+  if (props.state === 'running') {
+    return <LoadingState label="running" />
+  }
+  return (
+    <Badge variant={badgeVariant(props.state)} role="status">
+      <ResultMark key={props.state} state={props.state} />
+      {statusText(props.state)}
+    </Badge>
+  )
+}
+
 function artifactUrl(path: string): string {
   return `/api/artifact?path=${encodeURIComponent(path)}&token=${encodeURIComponent(token)}`
+}
+
+function matrixCellVariant(state: MatrixCell['state']) {
+  if (state === 'failed' || state === 'infrastructure-error') {
+    return 'destructive'
+  }
+  if (state === 'passed-with-adaptation') return 'adaptation'
+  if (state === 'passed') return 'passed'
+  return 'outline'
+}
+
+function reasonMessage(reason: unknown) {
+  return reason instanceof Error ? reason.message : String(reason)
 }
 
 function StudioApp() {
   const [project, setProject] = useState<StudioProject>()
   const [error, setError] = useState<string>()
-  const [area, setArea] = useState<(typeof areas)[number]>('Runs')
   const [runId, setRunId] = useState<string>()
+  const [selectedId, setSelectedId] = useState<string>()
   const [view, setView] = useState<RunView>(emptyRunView)
+  const running = view.phase === 'running'
 
   useEffect(() => {
-    api<StudioProject>('/api/project').then(setProject, (reason: unknown) => {
-      setError(reason instanceof Error ? reason.message : String(reason))
-    })
+    let cancelled = false
+    api<StudioProject>('/api/project').then(
+      (value) => {
+        if (!cancelled) setProject(value)
+      },
+      (reason: unknown) => {
+        if (!cancelled) setError(reasonMessage(reason))
+      },
+    )
+    return () => {
+      cancelled = true
+    }
   }, [])
 
   useEffect(() => {
@@ -79,36 +145,72 @@ function StudioApp() {
   }, [runId])
 
   const attention = useMemo(() => attentionCells(view.cells), [view.cells])
-  const scenarios = useMemo(() => scenarioRows(view.cells), [view.cells])
   const aggregate = statusLabel(view)
+  const selected =
+    project?.specifications.find((item) => item.id === selectedId) ??
+    project?.specifications[0]
 
-  async function startRun() {
+  async function startRun(request: StudioRunRequest) {
+    if (running) return
     setError(undefined)
     setView({ ...emptyRunView(), phase: 'running' })
     try {
       const started = await api<{ id: string }>('/api/runs', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({}),
+        body: JSON.stringify(request),
       })
       setRunId(started.id)
     } catch (reason) {
       setView(emptyRunView())
-      setError(reason instanceof Error ? reason.message : String(reason))
+      setError(reasonMessage(reason))
+    }
+  }
+
+  async function cancelRun() {
+    if (!runId || !running) return
+    setError(undefined)
+    try {
+      const response = await fetch(
+        `/api/runs/${encodeURIComponent(runId)}/cancel`,
+        {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${token}` },
+        },
+      )
+      if (!response.ok) throw new Error(await response.text())
+    } catch (reason) {
+      setError(reasonMessage(reason))
     }
   }
 
   if (error && !project) {
     return (
-      <main className="p-8">
-        <p role="alert">{error}</p>
+      <main className="flex min-h-screen items-start p-6">
+        <div className="max-w-lg space-y-3 rounded-md border border-border bg-card px-4 py-3">
+          <p role="alert" className="text-sm text-destructive">
+            {error}
+          </p>
+          <Button
+            type="button"
+            onClick={() => {
+              setError(undefined)
+              void api<StudioProject>('/api/project').then(
+                setProject,
+                (reason: unknown) => setError(reasonMessage(reason)),
+              )
+            }}
+          >
+            Try again
+          </Button>
+        </div>
       </main>
     )
   }
   if (!project) {
     return (
-      <main className="p-8">
-        <p>Opening project…</p>
+      <main className="flex min-h-screen items-start p-6">
+        <p className="text-sm text-muted-foreground">Opening project…</p>
       </main>
     )
   }
@@ -116,108 +218,212 @@ function StudioApp() {
   return (
     <div className="flex min-h-screen flex-col">
       <header className="flex items-center justify-between border-b border-border bg-card px-6 py-3">
-        <div>
-          <p className="font-mono text-xs tracking-[0.2em] text-muted-foreground uppercase">
-            Pickle Spec
-          </p>
-          <h1 className="text-xl font-semibold tracking-tight">
-            {project.name}
-          </h1>
-        </div>
-        {area === 'Runs' ? (
-          <Button type="button" onClick={() => void startRun()}>
-            Start test run
-          </Button>
-        ) : null}
+        <h1 className="text-xl font-semibold tracking-tight">{project.name}</h1>
+        <StatusBadge state={aggregate} />
       </header>
       <nav
         aria-label="Studio"
-        className="flex gap-1 border-b border-border px-4 py-2"
+        className="flex gap-px border-b border-border px-2 py-1"
       >
-        {areas.map((name) => (
+        {areas.map((area) => (
           <a
-            key={name}
-            href={`#${name.toLowerCase()}`}
-            className={`rounded-md px-3 py-1.5 text-sm ${
-              area === name
+            key={area.name}
+            href={`#${area.name.toLowerCase()}`}
+            aria-current={area.available ? 'page' : undefined}
+            aria-disabled={area.available ? undefined : true}
+            tabIndex={area.available ? undefined : -1}
+            className={cn(
+              'inline-flex h-7 items-center rounded-md px-2 text-xs/relaxed transition-colors duration-150 ease-[cubic-bezier(0.23,1,0.32,1)] motion-reduce:transition-none',
+              area.available
                 ? 'bg-accent text-accent-foreground'
-                : 'text-muted-foreground hover:bg-secondary'
-            }`}
-            onClick={() => setArea(name)}
+                : 'cursor-not-allowed text-muted-foreground opacity-60',
+            )}
+            onClick={(event) => {
+              if (!area.available) event.preventDefault()
+            }}
           >
-            {name}
+            {area.name}
           </a>
         ))}
       </nav>
-      <main className="grid flex-1 gap-6 p-6 lg:grid-cols-[20rem_1fr]">
-        {area === 'Runs' ? (
-          <>
-            <section className="space-y-4">
-              <div className="flex items-center gap-2">
-                <h2 className="text-lg font-medium">Test run</h2>
-                <Badge variant={badgeVariant(aggregate)} role="status">
-                  {aggregate}
-                </Badge>
+      <div className="grid min-h-0 flex-1 lg:grid-cols-[16rem_1fr]">
+        <SpecificationList
+          specifications={project.specifications}
+          selectedId={selected?.id}
+          running={running}
+          onSelect={setSelectedId}
+          onRunAll={() => void startRun({})}
+        />
+        <main className="min-w-0 space-y-6 p-6" aria-busy={running}>
+          {error ? (
+            <p role="alert" className="text-sm text-destructive">
+              {error}
+            </p>
+          ) : null}
+          {selected ? (
+            <>
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div className="min-w-0 space-y-1">
+                  <h2 className="text-lg font-medium">{selected.name}</h2>
+                  <p className="truncate font-mono text-xs text-muted-foreground">
+                    {selected.uri}
+                  </p>
+                </div>
+                {running && runId ? (
+                  <Button
+                    type="button"
+                    variant="destructive"
+                    onClick={() => void cancelRun()}
+                  >
+                    Cancel test run
+                  </Button>
+                ) : (
+                  <Button
+                    type="button"
+                    disabled={running}
+                    onClick={() => void startRun({ paths: [selected.uri] })}
+                  >
+                    Run Specification
+                  </Button>
+                )}
               </div>
-              {error ? <p role="alert">{error}</p> : null}
-              {view.activity.length > 0 ? (
-                <ul className="space-y-1 text-sm">
-                  {view.activity.map((name) => (
-                    <li key={name}>{name}</li>
-                  ))}
-                </ul>
-              ) : (
-                <p className="text-sm text-muted-foreground">
-                  Start a test run to watch live progress, the target matrix,
-                  and step timelines.
-                </p>
-              )}
-              <div>
-                <h3 className="mb-2 text-sm font-medium">Needs attention</h3>
-                <ul aria-label="Needs attention" className="space-y-2">
-                  {attention.map((cell) => (
-                    <li key={cellKey(cell.scenarioId, cell.profileId)}>
-                      <button
-                        type="button"
-                        className="w-full rounded-md border border-border bg-card px-3 py-2 text-left text-sm"
-                        onClick={() =>
-                          setView((current) => ({ ...current, selected: cell }))
-                        }
-                      >
-                        {cell.scenarioName} {cell.state}
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            </section>
-            <section className="space-y-6">
-              <TargetMatrix
+              <ScenarioTable
                 profiles={project.profiles}
-                scenarios={scenarios}
+                scenarios={selected.scenarios}
                 cells={view.cells}
+                selected={view.selected}
+                running={running}
                 onSelect={(cell) =>
-                  setView((current) => ({ ...current, selected: cell }))
+                  setView((current) => pinCell(current, cell))
+                }
+                onRun={(scenarioName) =>
+                  void startRun({ paths: [selected.uri], scenarioName })
                 }
               />
-              <Timeline cell={view.selected} />
-            </section>
-          </>
-        ) : (
-          <p className="text-sm text-muted-foreground">
-            {area} will be available in a later Studio slice.
-          </p>
-        )}
-      </main>
+            </>
+          ) : (
+            <p className="text-sm text-muted-foreground">
+              No Specifications found. Add a feature file matching the project
+              configuration.
+            </p>
+          )}
+          {attention.length > 0 ? (
+            <div>
+              <h3 className="mb-2 text-sm font-medium">Needs attention</h3>
+              <ul
+                aria-label="Needs attention"
+                aria-live="polite"
+                className="space-y-2"
+              >
+                {attention.map((cell) => (
+                  <li key={cellKey(cell.scenarioId, cell.profileId)}>
+                    <button
+                      type="button"
+                      className={cn(
+                        'flex w-full min-w-0 flex-col gap-1 rounded-md border bg-card px-3 py-2 text-left text-sm outline-none transition-[transform,background-color,border-color] duration-150 ease-[cubic-bezier(0.23,1,0.32,1)] hover:bg-muted/30 active:scale-[0.99] focus-visible:border-foreground/30 motion-reduce:transition-none motion-reduce:active:scale-100',
+                        isSelectedCell(view.selected, cell)
+                          ? 'border-foreground/25'
+                          : 'border-border',
+                      )}
+                      onClick={() =>
+                        setView((current) => pinCell(current, cell))
+                      }
+                    >
+                      <span className="flex min-w-0 items-center gap-2">
+                        <span className="min-w-0 flex-1 truncate">
+                          {cell.scenarioName}
+                        </span>
+                        <Badge variant={badgeVariant(cell.state)}>
+                          <ResultMark key={cell.state} state={cell.state} />
+                          {cell.state}
+                        </Badge>
+                      </span>
+                      <span className="text-xs text-muted-foreground">
+                        {cell.profileId} · Open step timeline
+                      </span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+          <Timeline cell={view.selected} />
+        </main>
+      </div>
     </div>
   )
 }
 
-function TargetMatrix(props: {
+function SpecificationList(props: {
+  specifications: StudioSpecification[]
+  selectedId?: string
+  running: boolean
+  onSelect: (id: string) => void
+  onRunAll: () => void
+}) {
+  return (
+    <nav
+      aria-label="Specifications"
+      className="flex min-h-0 flex-col border-b border-border lg:border-r lg:border-b-0"
+    >
+      <div className="flex h-8 shrink-0 items-center px-2">
+        <h2 className="text-xs text-muted-foreground">Specifications</h2>
+      </div>
+      {props.specifications.length === 0 ? (
+        <p className="px-2 pb-3 text-xs/relaxed text-muted-foreground">
+          None in this project.
+        </p>
+      ) : (
+        <ul className="flex min-h-0 flex-1 flex-col gap-px overflow-auto px-2 pb-2">
+          {props.specifications.map((specification) => {
+            const current = specification.id === props.selectedId
+            return (
+              <li key={specification.id}>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="lg"
+                  aria-label={specification.name}
+                  aria-current={current ? 'true' : undefined}
+                  className={cn(
+                    'h-8 w-full min-w-0 justify-between p-2 text-left',
+                    current && 'bg-accent font-medium text-accent-foreground',
+                  )}
+                  onClick={() => props.onSelect(specification.id)}
+                >
+                  <span className="min-w-0 truncate">{specification.name}</span>
+                  <span aria-hidden="true" className="font-mono">
+                    {specification.scenarios.length}
+                  </span>
+                </Button>
+              </li>
+            )
+          })}
+        </ul>
+      )}
+      <div className="border-t border-border p-2">
+        <Button
+          type="button"
+          variant="outline"
+          className="w-full"
+          disabled={props.running || props.specifications.length === 0}
+          onClick={props.onRunAll}
+        >
+          Run all Specifications
+        </Button>
+      </div>
+    </nav>
+  )
+}
+
+function ScenarioTable(props: {
   profiles: string[]
-  scenarios: { id: string; name: string }[]
+  scenarios: StudioScenario[]
   cells: MatrixCell[]
+  selected?: MatrixCell
+  running: boolean
   onSelect: (cell: MatrixCell) => void
+  onRun: (scenarioName: string) => void
 }) {
   function cellFor(scenarioId: string, profileId: string) {
     return props.cells.find(
@@ -227,7 +433,7 @@ function TargetMatrix(props: {
 
   return (
     <div className="overflow-auto rounded-lg border border-border bg-card">
-      <table aria-label="Target matrix" className="w-full text-sm">
+      <table aria-label="Scenarios" className="w-full text-sm">
         <thead>
           <tr className="border-b border-border">
             <th scope="col" className="px-3 py-2 text-left font-medium">
@@ -242,42 +448,75 @@ function TargetMatrix(props: {
                 {profile}
               </th>
             ))}
+            <th scope="col" className="px-3 py-2 text-right font-medium">
+              <span className="sr-only">Run</span>
+            </th>
           </tr>
         </thead>
         <tbody>
-          {props.scenarios.map((scenario) => (
-            <tr
-              key={scenario.id}
-              className="border-b border-border last:border-0"
-            >
-              <th scope="row" className="px-3 py-2 text-left font-medium">
-                {scenario.name}
-              </th>
-              {props.profiles.map((profile) => {
-                const cell = cellFor(scenario.id, profile)
-                const label = `${scenario.name} ${profile} ${cell?.state ?? 'pending'}`
-                return (
-                  <td key={profile} className="px-3 py-2">
-                    {cell ? (
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant={
-                          cell.state === 'failed' ? 'destructive' : 'outline'
-                        }
-                        aria-label={label}
-                        onClick={() => props.onSelect(cell)}
-                      >
-                        {cell.state}
-                      </Button>
-                    ) : (
-                      <span className="text-muted-foreground">pending</span>
-                    )}
-                  </td>
-                )
-              })}
+          {props.scenarios.length === 0 ? (
+            <tr>
+              <td
+                colSpan={2 + props.profiles.length}
+                className="px-3 py-6 text-muted-foreground"
+              >
+                This Specification has no Scenarios.
+              </td>
             </tr>
-          ))}
+          ) : (
+            props.scenarios.map((scenario) => (
+              <tr
+                key={scenario.id}
+                className="border-b border-border last:border-0"
+              >
+                <th
+                  scope="row"
+                  className="max-w-56 truncate px-3 py-2 text-left font-medium"
+                >
+                  {scenario.name}
+                </th>
+                {props.profiles.map((profile) => {
+                  const cell = cellFor(scenario.id, profile)
+                  const label = `${scenario.name} ${profile} ${cell?.state ?? 'pending'}`
+                  const selected = cell
+                    ? isSelectedCell(props.selected, cell)
+                    : false
+                  return (
+                    <td key={profile} className="px-3 py-2">
+                      {cell ? (
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant={matrixCellVariant(cell.state)}
+                          aria-label={label}
+                          aria-pressed={selected}
+                          className="animate-in fade-in zoom-in-95 duration-150 motion-reduce:animate-none"
+                          onClick={() => props.onSelect(cell)}
+                        >
+                          <ResultMark key={cell.state} state={cell.state} />
+                          {cell.state}
+                        </Button>
+                      ) : (
+                        <span className="text-muted-foreground">pending</span>
+                      )}
+                    </td>
+                  )
+                })}
+                <td className="px-3 py-2 text-right">
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    disabled={props.running}
+                    aria-label={`Run Scenario ${scenario.name}`}
+                    onClick={() => props.onRun(scenario.name)}
+                  >
+                    Run
+                  </Button>
+                </td>
+              </tr>
+            ))
+          )}
         </tbody>
       </table>
     </div>
@@ -296,7 +535,7 @@ function Timeline(props: { cell?: MatrixCell }) {
         {result.steps.map((step) => (
           <li
             key={`${step.step.text}:${step.resolvedActions.map((action) => action.description).join(',')}`}
-            className="rounded-md border border-border bg-card px-4 py-3"
+            className="rounded-md border border-border bg-card px-4 py-3 transition-[border-color] duration-150 ease-[cubic-bezier(0.23,1,0.32,1)] hover:border-foreground/15 motion-reduce:transition-none"
           >
             <p className="font-medium">
               {`${step.step.keyword.trim()} ${step.step.text}`}
@@ -313,7 +552,7 @@ function Timeline(props: { cell?: MatrixCell }) {
               artifact.mediaType?.startsWith('image/') ? (
                 <img
                   key={artifact.path}
-                  alt={artifact.kind}
+                  alt={`${artifact.kind} for ${result.scenario.name}`}
                   src={artifactUrl(artifact.path)}
                   className="mt-3 max-h-64 rounded-md border border-border"
                 />
@@ -321,7 +560,7 @@ function Timeline(props: { cell?: MatrixCell }) {
                 <a
                   key={artifact.path}
                   href={artifactUrl(artifact.path)}
-                  className="mt-2 inline-block text-sm text-primary"
+                  className="mt-2 inline-block text-sm text-primary underline-offset-4 hover:underline"
                 >
                   {artifact.kind}
                 </a>

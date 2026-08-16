@@ -11,10 +11,13 @@
     "!src/*.test.ts"
   ],
   "scripts": {
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "bun test"
   },
   "dependencies": {
     "@base-ui/react": "^1.0.0",
+    "@hugeicons/core-free-icons": "^4.2.3",
+    "@hugeicons/react": "^1.1.9",
     "@pickle-spec/runner": "workspace:*",
     "@types/bun": "catalog:",
     "@typescript/typescript6": "catalog:",

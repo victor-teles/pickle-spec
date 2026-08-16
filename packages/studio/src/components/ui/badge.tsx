@@ -4,16 +4,15 @@ import type { ComponentProps } from 'react'
 import { cn } from '../../lib/utils'
 
 const badgeVariants = cva(
-  'inline-flex items-center rounded-md border px-2 py-0.5 font-mono text-xs font-medium',
+  'group/badge inline-flex h-5 w-fit shrink-0 items-center justify-center gap-1 overflow-hidden rounded-full border border-transparent px-2 py-0.5 font-mono text-[0.625rem] font-medium whitespace-nowrap outline-none transition-[background-color,border-color,color] duration-150 ease-[cubic-bezier(0.23,1,0.32,1)] focus-visible:border-current/35 aria-invalid:border-destructive motion-reduce:transition-none',
   {
     variants: {
       variant: {
-        default: 'border-transparent bg-secondary text-secondary-foreground',
-        failed: 'border-transparent bg-destructive text-destructive-foreground',
-        adaptation:
-          'border-transparent bg-adaptation text-adaptation-foreground',
-        passed: 'border-transparent bg-primary/15 text-primary',
-        running: 'border-transparent bg-accent text-accent-foreground',
+        default: 'bg-secondary text-secondary-foreground',
+        failed: 'bg-destructive/10 text-destructive dark:bg-destructive/20',
+        adaptation: 'bg-adaptation/10 text-adaptation dark:bg-adaptation/20',
+        passed: 'bg-passed/10 text-passed dark:bg-passed/20',
+        running: 'bg-accent text-accent-foreground',
       },
     },
     defaultVariants: {

@@ -23,7 +23,8 @@
     "test": "turbo run test",
     "lint": "biome check .",
     "format": "biome check --write .",
-    "run:example": "turbo run run:example --filter=@pickle-spec/example"
+    "run:example": "turbo run run:example --filter=@pickle-spec/example",
+    "studio": "turbo run studio --filter=@pickle-spec/example"
   },
   "devDependencies": {
     "@biomejs/biome": "catalog:",
