@@ -13,6 +13,7 @@ import { Label } from './components/ui/label'
 import { Textarea } from './components/ui/textarea'
 import { GherkinEditor } from './gherkin-editor'
 import type { GherkinCatalog } from './gherkin-language'
+import { SpecificationMetadataForm } from './specification-metadata'
 import { SpecificationOutline } from './specification-outline'
 
 export type StructuredStep = {
@@ -126,6 +127,8 @@ function conflictFromReason(reason: unknown): ConflictState | undefined {
 export function SpecificationEditor(props: {
   uri: string
   model?: StudioAuthoringModel
+  namespaces?: readonly string[]
+  linkTemplates?: Readonly<Record<string, string>>
   api: <T>(path: string, init?: RequestInit) => Promise<T>
   onCatalogChange: () => Promise<void>
   onCreated?: (uri: string) => void
@@ -354,7 +357,18 @@ export function SpecificationEditor(props: {
         )}
       </div>
       {mode === 'view' ? (
-        <SpecificationOutline specification={buffer.specification} />
+        <>
+          <SpecificationMetadataForm
+            buffer={buffer}
+            namespaces={props.namespaces ?? []}
+            templates={props.linkTemplates}
+            api={props.api}
+            onReview={setReview}
+            onWrite={write}
+            onError={props.onError}
+          />
+          <SpecificationOutline specification={buffer.specification} />
+        </>
       ) : (
         <div className="space-y-3">
           <GherkinEditor

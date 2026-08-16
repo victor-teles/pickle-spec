@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 
-import { basename, resolve } from 'node:path'
+import { resolve } from 'node:path'
 import {
   compareTestRuns,
   formatHtml,
@@ -11,17 +11,9 @@ import {
   openTestRunStore,
   writeRunArchive,
 } from '@pickle-spec/runner'
-import type {
-  SelectionOptions,
-  Specification,
-  SpecificationState,
-} from '@pickle-spec/spec'
-import type {
-  StudioAuthoringModel,
-  StudioRunRequest,
-  StudioSpecification,
-} from '@pickle-spec/studio'
-import { startStudio } from '@pickle-spec/studio'
+import type { SelectionOptions, SpecificationState } from '@pickle-spec/spec'
+import type { StudioAuthoringModel } from '@pickle-spec/studio'
+import { createCredentialStore, startStudio } from '@pickle-spec/studio'
 import {
   defaultModelName,
   screenshotModes,
@@ -35,6 +27,14 @@ import {
   startProjectRun,
 } from './execute-run'
 import { checkProject, initializeProject, migrateProject } from './project'
+import {
+  loadStudioProject,
+  patchStudioConfig,
+  resolveConfigSecrets,
+  saveStudioCredential,
+  studioRunReadiness,
+  studioRunSelection,
+} from './studio-project'
 
 interface RunArguments {
   pattern?: string
@@ -353,30 +353,6 @@ async function exportRun(argv: string[]): Promise<number> {
   return 0
 }
 
-function studioCatalog(
-  specifications: readonly Specification[],
-): StudioSpecification[] {
-  return specifications.map((specification) => ({
-    id: specification.id ?? specification.source.uri,
-    name: specification.name,
-    uri: specification.source.uri,
-    scenarios: specification.scenarios.map((scenario) => ({
-      id: scenario.id ?? scenario.name,
-      name: scenario.name,
-    })),
-  }))
-}
-
-function studioRunSelection(
-  request: StudioRunRequest | undefined,
-): SelectionOptions | undefined {
-  if (!request?.paths?.length && !request?.scenarioName) return undefined
-  return {
-    ...(request.paths?.length ? { paths: [...request.paths] } : {}),
-    ...(request.scenarioName ? { scenarioName: request.scenarioName } : {}),
-  }
-}
-
 function parseStudioArguments(argv: string[]): {
   configPath?: string
   extensionsPath?: string
@@ -416,27 +392,17 @@ function authoringModel(modelName: string | undefined): StudioAuthoringModel {
 async function studio(argv: string[]): Promise<number> {
   const args = parseStudioArguments(argv)
   const root = process.cwd()
-  const config = await loadConfig(args.configPath)
-  const profiles = config.executionTargetProfiles
-    ? Object.keys(config.executionTargetProfiles)
-    : [config.executionTargetProfile?.id ?? (config.web ? 'web' : 'custom')]
+  const credentials = createCredentialStore()
+  const context = {
+    root,
+    configPath: args.configPath,
+    credentials,
+  }
+  const config = await loadConfig(args.configPath, root)
   const specificationGlobs = config.specifications ?? defaultSpecificationGlob
   const model = authoringModel(config.web?.browser?.modelName)
   async function loadProject() {
-    return {
-      name: basename(root),
-      root,
-      profiles,
-      suites: Object.keys(config.suites ?? {}),
-      specifications: studioCatalog(
-        await loadProjectSpecifications(
-          specificationGlobs,
-          config.language,
-          root,
-        ),
-      ),
-      model,
-    }
+    return loadStudioProject(context)
   }
   const extensions = await loadExtensions(args.extensionsPath, root)
   const controller = new AbortController()
@@ -450,6 +416,19 @@ async function studio(argv: string[]): Promise<number> {
       model,
       propose: extensions.authorSpecification,
     },
+    management: {
+      saveConfig: (patch) => patchStudioConfig(context, patch),
+      saveCredential: (input) => saveStudioCredential(context, input),
+      async readiness(request) {
+        const current = await loadConfig(args.configPath, root)
+        const specifications = await loadProjectSpecifications(
+          current.specifications ?? defaultSpecificationGlob,
+          current.language,
+          root,
+        )
+        return studioRunReadiness(context, request, current, specifications)
+      },
+    },
     gateway: {
       async start(request, onEvent) {
         const runController = new AbortController()
@@ -457,9 +436,10 @@ async function studio(argv: string[]): Promise<number> {
         controller.signal.addEventListener('abort', onProcessAbort, {
           once: true,
         })
+        const current = await loadConfig(args.configPath, root)
         const started = await startProjectRun({
           root,
-          config,
+          config: await resolveConfigSecrets(current, credentials),
           options: {
             extensionsPath: args.extensionsPath,
             suite: request?.suite,
