@@ -1,5 +1,5 @@
-import { mkdir } from 'node:fs/promises'
-import { basename, dirname, join, relative } from 'node:path'
+import { mkdir, open, rm, stat } from 'node:fs/promises'
+import { basename, dirname, join, relative, resolve, sep } from 'node:path'
 import { migrateRunArchive } from './archive-migrate'
 import type { RunEvent, TestResult, TestStepResult } from './run-scenario'
 import { openTestRunStore, type TestRunManifest } from './test-run-store'
@@ -44,6 +44,8 @@ interface CollectedArtifact {
 }
 
 type MapArtifactPath = (path: string) => string
+
+type NodeError = Error & { code?: string }
 
 function collectArtifacts(
   results: readonly TestResult[],
@@ -178,6 +180,7 @@ export async function importRunArchive(
   const archive = migrateRunArchive(
     JSON.parse(new TextDecoder().decode(originalBytes)),
   )
+  validateRunId(archive.manifest.id)
   const pickleDirectory = join(input.root, '.pickle')
   const archivesDirectory = join(pickleDirectory, 'archives')
   const runDirectory = join(pickleDirectory, 'runs', archive.manifest.id)
@@ -185,38 +188,107 @@ export async function importRunArchive(
     archivesDirectory,
     `${archive.manifest.id}.json`,
   )
+  if (
+    (await pathExists(runDirectory)) ||
+    (await pathExists(preservedArchivePath))
+  ) {
+    throw new Error(`Test run "${archive.manifest.id}" already exists`)
+  }
+  const artifacts = archive.artifacts.map((artifact) => ({
+    ...artifact,
+    target: importedArtifactPath(runDirectory, artifact.path),
+  }))
   await mkdir(archivesDirectory, { recursive: true })
-  await mkdir(join(runDirectory, 'artifacts'), { recursive: true })
-  await Bun.write(preservedArchivePath, originalBytes)
-
-  const pathMap = new Map<string, string>()
-  for (const artifact of archive.artifacts) {
-    const target = join(runDirectory, artifact.path)
-    await mkdir(dirname(target), { recursive: true })
-    await Bun.write(target, Buffer.from(artifact.content, 'base64'))
-    pathMap.set(artifact.path, target)
-  }
-  const mapPath: MapArtifactPath = (path) =>
-    pathMap.get(path) ?? join(runDirectory, path)
-  const events = archive.events.map((event) =>
-    mapEventArtifacts(event, mapPath),
-  )
-  const manifest: TestRunManifest = {
-    ...archive.manifest,
-    results: archive.manifest.results.map((result) =>
-      mapResultArtifacts(result, mapPath),
-    ),
+  await mkdir(dirname(runDirectory), { recursive: true })
+  try {
+    await mkdir(runDirectory)
+  } catch (error) {
+    if (isAlreadyExists(error)) {
+      throw new Error(`Test run "${archive.manifest.id}" already exists`)
+    }
+    throw error
   }
 
-  await Bun.write(
-    join(runDirectory, 'events.ndjson'),
-    `${events.map((event) => JSON.stringify(event)).join('\n')}\n`,
-  )
-  await Bun.write(
-    join(runDirectory, 'manifest.json'),
-    `${JSON.stringify(manifest, null, 2)}\n`,
-  )
-  await openTestRunStore({ root: input.root }).rebuildIndex()
+  let preservedArchive = false
+  try {
+    const archiveFile = await open(preservedArchivePath, 'wx')
+    preservedArchive = true
+    try {
+      await archiveFile.writeFile(originalBytes)
+    } finally {
+      await archiveFile.close()
+    }
+    await mkdir(join(runDirectory, 'artifacts'))
 
-  return { manifest, events, preservedArchivePath }
+    const pathMap = new Map<string, string>()
+    for (const artifact of artifacts) {
+      await mkdir(dirname(artifact.target), { recursive: true })
+      await Bun.write(artifact.target, Buffer.from(artifact.content, 'base64'))
+      pathMap.set(artifact.path, artifact.target)
+    }
+    const mapPath: MapArtifactPath = (path) =>
+      pathMap.get(path) ?? join(runDirectory, path)
+    const events = archive.events.map((event) =>
+      mapEventArtifacts(event, mapPath),
+    )
+    const manifest: TestRunManifest = {
+      ...archive.manifest,
+      results: archive.manifest.results.map((result) =>
+        mapResultArtifacts(result, mapPath),
+      ),
+    }
+
+    await Bun.write(
+      join(runDirectory, 'events.ndjson'),
+      `${events.map((event) => JSON.stringify(event)).join('\n')}\n`,
+    )
+    await Bun.write(
+      join(runDirectory, 'manifest.json'),
+      `${JSON.stringify(manifest, null, 2)}\n`,
+    )
+    await openTestRunStore({ root: input.root }).rebuildIndex()
+
+    return { manifest, events, preservedArchivePath }
+  } catch (error) {
+    await rm(runDirectory, { recursive: true, force: true })
+    if (preservedArchive) await rm(preservedArchivePath, { force: true })
+    if (isAlreadyExists(error)) {
+      throw new Error(`Test run "${archive.manifest.id}" already exists`)
+    }
+    throw error
+  }
+}
+
+async function pathExists(path: string): Promise<boolean> {
+  try {
+    await stat(path)
+    return true
+  } catch {
+    return false
+  }
+}
+
+function isAlreadyExists(error: unknown): boolean {
+  return error instanceof Error && (error as NodeError).code === 'EEXIST'
+}
+
+function validateRunId(id: string): void {
+  if (
+    !id ||
+    id === '.' ||
+    id === '..' ||
+    id.includes('/') ||
+    id.includes('\\')
+  ) {
+    throw new Error(`Invalid test run identifier "${id}"`)
+  }
+}
+
+function importedArtifactPath(runDirectory: string, path: string): string {
+  const artifactsDirectory = resolve(runDirectory, 'artifacts')
+  const target = resolve(runDirectory, path)
+  if (!target.startsWith(`${artifactsDirectory}${sep}`)) {
+    throw new Error('Artifact path must stay inside the imported test run')
+  }
+  return target
 }

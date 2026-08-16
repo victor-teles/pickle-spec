@@ -36,15 +36,6 @@ function scenarioIdOf(result: TestResult): string {
   return result.scenario.id ?? result.scenario.name
 }
 
-function identityKeys(result: TestResult): string[] {
-  const profileId = result.executionTargetProfile.id
-  const keys = [`name:${result.scenario.name}::${profileId}`]
-  if (result.scenario.id) {
-    keys.unshift(`id:${result.scenario.id}::${profileId}`)
-  }
-  return keys
-}
-
 function artifactSignature(result: TestResult): string {
   return JSON.stringify(
     result.steps.flatMap((step) =>
@@ -92,12 +83,17 @@ function changesBetween(
 }
 
 function findMatch(
-  available: Map<TestResult, string[]>,
+  available: Set<TestResult>,
   candidate: TestResult,
 ): TestResult | undefined {
-  const candidateKeys = new Set(identityKeys(candidate))
-  for (const [baseline, keys] of available) {
-    if (keys.some((key) => candidateKeys.has(key))) {
+  for (const baseline of available) {
+    const sameProfile =
+      baseline.executionTargetProfile.id === candidate.executionTargetProfile.id
+    const sameScenario =
+      baseline.scenario.id && candidate.scenario.id
+        ? baseline.scenario.id === candidate.scenario.id
+        : baseline.scenario.name === candidate.scenario.name
+    if (sameProfile && sameScenario) {
       available.delete(baseline)
       return baseline
     }
@@ -109,9 +105,7 @@ export function compareTestRuns(
   baseline: TestRunManifest,
   candidate: TestRunManifest,
 ): TestRunComparison {
-  const available = new Map(
-    baseline.results.map((result) => [result, identityKeys(result)] as const),
-  )
+  const available = new Set(baseline.results)
   const pairs: ComparedResultPair[] = []
   const added: ComparedResultSide[] = []
 
