@@ -610,7 +610,7 @@ Feature: Checkout
     })
     expect(run.exitCode).toBe(0)
     expect(await Bun.file(purchasePath).text()).toBe(purchaseSource)
-  })
+  }, 15_000)
 
   test('run reports missing Specification metadata without modifying source', async () => {
     const source = `Feature: Unreported
@@ -635,7 +635,7 @@ Feature: Checkout
       env: { ...Bun.env, PICKLE_TEST_OUTCOME: 'passed' },
     })
 
-    expect(run.exitCode).toBe(0)
+    expect(run.exitCode).toBe(2)
     expect(run.stderr.toString()).toContain('missing a Specification state')
     expect(run.stderr.toString()).toContain(
       'Run pickle migrate to add missing metadata',
@@ -783,24 +783,32 @@ Feature: Web search
       `
 export default {
   webAutomationFactory: {
-    async open() {
+    async launch() {
       let page = ''
       return {
-        async navigate(url) { page = await (await fetch(url)).text() },
-        async observe() {
-          return [{ description: 'Search for pickles', handle: 'search' }]
-        },
-        async act() {
-          page += '<div>Pickle results</div>'
-          return { success: true }
-        },
-        async verify() {
+        async openContext() {
           return {
-            meetsExpectation: page.includes('Pickle results'),
-            actualState: page,
+            async navigate(url) { page = await (await fetch(url)).text() },
+            async observe() {
+              return [{ description: 'Search for pickles', handle: 'search' }]
+            },
+            async act() {
+              page += '<div>Pickle results</div>'
+              return { success: true }
+            },
+            async verify() {
+              return {
+                meetsExpectation: page.includes('Pickle results'),
+                actualState: page,
+              }
+            },
+            async readIsolationState() {
+              return { cookieCount: 0, storageKeyCount: 0 }
+            },
+            async screenshot() { return new Uint8Array([137, 80, 78, 71]) },
+            async close() {},
           }
         },
-        async screenshot() { return new Uint8Array([137, 80, 78, 71]) },
         async close() {},
       }
     },

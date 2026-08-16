@@ -22,7 +22,8 @@
     "@pickle-spec/spec": "workspace:*",
     "@pickle-spec/web": "workspace:*",
     "@types/bun": "catalog:",
-    "@typescript/typescript6": "catalog:"
+    "@typescript/typescript6": "catalog:",
+    "zod": "catalog:"
   },
   "devDependencies": {
     "typescript": "catalog:"

@@ -13,7 +13,8 @@ import type {
 } from '@cucumber/messages'
 import { IdGenerator } from '@cucumber/messages'
 
-export type SpecificationState = 'draft' | 'active' | 'deprecated'
+export const specificationStates = ['draft', 'active', 'deprecated'] as const
+export type SpecificationState = (typeof specificationStates)[number]
 
 export interface SpecificationSourceFile {
   uri: string
@@ -39,7 +40,6 @@ export interface SpecificationMigrationPlan {
 const idTagPrefix = '@pickle:id:'
 const stateTagPrefix = '@pickle:state:'
 const rowIdColumn = 'pickle_id'
-const validStates = ['draft', 'active', 'deprecated'] as const
 const idPattern = /^[A-Za-z0-9_-]+$/
 
 interface IdentityNode {
@@ -80,7 +80,7 @@ function stateValues(tags: readonly string[]): string[] {
 function specificationState(
   value: string | undefined,
 ): SpecificationState | undefined {
-  return validStates.find((state) => state === value)
+  return specificationStates.find((state) => state === value)
 }
 
 export function identityFromTags(tags: readonly string[]): {

@@ -29,6 +29,7 @@
         "@pickle-spec/web": "workspace:*",
         "@types/bun": "catalog:",
         "@typescript/typescript6": "catalog:",
+        "zod": "catalog:",
       },
       "devDependencies": {
         "typescript": "catalog:",
@@ -39,6 +40,7 @@
       "version": "1.0.2",
       "dependencies": {
         "@pickle-spec/spec": "workspace:*",
+        "zod": "catalog:",
       },
       "devDependencies": {
         "@types/bun": "catalog:",
@@ -51,6 +53,7 @@
       "dependencies": {
         "@cucumber/gherkin": "catalog:",
         "@cucumber/messages": "catalog:",
+        "zod": "catalog:",
       },
       "devDependencies": {
         "@types/bun": "catalog:",

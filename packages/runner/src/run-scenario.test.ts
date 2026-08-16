@@ -230,6 +230,25 @@ describe('runScenario', () => {
     ])
   })
 
+  test('materializes isolation verification failure as an infrastructure error', async () => {
+    const run = await runScenario({
+      specification,
+      scenario,
+      executionTargetProfile: { id: 'web' },
+      adapter: {
+        async openSession() {
+          throw new Error('Logical session isolation verification failed')
+        },
+      },
+      retry: { infrastructureErrors: 0 },
+    })
+
+    expect(run.result).toMatchObject({
+      state: 'infrastructure-error',
+      message: 'Logical session isolation verification failed',
+    })
+  })
+
   test('preserves a successful adaptation as the final result state', async () => {
     let step = 0
     const run = await runScenario({
@@ -350,6 +369,56 @@ describe('runScenario', () => {
     })
 
     expect(run.result).toMatchObject({
+      state: 'passed',
+      attempts: 2,
+      flaky: true,
+    })
+    expect(openSession).toHaveBeenCalledTimes(2)
+    expect(close).toHaveBeenCalledTimes(2)
+  })
+
+  test('retries functional failures only when explicit policy allows it', async () => {
+    let attempt = 0
+    const close = mock(async () => {})
+    const openSession = mock(async () => {
+      attempt++
+      return {
+        async executeStep() {
+          if (attempt === 1) {
+            return {
+              state: 'failed' as const,
+              resolvedActions: [],
+              message: 'Product behavior failed',
+            }
+          }
+          return { state: 'passed' as const, resolvedActions: [] }
+        },
+        close,
+      }
+    })
+
+    const withoutPolicy = await runScenario({
+      specification,
+      scenario: { ...scenario, steps: scenario.steps.slice(0, 1) },
+      executionTargetProfile: { id: 'web' },
+      adapter: { openSession },
+      retry: { infrastructureErrors: 0, functionalFailures: 0 },
+    })
+    expect(withoutPolicy.result.state).toBe('failed')
+    expect(openSession).toHaveBeenCalledTimes(1)
+
+    attempt = 0
+    openSession.mockClear()
+    close.mockClear()
+
+    const withPolicy = await runScenario({
+      specification,
+      scenario: { ...scenario, steps: scenario.steps.slice(0, 1) },
+      executionTargetProfile: { id: 'web' },
+      adapter: { openSession },
+      retry: { infrastructureErrors: 0, functionalFailures: 1 },
+    })
+    expect(withPolicy.result).toMatchObject({
       state: 'passed',
       attempts: 2,
       flaky: true,

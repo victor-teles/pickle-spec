@@ -1,18 +1,24 @@
-import { resolve } from 'node:path'
+import { join, resolve } from 'node:path'
 import {
   type ArtifactCapturePolicy,
+  type ExecutionSettings,
   type ExecutionTargetProfile,
+  executionSettingsSchema,
   type RunConfiguration,
-  validateRunConfiguration,
 } from '@pickle-spec/runner'
 import {
   type SelectionOptions,
-  validateSelectionOptions,
+  selectionOptionsSchema,
 } from '@pickle-spec/spec'
 import {
-  validateWebAdapterOptions,
   type WebAdapterOptions,
+  webAdapterOptionsSchema,
 } from '@pickle-spec/web'
+import { z } from 'zod'
+
+export const defaultConfigFile = 'pickle.config.jsonc'
+export const defaultExtensionsFile = 'pickle.extensions.ts'
+export const defaultSpecificationGlob = 'features/**/*.feature'
 
 export interface ServerConfig {
   command?: string
@@ -54,11 +60,7 @@ export interface PickleConfig {
   policy?: ProjectPolicy
   web?: WebAdapterOptions
   selection?: SelectionOptions
-  execution?: {
-    infrastructureRetries?: number
-    scenarioTimeoutMs?: number
-    stepTimeoutMs?: number
-  }
+  execution?: ExecutionSettings
   concurrency?: number
   server?: ServerConfig
   retention?: ProjectRetention
@@ -74,8 +76,8 @@ function toExecutionTargetProfile(
 ): ExecutionTargetProfile {
   return {
     id,
-    ...(profile.adapter ? { adapter: profile.adapter } : {}),
-    ...(profile.capabilities ? { capabilities: profile.capabilities } : {}),
+    adapter: profile.adapter,
+    capabilities: profile.capabilities,
   }
 }
 
@@ -119,247 +121,190 @@ export function runConfigurationFrom(
     executionTargetProfiles,
     concurrency: config.concurrency,
     execution: config.execution,
-    ...(config.applicationRevision
-      ? { applicationRevision: config.applicationRevision }
-      : {}),
+    applicationRevision: config.applicationRevision,
   }
 }
 
-function record(value: unknown, field: string): Record<string, unknown> {
-  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
-    throw new Error(`${field} must be an object`)
-  }
-  return value as Record<string, unknown>
+function parsed<T>(schema: z.ZodType<T>, value: unknown): T {
+  const result = schema.safeParse(value)
+  if (result.success) return result.data
+  throw new Error(result.error.issues[0]?.message ?? 'Invalid configuration')
 }
 
-function knownFields(
-  value: Record<string, unknown>,
-  fields: readonly string[],
-  parent: string,
-): void {
-  for (const field of Object.keys(value)) {
-    if (!fields.includes(field))
-      throw new Error(`${parent}.${field} is not supported`)
-  }
-}
-
-function optionalString(value: unknown, field: string): void {
-  if (value !== undefined && typeof value !== 'string') {
-    throw new Error(`${field} must be a string`)
-  }
-}
-
-function optionalPositiveInteger(value: unknown, field: string): void {
-  if (
-    value !== undefined &&
-    (!Number.isInteger(value) || (value as number) < 1)
-  ) {
-    throw new Error(`${field} must be an integer greater than or equal to 1`)
-  }
-}
-
-function validateCapabilities(
-  value: unknown,
+function strictObject<Shape extends z.ZodRawShape>(
   field: string,
-): readonly string[] {
-  if (!Array.isArray(value) || value.length === 0) {
-    throw new Error(`${field} must contain at least one capability`)
-  }
-  if (!value.every((item) => typeof item === 'string' && item.trim())) {
-    throw new Error(`${field} must not contain an empty capability`)
-  }
-  return value
+  shape: Shape,
+) {
+  return z.strictObject(shape, {
+    error: (issue) => {
+      if (issue.code === 'unrecognized_keys') {
+        const keys = 'keys' in issue ? (issue.keys as string[]) : []
+        return keys.map((key) => `${field}.${key} is not supported`).join('\n')
+      }
+      return `${field} must be an object`
+    },
+  })
 }
 
-function validateSuites(value: unknown): Record<string, SelectionOptions> {
-  const suites = record(value, 'suites')
-  const result: Record<string, SelectionOptions> = {}
-  for (const [name, query] of Object.entries(suites)) {
-    if (!name.trim()) throw new Error('suites keys must not be empty')
-    const options = validateSelectionOptions(query)
-    if (options.shard) {
-      throw new Error(`suites.${name}.shard is not supported`)
-    }
-    result[name] = options
-  }
-  return result
+function optionalString(field: string) {
+  return z.string({ error: `${field} must be a string` }).optional()
 }
 
-function validateProjectProfiles(
-  value: unknown,
-): Record<string, ProjectExecutionTargetProfile> {
-  const profiles = record(value, 'executionTargetProfiles')
-  const ids = Object.keys(profiles)
-  if (ids.length === 0) {
-    throw new Error(
-      'executionTargetProfiles must contain at least one execution target profile',
+function optionalPositiveInteger(field: string) {
+  return z
+    .number({
+      error: `${field} must be an integer greater than or equal to 1`,
+    })
+    .int({
+      error: `${field} must be an integer greater than or equal to 1`,
+    })
+    .min(1, {
+      error: `${field} must be an integer greater than or equal to 1`,
+    })
+    .optional()
+}
+
+function nonemptyKey(field: string) {
+  return z.string().refine((value) => value.trim().length > 0, {
+    error: `${field} keys must not be empty`,
+  })
+}
+
+const nonemptyPath = z.string().refine((value) => value.trim().length > 0, {
+  error: 'specifications paths must not be empty',
+})
+
+const projectProfileSchema = strictObject('executionTargetProfiles', {
+  adapter: z
+    .string({ error: 'executionTargetProfiles adapter must not be empty' })
+    .refine((value) => value.trim().length > 0, {
+      error: 'executionTargetProfiles adapter must not be empty',
+    }),
+  capabilities: z
+    .array(
+      z.string().refine((item) => item.trim().length > 0, {
+        error: 'capabilities must not contain an empty capability',
+      }),
     )
-  }
-  const result: Record<string, ProjectExecutionTargetProfile> = {}
-  for (const id of ids) {
-    if (!id.trim()) {
-      throw new Error('executionTargetProfiles keys must not be empty')
-    }
-    const field = `executionTargetProfiles.${id}`
-    const profile = record(profiles[id], field)
-    knownFields(profile, ['adapter', 'capabilities', 'web'], field)
-    if (typeof profile.adapter !== 'string' || !profile.adapter.trim()) {
-      throw new Error(`${field}.adapter must not be empty`)
-    }
-    if (profile.capabilities !== undefined) {
-      profile.capabilities = validateCapabilities(
-        profile.capabilities,
-        `${field}.capabilities`,
-      )
-    }
-    if (profile.web !== undefined) {
-      profile.web = validateWebAdapterOptions(profile.web)
-    }
-    result[id] = profile as unknown as ProjectExecutionTargetProfile
-  }
-  return result
-}
+    .min(1, { error: 'capabilities must contain at least one capability' })
+    .optional(),
+  web: webAdapterOptionsSchema.optional(),
+})
+
+const pickleConfigSchema = strictObject('configuration', {
+  schemaVersion: z.number().superRefine((value, context) => {
+    if (value === 1) return
+    context.addIssue({
+      code: 'custom',
+      message: `Unsupported configuration schemaVersion: ${String(value)}`,
+    })
+  }),
+  language: optionalString('language'),
+  specifications: z
+    .union([
+      nonemptyPath,
+      z
+        .array(nonemptyPath, {
+          error: 'specifications must be a string or an array of strings',
+        })
+        .min(1, { error: 'specifications must contain at least one path' }),
+    ])
+    .optional(),
+  suites: z
+    .record(nonemptyKey('suites'), selectionOptionsSchema)
+    .superRefine((suites, context) => {
+      for (const [name, query] of Object.entries(suites)) {
+        if (!query.shard) continue
+        context.addIssue({
+          code: 'custom',
+          message: `suites.${name}.shard is not supported`,
+        })
+      }
+    })
+    .optional(),
+  executionTargetProfiles: z
+    .record(nonemptyKey('executionTargetProfiles'), projectProfileSchema)
+    .refine((profiles) => Object.keys(profiles).length > 0, {
+      error:
+        'executionTargetProfiles must contain at least one execution target profile',
+    })
+    .optional(),
+  executionTargetProfile: z
+    .object({
+      id: z.string(),
+      adapter: z.string().optional(),
+      capabilities: z.array(z.string()).optional(),
+    })
+    .optional(),
+  applicationRevision: z
+    .string()
+    .refine((value) => value.trim().length > 0, {
+      error: 'applicationRevision must not be empty',
+    })
+    .optional(),
+  policy: strictObject('policy', {
+    adaptedResults: z
+      .enum(['accept', 'reject'], {
+        error: 'policy.adaptedResults must be accept or reject',
+      })
+      .optional(),
+  }).optional(),
+  web: webAdapterOptionsSchema.optional(),
+  selection: selectionOptionsSchema.optional(),
+  execution: executionSettingsSchema.optional(),
+  concurrency: optionalPositiveInteger('concurrency'),
+  server: strictObject('server', {
+    command: optionalString('server.command'),
+    url: optionalString('server.url'),
+    port: optionalPositiveInteger('server.port'),
+    startupTimeoutMs: optionalPositiveInteger('server.startupTimeoutMs'),
+    pollIntervalMs: optionalPositiveInteger('server.pollIntervalMs'),
+    readinessPath: optionalString('server.readinessPath'),
+    reuseExisting: z
+      .boolean({ error: 'server.reuseExisting must be a boolean' })
+      .optional(),
+  })
+    .superRefine((server, context) => {
+      if (server.command && !server.url && !server.port) {
+        context.addIssue({
+          code: 'custom',
+          message: 'server.command requires server.url or server.port',
+        })
+      }
+      if (server.url !== undefined) {
+        try {
+          new URL(server.url)
+        } catch {
+          context.addIssue({
+            code: 'custom',
+            message: 'server.url must be a valid URL',
+          })
+        }
+      }
+      if (typeof server.port === 'number' && server.port > 65_535) {
+        context.addIssue({
+          code: 'custom',
+          message: 'server.port must be less than or equal to 65535',
+        })
+      }
+    })
+    .optional(),
+  retention: strictObject('retention', {
+    days: optionalPositiveInteger('retention.days'),
+    maxBytes: optionalPositiveInteger('retention.maxBytes'),
+  }).optional(),
+  artifacts: strictObject('artifacts', {
+    capture: z
+      .enum(['off', 'on-failure-or-adaptation', 'always'], {
+        error:
+          'artifacts.capture must be off, on-failure-or-adaptation, or always',
+      })
+      .optional(),
+  }).optional(),
+}).transform((config) => config as PickleConfig)
 
 function validateConfig(value: unknown): PickleConfig {
-  const config = record(value, 'configuration')
-  knownFields(
-    config,
-    [
-      'schemaVersion',
-      'language',
-      'specifications',
-      'suites',
-      'executionTargetProfiles',
-      'executionTargetProfile',
-      'applicationRevision',
-      'policy',
-      'web',
-      'selection',
-      'execution',
-      'concurrency',
-      'server',
-      'retention',
-      'artifacts',
-    ],
-    'configuration',
-  )
-  optionalString(config.language, 'language')
-  if (
-    typeof config.specifications === 'string' &&
-    !config.specifications.trim()
-  ) {
-    throw new Error('specifications paths must not be empty')
-  }
-  if (
-    Array.isArray(config.specifications) &&
-    config.specifications.length === 0
-  ) {
-    throw new Error('specifications must contain at least one path')
-  }
-  if (
-    config.specifications !== undefined &&
-    typeof config.specifications !== 'string' &&
-    !(
-      Array.isArray(config.specifications) &&
-      config.specifications.every(
-        (item) => typeof item === 'string' && item.trim(),
-      )
-    )
-  ) {
-    throw new Error('specifications must be a string or an array of strings')
-  }
-  if (config.web !== undefined) {
-    validateWebAdapterOptions(config.web)
-  }
-  if (config.server !== undefined) {
-    const server = record(config.server, 'server')
-    knownFields(
-      server,
-      [
-        'command',
-        'url',
-        'port',
-        'startupTimeoutMs',
-        'pollIntervalMs',
-        'readinessPath',
-        'reuseExisting',
-      ],
-      'server',
-    )
-    optionalString(server.command, 'server.command')
-    optionalString(server.url, 'server.url')
-    optionalString(server.readinessPath, 'server.readinessPath')
-    optionalPositiveInteger(server.port, 'server.port')
-    optionalPositiveInteger(server.startupTimeoutMs, 'server.startupTimeoutMs')
-    optionalPositiveInteger(server.pollIntervalMs, 'server.pollIntervalMs')
-    if (
-      server.reuseExisting !== undefined &&
-      typeof server.reuseExisting !== 'boolean'
-    ) {
-      throw new Error('server.reuseExisting must be a boolean')
-    }
-    if (server.command && !server.url && !server.port) {
-      throw new Error('server.command requires server.url or server.port')
-    }
-    if (server.url !== undefined) {
-      try {
-        new URL(server.url as string)
-      } catch {
-        throw new Error('server.url must be a valid URL')
-      }
-    }
-    if (typeof server.port === 'number' && server.port > 65_535) {
-      throw new Error('server.port must be less than or equal to 65535')
-    }
-  }
-  if (
-    config.applicationRevision !== undefined &&
-    (typeof config.applicationRevision !== 'string' ||
-      !config.applicationRevision.trim())
-  ) {
-    throw new Error('applicationRevision must not be empty')
-  }
-  if (config.policy !== undefined) {
-    const policy = record(config.policy, 'policy')
-    knownFields(policy, ['adaptedResults'], 'policy')
-    if (
-      policy.adaptedResults !== undefined &&
-      policy.adaptedResults !== 'accept' &&
-      policy.adaptedResults !== 'reject'
-    ) {
-      throw new Error('policy.adaptedResults must be accept or reject')
-    }
-  }
-  if (config.selection !== undefined) validateSelectionOptions(config.selection)
-  if (config.suites !== undefined) config.suites = validateSuites(config.suites)
-  if (config.retention !== undefined) {
-    const retention = record(config.retention, 'retention')
-    knownFields(retention, ['days', 'maxBytes'], 'retention')
-    optionalPositiveInteger(retention.days, 'retention.days')
-    optionalPositiveInteger(retention.maxBytes, 'retention.maxBytes')
-  }
-  if (config.artifacts !== undefined) {
-    const artifacts = record(config.artifacts, 'artifacts')
-    knownFields(artifacts, ['capture'], 'artifacts')
-    if (
-      artifacts.capture !== undefined &&
-      artifacts.capture !== 'off' &&
-      artifacts.capture !== 'on-failure-or-adaptation' &&
-      artifacts.capture !== 'always'
-    ) {
-      throw new Error(
-        'artifacts.capture must be off, on-failure-or-adaptation, or always',
-      )
-    }
-  }
-  if (config.executionTargetProfiles !== undefined) {
-    config.executionTargetProfiles = validateProjectProfiles(
-      config.executionTargetProfiles,
-    )
-  }
-  const validatedConfig = config as unknown as PickleConfig
-  validateRunConfiguration(runConfigurationFrom(validatedConfig))
-  return validatedConfig
+  return parsed(pickleConfigSchema, value)
 }
 
 function removeJsonComments(source: string): string {
@@ -403,27 +348,30 @@ function removeJsonComments(source: string): string {
   return result
 }
 
-async function defaultConfigPath(): Promise<string | undefined> {
-  return (await Bun.file('pickle.config.jsonc').exists())
-    ? 'pickle.config.jsonc'
-    : undefined
+function parseJsonc(source: string): unknown {
+  return JSON.parse(removeJsonComments(source).replaceAll(/,(\s*[}\]])/g, '$1'))
 }
 
-export async function loadConfig(configPath?: string): Promise<PickleConfig> {
-  const selectedPath = configPath ?? (await defaultConfigPath())
+export async function loadConfig(
+  configPath?: string,
+  root = process.cwd(),
+): Promise<PickleConfig> {
+  const selectedPath =
+    configPath ??
+    ((await Bun.file(join(root, defaultConfigFile)).exists())
+      ? defaultConfigFile
+      : undefined)
   if (!selectedPath) return { schemaVersion: 1 }
   if (!selectedPath.endsWith('.jsonc') && !selectedPath.endsWith('.json')) {
     throw new Error('Configuration must use pickle.config.jsonc')
   }
-  const absolutePath = resolve(selectedPath)
+  const absolutePath = resolve(root, selectedPath)
   if (!(await Bun.file(absolutePath).exists())) {
     throw new Error(`Configuration file not found: ${selectedPath}`)
   }
 
   try {
-    return validateConfig(
-      JSON.parse(removeJsonComments(await Bun.file(absolutePath).text())),
-    )
+    return validateConfig(parseJsonc(await Bun.file(absolutePath).text()))
   } catch (error) {
     const reason = error instanceof Error ? error.message : String(error)
     throw new Error(

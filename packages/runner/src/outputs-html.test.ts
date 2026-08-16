@@ -3,7 +3,7 @@ import { mkdir, mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { formatHtml } from '../index'
-import type { RunEvent, TestResult } from './run-scenario'
+import type { TestResult } from './run-scenario'
 import type { TestRunManifest } from './test-run-store'
 
 async function withArtifact(
@@ -93,8 +93,7 @@ test('formatHtml includes failure and adaptation artifacts by default', async ()
         result('Adapt the purchase', 'passed-with-adaptation'),
       ],
     }
-    const events: RunEvent[] = []
-    const html = await formatHtml(manifest, events)
+    const html = await formatHtml(manifest)
 
     expect(html).toContain('<!DOCTYPE html>')
     expect(html).toContain('Pay for the order')
@@ -161,7 +160,7 @@ test('formatHtml can include every available test artifact', async () => {
       ],
     }
 
-    const html = await formatHtml(manifest, [], { artifacts: 'all' })
+    const html = await formatHtml(manifest, { artifacts: 'all' })
     expect(html).toContain(Buffer.from('png-bytes').toString('base64'))
     expect(html).toContain(Buffer.from('passed-bytes').toString('base64'))
   })

@@ -44,20 +44,17 @@ test('combines versioned configuration and extensions into validated runner inpu
       },
     ],
     concurrency: 3,
-    retry: { infrastructureErrors: 2 },
+    retry: { infrastructureErrors: 2, functionalFailures: 0 },
     timeout: { scenarioMs: 30_000, stepMs: 5_000 },
   })
 })
 
 test('rejects an unsupported configuration schema before execution', () => {
   expect(() =>
-    resolveRunConfiguration(
-      {
-        schemaVersion: 2 as 1,
-        executionTargetProfile: { id: 'web' },
-      },
-      { adapter },
-    ),
+    validateRunConfiguration({
+      schemaVersion: 2,
+      executionTargetProfile: { id: 'web' },
+    }),
   ).toThrow('Unsupported configuration schemaVersion: 2')
 })
 
@@ -217,4 +214,35 @@ test('carries the application revision into the resolved run', () => {
   )
 
   expect(resolved.applicationRevision).toBe('app-1')
+})
+
+test('defaults infrastructure retries to one when execution policy is omitted', () => {
+  const resolved = resolveRunConfiguration(
+    {
+      schemaVersion: 1,
+      executionTargetProfile: { id: 'web' },
+    },
+    { adapter },
+  )
+
+  expect(resolved.retry).toEqual({
+    infrastructureErrors: 1,
+    functionalFailures: 0,
+  })
+})
+
+test('disables infrastructure retries when execution.infrastructureRetries is zero', () => {
+  const resolved = resolveRunConfiguration(
+    {
+      schemaVersion: 1,
+      executionTargetProfile: { id: 'web' },
+      execution: { infrastructureRetries: 0 },
+    },
+    { adapter },
+  )
+
+  expect(resolved.retry).toEqual({
+    infrastructureErrors: 0,
+    functionalFailures: 0,
+  })
 })

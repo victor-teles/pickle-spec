@@ -1,4 +1,5 @@
 import type { RunEvent, TestResult, TestResultState } from './run-scenario'
+import { isEvidenceState } from './run-scenario'
 import type { TestRunManifest } from './test-run-store'
 
 export function formatJson(manifest: TestRunManifest): string {
@@ -27,11 +28,7 @@ function shouldEmbedArtifacts(
   mode: HtmlArtifactMode,
 ): boolean {
   if (mode === 'all') return true
-  return (
-    state === 'failed' ||
-    state === 'passed-with-adaptation' ||
-    state === 'infrastructure-error'
-  )
+  return isEvidenceState(state)
 }
 
 function resultPriority(state: TestResultState): number {
@@ -68,7 +65,6 @@ async function embedArtifacts(
 
 export async function formatHtml(
   manifest: TestRunManifest,
-  _events: readonly RunEvent[],
   options: FormatHtmlOptions = {},
 ): Promise<string> {
   const mode = options.artifacts ?? 'failures-and-adaptations'

@@ -1,4 +1,5 @@
-import type { SpecificationState } from './identity'
+import { z } from 'zod'
+import { type SpecificationState, specificationStates } from './identity'
 import type { Scenario, Specification } from './specification'
 
 export interface Shard {
@@ -14,17 +15,55 @@ export interface SelectionOptions {
   shard?: Shard
 }
 
-const specificationStates = ['draft', 'active', 'deprecated'] as const
-
 export interface ScenarioSelection {
   specification: Specification
   scenario: Scenario
 }
 
+export const ignoreTag = '@ignore'
+
 type TagExpressionNode =
   | { type: 'tag'; value: string }
   | { type: 'not'; child: TagExpressionNode }
   | { type: 'and' | 'or'; left: TagExpressionNode; right: TagExpressionNode }
+
+function parsed<T>(schema: z.ZodType<T>, value: unknown): T {
+  const result = schema.safeParse(value)
+  if (result.success) return result.data
+  throw new Error(result.error.issues[0]?.message ?? 'Invalid selection')
+}
+
+function strictObject<Shape extends z.ZodRawShape>(
+  field: string,
+  shape: Shape,
+) {
+  return z.strictObject(shape, {
+    error: (issue) => {
+      if (issue.code === 'unrecognized_keys') {
+        const keys = 'keys' in issue ? (issue.keys as string[]) : []
+        return keys.map((key) => `${field}.${key} is not supported`).join('\n')
+      }
+      return `${field} must be an object`
+    },
+  })
+}
+
+function optionalString(field: string) {
+  return z.string({ error: `${field} must be a string` }).optional()
+}
+
+function positiveInteger(field: string) {
+  return z
+    .number({
+      error: `${field} must be an integer greater than or equal to 1`,
+    })
+    .int({
+      error: `${field} must be an integer greater than or equal to 1`,
+    })
+    .min(1, {
+      error: `${field} must be an integer greater than or equal to 1`,
+    })
+}
 
 function normalizedTag(tag: string): string {
   return tag.startsWith('@') ? tag : `@${tag}`
@@ -120,143 +159,89 @@ function matchesTagExpression(
   }
 }
 
-function record(value: unknown, field: string): Record<string, unknown> {
-  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
-    throw new Error(`${field} must be an object`)
-  }
-  return value as Record<string, unknown>
-}
+const selectionPathsSchema = z.union(
+  [
+    z.string().refine((value) => value.trim().length > 0, {
+      error: 'selection.paths must contain at least one path',
+    }),
+    z
+      .array(
+        z.string().refine((value) => value.trim().length > 0, {
+          error: 'selection.paths must not contain an empty path',
+        }),
+        { error: 'selection.paths must contain at least one path' },
+      )
+      .min(1, { error: 'selection.paths must contain at least one path' }),
+  ],
+  { error: 'selection.paths must contain at least one path' },
+)
 
-function knownFields(
-  value: Record<string, unknown>,
-  fields: readonly string[],
-  parent: string,
-): void {
-  for (const field of Object.keys(value)) {
-    if (!fields.includes(field))
-      throw new Error(`${parent}.${field} is not supported`)
-  }
-}
+const shardSchema = strictObject('selection.shard', {
+  index: positiveInteger('selection.shard.index'),
+  total: positiveInteger('selection.shard.total'),
+}).refine((shard) => shard.index <= shard.total, {
+  error:
+    'selection.shard.index must be less than or equal to selection.shard.total',
+})
 
-function optionalString(value: unknown, field: string): void {
-  if (value !== undefined && typeof value !== 'string') {
-    throw new Error(`${field} must be a string`)
-  }
-}
-
-function validateShard(value: unknown): void {
-  const shard = record(value, 'selection.shard')
-  knownFields(shard, ['index', 'total'], 'selection.shard')
-  if (!Number.isInteger(shard.index) || (shard.index as number) < 1) {
-    throw new Error(
-      'selection.shard.index must be an integer greater than or equal to 1',
+export const selectionOptionsSchema = strictObject('selection', {
+  paths: selectionPathsSchema.optional(),
+  scenarioName: optionalString('selection.scenarioName'),
+  tagExpression: optionalString('selection.tagExpression'),
+  states: z
+    .array(
+      z.enum(specificationStates, {
+        error: 'selection.states must be draft, active, or deprecated',
+      }),
+      { error: 'selection.states must be draft, active, or deprecated' },
     )
+    .min(1, {
+      error: 'selection.states must contain at least one Specification state',
+    })
+    .optional(),
+  shard: shardSchema.optional(),
+}).superRefine((options, context) => {
+  if (!options.tagExpression) return
+  try {
+    parseTagExpression(options.tagExpression)
+  } catch (error) {
+    context.addIssue({
+      code: 'custom',
+      message: error instanceof Error ? error.message : String(error),
+    })
   }
-  if (!Number.isInteger(shard.total) || (shard.total as number) < 1) {
-    throw new Error(
-      'selection.shard.total must be an integer greater than or equal to 1',
-    )
-  }
-  if ((shard.index as number) > (shard.total as number)) {
+})
+
+function matchesPath(uri: string, pattern: string): boolean {
+  return new Bun.Glob(pattern.replaceAll('\\', '/')).match(
+    uri.replaceAll('\\', '/'),
+  )
+}
+
+function assertShard(shard: Shard): void {
+  if (shard.index > shard.total) {
     throw new Error(
       'selection.shard.index must be less than or equal to selection.shard.total',
     )
   }
 }
 
-function globToRegExp(pattern: string): RegExp {
-  let regex = '^'
-  for (let index = 0; index < pattern.length; index++) {
-    const character = pattern[index]!
-    if (character === '*') {
-      if (pattern[index + 1] === '*') {
-        regex += '.*'
-        index++
-        continue
-      }
-      regex += '[^/]*'
-      continue
-    }
-    if ('\\^$+{}()|[]?.'.includes(character)) {
-      regex += `\\${character}`
-      continue
-    }
-    regex += character
-  }
-  return new RegExp(`${regex}$`)
-}
-
-function normalizePaths(value: unknown): string[] {
-  if (typeof value === 'string') {
-    if (!value.trim()) {
-      throw new Error('selection.paths must contain at least one path')
-    }
-    return [value]
-  }
-  if (!Array.isArray(value) || value.length === 0) {
-    throw new Error('selection.paths must contain at least one path')
-  }
-  if (!value.every((path) => typeof path === 'string' && path.trim())) {
-    throw new Error('selection.paths must not contain an empty path')
-  }
-  return value
-}
-
-function matchesPath(uri: string, pattern: string): boolean {
-  return globToRegExp(pattern.replaceAll('\\', '/')).test(
-    uri.replaceAll('\\', '/'),
-  )
-}
-
-function validateStates(value: unknown): SpecificationState[] {
-  if (!Array.isArray(value) || value.length === 0) {
-    throw new Error(
-      'selection.states must contain at least one Specification state',
-    )
-  }
-  if (
-    !value.every(
-      (state) =>
-        typeof state === 'string' &&
-        specificationStates.includes(state as SpecificationState),
-    )
-  ) {
-    throw new Error('selection.states must be draft, active, or deprecated')
-  }
-  return value as SpecificationState[]
-}
-
 export function validateSelectionOptions(value: unknown): SelectionOptions {
-  const options = record(value, 'selection')
-  knownFields(
-    options,
-    ['paths', 'scenarioName', 'tagExpression', 'states', 'shard'],
-    'selection',
-  )
-  optionalString(options.scenarioName, 'selection.scenarioName')
-  optionalString(options.tagExpression, 'selection.tagExpression')
-  if (options.paths !== undefined) options.paths = normalizePaths(options.paths)
-  if (options.states !== undefined)
-    options.states = validateStates(options.states)
-  if (options.tagExpression) parseTagExpression(options.tagExpression as string)
-  if (options.shard !== undefined) validateShard(options.shard)
-  return options as unknown as SelectionOptions
+  return parsed(selectionOptionsSchema, value)
 }
 
 export function selectScenarios(
   specifications: readonly Specification[],
   options: SelectionOptions = {},
 ): ScenarioSelection[] {
-  const validatedOptions = validateSelectionOptions(options)
-  const name = validatedOptions.scenarioName?.trim().toLowerCase()
-  const tagExpression = validatedOptions.tagExpression
-    ? parseTagExpression(validatedOptions.tagExpression)
+  if (options.shard) assertShard(options.shard)
+  const name = options.scenarioName?.trim().toLowerCase()
+  const tagExpression = options.tagExpression
+    ? parseTagExpression(options.tagExpression)
     : undefined
 
-  const paths = validatedOptions.paths ? [validatedOptions.paths].flat() : []
-  const states = new Set<SpecificationState>(
-    validatedOptions.states ?? ['active'],
-  )
+  const paths = options.paths ? [options.paths].flat() : []
+  const states = new Set<SpecificationState>(options.states ?? ['active'])
 
   const selected = [...specifications]
     .sort((left, right) => left.source.uri.localeCompare(right.source.uri))
@@ -277,13 +262,11 @@ export function selectScenarios(
         !tagExpression || matchesTagExpression(tagExpression, scenario.tags),
     )
 
-  if (!validatedOptions.shard) return selected
+  if (!options.shard) return selected
 
   return selected
-    .filter(({ scenario }) => !scenario.tags.includes('@ignore'))
+    .filter(({ scenario }) => !scenario.tags.includes(ignoreTag))
     .filter(
-      (_, index) =>
-        index % validatedOptions.shard!.total ===
-        validatedOptions.shard!.index - 1,
+      (_, index) => index % options.shard!.total === options.shard!.index - 1,
     )
 }

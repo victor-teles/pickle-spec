@@ -9,6 +9,7 @@ export {
   formatMigrationPreview,
   planSpecificationMigration,
   resolveScenarioId,
+  specificationStates,
   validateSpecificationMetadata,
 } from './src/identity'
 export { scenarioRevision } from './src/revision'
@@ -17,7 +18,12 @@ export type {
   SelectionOptions,
   Shard,
 } from './src/selection'
-export { selectScenarios, validateSelectionOptions } from './src/selection'
+export {
+  ignoreTag,
+  selectionOptionsSchema,
+  selectScenarios,
+  validateSelectionOptions,
+} from './src/selection'
 export type {
   ParseSpecificationInput,
   Scenario,
@@ -25,4 +31,4 @@ export type {
   Specification,
   SpecificationSource,
 } from './src/specification'
-export { parseSpecification, parseSpecificationFile } from './src/specification'
+export { parseSpecification } from './src/specification'

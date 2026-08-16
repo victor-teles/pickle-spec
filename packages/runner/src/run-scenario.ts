@@ -1,4 +1,5 @@
 import {
+  ignoreTag,
   resolveScenarioId,
   type Scenario,
   type ScenarioStep,
@@ -19,6 +20,14 @@ export type TestResultState =
   | 'skipped'
   | 'cancelled'
   | 'infrastructure-error'
+
+export function isEvidenceState(state: TestResultState): boolean {
+  return (
+    state === 'failed' ||
+    state === 'infrastructure-error' ||
+    state === 'passed-with-adaptation'
+  )
+}
 
 export type ExecutionMode = 'adaptive' | 'replay'
 
@@ -64,6 +73,7 @@ export interface ExecutionTargetAdapter {
   capabilities?: readonly string[]
   planFormatVersion?: string
   openSession(input: OpenSessionInput): Promise<TargetSession>
+  dispose?(): Promise<void>
 }
 
 export interface TestStepResult {
@@ -107,7 +117,7 @@ export type RunEventPayload =
   | { type: 'scenario-started'; scenario: TestResult['scenario'] }
   | { type: 'step-started'; step: ScenarioStep }
   | { type: 'step-finished'; result: TestStepResult }
-  | { type: 'scenario-finished'; result: TestResult }
+  | { type: 'scenario-finished'; result: TestResult; scheduleIndex?: number }
 
 export type RunEvent = RunEventEnvelope & RunEventPayload
 
@@ -118,6 +128,7 @@ export interface ScenarioRun {
 
 export interface RetryPolicy {
   infrastructureErrors: number
+  functionalFailures?: number
 }
 
 export interface ExecutionTimeouts {
@@ -346,7 +357,7 @@ async function runScenarioAttempt(
     },
   })
 
-  if (input.scenario.tags.includes('@ignore')) {
+  if (input.scenario.tags.includes(ignoreTag)) {
     return finish('skipped', [], 'Scenario is tagged @ignore')
   }
 
@@ -469,10 +480,13 @@ export async function runScenario(
   input: RunScenarioInput,
 ): Promise<ScenarioRun> {
   const events: RunEvent[] = []
-  const maximumAttempts = (input.retry?.infrastructureErrors ?? 0) + 1
+  const infrastructureRetries = input.retry?.infrastructureErrors ?? 0
+  const functionalRetries = input.retry?.functionalFailures ?? 0
+  let infrastructureFailures = 0
+  let functionalFailures = 0
   const selected = await selectPlan(input)
 
-  for (let attempt = 1; attempt <= maximumAttempts; attempt++) {
+  for (let attempt = 1; ; attempt++) {
     const run = await runScenarioAttempt({
       ...input,
       mode: selected.mode,
@@ -482,10 +496,15 @@ export async function runScenario(
       // Attempts own one logical session; retries are orchestrated here.
       retry: undefined,
     })
-    const shouldRetry =
+    const shouldRetryInfrastructure =
       run.result.state === 'infrastructure-error' &&
-      attempt < maximumAttempts &&
+      infrastructureFailures < infrastructureRetries &&
       !input.signal?.aborted
+    const shouldRetryFunctional =
+      run.result.state === 'failed' &&
+      functionalFailures < functionalRetries &&
+      !input.signal?.aborted
+    const shouldRetry = shouldRetryInfrastructure || shouldRetryFunctional
     const result = withAttemptMetadata(run.result, attempt)
 
     for (const event of run.events) {
@@ -500,7 +519,14 @@ export async function runScenario(
       await input.onEvent?.(versionedEvent)
     }
 
-    if (shouldRetry) continue
+    if (shouldRetryInfrastructure) {
+      infrastructureFailures++
+      continue
+    }
+    if (shouldRetryFunctional) {
+      functionalFailures++
+      continue
+    }
     if (input.plans && shouldSaveCandidate(result.state, selected.mode)) {
       await input.plans.saveCandidate(
         candidatePlan(selected.query, result.steps),
@@ -508,6 +534,4 @@ export async function runScenario(
     }
     return { events, result }
   }
-
-  throw new Error('Runner exhausted attempts without producing a test result')
 }

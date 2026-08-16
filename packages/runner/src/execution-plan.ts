@@ -1,5 +1,6 @@
 import { mkdir } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
+import { z } from 'zod'
 import type { ResolvedAction } from './run-scenario'
 
 export interface PlanApplicability {
@@ -55,17 +56,18 @@ function planPath(
   )
 }
 
+const executionPlanSchema = z.object({
+  schemaVersion: z.literal(1),
+  scenarioId: z.string(),
+  scenarioRevision: z.string(),
+  executionTargetProfileId: z.string(),
+  planFormatVersion: z.string(),
+  applicationRevision: z.string().optional(),
+  steps: z.array(z.object({ resolvedActions: z.array(z.unknown()) })),
+})
+
 function isExecutionPlan(value: unknown): value is ExecutionPlan {
-  if (typeof value !== 'object' || value === null) return false
-  const plan = value as ExecutionPlan
-  return (
-    plan.schemaVersion === 1 &&
-    typeof plan.scenarioId === 'string' &&
-    typeof plan.scenarioRevision === 'string' &&
-    typeof plan.executionTargetProfileId === 'string' &&
-    typeof plan.planFormatVersion === 'string' &&
-    Array.isArray(plan.steps)
-  )
+  return executionPlanSchema.safeParse(value).success
 }
 
 export function createFilePlanStore(root: string): ExecutionPlanStore {

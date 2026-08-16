@@ -1,5 +1,6 @@
 import { mkdir } from 'node:fs/promises'
 import { basename, dirname, join, relative } from 'node:path'
+import { z } from 'zod'
 import type { RunEvent, TestResult, TestStepResult } from './run-scenario'
 import { openTestRunStore, type TestRunManifest } from './test-run-store'
 
@@ -34,12 +35,16 @@ export interface ImportedRunArchive {
   preservedArchivePath: string
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
+const objectSchema = z.record(z.string(), z.unknown())
+
+function asObject(value: unknown, field: string): Record<string, unknown> {
+  const result = objectSchema.safeParse(value)
+  if (!result.success) throw new Error(`${field} must be an object`)
+  return result.data
 }
 
 function migrateStep(step: unknown): TestStepResult {
-  const value = isRecord(step) ? step : {}
+  const value = asObject(step, 'archive step')
   return {
     step: value.step as TestStepResult['step'],
     state: value.state as TestStepResult['state'],
@@ -54,8 +59,8 @@ function migrateStep(step: unknown): TestStepResult {
 }
 
 function migrateResult(result: unknown): TestResult {
-  const value = isRecord(result) ? result : {}
-  const scenario = isRecord(value.scenario) ? value.scenario : {}
+  const value = asObject(result, 'archive result')
+  const scenario = asObject(value.scenario, 'archive result.scenario')
   return {
     schemaVersion: 1,
     specification: value.specification as TestResult['specification'],
@@ -80,7 +85,7 @@ function migrateResult(result: unknown): TestResult {
 }
 
 function migrateEvent(event: unknown, index: number): RunEvent {
-  const value = isRecord(event) ? event : {}
+  const value = asObject(event, 'archive event')
   const base = {
     schemaVersion: 1 as const,
     sequence: typeof value.sequence === 'number' ? value.sequence : index + 1,
@@ -103,7 +108,7 @@ function migrateEvent(event: unknown, index: number): RunEvent {
 }
 
 function migrateManifest(manifest: unknown): TestRunManifest {
-  const value = isRecord(manifest) ? manifest : {}
+  const value = asObject(manifest, 'archive manifest')
   return {
     schemaVersion: 1,
     id: String(value.id ?? ''),
@@ -122,7 +127,7 @@ function migrateManifest(manifest: unknown): TestRunManifest {
 }
 
 export function migrateRunArchive(value: unknown): RunArchive {
-  const archive = isRecord(value) ? value : {}
+  const archive = asObject(value, 'run archive')
   const events = Array.isArray(archive.events) ? archive.events : []
   return {
     schemaVersion: 1,

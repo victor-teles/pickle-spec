@@ -276,14 +276,3 @@ function collectIdentityNodes(
 
   for (const child of document.feature?.children ?? []) visitChild(child)
 }
-
-export async function parseSpecificationFile(
-  filePath: string,
-  language?: string,
-): Promise<Specification> {
-  return parseSpecification({
-    source: await Bun.file(filePath).text(),
-    uri: filePath,
-    language,
-  })
-}

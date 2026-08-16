@@ -111,7 +111,13 @@ export async function runScenarios(
         retry: input.retry,
         timeout: input.timeout,
         onEvent: input.onEvent
-          ? (event) => input.onEvent?.(event, selection)
+          ? (event) =>
+              input.onEvent?.(
+                event.type === 'scenario-finished'
+                  ? { ...event, scheduleIndex: index }
+                  : event,
+                selection,
+              )
           : undefined,
       })
     }
