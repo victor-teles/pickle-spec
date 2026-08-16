@@ -10,6 +10,7 @@ import {
 } from '@pickle-spec/runner'
 import type { ScenarioStep } from '@pickle-spec/spec'
 import { abortError } from './abort'
+import { type ResolvedFidelity, resolveFidelityPolicy } from './fidelity'
 import { stagehandFactory } from './stagehand-factory'
 import {
   type BrowserOptions,
@@ -57,6 +58,7 @@ export interface WebScreenshotCapture {
 
 export interface WebClientContext {
   browser: BrowserOptions
+  fidelity?: ResolvedFidelity
   signal?: AbortSignal
 }
 
@@ -193,12 +195,18 @@ function shouldCaptureScreenshot(
   return true
 }
 
+export interface WebAdapterBehavior {
+  navigationPolicy?: 'delayed' | 'eager'
+}
+
 export function createWebAdapter(
   options: WebAdapterOptions,
   factory?: WebAutomationFactory,
+  behavior: WebAdapterBehavior = {},
 ): ExecutionTargetAdapter {
   const automationFactory = factory ?? stagehandFactory
   const requireProviderApiKey = factory === undefined
+  const fidelity = resolveFidelityPolicy(options)
   const pool = new WebProcessPool({
     factory: automationFactory,
     idleTimeoutMs: options.browser?.idleTimeoutMs,
@@ -207,6 +215,10 @@ export function createWebAdapter(
   return {
     capabilities: ['web', 'screenshots'],
     planFormatVersion: 'web.1',
+    fidelityPolicy: {
+      profile: fidelity.profile,
+      tradeOffs: fidelity.tradeOffs,
+    },
     async dispose() {
       await pool.dispose()
     },
@@ -225,6 +237,7 @@ export function createWebAdapter(
       const logicalSession = await pool.openLogicalSession(
         browserOptions,
         input.signal,
+        fidelity,
       )
       const automation = logicalSession.automation
       let closePromise: Promise<void> | undefined
@@ -244,6 +257,11 @@ export function createWebAdapter(
         void close()
       }
       input.signal?.addEventListener('abort', onAbort, { once: true })
+
+      if (behavior.navigationPolicy === 'eager') {
+        await automation.navigate(options.baseUrl, input.signal)
+        navigated = true
+      }
 
       async function screenshot(
         step: ScenarioStep,

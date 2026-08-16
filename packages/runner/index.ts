@@ -41,6 +41,10 @@ export {
   createFilePlanStore,
   planApplies,
 } from './src/execution-plan'
+export {
+  historicalDurationsFrom,
+  latestHistoricalDurations,
+} from './src/historical-durations'
 export type { FormatHtmlOptions, HtmlArtifactMode } from './src/outputs'
 export {
   formatHtml,
@@ -56,6 +60,7 @@ export type {
   ExecutionTargetAdapter,
   ExecutionTargetProfile,
   ExecutionTimeouts,
+  FidelityPolicy,
   OpenSessionInput,
   ResolvedAction,
   RetryPolicy,

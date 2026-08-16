@@ -106,6 +106,38 @@ describe('runScenario', () => {
     expect(close).toHaveBeenCalledTimes(1)
   })
 
+  test('copies adapter fidelityPolicy onto the test result', async () => {
+    const adapter: ExecutionTargetAdapter = {
+      fidelityPolicy: {
+        profile: 'fast',
+        tradeOffs: ['block-image', 'disable-animations'],
+      },
+      async openSession() {
+        return {
+          async executeStep(step) {
+            return {
+              state: 'passed',
+              resolvedActions: [{ description: step.text }],
+            }
+          },
+          close: async () => {},
+        }
+      },
+    }
+
+    const run = await runScenario({
+      specification,
+      scenario,
+      executionTargetProfile: { id: 'web' },
+      adapter,
+    })
+
+    expect(run.result.fidelityPolicy).toEqual({
+      profile: 'fast',
+      tradeOffs: ['block-image', 'disable-animations'],
+    })
+  })
+
   test('materializes a functional failure and stops the remaining steps', async () => {
     const executeStep = mock(async () => ({
       state: 'failed' as const,

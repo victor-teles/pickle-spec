@@ -1,7 +1,12 @@
 import { mkdir } from 'node:fs/promises'
 import { basename, dirname, join, relative } from 'node:path'
 import { z } from 'zod'
-import type { RunEvent, TestResult, TestStepResult } from './run-scenario'
+import type {
+  FidelityPolicy,
+  RunEvent,
+  TestResult,
+  TestStepResult,
+} from './run-scenario'
 import { openTestRunStore, type TestRunManifest } from './test-run-store'
 
 export interface RunArchiveArtifact {
@@ -80,6 +85,21 @@ function migrateResult(result: unknown): TestResult {
     ...(typeof value.flaky === 'boolean' ? { flaky: value.flaky } : {}),
     ...(typeof value.durationMs === 'number'
       ? { durationMs: value.durationMs }
+      : {}),
+    ...(value.fidelityPolicy && typeof value.fidelityPolicy === 'object'
+      ? {
+          fidelityPolicy: {
+            profile:
+              (value.fidelityPolicy as FidelityPolicy).profile === 'fast'
+                ? 'fast'
+                : 'default',
+            tradeOffs: Array.isArray(
+              (value.fidelityPolicy as FidelityPolicy).tradeOffs,
+            )
+              ? (value.fidelityPolicy as FidelityPolicy).tradeOffs.map(String)
+              : [],
+          },
+        }
       : {}),
   }
 }

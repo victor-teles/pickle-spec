@@ -6,6 +6,7 @@ import {
 } from '@browserbasehq/stagehand'
 import { z } from 'zod'
 import { abortError } from './abort'
+import type { ResolvedFidelity } from './fidelity'
 import type {
   WebAutomation,
   WebAutomationFactory,
@@ -70,6 +71,58 @@ async function readStagehandIsolation(
     )) as number
   }
   return { cookieCount, storageKeyCount }
+}
+
+async function applyFidelity(
+  stagehand: Stagehand,
+  fidelity?: ResolvedFidelity,
+): Promise<void> {
+  const context = stagehand.browser.context as {
+    route?: (
+      pattern: string,
+      handler: (route: {
+        request: () => { resourceType: () => string }
+        abort: () => Promise<void>
+        continue: () => Promise<void>
+      }) => Promise<void>,
+    ) => Promise<void>
+    unroute?: (pattern: string) => Promise<void>
+    activePage: () => Promise<{
+      addInitScript: (script: string) => Promise<void>
+    } | null>
+  }
+
+  if (!fidelity || fidelity.profile === 'default') {
+    if (context.unroute) await context.unroute('**/*')
+    return
+  }
+
+  const blocked = new Set(fidelity.blockResources)
+  if (context.unroute) await context.unroute('**/*')
+  if (blocked.size > 0 && context.route) {
+    await context.route('**/*', (route) => {
+      const resourceType = route.request().resourceType()
+      if (
+        blocked.has(resourceType as ResolvedFidelity['blockResources'][number])
+      ) {
+        return route.abort()
+      }
+      return route.continue()
+    })
+  }
+  if (fidelity.disableAnimations) {
+    const page = await context.activePage()
+    if (page) {
+      await page.addInitScript(`
+        (() => {
+          const style = document.createElement('style')
+          style.textContent =
+            '*, *::before, *::after { animation: none !important; transition: none !important; }'
+          document.documentElement.appendChild(style)
+        })()
+      `)
+    }
+  }
 }
 
 function createStagehandAutomation(
@@ -186,6 +239,7 @@ export const stagehandFactory: WebAutomationFactory = {
       async openContext(context) {
         if (context.signal?.aborted) throw abortError()
         const activeStagehand = await ensureStagehand(context)
+        await applyFidelity(activeStagehand, context.fidelity)
         return createStagehandAutomation(activeStagehand, {
           navigationTimeoutMs:
             context.browser.navigationTimeoutMs ??

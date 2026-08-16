@@ -1,10 +1,18 @@
 import { z } from 'zod'
-import { type SpecificationState, specificationStates } from './identity'
+import {
+  resolveScenarioId,
+  type SpecificationState,
+  specificationStates,
+} from './identity'
 import type { Scenario, Specification } from './specification'
 
 export interface Shard {
   index: number
   total: number
+}
+
+export interface SelectScenariosContext {
+  historicalDurations?: Readonly<Record<string, number>>
 }
 
 export interface SelectionOptions {
@@ -226,6 +234,90 @@ function assertShard(shard: Shard): void {
   }
 }
 
+function scenarioSelectionKey(
+  specification: Specification,
+  scenario: Scenario,
+): string {
+  return resolveScenarioId(
+    specification.source.uri,
+    specification.name,
+    scenario.name,
+    scenario.tags,
+  )
+}
+
+function median(values: readonly number[]): number {
+  if (values.length === 0) return 0
+  const sorted = [...values].sort((left, right) => left - right)
+  const middle = Math.floor(sorted.length / 2)
+  if (sorted.length % 2 === 0) {
+    return (sorted[middle - 1]! + sorted[middle]!) / 2
+  }
+  return sorted[middle]!
+}
+
+function shardByCount(
+  selections: readonly ScenarioSelection[],
+  shard: Shard,
+): ScenarioSelection[] {
+  return selections.filter(
+    (_, index) => index % shard.total === shard.index - 1,
+  )
+}
+
+function shardByDuration(
+  selections: readonly ScenarioSelection[],
+  shard: Shard,
+  historicalDurations: Readonly<Record<string, number>>,
+): ScenarioSelection[] {
+  const knownDurations = Object.values(historicalDurations)
+  const fallbackDuration = median(knownDurations)
+  const hasAnyHistory = selections.some(({ specification, scenario }) => {
+    const key = scenarioSelectionKey(specification, scenario)
+    return historicalDurations[key] !== undefined
+  })
+  if (!hasAnyHistory) return shardByCount(selections, shard)
+
+  const ranked = selections
+    .map((selection) => {
+      const key = scenarioSelectionKey(
+        selection.specification,
+        selection.scenario,
+      )
+      return {
+        selection,
+        key,
+        duration: historicalDurations[key] ?? fallbackDuration,
+      }
+    })
+    .sort(
+      (left, right) =>
+        right.duration - left.duration || left.key.localeCompare(right.key),
+    )
+
+  const shardTotals = Array.from({ length: shard.total }, () => 0)
+  const shardAssignments = new Map<string, number>()
+
+  for (const entry of ranked) {
+    let targetShard = 0
+    let lowestTotal = shardTotals[0]!
+    for (let index = 1; index < shardTotals.length; index++) {
+      const total = shardTotals[index]!
+      if (total < lowestTotal) {
+        lowestTotal = total
+        targetShard = index
+      }
+    }
+    shardAssignments.set(entry.key, targetShard)
+    shardTotals[targetShard] = lowestTotal + entry.duration
+  }
+
+  return selections.filter(({ specification, scenario }) => {
+    const key = scenarioSelectionKey(specification, scenario)
+    return shardAssignments.get(key) === shard.index - 1
+  })
+}
+
 export function validateSelectionOptions(value: unknown): SelectionOptions {
   return parsed(selectionOptionsSchema, value)
 }
@@ -233,6 +325,7 @@ export function validateSelectionOptions(value: unknown): SelectionOptions {
 export function selectScenarios(
   specifications: readonly Specification[],
   options: SelectionOptions = {},
+  context: SelectScenariosContext = {},
 ): ScenarioSelection[] {
   if (options.shard) assertShard(options.shard)
   const name = options.scenarioName?.trim().toLowerCase()
@@ -264,9 +357,18 @@ export function selectScenarios(
 
   if (!options.shard) return selected
 
-  return selected
-    .filter(({ scenario }) => !scenario.tags.includes(ignoreTag))
-    .filter(
-      (_, index) => index % options.shard!.total === options.shard!.index - 1,
-    )
+  const shardable = selected.filter(
+    ({ scenario }) => !scenario.tags.includes(ignoreTag),
+  )
+  const sharded = context.historicalDurations
+    ? shardByDuration(shardable, options.shard, context.historicalDurations)
+    : shardByCount(shardable, options.shard)
+  const shardedKeys = new Set(
+    sharded.map(({ specification, scenario }) =>
+      scenarioSelectionKey(specification, scenario),
+    ),
+  )
+  return selected.filter(({ specification, scenario }) =>
+    shardedKeys.has(scenarioSelectionKey(specification, scenario)),
+  )
 }

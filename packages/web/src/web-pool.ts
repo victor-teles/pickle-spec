@@ -1,4 +1,5 @@
 import { abortError } from './abort'
+import type { ResolvedFidelity } from './fidelity'
 import type {
   BrowserOptions,
   WebAutomation,
@@ -49,6 +50,7 @@ export class WebProcessPool {
   async openLogicalSession(
     browserOptions: BrowserOptions,
     signal?: AbortSignal,
+    fidelity?: ResolvedFidelity,
   ): Promise<WebLogicalSession> {
     if (this.disposed) {
       throw new Error('Web process pool is disposed')
@@ -61,6 +63,7 @@ export class WebProcessPool {
     try {
       const automation = await pooled.process.openContext({
         browser: browserOptions,
+        fidelity,
         signal,
       })
       const isolation = await automation.readIsolationState()

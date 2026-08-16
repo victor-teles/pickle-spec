@@ -69,6 +69,72 @@ describe('selectScenarios', () => {
     ).toThrow('Unexpected character "," in tag expression')
   })
 
+  test('balances shards by historical duration when timing data exists', () => {
+    const specifications = [
+      specification('features/a.feature', [
+        scenario('Fast checkout', ['@pickle:id:scn-fast']),
+        scenario('Slow checkout', ['@pickle:id:scn-slow']),
+      ]),
+      specification('features/b.feature', [
+        scenario('Medium checkout', ['@pickle:id:scn-medium']),
+        scenario('Another slow checkout', ['@pickle:id:scn-slow-2']),
+      ]),
+    ]
+
+    const shardOne = selectScenarios(
+      specifications,
+      { shard: { index: 1, total: 2 } },
+      {
+        historicalDurations: {
+          'scn-fast': 100,
+          'scn-slow': 900,
+          'scn-medium': 400,
+          'scn-slow-2': 850,
+        },
+      },
+    )
+    const shardTwo = selectScenarios(
+      specifications,
+      { shard: { index: 2, total: 2 } },
+      {
+        historicalDurations: {
+          'scn-fast': 100,
+          'scn-slow': 900,
+          'scn-medium': 400,
+          'scn-slow-2': 850,
+        },
+      },
+    )
+
+    expect(shardOne.map(({ scenario }) => scenario.name).sort()).toEqual([
+      'Fast checkout',
+      'Slow checkout',
+    ])
+    expect(shardTwo.map(({ scenario }) => scenario.name).sort()).toEqual([
+      'Another slow checkout',
+      'Medium checkout',
+    ])
+  })
+
+  test('uses deterministic scenario counts when no historical durations match', () => {
+    const specifications = [
+      specification('features/a.feature', [
+        scenario('First runnable'),
+        scenario('Second runnable'),
+      ]),
+    ]
+
+    const selected = selectScenarios(
+      specifications,
+      { shard: { index: 1, total: 2 } },
+      { historicalDurations: { 'other-scenario': 500 } },
+    )
+
+    expect(selected.map(({ scenario }) => scenario.name)).toEqual([
+      'First runnable',
+    ])
+  })
+
   test('does not assign ignored Scenarios to a shard or count them as shard positions', () => {
     const selected = selectScenarios(
       [

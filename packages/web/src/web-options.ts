@@ -1,10 +1,12 @@
 import { StagehandCreateOptionsSchema } from '@browserbasehq/stagehand'
 import { z } from 'zod'
+import { blockedResourceTypes } from './fidelity'
 
 export const defaultModelName = 'anthropic/claude-sonnet-4-6'
 export const screenshotModes = ['off', 'on-failure', 'on-step'] as const
 export const screenshotFormats = ['png', 'jpeg'] as const
 export const browserEnvironments = ['local', 'browserbase'] as const
+export const webProfiles = ['default', 'fast'] as const
 
 function parsed<T>(schema: z.ZodType<T>, value: unknown): T {
   const result = schema.safeParse(value)
@@ -106,6 +108,18 @@ const screenshotOptionsSchema = strictObject('web.screenshots', {
   fullPage: optionalBoolean('web.screenshots.fullPage'),
 })
 
+const fidelityOptionsSchema = strictObject('web.fidelity', {
+  blockResources: z
+    .array(
+      z.enum(blockedResourceTypes, {
+        error: 'web.fidelity.blockResources must be image, media, or font',
+      }),
+      { error: 'web.fidelity.blockResources must be image, media, or font' },
+    )
+    .optional(),
+  disableAnimations: optionalBoolean('web.fidelity.disableAnimations'),
+})
+
 export const webAdapterOptionsSchema = strictObject('web', {
   baseUrl: z
     .string({ error: 'web.baseUrl must not be empty' })
@@ -124,6 +138,19 @@ export const webAdapterOptionsSchema = strictObject('web', {
     ),
   browser: browserOptionsSchema.optional(),
   screenshots: screenshotOptionsSchema.optional(),
+  profile: z
+    .enum(webProfiles, {
+      error: 'web.profile must be default or fast',
+    })
+    .optional(),
+  fidelity: fidelityOptionsSchema.optional(),
+}).superRefine((options, context) => {
+  if (options.profile !== 'fast' && options.fidelity) {
+    context.addIssue({
+      code: 'custom',
+      message: 'web.fidelity requires web.profile fast',
+    })
+  }
 })
 
 export type BrowserOptions = z.infer<typeof browserOptionsSchema>
