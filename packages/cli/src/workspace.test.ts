@@ -1269,4 +1269,205 @@ Feature: Purchase
       'Correct the value and run pickle check again',
     )
   })
+
+  test('pickle run persists an immutable test run and writes stable CI outputs', async () => {
+    const project = await createCheckProject('persisted-run', {
+      config: {
+        schemaVersion: 1,
+        specifications: 'features/**/*.feature',
+        executionTargetProfile: { id: 'deterministic' },
+        artifacts: { capture: 'on-failure-or-adaptation' },
+      },
+      specification: {
+        path: 'features/purchase.feature',
+        source: `@pickle:id:specpurchaseaaaaaa @pickle:state:active
+Feature: Purchase
+  @pickle:id:scnpurchasebbbbbb
+  Scenario: Complete a purchase
+    Then the purchase succeeds`,
+      },
+      extensions: await Bun.file(
+        join(workspace, 'pickle.extensions.ts'),
+      ).text(),
+    })
+    const junitPath = join(project, 'results.xml')
+    const jsonPath = join(project, 'results.json')
+    const ndjsonPath = join(project, 'events.ndjson')
+
+    const process = Bun.spawn({
+      cmd: [
+        pickleCommand,
+        'run',
+        '--junit',
+        junitPath,
+        '--json',
+        jsonPath,
+        '--ndjson',
+        ndjsonPath,
+      ],
+      cwd: project,
+      env: { ...Bun.env, PICKLE_TEST_OUTCOME: 'passed' },
+      stdout: 'pipe',
+      stderr: 'pipe',
+    })
+    const [exitCode, stdout, stderr] = await Promise.all([
+      process.exited,
+      new Response(process.stdout).text(),
+      new Response(process.stderr).text(),
+    ])
+
+    expect(stderr).toBe('')
+    expect(exitCode).toBe(0)
+    expect(stdout).toContain('"kind":"run-event"')
+
+    const manifests = [
+      ...new Bun.Glob('*/manifest.json').scanSync({
+        cwd: join(project, '.pickle', 'runs'),
+      }),
+    ]
+    expect(manifests).toHaveLength(1)
+    const manifest = (await Bun.file(
+      join(project, '.pickle', 'runs', manifests[0]!),
+    ).json()) as {
+      schemaVersion: number
+      id: string
+      state: string
+      results: Array<{ state: string; scenario: { name: string } }>
+    }
+    expect(manifest).toMatchObject({
+      schemaVersion: 1,
+      state: 'passed',
+      results: [{ state: 'passed', scenario: { name: 'Complete a purchase' } }],
+    })
+    const events = (
+      await Bun.file(
+        join(
+          project,
+          '.pickle',
+          'runs',
+          dirname(manifests[0]!),
+          'events.ndjson',
+        ),
+      ).text()
+    )
+      .trim()
+      .split('\n')
+      .map((line) => JSON.parse(line))
+    expect(events[0]).toMatchObject({
+      schemaVersion: 1,
+      sequence: 1,
+      type: 'run-started',
+      run: { id: manifest.id },
+    })
+    expect(JSON.parse(await Bun.file(jsonPath).text())).toMatchObject({
+      schemaVersion: 1,
+      id: manifest.id,
+      state: 'passed',
+    })
+    expect(await Bun.file(junitPath).text()).toContain(
+      'classname="features/purchase.feature"',
+    )
+    expect(
+      (await Bun.file(ndjsonPath).text())
+        .trim()
+        .split('\n')
+        .map((line) => JSON.parse(line)),
+    ).toEqual(events)
+  })
+
+  test('pickle run applies retention without changing a retained test run', async () => {
+    const project = await createCheckProject('retention-run', {
+      config: {
+        schemaVersion: 1,
+        specifications: 'features/**/*.feature',
+        executionTargetProfile: { id: 'deterministic' },
+        retention: { days: 14 },
+      },
+      specification: {
+        path: 'features/purchase.feature',
+        source: `@pickle:id:specpurchaseaaaaaa @pickle:state:active
+Feature: Purchase
+  @pickle:id:scnpurchasebbbbbb
+  Scenario: Complete a purchase
+    Then the purchase succeeds`,
+      },
+      extensions: await Bun.file(
+        join(workspace, 'pickle.extensions.ts'),
+      ).text(),
+    })
+    const expiredDirectory = join(project, '.pickle', 'runs', 'run-expired')
+    await mkdir(expiredDirectory, { recursive: true })
+    await Bun.write(
+      join(expiredDirectory, 'events.ndjson'),
+      `${JSON.stringify({
+        schemaVersion: 1,
+        sequence: 1,
+        type: 'run-started',
+        run: { id: 'run-expired' },
+      })}\n`,
+    )
+    await Bun.write(
+      join(expiredDirectory, 'manifest.json'),
+      JSON.stringify({
+        schemaVersion: 1,
+        id: 'run-expired',
+        startedAt: '2026-07-01T00:00:00.000Z',
+        finishedAt: '2026-07-01T00:00:01.000Z',
+        state: 'passed',
+        results: [],
+      }),
+    )
+    const retainedDirectory = join(project, '.pickle', 'runs', 'run-retained')
+    await mkdir(retainedDirectory, { recursive: true })
+    const retainedEvents = `${JSON.stringify({
+      schemaVersion: 1,
+      sequence: 1,
+      type: 'run-started',
+      run: { id: 'run-retained' },
+    })}\n`
+    const retainedManifest = `${JSON.stringify({
+      schemaVersion: 1,
+      id: 'run-retained',
+      startedAt: new Date().toISOString(),
+      finishedAt: new Date().toISOString(),
+      state: 'passed',
+      results: [],
+    })}\n`
+    await Bun.write(join(retainedDirectory, 'events.ndjson'), retainedEvents)
+    await Bun.write(join(retainedDirectory, 'manifest.json'), retainedManifest)
+
+    const run = Bun.spawnSync({
+      cmd: [pickleCommand, 'run'],
+      cwd: project,
+      env: { ...Bun.env, PICKLE_TEST_OUTCOME: 'passed' },
+    })
+
+    expect(run.exitCode).toBe(0)
+    expect(
+      await Bun.file(join(expiredDirectory, 'events.ndjson')).exists(),
+    ).toBe(false)
+    expect(
+      await Bun.file(join(retainedDirectory, 'events.ndjson')).text(),
+    ).toBe(retainedEvents)
+    expect(
+      await Bun.file(join(retainedDirectory, 'manifest.json')).text(),
+    ).toBe(retainedManifest)
+  })
+
+  test('check rejects an unknown artifact capture policy', async () => {
+    const project = await createCheckProject('invalid-artifact-policy', {
+      config: {
+        ...defaultCheckConfig,
+        artifacts: { capture: 'sometimes' },
+      },
+      specification: validSpecification,
+    })
+
+    const checked = runCheck(project)
+
+    expect(checked.exitCode).toBe(2)
+    expect(checked.stderr.toString()).toContain(
+      'artifacts.capture must be off, on-failure-or-adaptation, or always',
+    )
+  })
 })

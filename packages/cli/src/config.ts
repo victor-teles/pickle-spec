@@ -1,5 +1,6 @@
 import { resolve } from 'node:path'
 import {
+  type ArtifactCapturePolicy,
   type ExecutionTargetProfile,
   type RunConfiguration,
   validateRunConfiguration,
@@ -33,6 +34,15 @@ export interface ProjectPolicy {
   adaptedResults?: 'accept' | 'reject'
 }
 
+export interface ProjectRetention {
+  days?: number
+  maxBytes?: number
+}
+
+export interface ProjectArtifacts {
+  capture?: ArtifactCapturePolicy
+}
+
 export interface PickleConfig {
   schemaVersion: 1
   language?: string
@@ -51,6 +61,8 @@ export interface PickleConfig {
   }
   concurrency?: number
   server?: ServerConfig
+  retention?: ProjectRetention
+  artifacts?: ProjectArtifacts
 }
 
 function toExecutionTargetProfile(
@@ -226,6 +238,8 @@ function validateConfig(value: unknown): PickleConfig {
       'execution',
       'concurrency',
       'server',
+      'retention',
+      'artifacts',
     ],
     'configuration',
   )
@@ -318,6 +332,26 @@ function validateConfig(value: unknown): PickleConfig {
   }
   if (config.selection !== undefined) validateSelectionOptions(config.selection)
   if (config.suites !== undefined) config.suites = validateSuites(config.suites)
+  if (config.retention !== undefined) {
+    const retention = record(config.retention, 'retention')
+    knownFields(retention, ['days', 'maxBytes'], 'retention')
+    optionalPositiveInteger(retention.days, 'retention.days')
+    optionalPositiveInteger(retention.maxBytes, 'retention.maxBytes')
+  }
+  if (config.artifacts !== undefined) {
+    const artifacts = record(config.artifacts, 'artifacts')
+    knownFields(artifacts, ['capture'], 'artifacts')
+    if (
+      artifacts.capture !== undefined &&
+      artifacts.capture !== 'off' &&
+      artifacts.capture !== 'on-failure-or-adaptation' &&
+      artifacts.capture !== 'always'
+    ) {
+      throw new Error(
+        'artifacts.capture must be off, on-failure-or-adaptation, or always',
+      )
+    }
+  }
   if (config.executionTargetProfiles !== undefined) {
     config.executionTargetProfiles = validateProjectProfiles(
       config.executionTargetProfiles,

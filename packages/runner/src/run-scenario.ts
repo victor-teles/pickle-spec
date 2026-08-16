@@ -97,7 +97,8 @@ interface RunEventEnvelope {
   sequence: number
 }
 
-type RunEventPayload =
+export type RunEventPayload =
+  | { type: 'run-started'; run: { id: string; startedAt: string } }
   | { type: 'scenario-started'; scenario: TestResult['scenario'] }
   | { type: 'step-started'; step: ScenarioStep }
   | { type: 'step-finished'; result: TestStepResult }
