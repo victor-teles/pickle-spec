@@ -1,6 +1,6 @@
 import { Database } from 'bun:sqlite'
 import { appendFile, copyFile, mkdir, rm } from 'node:fs/promises'
-import { extname, join } from 'node:path'
+import { dirname, extname, join } from 'node:path'
 import type {
   RunEvent,
   RunEventPayload,
@@ -62,8 +62,10 @@ export interface TestRunStore {
   applyRetention(policy?: RetentionPolicy): Promise<RetentionResult>
 }
 
+const dayMs = 24 * 60 * 60 * 1000
+
 export const defaultRetention = {
-  maxAgeMs: 30 * 24 * 60 * 60 * 1000,
+  maxAgeMs: 30 * dayMs,
   maxBytes: 2 * 1024 * 1024 * 1024,
 }
 
@@ -86,15 +88,10 @@ export function openTestRunStore(options: TestRunStoreOptions): TestRunStore {
 
   async function upsertManifest(manifest: TestRunManifest): Promise<void> {
     await mkdir(pickleDirectory, { recursive: true })
-    const db = openIndex(indexPath)
-    try {
-      upsertRun(db, manifest)
-    } finally {
-      db.close()
-    }
+    withIndex(indexPath, (db) => upsertRun(db, manifest))
   }
 
-  function runAt(id: string, startedAt: string): PersistedTestRun {
+  function persistedRunFor(id: string, startedAt: string): PersistedTestRun {
     return persistedTestRun(
       id,
       join(runsDirectory, id),
@@ -107,13 +104,7 @@ export function openTestRunStore(options: TestRunStoreOptions): TestRunStore {
 
   async function openRun(id: string): Promise<PersistedTestRun> {
     const events = await readEvents(join(runsDirectory, id, 'events.ndjson'))
-    const started = events.find((event) => event.type === 'run-started')
-    return runAt(
-      id,
-      started?.type === 'run-started'
-        ? started.run.startedAt
-        : now().toISOString(),
-    )
+    return persistedRunFor(id, startedAtFrom(events, now().toISOString()))
   }
 
   async function manifestFor(id: string): Promise<TestRunManifest> {
@@ -132,7 +123,7 @@ export function openTestRunStore(options: TestRunStoreOptions): TestRunStore {
         onlyFiles: true,
       })
       for await (const relativePath of files) {
-        manifests.push(await manifestFor(relativePath.split('/')[0]!))
+        manifests.push(await manifestFor(dirname(relativePath)))
       }
     } catch {
       return []
@@ -142,13 +133,11 @@ export function openTestRunStore(options: TestRunStoreOptions): TestRunStore {
 
   async function rebuild() {
     await mkdir(pickleDirectory, { recursive: true })
-    const db = openIndex(indexPath)
-    try {
+    const manifests = await loadManifests()
+    withIndex(indexPath, (db) => {
       db.run('DELETE FROM runs')
-      for (const manifest of await loadManifests()) upsertRun(db, manifest)
-    } finally {
-      db.close()
-    }
+      for (const manifest of manifests) upsertRun(db, manifest)
+    })
   }
 
   return {
@@ -156,46 +145,37 @@ export function openTestRunStore(options: TestRunStoreOptions): TestRunStore {
       const id = createId()
       const startedAt = now().toISOString()
       await mkdir(join(runsDirectory, id), { recursive: true })
-      const run = runAt(id, startedAt)
+      const run = persistedRunFor(id, startedAt)
       await run.append({ type: 'run-started', run: { id, startedAt } })
       return run
     },
     open: openRun,
     async list() {
       if (!(await Bun.file(indexPath).exists())) await rebuild()
-      const db = openIndex(indexPath)
-      try {
-        return listRuns(db)
-      } finally {
-        db.close()
-      }
+      return withIndex(indexPath, listRuns)
     },
-    async rebuildIndex() {
-      await rebuild()
-    },
+    rebuildIndex: rebuild,
     async applyRetention(policy: RetentionPolicy = {}) {
       const maxAgeMs = policy.maxAgeMs ?? defaultRetention.maxAgeMs
       const maxBytes = policy.maxBytes ?? defaultRetention.maxBytes
       const cutoff = now().getTime() - maxAgeMs
-      const removed: string[] = []
       const manifests = await loadManifests()
+      const removed: string[] = []
+      const retained: TestRunManifest[] = []
+
       for (const manifest of manifests) {
         if (Date.parse(manifest.startedAt) <= cutoff) {
           await removeRun(runsDirectory, indexPath, manifest.id)
           removed.push(manifest.id)
+        } else {
+          retained.push(manifest)
         }
       }
-      const remaining = manifests.filter(
-        (manifest) => !removed.includes(manifest.id),
-      )
-      remaining.sort(
-        (left, right) =>
-          Date.parse(left.startedAt) - Date.parse(right.startedAt) ||
-          left.id.localeCompare(right.id),
-      )
+
+      retained.sort(byOldest)
       let total = await directorySize(runsDirectory)
-      while (remaining.length > 1 && total > maxBytes) {
-        const oldest = remaining.shift()
+      while (retained.length > 1 && total > maxBytes) {
+        const oldest = retained.shift()
         if (!oldest) break
         await removeRun(runsDirectory, indexPath, oldest.id)
         removed.push(oldest.id)
@@ -239,15 +219,13 @@ function persistedTestRun(
     },
     async materialize(input) {
       const recorded = await readEvents(eventsPath)
-      const started = recorded.find((event) => event.type === 'run-started')
       const results = recorded.flatMap((event) =>
         event.type === 'scenario-finished' ? [event.result] : [],
       )
       const manifest: TestRunManifest = {
         schemaVersion: 1,
         id,
-        startedAt:
-          started?.type === 'run-started' ? started.run.startedAt : startedAt,
+        startedAt: startedAtFrom(recorded, startedAt),
         ...(input?.finished === false
           ? {}
           : { finishedAt: now().toISOString() }),
@@ -281,6 +259,27 @@ function openIndex(path: string): Database {
     )
   `)
   return db
+}
+
+function withIndex<Value>(path: string, use: (db: Database) => Value): Value {
+  const db = openIndex(path)
+  try {
+    return use(db)
+  } finally {
+    db.close()
+  }
+}
+
+function startedAtFrom(events: readonly RunEvent[], fallback: string): string {
+  const started = events.find((event) => event.type === 'run-started')
+  return started?.type === 'run-started' ? started.run.startedAt : fallback
+}
+
+function byOldest(left: TestRunManifest, right: TestRunManifest): number {
+  return (
+    Date.parse(left.startedAt) - Date.parse(right.startedAt) ||
+    left.id.localeCompare(right.id)
+  )
 }
 
 function upsertRun(db: Database, manifest: TestRunManifest): void {
@@ -383,12 +382,13 @@ async function persistResultArtifacts(
   policy: ArtifactCapturePolicy,
   artifactsDirectory: string,
 ): Promise<TestResult> {
-  const capture = shouldCapture(policy, result.state) ? 'always' : 'off'
+  if (!shouldCapture(policy, result.state)) {
+    return { ...result, steps: result.steps.map(withoutArtifacts) }
+  }
   const steps = await Promise.all(
     result.steps.map((step, index) =>
-      persistStepArtifacts(
+      copyStepArtifacts(
         step,
-        capture,
         artifactsDirectory,
         `${result.scenario.name}-${index + 1}`,
       ),
@@ -404,10 +404,22 @@ async function persistStepArtifacts(
   name: string,
 ): Promise<TestStepResult> {
   if (!step.artifacts?.length) return step
-  if (!shouldCapture(policy, step.state)) {
-    const { artifacts: _artifacts, ...rest } = step
-    return rest
-  }
+  if (!shouldCapture(policy, step.state)) return withoutArtifacts(step)
+  return copyStepArtifacts(step, artifactsDirectory, name)
+}
+
+function withoutArtifacts(step: TestStepResult): TestStepResult {
+  if (!step.artifacts) return step
+  const { artifacts: _artifacts, ...rest } = step
+  return rest
+}
+
+async function copyStepArtifacts(
+  step: TestStepResult,
+  artifactsDirectory: string,
+  name: string,
+): Promise<TestStepResult> {
+  if (!step.artifacts?.length) return step
   await mkdir(artifactsDirectory, { recursive: true })
   const artifacts = await Promise.all(
     step.artifacts.map(async (artifact, index) => {
@@ -440,12 +452,7 @@ async function removeRun(
 ): Promise<void> {
   await rm(join(runsDirectory, id), { recursive: true, force: true })
   if (!(await Bun.file(indexPath).exists())) return
-  const db = openIndex(indexPath)
-  try {
-    db.run('DELETE FROM runs WHERE id = ?', [id])
-  } finally {
-    db.close()
-  }
+  withIndex(indexPath, (db) => db.run('DELETE FROM runs WHERE id = ?', [id]))
 }
 
 async function directorySize(directory: string): Promise<number> {

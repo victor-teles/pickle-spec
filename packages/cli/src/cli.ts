@@ -9,7 +9,6 @@ import type {
 } from '@pickle-spec/runner'
 import {
   createFilePlanStore,
-  defaultRetention,
   formatJson,
   formatJunit,
   formatNdjson,
@@ -366,8 +365,8 @@ async function run(argv: string[]): Promise<number> {
     await store.applyRetention({
       maxAgeMs: config.retention?.days
         ? config.retention.days * 24 * 60 * 60 * 1000
-        : defaultRetention.maxAgeMs,
-      maxBytes: config.retention?.maxBytes ?? defaultRetention.maxBytes,
+        : undefined,
+      maxBytes: config.retention?.maxBytes,
     })
 
     for (const scenarioRun of runs) {

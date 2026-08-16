@@ -23,7 +23,7 @@ export function formatJunit(manifest: TestRunManifest): string {
     .join('\n')
 
   return `<?xml version="1.0" encoding="UTF-8"?>
-<testsuites id="${escapeXml(manifest.id)}" name="${escapeXml(manifest.id)}"${counts(manifest.results)}>
+<testsuites id="${escapeXml(manifest.id)}" name="${escapeXml(manifest.id)}"${countAttributes(manifest.results)}>
 ${body}
 </testsuites>
 `
@@ -31,7 +31,7 @@ ${body}
 
 function formatSuite(name: string, results: TestResult[]): string {
   const cases = results.map(formatCase).join('\n')
-  return `  <testsuite name="${escapeXml(name)}"${counts(results)}>
+  return `  <testsuite name="${escapeXml(name)}"${countAttributes(results)}>
 ${cases}
   </testsuite>`
 }
@@ -49,6 +49,16 @@ ${children.join('\n')}
 
 function caseChildren(result: TestResult): string[] {
   const children: string[] = []
+  const properties = caseProperties(result)
+  if (properties.length > 0) {
+    children.push('      <properties>', ...properties, '      </properties>')
+  }
+  const outcome = outcomeElement(result)
+  if (outcome) children.push(outcome)
+  return children
+}
+
+function caseProperties(result: TestResult): string[] {
   const properties: string[] = []
   if (result.state === 'passed-with-adaptation') {
     properties.push(
@@ -58,28 +68,21 @@ function caseChildren(result: TestResult): string[] {
   if (result.flaky) {
     properties.push('        <property name="flaky" value="true"/>')
   }
-  if (properties.length > 0) {
-    children.push('      <properties>', ...properties, '      </properties>')
-  }
-  if (result.state === 'failed') {
-    children.push(
-      `      <failure message="${escapeXml(result.message ?? '')}"/>`,
-    )
-  }
-  if (result.state === 'skipped') {
-    children.push(
-      `      <skipped message="${escapeXml(result.message ?? '')}"/>`,
-    )
-  }
-  if (result.state === 'cancelled' || result.state === 'infrastructure-error') {
-    children.push(
-      `      <error type="${result.state}" message="${escapeXml(result.message ?? '')}"/>`,
-    )
-  }
-  return children
+  return properties
 }
 
-function counts(results: readonly TestResult[]): string {
+function outcomeElement(result: TestResult): string | undefined {
+  const message = escapeXml(result.message ?? '')
+  const outcomes: Partial<Record<TestResultState, string>> = {
+    failed: `      <failure message="${message}"/>`,
+    skipped: `      <skipped message="${message}"/>`,
+    cancelled: `      <error type="cancelled" message="${message}"/>`,
+    'infrastructure-error': `      <error type="infrastructure-error" message="${message}"/>`,
+  }
+  return outcomes[result.state]
+}
+
+function countAttributes(results: readonly TestResult[]): string {
   return ` tests="${results.length}" failures="${count(results, 'failed')}" errors="${count(results, 'cancelled') + count(results, 'infrastructure-error')}" skipped="${count(results, 'skipped')}"`
 }
 
