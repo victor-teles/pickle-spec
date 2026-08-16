@@ -619,6 +619,7 @@ Feature: Disk edit
       await page
         .getByRole('region', { name: 'Specification metadata' })
         .waitFor()
+      await page.getByRole('button', { name: 'Edit metadata' }).click()
       await page.getByRole('button', { name: 'draft', exact: true }).click()
       await page.getByLabel('Specification tags').fill('@checkout @regression')
       await page.getByLabel('Link namespace').fill('jira')

@@ -143,6 +143,7 @@ function StudioApp() {
   const [currentArea, setCurrentArea] =
     useState<(typeof areas)[number]['name']>('Specifications')
   const [view, setView] = useState<RunView>(emptyRunView)
+  const [authoring, setAuthoring] = useState(false)
   const running = view.phase === 'running'
 
   useEffect(() => {
@@ -254,7 +255,7 @@ function StudioApp() {
   }
 
   return (
-    <div className="flex min-h-screen flex-col">
+    <div className="flex h-screen flex-col overflow-hidden">
       <header className="flex items-center justify-between border-b border-border bg-card px-6 py-3">
         <h1 className="text-xl font-semibold tracking-tight">{project.name}</h1>
         <StatusBadge state={aggregate} />
@@ -301,12 +302,14 @@ function StudioApp() {
         ))}
       </nav>
       {currentArea === 'Settings' ? (
-        <SettingsPanel
-          project={project}
-          api={api}
-          onProject={setProject}
-          onError={setError}
-        />
+        <div className="min-h-0 flex-1 overflow-auto">
+          <SettingsPanel
+            project={project}
+            api={api}
+            onProject={setProject}
+            onError={setError}
+          />
+        </div>
       ) : (
         <div className="grid min-h-0 flex-1 lg:grid-cols-[16rem_1fr]">
           <SpecificationList
@@ -317,124 +320,154 @@ function StudioApp() {
             onSelect={setSelectedId}
             onRunAll={() => void startRun({})}
           />
-          <main className="min-w-0 space-y-6 p-6" aria-busy={running}>
+          <main
+            className="flex min-h-0 min-w-0 flex-1 flex-col"
+            aria-busy={running}
+          >
             {error ? (
-              <p role="alert" className="text-sm text-destructive">
+              <p role="alert" className="px-6 pt-6 text-sm text-destructive">
                 {error}
-              </p>
-            ) : null}
-            {!specCanRun && runReasons?.length ? (
-              <p role="status" className="text-sm text-muted-foreground">
-                {runReasons.join(' ')}
               </p>
             ) : null}
             {selected ? (
               <>
-                <div className="flex flex-wrap items-start justify-between gap-3">
-                  <div className="min-w-0 space-y-1">
-                    <h2 className="text-lg font-medium">{selected.name}</h2>
-                    <p className="truncate font-mono text-xs text-muted-foreground">
-                      {selected.uri}
-                    </p>
+                <header
+                  className={
+                    authoring
+                      ? 'flex min-h-0 flex-1 flex-col space-y-3 border-b border-border px-6 py-4'
+                      : 'shrink-0 space-y-3 border-b border-border px-6 py-4'
+                  }
+                >
+                  <div className="flex shrink-0 flex-wrap items-start justify-between gap-3">
+                    <div className="min-w-0 space-y-1">
+                      <h2 className="text-lg font-medium">{selected.name}</h2>
+                      <p className="truncate font-mono text-xs text-muted-foreground">
+                        {selected.uri}
+                      </p>
+                    </div>
+                    {running && runId ? (
+                      <Button
+                        type="button"
+                        variant="destructive"
+                        onClick={() => void cancelRun()}
+                      >
+                        Cancel test run
+                      </Button>
+                    ) : specCanRun ? (
+                      <Button
+                        type="button"
+                        disabled={running}
+                        onClick={() => void startRun({ paths: [selected.uri] })}
+                      >
+                        Run Specification
+                      </Button>
+                    ) : null}
                   </div>
-                  {running && runId ? (
-                    <Button
-                      type="button"
-                      variant="destructive"
-                      onClick={() => void cancelRun()}
-                    >
-                      Cancel test run
-                    </Button>
-                  ) : specCanRun ? (
-                    <Button
-                      type="button"
-                      disabled={running}
-                      onClick={() => void startRun({ paths: [selected.uri] })}
-                    >
-                      Run Specification
-                    </Button>
+                  {!specCanRun && runReasons?.length ? (
+                    <p role="status" className="text-sm text-muted-foreground">
+                      {runReasons.join(' ')}
+                    </p>
                   ) : null}
-                </div>
-                <SpecificationEditor
-                  uri={selected.uri}
-                  model={project.model}
-                  namespaces={Object.keys(project.links ?? {})}
-                  linkTemplates={project.links}
-                  api={api}
-                  onCatalogChange={async () => {
-                    await reloadProject()
-                  }}
-                  onCreated={(uri) => {
-                    void reloadProject().then((value) => {
-                      const created = value.specifications.find(
-                        (item) => item.uri === uri,
-                      )
-                      if (created) setSelectedId(created.id)
-                    })
-                  }}
-                  onError={(message) => setError(message)}
-                />
-                <ScenarioTable
-                  profiles={project.profiles}
-                  scenarios={selected.scenarios}
-                  cells={view.cells}
-                  selected={view.selected}
-                  running={running}
-                  onSelect={(cell) =>
-                    setView((current) => pinCell(current, cell))
-                  }
-                  onRun={(scenarioName) =>
-                    void startRun({ paths: [selected.uri], scenarioName })
-                  }
-                />
+                  <div
+                    className={
+                      authoring ? 'flex min-h-0 flex-1 flex-col' : undefined
+                    }
+                  >
+                    <SpecificationEditor
+                      uri={selected.uri}
+                      model={project.model}
+                      namespaces={Object.keys(project.links ?? {})}
+                      linkTemplates={project.links}
+                      api={api}
+                      onModeChange={(mode) => setAuthoring(mode === 'edit')}
+                      onCatalogChange={async () => {
+                        await reloadProject()
+                      }}
+                      onCreated={(uri) => {
+                        void reloadProject().then((value) => {
+                          const created = value.specifications.find(
+                            (item) => item.uri === uri,
+                          )
+                          if (created) setSelectedId(created.id)
+                        })
+                      }}
+                      onError={(message) => setError(message)}
+                    />
+                  </div>
+                </header>
+                {authoring ? null : (
+                  <div className="min-h-0 flex-1 space-y-6 overflow-auto px-6 py-4">
+                    <ScenarioTable
+                      profiles={project.profiles}
+                      scenarios={selected.scenarios}
+                      cells={view.cells}
+                      selected={view.selected}
+                      running={running}
+                      onSelect={(cell) =>
+                        setView((current) => pinCell(current, cell))
+                      }
+                      onRun={(scenarioName) =>
+                        void startRun({
+                          paths: [selected.uri],
+                          scenarioName,
+                        })
+                      }
+                    />
+                    {attention.length > 0 ? (
+                      <div>
+                        <h3 className="mb-2 text-sm font-medium">
+                          Needs attention
+                        </h3>
+                        <ul
+                          aria-label="Needs attention"
+                          aria-live="polite"
+                          className="space-y-2"
+                        >
+                          {attention.map((cell) => (
+                            <li key={cellKey(cell.scenarioId, cell.profileId)}>
+                              <button
+                                type="button"
+                                className={cn(
+                                  'flex w-full min-w-0 flex-col gap-1 rounded-md border bg-card px-3 py-2 text-left text-sm outline-none transition-[transform,background-color,border-color] duration-150 ease-[cubic-bezier(0.23,1,0.32,1)] hover:bg-muted/30 active:scale-[0.99] focus-visible:border-foreground/30 motion-reduce:transition-none motion-reduce:active:scale-100',
+                                  isSelectedCell(view.selected, cell)
+                                    ? 'border-foreground/25'
+                                    : 'border-border',
+                                )}
+                                onClick={() =>
+                                  setView((current) => pinCell(current, cell))
+                                }
+                              >
+                                <span className="flex min-w-0 items-center gap-2">
+                                  <span className="min-w-0 flex-1 truncate">
+                                    {cell.scenarioName}
+                                  </span>
+                                  <Badge variant={badgeVariant(cell.state)}>
+                                    <ResultMark
+                                      key={cell.state}
+                                      state={cell.state}
+                                    />
+                                    {cell.state}
+                                  </Badge>
+                                </span>
+                                <span className="text-xs text-muted-foreground">
+                                  {cell.profileId} · Open step timeline
+                                </span>
+                              </button>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    ) : null}
+                    <Timeline cell={view.selected} />
+                  </div>
+                )}
               </>
             ) : (
-              <p className="text-sm text-muted-foreground">
+              <p className="p-6 text-sm text-muted-foreground">
                 No Specifications found. Add a feature file matching the project
                 configuration.
               </p>
             )}
-            {attention.length > 0 ? (
-              <div>
-                <h3 className="mb-2 text-sm font-medium">Needs attention</h3>
-                <ul
-                  aria-label="Needs attention"
-                  aria-live="polite"
-                  className="space-y-2"
-                >
-                  {attention.map((cell) => (
-                    <li key={cellKey(cell.scenarioId, cell.profileId)}>
-                      <button
-                        type="button"
-                        className={cn(
-                          'flex w-full min-w-0 flex-col gap-1 rounded-md border bg-card px-3 py-2 text-left text-sm outline-none transition-[transform,background-color,border-color] duration-150 ease-[cubic-bezier(0.23,1,0.32,1)] hover:bg-muted/30 active:scale-[0.99] focus-visible:border-foreground/30 motion-reduce:transition-none motion-reduce:active:scale-100',
-                          isSelectedCell(view.selected, cell)
-                            ? 'border-foreground/25'
-                            : 'border-border',
-                        )}
-                        onClick={() =>
-                          setView((current) => pinCell(current, cell))
-                        }
-                      >
-                        <span className="flex min-w-0 items-center gap-2">
-                          <span className="min-w-0 flex-1 truncate">
-                            {cell.scenarioName}
-                          </span>
-                          <Badge variant={badgeVariant(cell.state)}>
-                            <ResultMark key={cell.state} state={cell.state} />
-                            {cell.state}
-                          </Badge>
-                        </span>
-                        <span className="text-xs text-muted-foreground">
-                          {cell.profileId} · Open step timeline
-                        </span>
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            ) : null}
-            <Timeline cell={view.selected} />
           </main>
         </div>
       )}

@@ -133,6 +133,7 @@ export function SpecificationEditor(props: {
   onCatalogChange: () => Promise<void>
   onCreated?: (uri: string) => void
   onError: (message: string | undefined) => void
+  onModeChange?: (mode: 'view' | 'edit') => void
 }) {
   const [mode, setMode] = useState<'view' | 'edit'>('view')
   const [buffer, setBuffer] = useState<SpecificationBuffer>()
@@ -165,12 +166,20 @@ export function SpecificationEditor(props: {
   const loadRef = useRef(load)
   const catalogRef = useRef(props.onCatalogChange)
   const errorRef = useRef(props.onError)
+  const modeChangeRef = useRef(props.onModeChange)
   loadRef.current = load
   catalogRef.current = props.onCatalogChange
   errorRef.current = props.onError
+  modeChangeRef.current = props.onModeChange
+
+  function setEditorMode(next: 'view' | 'edit') {
+    setMode(next)
+    modeChangeRef.current?.(next)
+  }
 
   useEffect(() => {
     setMode('view')
+    modeChangeRef.current?.('view')
     let cancelled = false
     void loadRef.current(props.uri).catch((reason: unknown) => {
       if (!cancelled) errorRef.current(reasonMessage(reason))
@@ -298,7 +307,7 @@ export function SpecificationEditor(props: {
       setDiscardOpen(true)
       return
     }
-    setMode('view')
+    setEditorMode('view')
   }
 
   function discardEdits() {
@@ -306,7 +315,7 @@ export function SpecificationEditor(props: {
     setSource(buffer.source)
     setSavedSource(buffer.source)
     setDiscardOpen(false)
-    setMode('view')
+    setEditorMode('view')
   }
 
   if (!buffer) {
@@ -316,7 +325,11 @@ export function SpecificationEditor(props: {
   }
 
   return (
-    <div className="space-y-3">
+    <div
+      className={
+        mode === 'edit' ? 'flex min-h-0 flex-1 flex-col gap-3' : 'space-y-3'
+      }
+    >
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
           <p
@@ -341,7 +354,7 @@ export function SpecificationEditor(props: {
           <Button
             type="button"
             variant="outline"
-            onClick={() => setMode('edit')}
+            onClick={() => setEditorMode('edit')}
           >
             Edit Specification
           </Button>
@@ -359,6 +372,7 @@ export function SpecificationEditor(props: {
       {mode === 'view' ? (
         <>
           <SpecificationMetadataForm
+            key={buffer.uri}
             buffer={buffer}
             namespaces={props.namespaces ?? []}
             templates={props.linkTemplates}
@@ -370,7 +384,7 @@ export function SpecificationEditor(props: {
           <SpecificationOutline specification={buffer.specification} />
         </>
       ) : (
-        <div className="space-y-3">
+        <div className="flex min-h-0 flex-1 flex-col gap-3">
           <GherkinEditor
             source={source}
             catalog={catalog}
