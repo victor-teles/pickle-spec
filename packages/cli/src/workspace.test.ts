@@ -783,24 +783,32 @@ Feature: Web search
       `
 export default {
   webAutomationFactory: {
-    async open() {
+    async launch() {
       let page = ''
       return {
-        async navigate(url) { page = await (await fetch(url)).text() },
-        async observe() {
-          return [{ description: 'Search for pickles', handle: 'search' }]
-        },
-        async act() {
-          page += '<div>Pickle results</div>'
-          return { success: true }
-        },
-        async verify() {
+        async openContext() {
           return {
-            meetsExpectation: page.includes('Pickle results'),
-            actualState: page,
+            async navigate(url) { page = await (await fetch(url)).text() },
+            async observe() {
+              return [{ description: 'Search for pickles', handle: 'search' }]
+            },
+            async act() {
+              page += '<div>Pickle results</div>'
+              return { success: true }
+            },
+            async verify() {
+              return {
+                meetsExpectation: page.includes('Pickle results'),
+                actualState: page,
+              }
+            },
+            async readIsolationState() {
+              return { cookieCount: 0, storageKeyCount: 0 }
+            },
+            async screenshot() { return new Uint8Array([137, 80, 78, 71]) },
+            async close() {},
           }
         },
-        async screenshot() { return new Uint8Array([137, 80, 78, 71]) },
         async close() {},
       }
     },

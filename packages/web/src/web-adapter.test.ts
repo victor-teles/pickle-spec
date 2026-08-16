@@ -9,6 +9,27 @@ import {
   type WebAutomationFactory,
 } from '../index'
 
+function withIsolation(
+  automation: Omit<WebAutomation, 'readIsolationState'> &
+    Partial<Pick<WebAutomation, 'readIsolationState'>>,
+): WebAutomation {
+  return {
+    async readIsolationState() {
+      return { cookieCount: 0, storageKeyCount: 0 }
+    },
+    ...automation,
+  }
+}
+
+function factoryFor(automation: WebAutomation): WebAutomationFactory {
+  return {
+    launch: mock(async () => ({
+      openContext: mock(async () => automation),
+      close: mock(async () => {}),
+    })),
+  }
+}
+
 const scenario: Scenario = {
   name: 'Search for pickles',
   tags: ['@web'],
@@ -52,7 +73,7 @@ describe('createWebAdapter', () => {
       actualState: 'No results were shown',
     }))
     const close = mock(async () => {})
-    const automation: WebAutomation = {
+    const automation = withIsolation({
       navigate,
       observe,
       act,
@@ -61,16 +82,13 @@ describe('createWebAdapter', () => {
         return new Uint8Array([137, 80, 78, 71])
       },
       close,
-    }
-    const factory: WebAutomationFactory = {
-      open: mock(async () => automation),
-    }
+    })
     const adapter = createWebAdapter(
       {
         baseUrl: 'https://example.test',
         screenshots: { mode: 'on-step', outputDir: artifactDirectory },
       },
-      factory,
+      factoryFor(automation),
     )
     const session = await adapter.openSession({
       executionTargetProfile: { id: 'web' },
@@ -109,7 +127,7 @@ describe('createWebAdapter', () => {
   test('gives explicit navigation precedence for an action step', async () => {
     const navigate = mock(async () => {})
     const observe = mock(async () => [])
-    const automation: WebAutomation = {
+    const automation = withIsolation({
       navigate,
       observe,
       async act() {
@@ -122,14 +140,10 @@ describe('createWebAdapter', () => {
         return new Uint8Array()
       },
       async close() {},
-    }
+    })
     const adapter = createWebAdapter(
       { baseUrl: 'https://example.test' },
-      {
-        async open() {
-          return automation
-        },
-      },
+      factoryFor(automation),
     )
     const session = await adapter.openSession({
       executionTargetProfile: { id: 'web' },
@@ -159,7 +173,7 @@ describe('createWebAdapter', () => {
   })
 
   test('rejects an unsupported Stagehand model before opening a logical session', () => {
-    const open = mock(async () => {
+    const launch = mock(async () => {
       throw new Error('logical session must not start')
     })
 
@@ -169,12 +183,12 @@ describe('createWebAdapter', () => {
           baseUrl: 'https://example.test',
           browser: { modelName: 'google/gemini-3.7-flash' },
         },
-        { open },
+        { launch },
       ),
     ).toThrow(
       'web.browser.modelName "google/gemini-3.7-flash" is not a Stagehand-supported model',
     )
-    expect(open).not.toHaveBeenCalled()
+    expect(launch).not.toHaveBeenCalled()
   })
 
   test('accepts a Stagehand-supported model name', () => {
@@ -197,21 +211,27 @@ describe('createWebAdapter', () => {
     )
     for (const name of names) delete process.env[name]
     process.env.GOOGLE_API_KEY = 'test-google-key'
-    const open = mock(async () => ({
-      async navigate() {},
-      async observe() {
-        return []
-      },
-      async act() {
-        return { success: true }
-      },
-      async verify() {
-        return { meetsExpectation: true, actualState: 'Ready' }
-      },
-      async screenshot() {
-        return new Uint8Array()
-      },
-      async close() {},
+    const openContext = mock(async () =>
+      withIsolation({
+        async navigate() {},
+        async observe() {
+          return []
+        },
+        async act() {
+          return { success: true }
+        },
+        async verify() {
+          return { meetsExpectation: true, actualState: 'Ready' }
+        },
+        async screenshot() {
+          return new Uint8Array()
+        },
+        async close() {},
+      }),
+    )
+    const launch = mock(async () => ({
+      openContext,
+      close: mock(async () => {}),
     }))
     try {
       const adapter = createWebAdapter(
@@ -219,7 +239,7 @@ describe('createWebAdapter', () => {
           baseUrl: 'https://example.test',
           browser: { modelName: 'google/gemini-3.6-flash' },
         },
-        { open },
+        { launch },
       )
       const session = await adapter.openSession({
         executionTargetProfile: { id: 'web' },
@@ -234,7 +254,7 @@ describe('createWebAdapter', () => {
       }
     }
 
-    expect(open).toHaveBeenCalledWith(
+    expect(launch).toHaveBeenCalledWith(
       expect.objectContaining({
         browser: expect.objectContaining({ modelApiKey: 'test-google-key' }),
       }),
@@ -277,7 +297,7 @@ describe('createWebAdapter', () => {
       { description: 'Must not resolve', handle: { selector: '#new' } },
     ])
     const act = mock(async () => ({ success: true }))
-    const automation: WebAutomation = {
+    const automation = withIsolation({
       async navigate() {},
       observe,
       act,
@@ -288,14 +308,10 @@ describe('createWebAdapter', () => {
         return new Uint8Array()
       },
       async close() {},
-    }
+    })
     const adapter = createWebAdapter(
       { baseUrl: 'https://example.test' },
-      {
-        async open() {
-          return automation
-        },
-      },
+      factoryFor(automation),
     )
     const session = await adapter.openSession({
       executionTargetProfile: { id: 'web' },
@@ -376,22 +392,20 @@ describe('createWebAdapter', () => {
     }))
     const adapter = createWebAdapter(
       { baseUrl: 'https://example.test' },
-      {
-        async open() {
-          return {
-            async navigate() {},
-            observe,
-            act,
-            async verify() {
-              return { meetsExpectation: true, actualState: 'Ready' }
-            },
-            async screenshot() {
-              return new Uint8Array()
-            },
-            async close() {},
-          }
-        },
-      },
+      factoryFor(
+        withIsolation({
+          async navigate() {},
+          observe,
+          act,
+          async verify() {
+            return { meetsExpectation: true, actualState: 'Ready' }
+          },
+          async screenshot() {
+            return new Uint8Array()
+          },
+          async close() {},
+        }),
+      ),
     )
     const plan = {
       schemaVersion: 1 as const,
@@ -449,22 +463,20 @@ describe('createWebAdapter', () => {
     const act = mock(async () => ({ success: true }))
     const adapter = createWebAdapter(
       { baseUrl: 'https://example.test' },
-      {
-        async open() {
-          return {
-            async navigate() {},
-            observe,
-            act,
-            async verify() {
-              return { meetsExpectation: true, actualState: 'Ready' }
-            },
-            async screenshot() {
-              return new Uint8Array()
-            },
-            async close() {},
-          }
-        },
-      },
+      factoryFor(
+        withIsolation({
+          async navigate() {},
+          observe,
+          act,
+          async verify() {
+            return { meetsExpectation: true, actualState: 'Ready' }
+          },
+          async screenshot() {
+            return new Uint8Array()
+          },
+          async close() {},
+        }),
+      ),
     )
     const session = await adapter.openSession({
       executionTargetProfile: { id: 'web' },
@@ -495,5 +507,154 @@ describe('createWebAdapter', () => {
     expect(action.state).toBe('passed-with-adaptation')
     expect(observe).toHaveBeenCalledTimes(1)
     expect(act).toHaveBeenCalledTimes(1)
+  })
+
+  test('pools browser processes across consecutive logical sessions', async () => {
+    const launch = mock(async () => ({
+      openContext: mock(async () =>
+        withIsolation({
+          async navigate() {},
+          async observe() {
+            return []
+          },
+          async act() {
+            return { success: true }
+          },
+          async verify() {
+            return { meetsExpectation: true, actualState: 'Ready' }
+          },
+          async screenshot() {
+            return new Uint8Array()
+          },
+          async close() {},
+        }),
+      ),
+      close: mock(async () => {}),
+    }))
+    const adapter = createWebAdapter(
+      { baseUrl: 'https://example.test' },
+      { launch },
+    )
+
+    const first = await adapter.openSession({
+      executionTargetProfile: { id: 'web' },
+      specification,
+      scenario,
+    })
+    await first.close()
+    const second = await adapter.openSession({
+      executionTargetProfile: { id: 'web' },
+      specification,
+      scenario: { ...scenario, name: 'Second search' },
+    })
+    await second.close()
+    await adapter.dispose?.()
+
+    expect(launch).toHaveBeenCalledTimes(1)
+  })
+
+  test('surfaces isolation verification failure when opening a logical session', async () => {
+    const adapter = createWebAdapter(
+      { baseUrl: 'https://example.test' },
+      {
+        launch: mock(async () => ({
+          openContext: mock(async () =>
+            withIsolation({
+              async readIsolationState() {
+                return { cookieCount: 2, storageKeyCount: 0 }
+              },
+              async navigate() {},
+              async observe() {
+                return []
+              },
+              async act() {
+                return { success: true }
+              },
+              async verify() {
+                return { meetsExpectation: true, actualState: 'Ready' }
+              },
+              async screenshot() {
+                return new Uint8Array()
+              },
+              async close() {},
+            }),
+          ),
+          close: mock(async () => {}),
+        })),
+      },
+    )
+
+    await expect(
+      adapter.openSession({
+        executionTargetProfile: { id: 'web' },
+        specification,
+        scenario,
+      }),
+    ).rejects.toThrow('Logical session isolation verification failed')
+  })
+
+  test('closes automation on abort before returning the browser process to the pool', async () => {
+    let closeStarted = false
+    let closeFinished = false
+    const launch = mock(async () => ({
+      openContext: mock(async () =>
+        withIsolation({
+          async navigate(_url, signal) {
+            await new Promise((_resolve, reject) => {
+              signal?.addEventListener(
+                'abort',
+                () =>
+                  reject(new DOMException('Scenario cancelled', 'AbortError')),
+                { once: true },
+              )
+            })
+          },
+          async observe() {
+            return []
+          },
+          async act() {
+            return { success: true }
+          },
+          async verify() {
+            return { meetsExpectation: true, actualState: 'Ready' }
+          },
+          async screenshot() {
+            return new Uint8Array()
+          },
+          async close() {
+            closeStarted = true
+            await Bun.sleep(10)
+            closeFinished = true
+          },
+        }),
+      ),
+      close: mock(async () => {}),
+    }))
+    const adapter = createWebAdapter(
+      { baseUrl: 'https://example.test' },
+      { launch },
+    )
+    const controller = new AbortController()
+    const session = await adapter.openSession({
+      executionTargetProfile: { id: 'web' },
+      specification,
+      scenario,
+      signal: controller.signal,
+    })
+    const execution = session.executeStep(scenario.steps[0]!, controller.signal)
+    controller.abort()
+    await expect(execution).rejects.toThrow('Scenario cancelled')
+    await session.close()
+    expect(closeStarted).toBe(true)
+    expect(closeFinished).toBe(true)
+
+    const reused = await adapter.openSession({
+      executionTargetProfile: { id: 'web' },
+      specification,
+      scenario: { ...scenario, name: 'Reuse after abort' },
+    })
+    await reused.close()
+    await adapter.dispose?.()
+    expect(launch).toHaveBeenCalledTimes(1)
   })
 })

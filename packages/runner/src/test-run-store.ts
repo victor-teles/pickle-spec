@@ -244,9 +244,18 @@ function persistedTestRun(
     },
     async materialize(input) {
       const recorded = await readEvents(eventsPath)
-      const results = recorded.flatMap((event) =>
-        event.type === 'scenario-finished' ? [event.result] : [],
+      const finished = recorded.flatMap((event) =>
+        event.type === 'scenario-finished'
+          ? [{ result: event.result, scheduleIndex: event.scheduleIndex }]
+          : [],
       )
+      const results = [...finished]
+        .sort(
+          (left, right) =>
+            (left.scheduleIndex ?? Number.MAX_SAFE_INTEGER) -
+            (right.scheduleIndex ?? Number.MAX_SAFE_INTEGER),
+        )
+        .map(({ result }) => result)
       const manifest: TestRunManifest = {
         schemaVersion: 1,
         id,

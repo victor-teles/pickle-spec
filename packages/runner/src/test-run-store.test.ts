@@ -182,6 +182,38 @@ test('an in-progress manifest omits finishedAt until the test run finishes', asy
   expect(finished.finishedAt).toBe('2026-08-15T12:00:00.000Z')
 })
 
+test('orders manifest results by schedule index instead of finish order', async () => {
+  const root = await tempRoot()
+  const store = openTestRunStore({
+    root,
+    createId: () => 'run-order',
+    now: () => new Date('2026-08-15T12:00:00.000Z'),
+  })
+  const run = await store.create()
+  await run.append({
+    type: 'scenario-finished',
+    scheduleIndex: 1,
+    result: {
+      ...passedResult('Second scenario'),
+      specification: {
+        name: 'Search',
+        uri: 'features/search.feature',
+      },
+    },
+  })
+  await run.append({
+    type: 'scenario-finished',
+    scheduleIndex: 0,
+    result: passedResult('First scenario'),
+  })
+
+  const manifest = await run.materialize()
+  expect(manifest.results.map((result) => result.scenario.name)).toEqual([
+    'First scenario',
+    'Second scenario',
+  ])
+})
+
 test('rebuilds the query index from persisted test runs after it is deleted', async () => {
   const root = await tempRoot()
   let nextId = 1

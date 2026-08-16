@@ -13,6 +13,7 @@ export interface RunConfiguration {
   concurrency?: number
   execution?: {
     infrastructureRetries?: number
+    functionalRetries?: number
     scenarioTimeoutMs?: number
     stepTimeoutMs?: number
   }
@@ -162,7 +163,12 @@ function validateExecution(value: unknown): RunConfiguration['execution'] {
   const execution = record(value, 'execution')
   knownFields(
     execution,
-    ['infrastructureRetries', 'scenarioTimeoutMs', 'stepTimeoutMs'],
+    [
+      'infrastructureRetries',
+      'functionalRetries',
+      'scenarioTimeoutMs',
+      'stepTimeoutMs',
+    ],
     'execution',
   )
   positiveInteger(execution.scenarioTimeoutMs, 'execution.scenarioTimeoutMs')
@@ -174,6 +180,15 @@ function validateExecution(value: unknown): RunConfiguration['execution'] {
   ) {
     throw new Error(
       'execution.infrastructureRetries must be a non-negative integer',
+    )
+  }
+  const functionalRetries = execution.functionalRetries
+  if (
+    functionalRetries !== undefined &&
+    (!Number.isInteger(functionalRetries) || (functionalRetries as number) < 0)
+  ) {
+    throw new Error(
+      'execution.functionalRetries must be a non-negative integer',
     )
   }
   return execution
@@ -268,14 +283,19 @@ export function resolveRunConfiguration(
     return { executionTargetProfile, adapter }
   })
   const first = targets[0]!
-  const retries = validatedConfiguration.execution?.infrastructureRetries
+  const infrastructureRetries =
+    validatedConfiguration.execution?.infrastructureRetries
+  const functionalRetries = validatedConfiguration.execution?.functionalRetries
 
   return {
     adapter: first.adapter,
     executionTargetProfile: first.executionTargetProfile,
     targets,
     concurrency: validatedConfiguration.concurrency ?? 1,
-    retry: { infrastructureErrors: retries ?? 0 },
+    retry: {
+      infrastructureErrors: infrastructureRetries ?? 1,
+      functionalFailures: functionalRetries ?? 0,
+    },
     timeout: {
       scenarioMs: validatedConfiguration.execution?.scenarioTimeoutMs,
       stepMs: validatedConfiguration.execution?.stepTimeoutMs,

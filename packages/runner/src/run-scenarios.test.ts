@@ -89,6 +89,106 @@ test('rejects a target that lacks a Scenario capability requirement before openi
   expect(openSession).not.toHaveBeenCalled()
 })
 
+test('applies one global concurrency limit across Scenarios from multiple feature files', async () => {
+  let active = 0
+  let maximumActive = 0
+  const openSession = mock(async () => {
+    active++
+    maximumActive = Math.max(maximumActive, active)
+    return {
+      async executeStep(step: { text: string }) {
+        await Bun.sleep(step.text.includes('slow') ? 30 : 1)
+        return { state: 'passed' as const, resolvedActions: [] }
+      },
+      async close() {
+        active--
+      },
+    }
+  })
+  const adapter: ExecutionTargetAdapter = { openSession }
+
+  const crossFileSelections: ScenarioSelection[] = [
+    {
+      specification: {
+        name: 'Checkout',
+        source: { uri: 'features/checkout.feature', language: 'en' },
+        tags: [],
+        scenarios: [],
+      },
+      scenario: {
+        name: 'slow checkout',
+        tags: [],
+        steps: [
+          {
+            keyword: 'Then',
+            text: 'slow checkout completes',
+            type: 'outcome' as const,
+          },
+        ],
+      },
+    },
+    {
+      specification: {
+        name: 'Search',
+        source: { uri: 'features/search.feature', language: 'en' },
+        tags: [],
+        scenarios: [],
+      },
+      scenario: {
+        name: 'fast search',
+        tags: [],
+        steps: [
+          {
+            keyword: 'Then',
+            text: 'fast search completes',
+            type: 'outcome' as const,
+          },
+        ],
+      },
+    },
+    {
+      specification: {
+        name: 'Account',
+        source: { uri: 'features/account.feature', language: 'en' },
+        tags: [],
+        scenarios: [],
+      },
+      scenario: {
+        name: 'slow account',
+        tags: [],
+        steps: [
+          {
+            keyword: 'Then',
+            text: 'slow account completes',
+            type: 'outcome' as const,
+          },
+        ],
+      },
+    },
+  ]
+
+  const runs = await runScenarios({
+    selections: crossFileSelections,
+    executionTargetProfile: { id: 'web' },
+    adapter,
+    concurrency: 2,
+  })
+
+  expect(
+    runs.map((run) => [
+      run.result.specification.uri,
+      run.result.scenario.name,
+      run.result.state,
+    ]),
+  ).toEqual([
+    ['features/checkout.feature', 'slow checkout', 'passed'],
+    ['features/search.feature', 'fast search', 'passed'],
+    ['features/account.feature', 'slow account', 'passed'],
+  ])
+  expect(maximumActive).toBe(2)
+  expect(openSession).toHaveBeenCalledTimes(3)
+})
+
 test('produces one test result per Scenario and execution target profile', async () => {
   const webOpen = mock(async () => ({
     async executeStep() {

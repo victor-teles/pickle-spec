@@ -56,6 +56,7 @@ export interface PickleConfig {
   selection?: SelectionOptions
   execution?: {
     infrastructureRetries?: number
+    functionalRetries?: number
     scenarioTimeoutMs?: number
     stepTimeoutMs?: number
   }

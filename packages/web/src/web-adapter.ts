@@ -15,6 +15,7 @@ import type {
 } from '@pickle-spec/runner'
 import type { ScenarioStep } from '@pickle-spec/spec'
 import { z } from 'zod'
+import { WebProcessPool } from './web-pool'
 
 export interface BrowserOptions {
   environment?: 'local' | 'browserbase'
@@ -29,6 +30,7 @@ export interface BrowserOptions {
   observeTimeoutMs?: number
   actTimeoutMs?: number
   navigationTimeoutMs?: number
+  idleTimeoutMs?: number
 }
 
 export interface ScreenshotOptions {
@@ -126,6 +128,7 @@ export function validateWebAdapterOptions(value: unknown): WebAdapterOptions {
         'observeTimeoutMs',
         'actTimeoutMs',
         'navigationTimeoutMs',
+        'idleTimeoutMs',
       ],
       'web.browser',
     )
@@ -159,6 +162,7 @@ export function validateWebAdapterOptions(value: unknown): WebAdapterOptions {
       browser.navigationTimeoutMs,
       'web.browser.navigationTimeoutMs',
     )
+    optionalPositiveInteger(browser.idleTimeoutMs, 'web.browser.idleTimeoutMs')
   }
 
   if (web.screenshots !== undefined) {
@@ -195,6 +199,11 @@ export interface WebObservedAction {
   handle: unknown
 }
 
+export interface WebIsolationState {
+  cookieCount: number
+  storageKeyCount: number
+}
+
 export interface WebAutomation {
   navigate(url: string, signal?: AbortSignal): Promise<void>
   observe(prompt: string, signal?: AbortSignal): Promise<WebObservedAction[]>
@@ -213,14 +222,23 @@ export interface WebAutomation {
     format: 'png' | 'jpeg'
     fullPage: boolean
   }): Promise<Uint8Array>
+  readIsolationState(): Promise<WebIsolationState>
+  close(): Promise<void>
+}
+
+export interface WebBrowserProcess {
+  openContext(input: {
+    browser: BrowserOptions
+    signal?: AbortSignal
+  }): Promise<WebAutomation>
   close(): Promise<void>
 }
 
 export interface WebAutomationFactory {
-  open(input: {
+  launch(input: {
     browser: BrowserOptions
     signal?: AbortSignal
-  }): Promise<WebAutomation>
+  }): Promise<WebBrowserProcess>
 }
 
 const verificationSchema = z.object({
@@ -271,7 +289,7 @@ async function activePage(stagehand: Stagehand) {
 }
 
 const stagehandFactory: WebAutomationFactory = {
-  async open({ browser: options, signal }) {
+  async launch({ browser: options, signal }) {
     if (signal?.aborted) throw abortError()
     const browser =
       options.environment === 'browserbase'
@@ -283,91 +301,125 @@ const stagehandFactory: WebAutomationFactory = {
               process.env.BROWSERBASE_PROJECT_ID!,
           })
         : await localBrowser.launch({ headless: options.headless ?? true })
-    const model: ModelConfig = {
-      modelName: (options.modelName ??
-        'anthropic/claude-sonnet-4-6') as ModelConfig['modelName'],
-      ...(options.modelApiKey ? { apiKey: options.modelApiKey } : {}),
-    }
-    let stagehand: Stagehand
-    try {
-      stagehand = await Stagehand.create({
-        browser,
-        model,
-        logging: { level: 'off', format: 'json' },
-        selfHeal: options.selfHeal ?? true,
-        domSettleTimeoutMs: options.domSettleTimeoutMs ?? 3_000,
-        ...(options.cache !== undefined ? { cache: options.cache } : {}),
-      })
-    } catch (error) {
-      try {
-        await browser.close()
-      } catch {}
-      throw error
-    }
 
     return {
-      async navigate(url, operationSignal) {
-        const page = await activePage(stagehand)
-        await withAbort(
-          page
-            .goto(url, {
-              waitUntil: 'domcontentloaded',
-              timeout: options.navigationTimeoutMs ?? 15_000,
-            })
-            .then(() => undefined),
-          operationSignal,
-        )
-      },
-      async observe(prompt, operationSignal) {
-        const result = await withAbort(
-          stagehand.observe(prompt, {
-            timeout: options.observeTimeoutMs ?? 10_000,
-          }),
-          operationSignal,
-        )
-        return result.data.map((action) => ({
-          description: action.description,
-          handle: action,
-        }))
-      },
-      async act(action, operationSignal) {
-        const result = await withAbort(
-          stagehand.act(action.handle as Parameters<Stagehand['act']>[0], {
-            timeout: options.actTimeoutMs ?? 15_000,
-          }),
-          operationSignal,
-        )
-        return {
-          success: result.data.success,
-          ...(result.data.success ? {} : { message: result.data.message }),
+      async openContext(contextInput) {
+        if (contextInput.signal?.aborted) throw abortError()
+        const model: ModelConfig = {
+          modelName: (contextInput.browser.modelName ??
+            options.modelName ??
+            'anthropic/claude-sonnet-4-6') as ModelConfig['modelName'],
+          ...((contextInput.browser.modelApiKey ?? options.modelApiKey)
+            ? {
+                apiKey: (contextInput.browser.modelApiKey ??
+                  options.modelApiKey)!,
+              }
+            : {}),
         }
-      },
-      async verify(prompt, operationSignal) {
-        const result = await withAbort(
-          stagehand.extract(
-            `Verify the following condition on the current page: "${prompt}". ` +
-              'Determine if the page currently meets this expectation.',
-            verificationSchema,
-          ),
-          operationSignal,
-        )
-        return result.data
-      },
-      async screenshot(screenshotOptions) {
-        const page = await activePage(stagehand)
-        return new Uint8Array(
-          await page.screenshot({
-            type: screenshotOptions.format,
-            fullPage: screenshotOptions.fullPage,
-          }),
-        )
+        let stagehand: Stagehand
+        stagehand = await Stagehand.create({
+          browser,
+          model,
+          logging: { level: 'off', format: 'json' },
+          selfHeal: contextInput.browser.selfHeal ?? options.selfHeal ?? true,
+          domSettleTimeoutMs:
+            contextInput.browser.domSettleTimeoutMs ??
+            options.domSettleTimeoutMs ??
+            3_000,
+          ...((contextInput.browser.cache ?? options.cache) !== undefined
+            ? { cache: contextInput.browser.cache ?? options.cache }
+            : {}),
+        })
+
+        const navigationTimeoutMs =
+          contextInput.browser.navigationTimeoutMs ??
+          options.navigationTimeoutMs ??
+          15_000
+        const observeTimeoutMs =
+          contextInput.browser.observeTimeoutMs ??
+          options.observeTimeoutMs ??
+          10_000
+        const actTimeoutMs =
+          contextInput.browser.actTimeoutMs ?? options.actTimeoutMs ?? 15_000
+
+        return {
+          async navigate(url, operationSignal) {
+            const page = await activePage(stagehand)
+            await withAbort(
+              page
+                .goto(url, {
+                  waitUntil: 'domcontentloaded',
+                  timeout: navigationTimeoutMs,
+                })
+                .then(() => undefined),
+              operationSignal,
+            )
+          },
+          async observe(prompt, operationSignal) {
+            const result = await withAbort(
+              stagehand.observe(prompt, {
+                timeout: observeTimeoutMs,
+              }),
+              operationSignal,
+            )
+            return result.data.map((action) => ({
+              description: action.description,
+              handle: action,
+            }))
+          },
+          async act(action, operationSignal) {
+            const result = await withAbort(
+              stagehand.act(action.handle as Parameters<Stagehand['act']>[0], {
+                timeout: actTimeoutMs,
+              }),
+              operationSignal,
+            )
+            return {
+              success: result.data.success,
+              ...(result.data.success ? {} : { message: result.data.message }),
+            }
+          },
+          async verify(prompt, operationSignal) {
+            const result = await withAbort(
+              stagehand.extract(
+                `Verify the following condition on the current page: "${prompt}". ` +
+                  'Determine if the page currently meets this expectation.',
+                verificationSchema,
+              ),
+              operationSignal,
+            )
+            return result.data
+          },
+          async screenshot(screenshotOptions) {
+            const page = await activePage(stagehand)
+            return new Uint8Array(
+              await page.screenshot({
+                type: screenshotOptions.format,
+                fullPage: screenshotOptions.fullPage,
+              }),
+            )
+          },
+          async readIsolationState() {
+            const page = await activePage(stagehand)
+            return page.evaluate(`
+              ({
+                cookieCount: document.cookie
+                  ? document.cookie.split(';').filter((part) => part.trim()).length
+                  : 0,
+                storageKeyCount: localStorage.length,
+              })
+            `) as Promise<WebIsolationState>
+          },
+          async close() {
+            try {
+              await stagehand.close()
+            } catch {}
+          },
+        }
       },
       async close() {
         try {
-          await stagehand.close()
-        } catch {}
-        try {
-          await stagehand.browser.close()
+          await browser.close()
         } catch {}
       },
     }
@@ -479,33 +531,49 @@ export function createWebAdapter(
   factory: WebAutomationFactory = stagehandFactory,
 ): ExecutionTargetAdapter {
   const validatedOptions = validateWebAdapterOptions(options)
+  const pool = new WebProcessPool({
+    factory,
+    idleTimeoutMs: validatedOptions.browser?.idleTimeoutMs,
+  })
+
   return {
     capabilities: ['web', 'screenshots'],
     planFormatVersion: 'web.1',
+    async dispose() {
+      await pool.dispose()
+    },
     async openSession(input) {
-      const automation = await factory.open({
-        browser: stagehandBrowserOptions(
-          {
-            ...validatedOptions.browser,
-            selfHeal:
-              (input.mode ?? 'adaptive') === 'replay'
-                ? false
-                : (validatedOptions.browser?.selfHeal ?? true),
-          },
-          factory === stagehandFactory,
-        ),
-        signal: input.signal,
-      })
+      const browserOptions = stagehandBrowserOptions(
+        {
+          ...validatedOptions.browser,
+          selfHeal:
+            (input.mode ?? 'adaptive') === 'replay'
+              ? false
+              : (validatedOptions.browser?.selfHeal ?? true),
+        },
+        factory === stagehandFactory,
+      )
+      const logicalSession = await pool.openLogicalSession(
+        browserOptions,
+        input.signal,
+      )
+      const automation = logicalSession.automation
       let closed = false
+      let closePromise: Promise<void> | undefined
       let navigated = false
       let stepIndex = 0
       let executionMode = input.mode ?? 'adaptive'
 
       const close = async () => {
-        if (closed) return
-        closed = true
-        input.signal?.removeEventListener('abort', onAbort)
-        await automation.close()
+        if (closePromise) return closePromise
+        closePromise = (async () => {
+          if (closed) return
+          closed = true
+          input.signal?.removeEventListener('abort', onAbort)
+          await automation.close()
+          await logicalSession.release()
+        })()
+        return closePromise
       }
       const onAbort = () => {
         void close()

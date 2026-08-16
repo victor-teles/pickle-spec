@@ -302,6 +302,17 @@ function configuredRunExtensions(
   }
 }
 
+async function disposeAdapters(
+  targets: ReturnType<typeof resolveRunConfiguration>['targets'],
+): Promise<void> {
+  const seen = new Set<ExecutionTargetAdapter>()
+  for (const target of targets) {
+    if (seen.has(target.adapter)) continue
+    seen.add(target.adapter)
+    await target.adapter.dispose?.()
+  }
+}
+
 function scenarioSelectionId(selection: {
   specification: { source: { uri: string }; name: string }
   scenario: { name: string; id?: string; tags: string[] }
@@ -338,6 +349,9 @@ async function run(argv: string[]): Promise<number> {
   const onSigint = () => controller.abort()
   process.on('SIGINT', onSigint)
   let server: Awaited<ReturnType<typeof startServer>>
+  let resolvedConfiguration:
+    | ReturnType<typeof resolveRunConfiguration>
+    | undefined
 
   try {
     const specifications = await discoverSpecifications(
@@ -415,12 +429,13 @@ async function run(argv: string[]): Promise<number> {
       execution: {
         infrastructureRetries:
           args.retries ?? config.execution?.infrastructureRetries,
+        functionalRetries: config.execution?.functionalRetries,
         stepTimeoutMs: args.stepTimeoutMs ?? config.execution?.stepTimeoutMs,
         scenarioTimeoutMs:
           args.scenarioTimeoutMs ?? config.execution?.scenarioTimeoutMs,
       },
     }
-    const resolvedConfiguration = resolveRunConfiguration(
+    resolvedConfiguration = resolveRunConfiguration(
       runConfiguration,
       configuredRunExtensions(
         extensions,
@@ -504,6 +519,9 @@ async function run(argv: string[]): Promise<number> {
   } finally {
     process.off('SIGINT', onSigint)
     server?.stop()
+    if (resolvedConfiguration) {
+      await disposeAdapters(resolvedConfiguration.targets)
+    }
   }
 }
 
