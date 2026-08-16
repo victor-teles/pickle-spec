@@ -302,34 +302,41 @@ const stagehandFactory: WebAutomationFactory = {
           })
         : await localBrowser.launch({ headless: options.headless ?? true })
 
+    let stagehand: Stagehand | undefined
+
+    async function ensureStagehand(contextInput: {
+      browser: BrowserOptions
+      signal?: AbortSignal
+    }): Promise<Stagehand> {
+      if (stagehand) return stagehand
+      const modelName =
+        contextInput.browser.modelName ??
+        options.modelName ??
+        'anthropic/claude-sonnet-4-6'
+
+      const domSettleTimeoutMs =
+        contextInput.browser.domSettleTimeoutMs ??
+        options.domSettleTimeoutMs ??
+        3_000
+
+      stagehand = await Stagehand.create({
+        browser,
+        model: {
+          modelName: modelName as ModelConfig['modelName'],
+          apiKey: contextInput.browser.modelApiKey ?? options.modelApiKey,
+        },
+        logging: { level: 'off', format: 'json' },
+        selfHeal: contextInput.browser.selfHeal ?? options.selfHeal ?? true,
+        domSettleTimeoutMs,
+        cache: contextInput.browser.cache ?? options.cache,
+      })
+      return stagehand
+    }
+
     return {
       async openContext(contextInput) {
         if (contextInput.signal?.aborted) throw abortError()
-        const model: ModelConfig = {
-          modelName: (contextInput.browser.modelName ??
-            options.modelName ??
-            'anthropic/claude-sonnet-4-6') as ModelConfig['modelName'],
-          ...((contextInput.browser.modelApiKey ?? options.modelApiKey)
-            ? {
-                apiKey: (contextInput.browser.modelApiKey ??
-                  options.modelApiKey)!,
-              }
-            : {}),
-        }
-        let stagehand: Stagehand
-        stagehand = await Stagehand.create({
-          browser,
-          model,
-          logging: { level: 'off', format: 'json' },
-          selfHeal: contextInput.browser.selfHeal ?? options.selfHeal ?? true,
-          domSettleTimeoutMs:
-            contextInput.browser.domSettleTimeoutMs ??
-            options.domSettleTimeoutMs ??
-            3_000,
-          ...((contextInput.browser.cache ?? options.cache) !== undefined
-            ? { cache: contextInput.browser.cache ?? options.cache }
-            : {}),
-        })
+        const activeStagehand = await ensureStagehand(contextInput)
 
         const navigationTimeoutMs =
           contextInput.browser.navigationTimeoutMs ??
@@ -344,7 +351,7 @@ const stagehandFactory: WebAutomationFactory = {
 
         return {
           async navigate(url, operationSignal) {
-            const page = await activePage(stagehand)
+            const page = await activePage(activeStagehand)
             await withAbort(
               page
                 .goto(url, {
@@ -357,7 +364,7 @@ const stagehandFactory: WebAutomationFactory = {
           },
           async observe(prompt, operationSignal) {
             const result = await withAbort(
-              stagehand.observe(prompt, {
+              activeStagehand.observe(prompt, {
                 timeout: observeTimeoutMs,
               }),
               operationSignal,
@@ -369,9 +376,12 @@ const stagehandFactory: WebAutomationFactory = {
           },
           async act(action, operationSignal) {
             const result = await withAbort(
-              stagehand.act(action.handle as Parameters<Stagehand['act']>[0], {
-                timeout: actTimeoutMs,
-              }),
+              activeStagehand.act(
+                action.handle as Parameters<Stagehand['act']>[0],
+                {
+                  timeout: actTimeoutMs,
+                },
+              ),
               operationSignal,
             )
             return {
@@ -381,7 +391,7 @@ const stagehandFactory: WebAutomationFactory = {
           },
           async verify(prompt, operationSignal) {
             const result = await withAbort(
-              stagehand.extract(
+              activeStagehand.extract(
                 `Verify the following condition on the current page: "${prompt}". ` +
                   'Determine if the page currently meets this expectation.',
                 verificationSchema,
@@ -391,7 +401,7 @@ const stagehandFactory: WebAutomationFactory = {
             return result.data
           },
           async screenshot(screenshotOptions) {
-            const page = await activePage(stagehand)
+            const page = await activePage(activeStagehand)
             return new Uint8Array(
               await page.screenshot({
                 type: screenshotOptions.format,
@@ -400,24 +410,27 @@ const stagehandFactory: WebAutomationFactory = {
             )
           },
           async readIsolationState() {
-            const page = await activePage(stagehand)
-            return page.evaluate(`
-              ({
-                cookieCount: document.cookie
-                  ? document.cookie.split(';').filter((part) => part.trim()).length
-                  : 0,
-                storageKeyCount: localStorage.length,
-              })
-            `) as Promise<WebIsolationState>
+            const context = activeStagehand.browser.context
+            const cookieCount = (await context.cookies()).length
+            let storageKeyCount = 0
+            const page = await context.activePage()
+            if (page) {
+              storageKeyCount = await page.evaluate(
+                '(() => { try { return localStorage.length } catch { return 0 } })()',
+              )
+            }
+            return { cookieCount, storageKeyCount }
           },
-          async close() {
-            try {
-              await stagehand.close()
-            } catch {}
-          },
+          async close() {},
         }
       },
       async close() {
+        try {
+          if (stagehand) {
+            await stagehand.close()
+            stagehand = undefined
+          }
+        } catch {}
         try {
           await browser.close()
         } catch {}

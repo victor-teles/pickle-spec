@@ -56,6 +56,11 @@ export class WebProcessPool {
       const release = async () => {
         if (released) return
         released = true
+        const state = await automation.readIsolationState()
+        if (state.cookieCount > 0 || state.storageKeyCount > 0) {
+          await this.retire(pooled)
+          return
+        }
         await this.release(pooled)
       }
       return { automation, release }

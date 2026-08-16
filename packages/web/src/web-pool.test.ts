@@ -71,6 +71,33 @@ describe('WebProcessPool', () => {
     expect(launch).toHaveBeenCalledTimes(1)
   })
 
+  test('retires a process when release finds a dirty logical session', async () => {
+    const launch = mock(async () => {
+      let readCount = 0
+      return mockProcess(
+        isolatedAutomation({
+          async readIsolationState() {
+            readCount++
+            if (readCount === 1) return { cookieCount: 0, storageKeyCount: 0 }
+            return { cookieCount: 2, storageKeyCount: 0 }
+          },
+        }),
+      )
+    })
+    const pool = new WebProcessPool({ factory: { launch } })
+
+    const session = await pool.openLogicalSession({}, undefined)
+    await session.automation.close()
+    await session.release()
+
+    const recovered = await pool.openLogicalSession({}, undefined)
+    await recovered.automation.close()
+    await recovered.release()
+    await pool.dispose()
+
+    expect(launch).toHaveBeenCalledTimes(2)
+  })
+
   test('retires a process when isolation verification fails', async () => {
     let launchCount = 0
     const launch = mock(async () => {
