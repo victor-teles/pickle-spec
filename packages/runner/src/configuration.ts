@@ -1,3 +1,4 @@
+import { z } from 'zod'
 import type {
   ExecutionPolicy,
   ExecutionTargetAdapter,
@@ -5,18 +6,20 @@ import type {
 } from './run-scenario'
 import type { RunTarget } from './run-scenarios'
 
+export interface ExecutionSettings {
+  infrastructureRetries?: number
+  functionalRetries?: number
+  scenarioTimeoutMs?: number
+  stepTimeoutMs?: number
+}
+
 export interface RunConfiguration {
   schemaVersion: 1
   executionTargetProfile?: ExecutionTargetProfile
   executionTargetProfiles?: ExecutionTargetProfile[]
   applicationRevision?: string
   concurrency?: number
-  execution?: {
-    infrastructureRetries?: number
-    functionalRetries?: number
-    scenarioTimeoutMs?: number
-    stepTimeoutMs?: number
-  }
+  execution?: ExecutionSettings
 }
 
 export interface RunExtensions {
@@ -37,68 +40,128 @@ export interface ResolvedRunConfiguration extends ExecutionPolicy {
   applicationRevision?: string
 }
 
-function record(value: unknown, field: string): Record<string, unknown> {
-  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
-    throw new Error(`${field} must be an object`)
-  }
-  return value as Record<string, unknown>
+function parsed<T>(schema: z.ZodType<T>, value: unknown): T {
+  const result = schema.safeParse(value)
+  if (result.success) return result.data
+  throw new Error(
+    result.error.issues[0]?.message ?? 'Invalid run configuration',
+  )
 }
 
-function knownFields(
-  value: Record<string, unknown>,
-  fields: readonly string[],
-  parent: string,
-): void {
-  for (const field of Object.keys(value)) {
-    if (!fields.includes(field))
-      throw new Error(`${parent}.${field} is not supported`)
-  }
-}
-
-function positiveInteger(value: unknown, field: string): void {
-  if (
-    value !== undefined &&
-    (!Number.isInteger(value) || (value as number) < 1)
-  ) {
-    throw new Error(`${field} must be an integer greater than or equal to 1`)
-  }
-}
-
-function validateCapabilities(
-  value: unknown,
+function strictObject<Shape extends z.ZodRawShape>(
   field: string,
-): readonly string[] {
-  if (!Array.isArray(value) || value.length === 0) {
-    throw new Error(`${field} must contain at least one capability`)
-  }
-  if (!value.every((item) => typeof item === 'string' && item.trim())) {
-    throw new Error(`${field} must not contain an empty capability`)
-  }
-  return value
+  shape: Shape,
+) {
+  return z.strictObject(shape, {
+    error: (issue) => {
+      if (issue.code === 'unrecognized_keys') {
+        const keys = 'keys' in issue ? (issue.keys as string[]) : []
+        return keys.map((key) => `${field}.${key} is not supported`).join('\n')
+      }
+      return `${field} must be an object`
+    },
+  })
 }
 
-function validateExecutionTargetProfile(
-  value: unknown,
-  field = 'executionTargetProfile',
-): ExecutionTargetProfile {
-  const profile = record(value, field)
-  knownFields(profile, ['id', 'adapter', 'capabilities'], field)
-  if (typeof profile.id !== 'string' || !profile.id.trim()) {
-    throw new Error(`${field}.id must not be empty`)
-  }
-  if (
-    profile.adapter !== undefined &&
-    (typeof profile.adapter !== 'string' || !profile.adapter.trim())
-  ) {
-    throw new Error(`${field}.adapter must not be empty`)
-  }
-  if (profile.capabilities !== undefined) {
-    profile.capabilities = validateCapabilities(
-      profile.capabilities,
-      `${field}.capabilities`,
+function nonemptyString(field: string) {
+  return z
+    .string({ error: `${field} must not be empty` })
+    .refine((value) => value.trim().length > 0, {
+      error: `${field} must not be empty`,
+    })
+}
+
+function optionalPositiveInteger(field: string) {
+  return z
+    .number({
+      error: `${field} must be an integer greater than or equal to 1`,
+    })
+    .int({
+      error: `${field} must be an integer greater than or equal to 1`,
+    })
+    .min(1, {
+      error: `${field} must be an integer greater than or equal to 1`,
+    })
+    .optional()
+}
+
+function optionalNonNegativeInteger(field: string) {
+  return z
+    .number({ error: `${field} must be a non-negative integer` })
+    .int({ error: `${field} must be a non-negative integer` })
+    .min(0, { error: `${field} must be a non-negative integer` })
+    .optional()
+}
+
+function capabilitiesSchema(field: string) {
+  return z
+    .array(
+      z.string().refine((item) => item.trim().length > 0, {
+        error: `${field} must not contain an empty capability`,
+      }),
+      { error: `${field} must contain at least one capability` },
     )
-  }
-  return profile as unknown as ExecutionTargetProfile
+    .min(1, { error: `${field} must contain at least one capability` })
+}
+
+function executionTargetProfileSchema(field: string) {
+  return strictObject(field, {
+    id: nonemptyString(`${field}.id`),
+    adapter: nonemptyString(`${field}.adapter`).optional(),
+    capabilities: capabilitiesSchema(`${field}.capabilities`).optional(),
+  })
+}
+
+export const executionSettingsSchema = strictObject('execution', {
+  infrastructureRetries: optionalNonNegativeInteger(
+    'execution.infrastructureRetries',
+  ),
+  functionalRetries: optionalNonNegativeInteger('execution.functionalRetries'),
+  scenarioTimeoutMs: optionalPositiveInteger('execution.scenarioTimeoutMs'),
+  stepTimeoutMs: optionalPositiveInteger('execution.stepTimeoutMs'),
+})
+
+export const runConfigurationSchema = strictObject('run configuration', {
+  schemaVersion: z.number(),
+  executionTargetProfile: executionTargetProfileSchema(
+    'executionTargetProfile',
+  ).optional(),
+  executionTargetProfiles: z
+    .array(executionTargetProfileSchema('executionTargetProfiles'), {
+      error:
+        'executionTargetProfiles must contain at least one execution target profile',
+    })
+    .min(1, {
+      error:
+        'executionTargetProfiles must contain at least one execution target profile',
+    })
+    .optional(),
+  applicationRevision: nonemptyString('applicationRevision').optional(),
+  concurrency: optionalPositiveInteger('concurrency'),
+  execution: executionSettingsSchema.optional(),
+})
+  .refine(
+    (configuration) =>
+      configuration.executionTargetProfile !== undefined ||
+      configuration.executionTargetProfiles !== undefined,
+    {
+      error: 'executionTargetProfile or executionTargetProfiles is required',
+    },
+  )
+  .superRefine((configuration, context) => {
+    if (configuration.schemaVersion === 1) return
+    context.addIssue({
+      code: 'custom',
+      message: `Unsupported configuration schemaVersion: ${String(configuration.schemaVersion)}`,
+    })
+  })
+  .transform((configuration) => ({
+    ...configuration,
+    schemaVersion: 1 as const,
+  }))
+
+export function validateRunConfiguration(value: unknown): RunConfiguration {
+  return parsed(runConfigurationSchema, value)
 }
 
 function configuredProfiles(
@@ -159,104 +222,6 @@ function assertProfileCapabilities(
   }
 }
 
-function validateExecution(value: unknown): RunConfiguration['execution'] {
-  const execution = record(value, 'execution')
-  knownFields(
-    execution,
-    [
-      'infrastructureRetries',
-      'functionalRetries',
-      'scenarioTimeoutMs',
-      'stepTimeoutMs',
-    ],
-    'execution',
-  )
-  positiveInteger(execution.scenarioTimeoutMs, 'execution.scenarioTimeoutMs')
-  positiveInteger(execution.stepTimeoutMs, 'execution.stepTimeoutMs')
-  const retries = execution.infrastructureRetries
-  if (
-    retries !== undefined &&
-    (!Number.isInteger(retries) || (retries as number) < 0)
-  ) {
-    throw new Error(
-      'execution.infrastructureRetries must be a non-negative integer',
-    )
-  }
-  const functionalRetries = execution.functionalRetries
-  if (
-    functionalRetries !== undefined &&
-    (!Number.isInteger(functionalRetries) || (functionalRetries as number) < 0)
-  ) {
-    throw new Error(
-      'execution.functionalRetries must be a non-negative integer',
-    )
-  }
-  return execution
-}
-
-export function validateRunConfiguration(value: unknown): RunConfiguration {
-  const configuration = record(value, 'run configuration')
-  knownFields(
-    configuration,
-    [
-      'schemaVersion',
-      'executionTargetProfile',
-      'executionTargetProfiles',
-      'applicationRevision',
-      'concurrency',
-      'execution',
-    ],
-    'run configuration',
-  )
-  if (configuration.schemaVersion !== 1) {
-    throw new Error(
-      `Unsupported configuration schemaVersion: ${String(configuration.schemaVersion)}`,
-    )
-  }
-  if (configuration.executionTargetProfile !== undefined) {
-    configuration.executionTargetProfile = validateExecutionTargetProfile(
-      configuration.executionTargetProfile,
-    )
-  }
-  if (configuration.executionTargetProfiles !== undefined) {
-    if (
-      !Array.isArray(configuration.executionTargetProfiles) ||
-      configuration.executionTargetProfiles.length === 0
-    ) {
-      throw new Error(
-        'executionTargetProfiles must contain at least one execution target profile',
-      )
-    }
-    configuration.executionTargetProfiles =
-      configuration.executionTargetProfiles.map((profile, index) =>
-        validateExecutionTargetProfile(
-          profile,
-          `executionTargetProfiles[${index}]`,
-        ),
-      )
-  }
-  if (
-    configuration.executionTargetProfile === undefined &&
-    configuration.executionTargetProfiles === undefined
-  ) {
-    throw new Error(
-      'executionTargetProfile or executionTargetProfiles is required',
-    )
-  }
-  if (
-    configuration.applicationRevision !== undefined &&
-    (typeof configuration.applicationRevision !== 'string' ||
-      !configuration.applicationRevision.trim())
-  ) {
-    throw new Error('applicationRevision must not be empty')
-  }
-  positiveInteger(configuration.concurrency, 'concurrency')
-  if (configuration.execution !== undefined) {
-    configuration.execution = validateExecution(configuration.execution)
-  }
-  return configuration as unknown as RunConfiguration
-}
-
 export function validateProjectRunConfiguration(
   configuration: unknown,
   extensions: RunExtensionManifest,
@@ -275,33 +240,34 @@ export function resolveRunConfiguration(
   configuration: RunConfiguration,
   extensions: RunExtensions,
 ): ResolvedRunConfiguration {
-  const validatedConfiguration = validateRunConfiguration(configuration)
-  const profiles = configuredProfiles(validatedConfiguration)
+  const profiles = configuredProfiles(configuration)
   const targets = profiles.map((executionTargetProfile) => {
     const adapter = adapterForProfile(executionTargetProfile, extensions)
     assertProfileCapabilities(executionTargetProfile, adapter)
     return { executionTargetProfile, adapter }
   })
-  const first = targets[0]!
-  const infrastructureRetries =
-    validatedConfiguration.execution?.infrastructureRetries
-  const functionalRetries = validatedConfiguration.execution?.functionalRetries
+  const first = targets[0]
+  if (!first) {
+    throw new Error(
+      'executionTargetProfile or executionTargetProfiles is required',
+    )
+  }
+  const infrastructureRetries = configuration.execution?.infrastructureRetries
+  const functionalRetries = configuration.execution?.functionalRetries
 
   return {
     adapter: first.adapter,
     executionTargetProfile: first.executionTargetProfile,
     targets,
-    concurrency: validatedConfiguration.concurrency ?? 1,
+    concurrency: configuration.concurrency ?? 1,
     retry: {
       infrastructureErrors: infrastructureRetries ?? 1,
       functionalFailures: functionalRetries ?? 0,
     },
     timeout: {
-      scenarioMs: validatedConfiguration.execution?.scenarioTimeoutMs,
-      stepMs: validatedConfiguration.execution?.stepTimeoutMs,
+      scenarioMs: configuration.execution?.scenarioTimeoutMs,
+      stepMs: configuration.execution?.stepTimeoutMs,
     },
-    ...(validatedConfiguration.applicationRevision
-      ? { applicationRevision: validatedConfiguration.applicationRevision }
-      : {}),
+    applicationRevision: configuration.applicationRevision,
   }
 }

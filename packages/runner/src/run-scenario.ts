@@ -1,4 +1,5 @@
 import {
+  ignoreTag,
   resolveScenarioId,
   type Scenario,
   type ScenarioStep,
@@ -19,6 +20,14 @@ export type TestResultState =
   | 'skipped'
   | 'cancelled'
   | 'infrastructure-error'
+
+export function isEvidenceState(state: TestResultState): boolean {
+  return (
+    state === 'failed' ||
+    state === 'infrastructure-error' ||
+    state === 'passed-with-adaptation'
+  )
+}
 
 export type ExecutionMode = 'adaptive' | 'replay'
 
@@ -348,7 +357,7 @@ async function runScenarioAttempt(
     },
   })
 
-  if (input.scenario.tags.includes('@ignore')) {
+  if (input.scenario.tags.includes(ignoreTag)) {
     return finish('skipped', [], 'Scenario is tagged @ignore')
   }
 

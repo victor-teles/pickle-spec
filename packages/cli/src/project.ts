@@ -7,16 +7,20 @@ import {
   type SpecificationSourceFile,
   validateSpecificationMetadata,
 } from '@pickle-spec/spec'
-import { loadConfig, type PickleConfig, runConfigurationFrom } from './config'
+import {
+  defaultConfigFile,
+  defaultExtensionsFile,
+  defaultSpecificationGlob,
+  loadConfig,
+  type PickleConfig,
+  runConfigurationFrom,
+} from './config'
 import { validateExtensions } from './extension-validation'
-
-const defaultConfigPath = 'pickle.config.jsonc'
-const defaultExtensionsPath = 'pickle.extensions.ts'
 
 const initialConfig = `{
   // Pickle Spec project configuration.
   "schemaVersion": 1,
-  "specifications": "features/**/*.feature",
+  "specifications": "${defaultSpecificationGlob}",
   "executionTargetProfile": { "id": "custom" }
 }
 `
@@ -45,8 +49,8 @@ export async function initializeProject(
   const cwd = resolve(options.cwd ?? process.cwd())
   const report = options.report ?? console.log
   for (const [path, contents] of [
-    [defaultConfigPath, initialConfig],
-    [defaultExtensionsPath, initialExtensions],
+    [defaultConfigFile, initialConfig],
+    [defaultExtensionsFile, initialExtensions],
   ] as const) {
     const absolutePath = resolve(cwd, path)
     if (await Bun.file(absolutePath).exists()) {
@@ -62,7 +66,7 @@ async function discoverSpecificationPaths(
   config: PickleConfig,
   cwd: string,
 ): Promise<string[]> {
-  const patterns = config.specifications ?? 'features/**/*.feature'
+  const patterns = config.specifications ?? defaultSpecificationGlob
   const specificationPaths = new Set<string>()
   for (const pattern of Array.isArray(patterns) ? patterns : [patterns]) {
     let found = false
@@ -108,7 +112,7 @@ export async function migrateProject(
   options: ProjectCommandOptions = {},
 ): Promise<void> {
   const cwd = resolve(options.cwd ?? process.cwd())
-  const configPath = resolve(cwd, options.configPath ?? defaultConfigPath)
+  const configPath = resolve(cwd, options.configPath ?? defaultConfigFile)
   const report = options.report ?? console.log
   if (!(await Bun.file(configPath).exists())) {
     throw new Error(
@@ -116,46 +120,40 @@ export async function migrateProject(
     )
   }
 
-  const previousCwd = process.cwd()
-  try {
-    process.chdir(cwd)
-    const config = await loadConfig(configPath)
-    const files = await readSpecificationFiles(config, cwd)
-    const plan = planSpecificationMigration(files, config.language)
-    report(formatMigrationPreview(plan))
-    if (plan.changes.length === 0) return
-    if (!options.yes) {
-      if (!process.stdin.isTTY) {
-        report(
-          'No files were changed. Re-run pickle migrate --yes after reviewing the preview.',
-        )
-        return
-      }
-      if (!/^[yY]/.test((prompt('Apply these changes? [y/N]') ?? '').trim())) {
-        report('No files were changed')
-        return
-      }
+  const config = await loadConfig(configPath, cwd)
+  const files = await readSpecificationFiles(config, cwd)
+  const plan = planSpecificationMigration(files, config.language)
+  report(formatMigrationPreview(plan))
+  if (plan.changes.length === 0) return
+  if (!options.yes) {
+    if (!process.stdin.isTTY) {
+      report(
+        'No files were changed. Re-run pickle migrate --yes after reviewing the preview.',
+      )
+      return
     }
-    let updated = 0
-    for (const file of plan.files) {
-      if (file.source === file.nextSource) continue
-      await Bun.write(resolve(cwd, file.uri), file.nextSource)
-      updated++
+    if (!/^[yY]/.test((prompt('Apply these changes? [y/N]') ?? '').trim())) {
+      report('No files were changed')
+      return
     }
-    report(`Updated ${updated} Specification file(s)`)
-  } finally {
-    process.chdir(previousCwd)
   }
+  let updated = 0
+  for (const file of plan.files) {
+    if (file.source === file.nextSource) continue
+    await Bun.write(resolve(cwd, file.uri), file.nextSource)
+    updated++
+  }
+  report(`Updated ${updated} Specification file(s)`)
 }
 
 export async function checkProject(
   options: ProjectCommandOptions = {},
 ): Promise<void> {
   const cwd = resolve(options.cwd ?? process.cwd())
-  const configPath = resolve(cwd, options.configPath ?? defaultConfigPath)
+  const configPath = resolve(cwd, options.configPath ?? defaultConfigFile)
   const extensionsPath = resolve(
     cwd,
-    options.extensionsPath ?? defaultExtensionsPath,
+    options.extensionsPath ?? defaultExtensionsFile,
   )
   if (!(await Bun.file(configPath).exists())) {
     throw new Error(
@@ -168,23 +166,17 @@ export async function checkProject(
     )
   }
 
-  const previousCwd = process.cwd()
-  try {
-    process.chdir(cwd)
-    const config = await loadConfig(configPath)
-    const extensions = validateExtensions(extensionsPath)
-    validateProjectRunConfiguration(runConfigurationFrom(config), {
-      ...extensions,
-      fallbackAdapterAvailable: Boolean(config.web),
-    })
-    validateSpecificationMetadata(
-      await readSpecificationFiles(config, cwd),
-      config.language,
-    )
-    options.report?.(
-      `Project is valid (${relative(cwd, configPath)}, ${relative(cwd, extensionsPath)})`,
-    )
-  } finally {
-    process.chdir(previousCwd)
-  }
+  const config = await loadConfig(configPath, cwd)
+  const extensions = validateExtensions(extensionsPath)
+  validateProjectRunConfiguration(runConfigurationFrom(config), {
+    ...extensions,
+    fallbackAdapterAvailable: Boolean(config.web),
+  })
+  validateSpecificationMetadata(
+    await readSpecificationFiles(config, cwd),
+    config.language,
+  )
+  options.report?.(
+    `Project is valid (${relative(cwd, configPath)}, ${relative(cwd, extensionsPath)})`,
+  )
 }

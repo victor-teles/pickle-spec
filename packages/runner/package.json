@@ -15,7 +15,8 @@
     "test": "bun test"
   },
   "dependencies": {
-    "@pickle-spec/spec": "workspace:*"
+    "@pickle-spec/spec": "workspace:*",
+    "zod": "catalog:"
   },
   "devDependencies": {
     "@types/bun": "catalog:",

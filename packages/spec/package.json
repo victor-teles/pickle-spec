@@ -16,7 +16,8 @@
   },
   "dependencies": {
     "@cucumber/gherkin": "catalog:",
-    "@cucumber/messages": "catalog:"
+    "@cucumber/messages": "catalog:",
+    "zod": "catalog:"
   },
   "devDependencies": {
     "@types/bun": "catalog:",

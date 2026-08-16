@@ -18,13 +18,16 @@ export type {
 } from './src/compare'
 export { compareTestRuns } from './src/compare'
 export type {
+  ExecutionSettings,
   ResolvedRunConfiguration,
   RunConfiguration,
   RunExtensionManifest,
   RunExtensions,
 } from './src/configuration'
 export {
+  executionSettingsSchema,
   resolveRunConfiguration,
+  runConfigurationSchema,
   validateProjectRunConfiguration,
   validateRunConfiguration,
 } from './src/configuration'
@@ -65,7 +68,7 @@ export type {
   TestResult,
   TestResultState,
 } from './src/run-scenario'
-export { runScenario } from './src/run-scenario'
+export { isEvidenceState, runScenario } from './src/run-scenario'
 export type { RunScenariosInput, RunTarget } from './src/run-scenarios'
 export { runScenarios, validateTargetSelection } from './src/run-scenarios'
 export type {
@@ -79,4 +82,4 @@ export type {
   TestRunStoreOptions,
   TestRunSummary,
 } from './src/test-run-store'
-export { defaultRetention, openTestRunStore } from './src/test-run-store'
+export { defaultRetention, openTestRunStore, slug } from './src/test-run-store'

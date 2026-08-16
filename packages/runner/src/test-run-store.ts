@@ -8,6 +8,7 @@ import type {
   TestResultState,
   TestStepResult,
 } from './run-scenario'
+import { isEvidenceState } from './run-scenario'
 
 export type ArtifactCapturePolicy =
   | 'off'
@@ -477,7 +478,7 @@ function shouldCapture(
 ): boolean {
   if (policy === 'always') return true
   if (policy === 'off') return false
-  return state === 'failed' || state === 'passed-with-adaptation'
+  return isEvidenceState(state)
 }
 
 async function removeRun(
@@ -502,7 +503,7 @@ async function directorySize(directory: string): Promise<number> {
   return total
 }
 
-function slug(value: string): string {
+export function slug(value: string): string {
   return value
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, '-')

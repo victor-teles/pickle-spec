@@ -31,8 +31,18 @@ import {
   selectScenarios,
   validateSpecificationMetadata,
 } from '@pickle-spec/spec'
-import { createWebAdapter, type WebAdapterOptions } from '@pickle-spec/web'
-import { loadConfig, type PickleConfig, runConfigurationFrom } from './config'
+import {
+  createWebAdapter,
+  screenshotModes,
+  type WebAdapterOptions,
+} from '@pickle-spec/web'
+import {
+  defaultExtensionsFile,
+  defaultSpecificationGlob,
+  loadConfig,
+  type PickleConfig,
+  runConfigurationFrom,
+} from './config'
 import type { Extensions } from './extensions'
 import { checkProject, initializeProject, migrateProject } from './project'
 import { startServer } from './server'
@@ -60,6 +70,8 @@ interface RunArguments {
   failures?: boolean
   adaptations?: boolean
 }
+
+const dayMs = 24 * 60 * 60 * 1000
 
 function integer(value: string, flag: string, minimum: number): number {
   const parsed = Number(value)
@@ -150,7 +162,9 @@ function parseRunArguments(argv: string[]): RunArguments {
         break
       case '--screenshot': {
         const mode = valueAfter(argv, index++)
-        if (!['off', 'on-failure', 'on-step'].includes(mode)) {
+        if (
+          !screenshotModes.includes(mode as (typeof screenshotModes)[number])
+        ) {
           throw new Error('--screenshot requires off, on-failure, or on-step')
         }
         args.screenshotMode = mode as RunArguments['screenshotMode']
@@ -186,7 +200,7 @@ function parseRunArguments(argv: string[]): RunArguments {
 }
 
 async function loadExtensions(path?: string): Promise<Extensions> {
-  const selectedPath = path ?? 'pickle.extensions.ts'
+  const selectedPath = path ?? defaultExtensionsFile
   const absolutePath = resolve(selectedPath)
   if (!(await Bun.file(absolutePath).exists())) {
     if (!path) return {}
@@ -216,11 +230,7 @@ async function discoverSpecifications(
       source: await Bun.file(path).text(),
     })),
   )
-  try {
-    validateSpecificationMetadata(files, language)
-  } catch (error) {
-    console.error(error instanceof Error ? error.message : String(error))
-  }
+  validateSpecificationMetadata(files, language)
   return files.map((file) =>
     parseSpecification({
       source: file.source,
@@ -355,7 +365,7 @@ async function run(argv: string[]): Promise<number> {
 
   try {
     const specifications = await discoverSpecifications(
-      args.pattern ?? config.specifications ?? 'features/**/*.feature',
+      args.pattern ?? config.specifications ?? defaultSpecificationGlob,
       args.language ?? config.language,
     )
     const suiteSelection = args.suite ? config.suites?.[args.suite] : undefined
@@ -495,7 +505,7 @@ async function run(argv: string[]): Promise<number> {
     }
     await store.applyRetention({
       maxAgeMs: config.retention?.days
-        ? config.retention.days * 24 * 60 * 60 * 1000
+        ? config.retention.days * dayMs
         : undefined,
       maxBytes: config.retention?.maxBytes,
     })
@@ -667,8 +677,8 @@ async function exportRun(argv: string[]): Promise<number> {
     return 0
   }
 
-  const { manifest, events } = await loadPersistedRun(runId)
-  const html = await formatHtml(manifest, events, {
+  const { manifest } = await loadPersistedRun(runId)
+  const html = await formatHtml(manifest, {
     artifacts: allArtifacts ? 'all' : 'failures-and-adaptations',
   })
   const htmlBytes = Buffer.byteLength(html, 'utf8')

@@ -1,4 +1,13 @@
-import type { BrowserOptions, WebAutomationFactory } from './web-adapter'
+import { abortError } from './abort'
+import type {
+  BrowserOptions,
+  WebAutomation,
+  WebAutomationFactory,
+  WebBrowserProcess,
+  WebIsolationState,
+} from './web-adapter'
+
+const defaultIdleTimeoutMs = 30_000
 
 export class IsolationVerificationError extends Error {
   constructor(message: string) {
@@ -8,13 +17,22 @@ export class IsolationVerificationError extends Error {
 }
 
 interface PooledProcess {
-  process: Awaited<ReturnType<WebAutomationFactory['launch']>>
+  process: WebBrowserProcess
   idleTimer?: ReturnType<typeof setTimeout>
 }
 
 export interface WebProcessPoolOptions {
   factory: WebAutomationFactory
   idleTimeoutMs?: number
+}
+
+export interface WebLogicalSession {
+  automation: WebAutomation
+  release(): Promise<void>
+}
+
+function isDirty(state: WebIsolationState): boolean {
+  return state.cookieCount > 0 || state.storageKeyCount > 0
 }
 
 export class WebProcessPool {
@@ -25,18 +43,18 @@ export class WebProcessPool {
 
   constructor(options: WebProcessPoolOptions) {
     this.factory = options.factory
-    this.idleTimeoutMs = options.idleTimeoutMs ?? 30_000
+    this.idleTimeoutMs = options.idleTimeoutMs ?? defaultIdleTimeoutMs
   }
 
   async openLogicalSession(
     browserOptions: BrowserOptions,
     signal?: AbortSignal,
-  ) {
+  ): Promise<WebLogicalSession> {
     if (this.disposed) {
       throw new Error('Web process pool is disposed')
     }
     if (signal?.aborted) {
-      throw new DOMException('Scenario cancelled', 'AbortError')
+      throw abortError()
     }
 
     const pooled = await this.checkout(browserOptions, signal)
@@ -46,8 +64,8 @@ export class WebProcessPool {
         signal,
       })
       const isolation = await automation.readIsolationState()
-      if (isolation.cookieCount > 0 || isolation.storageKeyCount > 0) {
-        await this.retire(pooled)
+      if (isDirty(isolation)) {
+        await this.closeProcess(pooled)
         throw new IsolationVerificationError(
           'Logical session isolation verification failed',
         )
@@ -57,17 +75,16 @@ export class WebProcessPool {
         if (released) return
         released = true
         const state = await automation.readIsolationState()
-        if (state.cookieCount > 0 || state.storageKeyCount > 0) {
-          await this.retire(pooled)
+        if (isDirty(state)) {
+          await this.closeProcess(pooled)
           return
         }
         await this.release(pooled)
       }
       return { automation, release }
     } catch (error) {
-      if (!(error instanceof IsolationVerificationError)) {
-        await this.retire(pooled)
-      }
+      if (error instanceof IsolationVerificationError) throw error
+      await this.closeProcess(pooled)
       throw error
     }
   }
@@ -76,17 +93,16 @@ export class WebProcessPool {
     if (this.disposed) return
     this.disposed = true
     const processes = this.available.splice(0)
-    await Promise.all(processes.map((entry) => this.closePooled(entry)))
+    await Promise.all(processes.map((entry) => this.closeProcess(entry)))
   }
 
   private async checkout(
     browserOptions: BrowserOptions,
     signal?: AbortSignal,
   ): Promise<PooledProcess> {
-    while (this.available.length > 0) {
-      const pooled = this.available.pop()!
-      if (pooled.idleTimer) clearTimeout(pooled.idleTimer)
-      pooled.idleTimer = undefined
+    const pooled = this.available.pop()
+    if (pooled) {
+      this.clearIdleTimer(pooled)
       return pooled
     }
     const process = await this.factory.launch({
@@ -98,30 +114,30 @@ export class WebProcessPool {
 
   private async release(pooled: PooledProcess): Promise<void> {
     if (this.disposed) {
-      await pooled.process.close()
+      await this.closeProcess(pooled)
       return
     }
-    if (pooled.idleTimer) clearTimeout(pooled.idleTimer)
+    this.clearIdleTimer(pooled)
     pooled.idleTimer = setTimeout(() => {
       void this.closeIdle(pooled)
     }, this.idleTimeoutMs)
     this.available.push(pooled)
   }
 
-  private async retire(pooled: PooledProcess): Promise<void> {
-    if (pooled.idleTimer) clearTimeout(pooled.idleTimer)
-    await pooled.process.close()
-  }
-
   private async closeIdle(pooled: PooledProcess): Promise<void> {
     const index = this.available.indexOf(pooled)
     if (index === -1) return
     this.available.splice(index, 1)
+    await this.closeProcess(pooled)
+  }
+
+  private async closeProcess(pooled: PooledProcess): Promise<void> {
+    this.clearIdleTimer(pooled)
     await pooled.process.close()
   }
 
-  private async closePooled(pooled: PooledProcess): Promise<void> {
+  private clearIdleTimer(pooled: PooledProcess): void {
     if (pooled.idleTimer) clearTimeout(pooled.idleTimer)
-    await pooled.process.close()
+    pooled.idleTimer = undefined
   }
 }

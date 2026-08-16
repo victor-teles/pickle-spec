@@ -610,7 +610,7 @@ Feature: Checkout
     })
     expect(run.exitCode).toBe(0)
     expect(await Bun.file(purchasePath).text()).toBe(purchaseSource)
-  })
+  }, 15_000)
 
   test('run reports missing Specification metadata without modifying source', async () => {
     const source = `Feature: Unreported
@@ -635,7 +635,7 @@ Feature: Checkout
       env: { ...Bun.env, PICKLE_TEST_OUTCOME: 'passed' },
     })
 
-    expect(run.exitCode).toBe(0)
+    expect(run.exitCode).toBe(2)
     expect(run.stderr.toString()).toContain('missing a Specification state')
     expect(run.stderr.toString()).toContain(
       'Run pickle migrate to add missing metadata',

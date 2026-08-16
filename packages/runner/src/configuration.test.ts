@@ -51,13 +51,10 @@ test('combines versioned configuration and extensions into validated runner inpu
 
 test('rejects an unsupported configuration schema before execution', () => {
   expect(() =>
-    resolveRunConfiguration(
-      {
-        schemaVersion: 2 as 1,
-        executionTargetProfile: { id: 'web' },
-      },
-      { adapter },
-    ),
+    validateRunConfiguration({
+      schemaVersion: 2,
+      executionTargetProfile: { id: 'web' },
+    }),
   ).toThrow('Unsupported configuration schemaVersion: 2')
 })
 

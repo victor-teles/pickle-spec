@@ -1,198 +1,34 @@
 import { mkdir } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import {
-  browserbase,
-  localBrowser,
-  type ModelConfig,
-  Stagehand,
-  StagehandCreateOptionsSchema,
-} from '@browserbasehq/stagehand'
-import type {
-  ExecutionTargetAdapter,
-  ResolvedAction,
-  StepExecution,
-  TestArtifact,
+  type ExecutionTargetAdapter,
+  isEvidenceState,
+  type ResolvedAction,
+  type StepExecution,
+  slug,
+  type TestArtifact,
 } from '@pickle-spec/runner'
 import type { ScenarioStep } from '@pickle-spec/spec'
-import { z } from 'zod'
+import { abortError } from './abort'
+import { stagehandFactory } from './stagehand-factory'
+import {
+  type BrowserOptions,
+  defaultModelName,
+  type ScreenshotOptions,
+  type WebAdapterOptions,
+} from './web-options'
 import { WebProcessPool } from './web-pool'
 
-export interface BrowserOptions {
-  environment?: 'local' | 'browserbase'
-  modelName?: string
-  modelApiKey?: string
-  headless?: boolean
-  browserbaseApiKey?: string
-  browserbaseProjectId?: string
-  cache?: boolean
-  selfHeal?: boolean
-  domSettleTimeoutMs?: number
-  observeTimeoutMs?: number
-  actTimeoutMs?: number
-  navigationTimeoutMs?: number
-  idleTimeoutMs?: number
-}
-
-export interface ScreenshotOptions {
-  mode?: 'off' | 'on-failure' | 'on-step'
-  outputDir?: string
-  format?: 'png' | 'jpeg'
-  fullPage?: boolean
-}
-
-export interface WebAdapterOptions {
-  baseUrl: string
-  browser?: BrowserOptions
-  screenshots?: ScreenshotOptions
-}
-
-function record(value: unknown, field: string): Record<string, unknown> {
-  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
-    throw new Error(`${field} must be an object`)
-  }
-  return value as Record<string, unknown>
-}
-
-function knownFields(
-  value: Record<string, unknown>,
-  fields: readonly string[],
-  parent: string,
-): void {
-  for (const field of Object.keys(value)) {
-    if (!fields.includes(field))
-      throw new Error(`${parent}.${field} is not supported`)
-  }
-}
-
-function optionalString(value: unknown, field: string): void {
-  if (value !== undefined && typeof value !== 'string')
-    throw new Error(`${field} must be a string`)
-}
-
-function optionalBoolean(value: unknown, field: string): void {
-  if (value !== undefined && typeof value !== 'boolean')
-    throw new Error(`${field} must be a boolean`)
-}
-
-function optionalPositiveInteger(value: unknown, field: string): void {
-  if (
-    value !== undefined &&
-    (!Number.isInteger(value) || (value as number) < 1)
-  ) {
-    throw new Error(`${field} must be an integer greater than or equal to 1`)
-  }
-}
-
-function validateModelName(value: unknown): void {
-  optionalString(value, 'web.browser.modelName')
-  if (value === undefined) return
-  if (!(value as string).trim()) {
-    throw new Error('web.browser.modelName must not be empty')
-  }
-  const parsed = StagehandCreateOptionsSchema.shape.model.safeParse({
-    modelName: value,
-  })
-  if (!parsed.success) {
-    throw new Error(
-      `web.browser.modelName "${value}" is not a Stagehand-supported model`,
-    )
-  }
-}
-
-export function validateWebAdapterOptions(value: unknown): WebAdapterOptions {
-  const web = record(value, 'web')
-  knownFields(web, ['baseUrl', 'browser', 'screenshots'], 'web')
-  if (typeof web.baseUrl !== 'string' || !web.baseUrl.trim()) {
-    throw new Error('web.baseUrl must not be empty')
-  }
-  try {
-    new URL(web.baseUrl)
-  } catch {
-    throw new Error('web.baseUrl must be a valid URL')
-  }
-
-  if (web.browser !== undefined) {
-    const browser = record(web.browser, 'web.browser')
-    knownFields(
-      browser,
-      [
-        'environment',
-        'modelName',
-        'modelApiKey',
-        'headless',
-        'browserbaseApiKey',
-        'browserbaseProjectId',
-        'cache',
-        'selfHeal',
-        'domSettleTimeoutMs',
-        'observeTimeoutMs',
-        'actTimeoutMs',
-        'navigationTimeoutMs',
-        'idleTimeoutMs',
-      ],
-      'web.browser',
-    )
-    if (
-      browser.environment !== undefined &&
-      browser.environment !== 'local' &&
-      browser.environment !== 'browserbase'
-    ) {
-      throw new Error('web.browser.environment must be local or browserbase')
-    }
-    validateModelName(browser.modelName)
-    optionalString(browser.modelApiKey, 'web.browser.modelApiKey')
-    optionalString(browser.browserbaseApiKey, 'web.browser.browserbaseApiKey')
-    optionalString(
-      browser.browserbaseProjectId,
-      'web.browser.browserbaseProjectId',
-    )
-    optionalBoolean(browser.headless, 'web.browser.headless')
-    optionalBoolean(browser.cache, 'web.browser.cache')
-    optionalBoolean(browser.selfHeal, 'web.browser.selfHeal')
-    optionalPositiveInteger(
-      browser.domSettleTimeoutMs,
-      'web.browser.domSettleTimeoutMs',
-    )
-    optionalPositiveInteger(
-      browser.observeTimeoutMs,
-      'web.browser.observeTimeoutMs',
-    )
-    optionalPositiveInteger(browser.actTimeoutMs, 'web.browser.actTimeoutMs')
-    optionalPositiveInteger(
-      browser.navigationTimeoutMs,
-      'web.browser.navigationTimeoutMs',
-    )
-    optionalPositiveInteger(browser.idleTimeoutMs, 'web.browser.idleTimeoutMs')
-  }
-
-  if (web.screenshots !== undefined) {
-    const screenshots = record(web.screenshots, 'web.screenshots')
-    knownFields(
-      screenshots,
-      ['mode', 'outputDir', 'format', 'fullPage'],
-      'web.screenshots',
-    )
-    if (
-      screenshots.mode !== undefined &&
-      !['off', 'on-failure', 'on-step'].includes(screenshots.mode as string)
-    ) {
-      throw new Error(
-        'web.screenshots.mode must be off, on-failure, or on-step',
-      )
-    }
-    optionalString(screenshots.outputDir, 'web.screenshots.outputDir')
-    if (
-      screenshots.format !== undefined &&
-      screenshots.format !== 'png' &&
-      screenshots.format !== 'jpeg'
-    ) {
-      throw new Error('web.screenshots.format must be png or jpeg')
-    }
-    optionalBoolean(screenshots.fullPage, 'web.screenshots.fullPage')
-  }
-
-  return web as unknown as WebAdapterOptions
-}
+export type {
+  BrowserOptions,
+  ScreenshotOptions,
+  WebAdapterOptions,
+} from './web-options'
+export {
+  screenshotModes,
+  validateWebAdapterOptions,
+  webAdapterOptionsSchema,
+} from './web-options'
 
 export interface WebObservedAction {
   description: string
@@ -204,47 +40,44 @@ export interface WebIsolationState {
   storageKeyCount: number
 }
 
+export interface WebActResult {
+  success: boolean
+  message?: string
+}
+
+export interface WebVerificationResult {
+  meetsExpectation: boolean
+  actualState: string
+}
+
+export interface WebScreenshotCapture {
+  format: 'png' | 'jpeg'
+  fullPage: boolean
+}
+
+export interface WebClientContext {
+  browser: BrowserOptions
+  signal?: AbortSignal
+}
+
 export interface WebAutomation {
   navigate(url: string, signal?: AbortSignal): Promise<void>
   observe(prompt: string, signal?: AbortSignal): Promise<WebObservedAction[]>
-  act(
-    action: WebObservedAction,
-    signal?: AbortSignal,
-  ): Promise<{ success: boolean; message?: string }>
-  verify(
-    prompt: string,
-    signal?: AbortSignal,
-  ): Promise<{
-    meetsExpectation: boolean
-    actualState: string
-  }>
-  screenshot(options: {
-    format: 'png' | 'jpeg'
-    fullPage: boolean
-  }): Promise<Uint8Array>
+  act(action: WebObservedAction, signal?: AbortSignal): Promise<WebActResult>
+  verify(prompt: string, signal?: AbortSignal): Promise<WebVerificationResult>
+  screenshot(options: WebScreenshotCapture): Promise<Uint8Array>
   readIsolationState(): Promise<WebIsolationState>
   close(): Promise<void>
 }
 
 export interface WebBrowserProcess {
-  openContext(input: {
-    browser: BrowserOptions
-    signal?: AbortSignal
-  }): Promise<WebAutomation>
+  openContext(input: WebClientContext): Promise<WebAutomation>
   close(): Promise<void>
 }
 
 export interface WebAutomationFactory {
-  launch(input: {
-    browser: BrowserOptions
-    signal?: AbortSignal
-  }): Promise<WebBrowserProcess>
+  launch(input: WebClientContext): Promise<WebBrowserProcess>
 }
-
-const verificationSchema = z.object({
-  meetsExpectation: z.boolean(),
-  actualState: z.string(),
-})
 
 const navigationPattern = new RegExp(
   '(?:' +
@@ -258,185 +91,17 @@ const navigationPattern = new RegExp(
   'i',
 )
 
-function abortError(): DOMException {
-  return new DOMException('Scenario cancelled', 'AbortError')
+const providerApiKeyEnvNamesByProvider: Record<string, string[]> = {
+  openai: ['OPENAI_API_KEY'],
+  anthropic: ['ANTHROPIC_API_KEY'],
+  google: ['GOOGLE_GENERATIVE_AI_API_KEY', 'GOOGLE_API_KEY', 'GEMINI_API_KEY'],
+  groq: ['GROQ_API_KEY'],
+  cerebras: ['CEREBRAS_API_KEY'],
 }
 
-function withAbort<T>(operation: Promise<T>, signal?: AbortSignal): Promise<T> {
-  if (!signal) return operation
-  if (signal.aborted) return Promise.reject(abortError())
-
-  return new Promise<T>((resolvePromise, reject) => {
-    const onAbort = () => reject(abortError())
-    signal.addEventListener('abort', onAbort, { once: true })
-    operation.then(
-      (value) => {
-        signal.removeEventListener('abort', onAbort)
-        resolvePromise(value)
-      },
-      (error) => {
-        signal.removeEventListener('abort', onAbort)
-        reject(error)
-      },
-    )
-  })
-}
-
-async function activePage(stagehand: Stagehand) {
-  const page = await stagehand.browser.context.activePage()
-  if (!page) throw new Error('No active browser page')
-  return page
-}
-
-const stagehandFactory: WebAutomationFactory = {
-  async launch({ browser: options, signal }) {
-    if (signal?.aborted) throw abortError()
-    const browser =
-      options.environment === 'browserbase'
-        ? await browserbase.launch({
-            apiKey:
-              options.browserbaseApiKey ?? process.env.BROWSERBASE_API_KEY!,
-            projectId:
-              options.browserbaseProjectId ??
-              process.env.BROWSERBASE_PROJECT_ID!,
-          })
-        : await localBrowser.launch({ headless: options.headless ?? true })
-
-    let stagehand: Stagehand | undefined
-
-    async function ensureStagehand(contextInput: {
-      browser: BrowserOptions
-      signal?: AbortSignal
-    }): Promise<Stagehand> {
-      if (stagehand) return stagehand
-      const modelName =
-        contextInput.browser.modelName ??
-        options.modelName ??
-        'anthropic/claude-sonnet-4-6'
-
-      const domSettleTimeoutMs =
-        contextInput.browser.domSettleTimeoutMs ??
-        options.domSettleTimeoutMs ??
-        3_000
-
-      stagehand = await Stagehand.create({
-        browser,
-        model: {
-          modelName: modelName as ModelConfig['modelName'],
-          apiKey: contextInput.browser.modelApiKey ?? options.modelApiKey,
-        },
-        logging: { level: 'off', format: 'json' },
-        selfHeal: contextInput.browser.selfHeal ?? options.selfHeal ?? true,
-        domSettleTimeoutMs,
-        cache: contextInput.browser.cache ?? options.cache,
-      })
-      return stagehand
-    }
-
-    return {
-      async openContext(contextInput) {
-        if (contextInput.signal?.aborted) throw abortError()
-        const activeStagehand = await ensureStagehand(contextInput)
-
-        const navigationTimeoutMs =
-          contextInput.browser.navigationTimeoutMs ??
-          options.navigationTimeoutMs ??
-          15_000
-        const observeTimeoutMs =
-          contextInput.browser.observeTimeoutMs ??
-          options.observeTimeoutMs ??
-          10_000
-        const actTimeoutMs =
-          contextInput.browser.actTimeoutMs ?? options.actTimeoutMs ?? 15_000
-
-        return {
-          async navigate(url, operationSignal) {
-            const page = await activePage(activeStagehand)
-            await withAbort(
-              page
-                .goto(url, {
-                  waitUntil: 'domcontentloaded',
-                  timeout: navigationTimeoutMs,
-                })
-                .then(() => undefined),
-              operationSignal,
-            )
-          },
-          async observe(prompt, operationSignal) {
-            const result = await withAbort(
-              activeStagehand.observe(prompt, {
-                timeout: observeTimeoutMs,
-              }),
-              operationSignal,
-            )
-            return result.data.map((action) => ({
-              description: action.description,
-              handle: action,
-            }))
-          },
-          async act(action, operationSignal) {
-            const result = await withAbort(
-              activeStagehand.act(
-                action.handle as Parameters<Stagehand['act']>[0],
-                {
-                  timeout: actTimeoutMs,
-                },
-              ),
-              operationSignal,
-            )
-            return {
-              success: result.data.success,
-              ...(result.data.success ? {} : { message: result.data.message }),
-            }
-          },
-          async verify(prompt, operationSignal) {
-            const result = await withAbort(
-              activeStagehand.extract(
-                `Verify the following condition on the current page: "${prompt}". ` +
-                  'Determine if the page currently meets this expectation.',
-                verificationSchema,
-              ),
-              operationSignal,
-            )
-            return result.data
-          },
-          async screenshot(screenshotOptions) {
-            const page = await activePage(activeStagehand)
-            return new Uint8Array(
-              await page.screenshot({
-                type: screenshotOptions.format,
-                fullPage: screenshotOptions.fullPage,
-              }),
-            )
-          },
-          async readIsolationState() {
-            const context = activeStagehand.browser.context
-            const cookieCount = (await context.cookies()).length
-            let storageKeyCount = 0
-            const page = await context.activePage()
-            if (page) {
-              storageKeyCount = await page.evaluate(
-                '(() => { try { return localStorage.length } catch { return 0 } })()',
-              )
-            }
-            return { cookieCount, storageKeyCount }
-          },
-          async close() {},
-        }
-      },
-      async close() {
-        try {
-          if (stagehand) {
-            await stagehand.close()
-            stagehand = undefined
-          }
-        } catch {}
-        try {
-          await browser.close()
-        } catch {}
-      },
-    }
-  },
+type BrowserLaunchConfig = {
+  browser: BrowserOptions | undefined
+  requireProviderApiKey: boolean
 }
 
 function promptFor(step: ScenarioStep): string {
@@ -449,12 +114,8 @@ function promptFor(step: ScenarioStep): string {
   return prompt
 }
 
-function safeName(value: string): string {
-  return value
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-|-$/g, '')
-    .slice(0, 80)
+function screenshotName(value: string): string {
+  return slug(value).slice(0, 80)
 }
 
 function navigationUrl(baseUrl: string, target: string): string {
@@ -484,25 +145,8 @@ function plannedAction(action: ResolvedAction): WebObservedAction {
 }
 
 function providerApiKeyEnvNames(modelName: string | undefined): string[] {
-  const provider = (modelName ?? 'anthropic/claude-sonnet-4-6').split('/')[0]
-  switch (provider) {
-    case 'openai':
-      return ['OPENAI_API_KEY']
-    case 'anthropic':
-      return ['ANTHROPIC_API_KEY']
-    case 'google':
-      return [
-        'GOOGLE_GENERATIVE_AI_API_KEY',
-        'GOOGLE_API_KEY',
-        'GEMINI_API_KEY',
-      ]
-    case 'groq':
-      return ['GROQ_API_KEY']
-    case 'cerebras':
-      return ['CEREBRAS_API_KEY']
-    default:
-      return []
-  }
+  const provider = (modelName ?? defaultModelName).split('/')[0]!
+  return providerApiKeyEnvNamesByProvider[provider] ?? []
 }
 
 function resolveModelApiKey(
@@ -516,14 +160,14 @@ function resolveModelApiKey(
   }
 }
 
-function stagehandBrowserOptions(
-  browser: BrowserOptions | undefined,
-  requireProviderApiKey: boolean,
-): BrowserOptions {
+function resolveBrowserLaunchOptions({
+  browser,
+  requireProviderApiKey,
+}: BrowserLaunchConfig): BrowserOptions {
   const modelApiKey = resolveModelApiKey(browser)
   const next = {
     ...browser,
-    ...(modelApiKey ? { modelApiKey } : {}),
+    modelApiKey,
   }
   if (
     requireProviderApiKey &&
@@ -539,14 +183,25 @@ function stagehandBrowserOptions(
   return next
 }
 
+function shouldCaptureScreenshot(
+  mode: NonNullable<ScreenshotOptions['mode']>,
+  state: StepExecution['state'],
+): boolean {
+  if (mode === 'off') return false
+  if (state === 'cancelled' || state === 'skipped') return false
+  if (mode === 'on-failure') return isEvidenceState(state)
+  return true
+}
+
 export function createWebAdapter(
   options: WebAdapterOptions,
-  factory: WebAutomationFactory = stagehandFactory,
+  factory?: WebAutomationFactory,
 ): ExecutionTargetAdapter {
-  const validatedOptions = validateWebAdapterOptions(options)
+  const automationFactory = factory ?? stagehandFactory
+  const requireProviderApiKey = factory === undefined
   const pool = new WebProcessPool({
-    factory,
-    idleTimeoutMs: validatedOptions.browser?.idleTimeoutMs,
+    factory: automationFactory,
+    idleTimeoutMs: options.browser?.idleTimeoutMs,
   })
 
   return {
@@ -556,32 +211,29 @@ export function createWebAdapter(
       await pool.dispose()
     },
     async openSession(input) {
-      const browserOptions = stagehandBrowserOptions(
-        {
-          ...validatedOptions.browser,
+      let executionMode = input.mode ?? 'adaptive'
+      const browserOptions = resolveBrowserLaunchOptions({
+        browser: {
+          ...options.browser,
           selfHeal:
-            (input.mode ?? 'adaptive') === 'replay'
+            executionMode === 'replay'
               ? false
-              : (validatedOptions.browser?.selfHeal ?? true),
+              : (options.browser?.selfHeal ?? true),
         },
-        factory === stagehandFactory,
-      )
+        requireProviderApiKey,
+      })
       const logicalSession = await pool.openLogicalSession(
         browserOptions,
         input.signal,
       )
       const automation = logicalSession.automation
-      let closed = false
       let closePromise: Promise<void> | undefined
       let navigated = false
       let stepIndex = 0
-      let executionMode = input.mode ?? 'adaptive'
 
       const close = async () => {
         if (closePromise) return closePromise
         closePromise = (async () => {
-          if (closed) return
-          closed = true
           input.signal?.removeEventListener('abort', onAbort)
           await automation.close()
           await logicalSession.release()
@@ -597,29 +249,21 @@ export function createWebAdapter(
         step: ScenarioStep,
         state: StepExecution['state'],
       ): Promise<TestArtifact | undefined> {
-        const screenshotOptions = validatedOptions.screenshots
+        const screenshotOptions = options.screenshots
         const mode = screenshotOptions?.mode ?? 'off'
-        if (mode === 'off') return undefined
-        if (
-          mode === 'on-failure' &&
-          state !== 'failed' &&
-          state !== 'infrastructure-error'
-        ) {
-          return undefined
-        }
-        if (state === 'cancelled' || state === 'skipped') return undefined
+        if (!shouldCaptureScreenshot(mode, state)) return undefined
 
         try {
           const format = screenshotOptions?.format ?? 'png'
           const directory = resolve(
             screenshotOptions?.outputDir ?? './.pickle/artifacts',
-            safeName(input.specification.name),
-            safeName(input.scenario.name),
+            screenshotName(input.specification.name),
+            screenshotName(input.scenario.name),
           )
           await mkdir(directory, { recursive: true })
           const path = join(
             directory,
-            `step-${String(stepIndex).padStart(2, '0')}-${state}-${safeName(step.text).slice(0, 40)}.${format}`,
+            `step-${String(stepIndex).padStart(2, '0')}-${state}-${screenshotName(step.text).slice(0, 40)}.${format}`,
           )
           await Bun.write(
             path,
@@ -648,7 +292,7 @@ export function createWebAdapter(
 
       async function ensureNavigation(signal?: AbortSignal): Promise<void> {
         if (navigated) return
-        await automation.navigate(validatedOptions.baseUrl, signal)
+        await automation.navigate(options.baseUrl, signal)
         navigated = true
       }
 
@@ -661,7 +305,7 @@ export function createWebAdapter(
           actions = await automation.observe(prompt, signal)
         if (actions.length === 0) {
           return {
-            state: 'infrastructure-error',
+            state: 'failed',
             resolvedActions: [],
             message: 'Observe returned no actions',
           }
@@ -670,14 +314,13 @@ export function createWebAdapter(
         const resolvedActions: ResolvedAction[] = []
         for (const action of actions) {
           const result = await automation.act(action, signal)
-          const replay = replayPayload(action.handle)
           resolvedActions.push({
             description: action.description,
-            ...(replay ? { replay } : {}),
+            replay: replayPayload(action.handle),
           })
           if (!result.success) {
             return {
-              state: 'infrastructure-error',
+              state: 'failed',
               resolvedActions,
               message: result.message ?? 'Web action failed',
             }
@@ -721,10 +364,7 @@ export function createWebAdapter(
           try {
             const navigation = prompt.match(navigationPattern)
             if (navigation) {
-              const url = navigationUrl(
-                validatedOptions.baseUrl,
-                navigation[1]!.trim(),
-              )
+              const url = navigationUrl(options.baseUrl, navigation[1]!.trim())
               await automation.navigate(url, operationSignal)
               navigated = true
               return finish(step, {
