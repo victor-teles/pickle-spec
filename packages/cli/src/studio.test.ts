@@ -138,13 +138,14 @@ export default {
     browser = await chromium.launch({
       headless: true,
       channel: 'chrome',
+      timeout: 60_000,
     })
-  })
+  }, 60_000)
 
   afterAll(async () => {
     await browser?.close()
     await rm(workspace, { recursive: true, force: true })
-  })
+  }, 15_000)
 
   test('pickle studio starts a local application and opens the configured project', async () => {
     const project = await createStudioProject('opened-project')
