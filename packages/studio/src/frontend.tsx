@@ -4,6 +4,7 @@ import { Badge } from './components/ui/badge'
 import { Button } from './components/ui/button'
 import { LoadingState } from './components/ui/loading-state'
 import { ResultMark } from './components/ui/result-mark'
+import { HistoryPanel } from './history'
 import { cn } from './lib/utils'
 import { PlansPanel } from './plans'
 import {
@@ -33,7 +34,7 @@ import { TestResultTimeline } from './test-result-timeline'
 const token = new URLSearchParams(location.search).get('token') ?? ''
 const areas = [
   { name: 'Specifications', available: true },
-  { name: 'Runs', available: false },
+  { name: 'Runs', available: true },
   { name: 'Plans', available: true },
   { name: 'Settings', available: true },
 ] as const
@@ -269,6 +270,13 @@ function StudioApp() {
           adaptedResultsPolicy={project.policy.adaptedResults}
           running={running}
           api={api}
+        />
+      ) : currentArea === 'Runs' ? (
+        <HistoryPanel
+          api={api}
+          token={token}
+          runPhase={view.phase}
+          onRerun={startRun}
         />
       ) : (
         <div className="grid min-h-0 flex-1 lg:grid-cols-[16rem_1fr]">

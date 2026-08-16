@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test'
-import { mkdtemp, rm } from 'node:fs/promises'
+import { mkdir, mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
@@ -171,12 +171,163 @@ test('import preserves the original archive and migrates older schemas in memory
     expect(await store.list()).toEqual([
       {
         id: 'run-legacy',
+        executionTargetProfileIds: ['deterministic'],
         startedAt: '2026-08-01T00:00:00.000Z',
         finishedAt: '2026-08-01T00:00:01.000Z',
+        durationMs: 1_000,
         state: 'passed',
         resultCount: 1,
       },
     ])
+  } finally {
+    await rm(root, { recursive: true, force: true })
+  }
+})
+
+test('import refuses to overwrite an existing immutable run or retained archive', async () => {
+  const root = await tempRoot()
+  try {
+    const archivePath = join(root, 'run-archive.json')
+    const archive = {
+      kind: 'run-archive',
+      manifest: {
+        id: 'run-existing',
+        startedAt: '2026-08-01T00:00:00.000Z',
+        state: 'passed',
+        results: [],
+      },
+      events: [
+        {
+          sequence: 1,
+          type: 'run-started',
+          run: {
+            id: 'run-existing',
+            startedAt: '2026-08-01T00:00:00.000Z',
+          },
+        },
+      ],
+      artifacts: [],
+    }
+    const original = `${JSON.stringify(archive)}\n`
+    await Bun.write(archivePath, original)
+    const imported = await importRunArchive({ root, archivePath })
+    const eventsPath = join(
+      root,
+      '.pickle',
+      'runs',
+      'run-existing',
+      'events.ndjson',
+    )
+    const eventsBefore = await Bun.file(eventsPath).text()
+    const archiveBefore = await Bun.file(imported.preservedArchivePath).text()
+    await Bun.write(
+      archivePath,
+      `${JSON.stringify({ ...archive, events: [] })}\n`,
+    )
+
+    await expect(importRunArchive({ root, archivePath })).rejects.toThrow(
+      'Test run "run-existing" already exists',
+    )
+    expect(await Bun.file(eventsPath).text()).toBe(eventsBefore)
+    expect(await Bun.file(imported.preservedArchivePath).text()).toBe(
+      archiveBefore,
+    )
+  } finally {
+    await rm(root, { recursive: true, force: true })
+  }
+})
+
+test('concurrent imports reserve an immutable run before writing it', async () => {
+  const root = await tempRoot()
+  try {
+    const archivePath = join(root, 'run-archive.json')
+    const archive = {
+      kind: 'run-archive',
+      manifest: {
+        id: 'run-concurrent',
+        startedAt: '2026-08-01T00:00:00.000Z',
+        state: 'passed',
+        results: [],
+      },
+      events: [
+        {
+          sequence: 1,
+          type: 'run-started',
+          run: {
+            id: 'run-concurrent',
+            startedAt: '2026-08-01T00:00:00.000Z',
+          },
+        },
+      ],
+      artifacts: [],
+    }
+    const original = `${JSON.stringify(archive)}\n`
+    await Bun.write(archivePath, original)
+
+    const imports = await Promise.allSettled([
+      importRunArchive({ root, archivePath }),
+      importRunArchive({ root, archivePath }),
+    ])
+
+    expect(
+      imports.filter((result) => result.status === 'fulfilled'),
+    ).toHaveLength(1)
+    const rejected = imports.find((result) => result.status === 'rejected')
+    expect(rejected).toMatchObject({
+      reason: new Error('Test run "run-concurrent" already exists'),
+    })
+    expect(
+      await Bun.file(
+        join(root, '.pickle', 'archives', 'run-concurrent.json'),
+      ).text(),
+    ).toBe(original)
+  } finally {
+    await rm(root, { recursive: true, force: true })
+  }
+})
+
+test('import rejects run identifiers and artifact paths that escape the run directory', async () => {
+  const root = await tempRoot()
+  try {
+    const existingDirectory = join(root, '.pickle', 'runs', 'run-existing')
+    const existingEventsPath = join(existingDirectory, 'events.ndjson')
+    await mkdir(existingDirectory, { recursive: true })
+    await Bun.write(existingEventsPath, 'immutable\n')
+    const archivePath = join(root, 'unsafe-archive.json')
+    const unsafeArtifact = {
+      kind: 'run-archive',
+      manifest: {
+        id: 'run-imported',
+        startedAt: '2026-08-01T00:00:00.000Z',
+        state: 'passed',
+        results: [],
+      },
+      events: [],
+      artifacts: [
+        {
+          path: '../run-existing/events.ndjson',
+          content: Buffer.from('rewritten\n').toString('base64'),
+        },
+      ],
+    }
+    await Bun.write(archivePath, JSON.stringify(unsafeArtifact))
+
+    await expect(importRunArchive({ root, archivePath })).rejects.toThrow(
+      'Artifact path must stay inside the imported test run',
+    )
+    expect(await Bun.file(existingEventsPath).text()).toBe('immutable\n')
+
+    await Bun.write(
+      archivePath,
+      JSON.stringify({
+        ...unsafeArtifact,
+        manifest: { ...unsafeArtifact.manifest, id: '../run-escaped' },
+        artifacts: [],
+      }),
+    )
+    await expect(importRunArchive({ root, archivePath })).rejects.toThrow(
+      'Invalid test run identifier',
+    )
   } finally {
     await rm(root, { recursive: true, force: true })
   }

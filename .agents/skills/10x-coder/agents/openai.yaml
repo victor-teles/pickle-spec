@@ -1,0 +1,4 @@
+interface:
+  display_name: "10x-coder"
+  short_description: "Polish with Clean Code and SOLID"
+  default_prompt: "Use $clean to polish my current diff without expanding its scope."

@@ -213,9 +213,10 @@ Feature: Search
       expect(
         await page.getByRole('link', { name: 'Specifications' }).count(),
       ).toBe(1)
+      expect(await page.getByRole('link', { name: 'Runs' }).count()).toBe(1)
       expect(
         await page.getByRole('link', { name: 'Runs', disabled: true }).count(),
-      ).toBe(1)
+      ).toBe(0)
       expect(await page.getByRole('link', { name: 'Plans' }).count()).toBe(1)
       expect(
         await page.getByRole('link', { name: 'Plans', disabled: true }).count(),
@@ -354,6 +355,206 @@ Feature: Search
       expect(await timeline.textContent()).toContain('Payment was declined')
       expect(await page.getByRole('img', { name: /screenshot/ }).count()).toBe(
         1,
+      )
+    } finally {
+      await page.close()
+      child.kill()
+      await child.exited
+    }
+  }, 60_000)
+
+  test('Studio manages immutable history and portable runs', async () => {
+    const project = await createStudioProject('run-history')
+    const configPath = join(project, 'pickle.config.jsonc')
+    const config = await Bun.file(configPath).json()
+    await Bun.write(
+      configPath,
+      JSON.stringify({
+        ...config,
+        applicationRevision: 'app-42',
+        retention: { days: 14, maxBytes: 1 },
+      }),
+    )
+    const { child, url } = await startStudio(project)
+    const page = await browser.newPage()
+    try {
+      await page.goto(url)
+      await page.getByRole('button', { name: 'Run Specification' }).click()
+      await page
+        .getByRole('status')
+        .filter({ hasText: 'failed' })
+        .waitFor({ timeout: 20_000 })
+      await page.getByRole('link', { name: 'Runs' }).click()
+
+      const history = page.getByRole('table', { name: 'Test run history' })
+      expect(await history.getByRole('row').count()).toBe(2)
+      const run = history.getByRole('row').nth(1)
+      expect(await run.textContent()).toContain('Ad hoc selection')
+      expect(await run.textContent()).toContain('chrome, firefox')
+      expect(await run.textContent()).toContain('app-42')
+      expect(await run.textContent()).toContain('failed')
+      expect(await run.textContent()).toContain('6 results')
+
+      await run.getByRole('button', { name: 'Rerun failures' }).click()
+      await history.getByRole('row').nth(2).waitFor({ timeout: 20_000 })
+      expect(await history.getByRole('row').count()).toBe(3)
+      expect(await history.getByRole('row').nth(1).textContent()).toContain(
+        'Rerun of',
+      )
+
+      const comparisonSelection = history.getByRole('checkbox')
+      await comparisonSelection.nth(0).click()
+      await comparisonSelection.nth(1).click()
+      await page.getByRole('button', { name: 'Compare selected runs' }).click()
+      const comparison = page.getByRole('table', { name: 'Run comparison' })
+      expect(await comparison.textContent()).toContain('Pay for the order')
+      expect(await comparison.textContent()).toContain('chrome')
+
+      await history
+        .getByRole('row')
+        .nth(2)
+        .getByRole('button', { name: 'Review run' })
+        .click()
+      const results = page.getByRole('table', { name: 'Test run results' })
+      expect(await results.textContent()).toContain('Pay for the order')
+      expect(
+        await results.getByRole('button', { name: 'Rerun Scenario' }).count(),
+      ).toBeGreaterThan(0)
+      expect(
+        await results.getByRole('button', { name: 'Rerun target' }).count(),
+      ).toBeGreaterThan(0)
+      expect(
+        await page.getByRole('button', { name: 'Rerun adaptations' }).count(),
+      ).toBe(1)
+
+      await page.getByRole('button', { name: 'Rerun adaptations' }).click()
+      await history.getByRole('row').nth(3).waitFor({ timeout: 20_000 })
+      expect(await history.getByRole('row').nth(1).textContent()).toContain(
+        '1 result',
+      )
+      await results
+        .getByRole('button', { name: 'Rerun Scenario' })
+        .first()
+        .click()
+      await history.getByRole('row').nth(4).waitFor({ timeout: 20_000 })
+      await history.getByText('2 results').first().waitFor({ timeout: 20_000 })
+      expect(await history.getByRole('row').nth(1).textContent()).toContain(
+        '2 results',
+      )
+      await results
+        .getByRole('button', { name: 'Rerun target' })
+        .first()
+        .click()
+      await history.getByRole('row').nth(5).waitFor({ timeout: 20_000 })
+      await history.getByText('3 results').first().waitFor({ timeout: 20_000 })
+      expect(await history.getByRole('row').nth(1).textContent()).toContain(
+        '3 results',
+      )
+
+      expect(await page.getByText('14 days · 1 B').count()).toBe(1)
+      expect(
+        await page.getByRole('link', { name: 'Export HTML' }).count(),
+      ).toBe(1)
+      const defaultHtmlHref = await page
+        .getByRole('link', { name: 'Export HTML' })
+        .getAttribute('href')
+      const defaultHtml = await page.evaluate(
+        async (href) => (await fetch(href!)).text(),
+        defaultHtmlHref,
+      )
+      expect(defaultHtml).toContain('<!DOCTYPE html>')
+      expect(defaultHtml).toContain('data:image/png;base64,')
+      await page
+        .getByRole('checkbox', { name: 'Include all artifacts' })
+        .click()
+      expect(
+        await page
+          .getByRole('link', { name: 'Export HTML' })
+          .getAttribute('href'),
+      ).toContain('artifacts=all')
+
+      const archivePath = join(project, 'importable-run.json')
+      const archiveHref = await page
+        .getByRole('link', { name: 'Export archive' })
+        .getAttribute('href')
+      const archive = JSON.parse(
+        await page.evaluate(
+          async (href) => (await fetch(href!)).text(),
+          archiveHref,
+        ),
+      )
+      archive.manifest.id = 'run-imported'
+      for (const event of archive.events) {
+        if (event.type === 'run-started') event.run.id = 'run-imported'
+      }
+      const importBytes = `${JSON.stringify(archive, null, 2)}\n`
+      await Bun.write(archivePath, importBytes)
+      await page.getByLabel('Import run archive').setInputFiles(archivePath)
+      await history.getByText('run-imported').waitFor({ timeout: 20_000 })
+      expect(
+        await Bun.file(
+          join(project, '.pickle', 'archives', 'run-imported.json'),
+        ).text(),
+      ).toBe(importBytes)
+
+      await page
+        .getByRole('button', { name: 'Delete eligible history' })
+        .click()
+      await page.getByText(/Deleted \d+ local test runs/).waitFor()
+      expect(
+        await Bun.file(
+          join(project, '.pickle', 'archives', 'run-imported.json'),
+        ).text(),
+      ).toBe(importBytes)
+    } finally {
+      await page.close()
+      child.kill()
+      await child.exited
+    }
+  }, 60_000)
+
+  test('Studio reruns one durable Scenario when names repeat', async () => {
+    const project = await createStudioProject('scenario-rerun-identity')
+    await Bun.write(
+      join(project, 'features', 'checkout.feature'),
+      `@pickle:id:speccheckaaaaaaaa @pickle:state:active
+Feature: Checkout
+  @pickle:id:scnfirstbbbbbbbbb
+  Scenario: Complete a purchase
+    Then the first purchase succeeds
+  @pickle:id:scnsecondcccccccc
+  Scenario: Complete a purchase
+    Then the second purchase succeeds
+`,
+    )
+    const { child, url } = await startStudio(project)
+    const page = await browser.newPage()
+    try {
+      await page.goto(url)
+      await page.getByRole('button', { name: 'Run Specification' }).click()
+      await page
+        .getByRole('status')
+        .filter({ hasText: 'passed' })
+        .waitFor({ timeout: 20_000 })
+      await page.getByRole('link', { name: 'Runs' }).click()
+      const history = page.getByRole('table', { name: 'Test run history' })
+      await history
+        .getByRole('row')
+        .nth(1)
+        .getByRole('button', { name: 'Review run' })
+        .click()
+      const results = page.getByRole('table', { name: 'Test run results' })
+      await results.waitFor()
+      expect(await results.getByRole('row').count()).toBe(5)
+
+      await results
+        .getByRole('button', { name: 'Rerun Scenario' })
+        .first()
+        .click()
+      await history.getByRole('row').nth(2).waitFor({ timeout: 20_000 })
+      await history.getByText('2 results').waitFor({ timeout: 20_000 })
+      expect(await history.getByRole('row').nth(1).textContent()).toContain(
+        'Rerun of',
       )
     } finally {
       await page.close()

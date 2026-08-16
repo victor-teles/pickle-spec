@@ -4,9 +4,12 @@ import { basename, join, resolve } from 'node:path'
 import type {
   CandidateExecutionPlan,
   ExecutionPlan,
+  HtmlArtifactMode,
   RunEvent,
   TestResult,
+  TestRunComparison,
   TestRunManifest,
+  TestRunSummary,
 } from '@pickle-spec/runner'
 import type {
   SpecificationMetadata,
@@ -137,6 +140,10 @@ export interface StudioRunRequest {
   profiles?: readonly string[]
   paths?: readonly string[]
   scenarioName?: string
+  scenarioId?: string
+  rerunId?: string
+  failures?: boolean
+  adaptations?: boolean
 }
 
 export interface StudioRunSnapshot {
@@ -152,6 +159,28 @@ export interface StudioRunGateway {
   ): Promise<{ id: string; done: Promise<unknown> }>
   snapshot(id: string): Promise<StudioRunSnapshot>
   cancel(id: string): Promise<void>
+}
+
+export interface StudioHistoryGateway {
+  list(): Promise<StudioHistory>
+  compare(
+    baselineRunId: string,
+    candidateRunId: string,
+  ): Promise<TestRunComparison>
+  importArchive(bytes: Uint8Array): Promise<TestRunManifest>
+  exportArchive(runId: string): Promise<string>
+  exportHtml(runId: string, artifacts: HtmlArtifactMode): Promise<string>
+  deleteEligible(): Promise<{ removed: string[] }>
+}
+
+export interface StudioRetentionPolicy {
+  maxAgeMs: number
+  maxBytes: number
+}
+
+export interface StudioHistory {
+  runs: readonly TestRunSummary[]
+  retention: StudioRetentionPolicy
 }
 
 export interface StudioAuthoringGateway {
@@ -175,6 +204,7 @@ export interface StudioOptions {
   project: StudioProject
   loadProject?: () => Promise<StudioProject> | StudioProject
   gateway?: StudioRunGateway
+  history?: StudioHistoryGateway
   documents?: SpecificationWorkspace
   authoring?: StudioAuthoringGateway
   management?: StudioManagementGateway
@@ -220,6 +250,11 @@ type StudioSocketData =
 type CredentialWriteRequest = {
   name?: string
   secret?: string
+}
+
+type HistoryComparisonRequest = {
+  baselineRunId?: string
+  candidateRunId?: string
 }
 
 type GitPathsRequest = {
@@ -444,6 +479,97 @@ export async function startStudio(
       }
       if (url.pathname === '/api/project' && request.method === 'GET') {
         return Response.json(await currentProject())
+      }
+      if (url.pathname === '/api/history' && request.method === 'GET') {
+        if (!options.history) {
+          return new Response('Test run history is unavailable', {
+            status: 501,
+          })
+        }
+        return Response.json(await options.history.list())
+      }
+      if (
+        url.pathname === '/api/history/compare' &&
+        request.method === 'POST'
+      ) {
+        if (!options.history) {
+          return new Response('Test run history is unavailable', {
+            status: 501,
+          })
+        }
+        const body = (await request.json()) as HistoryComparisonRequest
+        if (!body.baselineRunId || !body.candidateRunId) {
+          return new Response('Select two test runs to compare', {
+            status: 400,
+          })
+        }
+        return Response.json(
+          await options.history.compare(
+            body.baselineRunId,
+            body.candidateRunId,
+          ),
+        )
+      }
+      if (url.pathname === '/api/history/import' && request.method === 'POST') {
+        if (!options.history) {
+          return new Response('Test run history is unavailable', {
+            status: 501,
+          })
+        }
+        try {
+          return Response.json(
+            await options.history.importArchive(
+              new Uint8Array(await request.arrayBuffer()),
+            ),
+          )
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error)
+          return new Response(message, { status: 400 })
+        }
+      }
+      if (
+        url.pathname === '/api/history/retention' &&
+        request.method === 'POST'
+      ) {
+        if (!options.history) {
+          return new Response('Test run history is unavailable', {
+            status: 501,
+          })
+        }
+        return Response.json(await options.history.deleteEligible())
+      }
+      const historyExportMatch = url.pathname.match(
+        /^\/api\/history\/([^/]+)\/(html|archive)$/,
+      )
+      if (historyExportMatch && request.method === 'GET') {
+        if (!options.history) {
+          return new Response('Test run history is unavailable', {
+            status: 501,
+          })
+        }
+        const runId = decodeURIComponent(historyExportMatch[1]!)
+        const kind = historyExportMatch[2]
+        if (kind === 'archive') {
+          return new Response(await options.history.exportArchive(runId), {
+            headers: {
+              'content-type': 'application/json; charset=utf-8',
+              'content-disposition': `attachment; filename="${runId}.pickle-run.json"`,
+            },
+          })
+        }
+        const artifacts =
+          url.searchParams.get('artifacts') === 'all'
+            ? 'all'
+            : 'failures-and-adaptations'
+        return new Response(
+          await options.history.exportHtml(runId, artifacts),
+          {
+            headers: {
+              'content-type': 'text/html; charset=utf-8',
+              'content-disposition': `attachment; filename="${runId}.html"`,
+            },
+          },
+        )
       }
       if (url.pathname === '/api/plans' && request.method === 'GET') {
         if (!options.plans) {

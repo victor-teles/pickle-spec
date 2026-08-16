@@ -50,6 +50,8 @@ const archiveManifestInput = object('archive manifest', {
   startedAt: z.unknown().optional(),
   finishedAt: z.unknown().optional(),
   sourceRunId: z.unknown().optional(),
+  suite: z.unknown().optional(),
+  applicationRevision: z.unknown().optional(),
   state: z.unknown().optional(),
   results: z.unknown().optional(),
 })
@@ -149,6 +151,11 @@ function migrateManifest(manifest: unknown): TestRunManifest {
       typeof value.finishedAt === 'string' ? value.finishedAt : undefined,
     sourceRunId:
       typeof value.sourceRunId === 'string' ? value.sourceRunId : undefined,
+    suite: typeof value.suite === 'string' ? value.suite : undefined,
+    applicationRevision:
+      typeof value.applicationRevision === 'string'
+        ? value.applicationRevision
+        : undefined,
     state: value.state as TestRunManifest['state'],
     results: Array.isArray(value.results)
       ? value.results.map(migrateResult)

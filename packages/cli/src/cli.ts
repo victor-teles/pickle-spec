@@ -3,6 +3,7 @@
 import { resolve } from 'node:path'
 import {
   compareTestRuns,
+  defaultRetention,
   formatHtml,
   formatJson,
   formatJunit,
@@ -27,6 +28,7 @@ import {
   startProjectRun,
 } from './execute-run'
 import { checkProject, initializeProject, migrateProject } from './project'
+import { createStudioHistoryGateway } from './studio-history'
 import { createStudioPlanGateway } from './studio-plans'
 import {
   loadStudioProject,
@@ -431,6 +433,15 @@ async function studio(argv: string[]): Promise<number> {
       },
     },
     plans: createStudioPlanGateway(root, loadProject),
+    history: createStudioHistoryGateway(root, async () => {
+      const current = await loadConfig(args.configPath, root)
+      return {
+        maxAgeMs: current.retention?.days
+          ? current.retention.days * dayMs
+          : defaultRetention.maxAgeMs,
+        maxBytes: current.retention?.maxBytes ?? defaultRetention.maxBytes,
+      }
+    }),
     gateway: {
       async start(request, onEvent) {
         const runController = new AbortController()
@@ -447,6 +458,10 @@ async function studio(argv: string[]): Promise<number> {
             suite: request?.suite,
             profiles: request?.profiles ? [...request.profiles] : undefined,
             selection: studioRunSelection(request),
+            rerunId: request?.rerunId,
+            scenarioIds: request?.scenarioId ? [request.scenarioId] : undefined,
+            failures: request?.failures,
+            adaptations: request?.adaptations,
           },
           signal: runController.signal,
           onEvent,
