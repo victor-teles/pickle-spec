@@ -18,6 +18,7 @@ import {
   statusLabel,
   type TestResultState,
 } from './run-view'
+import { SpecificationEditor } from './specification-editor'
 import './styles.css'
 
 type StudioScenario = {
@@ -38,6 +39,10 @@ type StudioProject = {
   profiles: string[]
   suites: string[]
   specifications: StudioSpecification[]
+  model?: {
+    provider: string
+    name: string
+  }
 }
 
 type StudioRunRequest = {
@@ -149,6 +154,12 @@ function StudioApp() {
   const selected =
     project?.specifications.find((item) => item.id === selectedId) ??
     project?.specifications[0]
+
+  async function reloadProject() {
+    const value = await api<StudioProject>('/api/project')
+    setProject(value)
+    return value
+  }
 
   async function startRun(request: StudioRunRequest) {
     if (running) return
@@ -287,6 +298,23 @@ function StudioApp() {
                   </Button>
                 )}
               </div>
+              <SpecificationEditor
+                uri={selected.uri}
+                model={project.model}
+                api={api}
+                onCatalogChange={async () => {
+                  await reloadProject()
+                }}
+                onCreated={(uri) => {
+                  void reloadProject().then((value) => {
+                    const created = value.specifications.find(
+                      (item) => item.uri === uri,
+                    )
+                    if (created) setSelectedId(created.id)
+                  })
+                }}
+                onError={(message) => setError(message)}
+              />
               <ScenarioTable
                 profiles={project.profiles}
                 scenarios={selected.scenarios}

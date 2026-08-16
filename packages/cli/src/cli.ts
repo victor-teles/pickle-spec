@@ -16,11 +16,20 @@ import type {
   Specification,
   SpecificationState,
 } from '@pickle-spec/spec'
-import type { StudioRunRequest, StudioSpecification } from '@pickle-spec/studio'
+import type {
+  StudioAuthoringModel,
+  StudioRunRequest,
+  StudioSpecification,
+} from '@pickle-spec/studio'
 import { startStudio } from '@pickle-spec/studio'
-import { screenshotModes, type WebAdapterOptions } from '@pickle-spec/web'
+import {
+  defaultModelName,
+  screenshotModes,
+  type WebAdapterOptions,
+} from '@pickle-spec/web'
 import { defaultSpecificationGlob, loadConfig } from './config'
 import {
+  loadExtensions,
   loadPersistedRun,
   loadProjectSpecifications,
   startProjectRun,
@@ -394,6 +403,16 @@ function parseStudioArguments(argv: string[]): {
   return options
 }
 
+function authoringModel(modelName: string | undefined): StudioAuthoringModel {
+  const value = modelName ?? defaultModelName
+  const separator = value.indexOf('/')
+  if (separator <= 0) return { provider: value, name: value }
+  return {
+    provider: value.slice(0, separator),
+    name: value.slice(separator + 1),
+  }
+}
+
 async function studio(argv: string[]): Promise<number> {
   const args = parseStudioArguments(argv)
   const root = process.cwd()
@@ -401,22 +420,35 @@ async function studio(argv: string[]): Promise<number> {
   const profiles = config.executionTargetProfiles
     ? Object.keys(config.executionTargetProfiles)
     : [config.executionTargetProfile?.id ?? (config.web ? 'web' : 'custom')]
-  const specifications = studioCatalog(
-    await loadProjectSpecifications(
-      config.specifications ?? defaultSpecificationGlob,
-      config.language,
-      root,
-    ),
-  )
-  const controller = new AbortController()
-  const activeRuns = new Map<string, AbortController>()
-  const server = await startStudio({
-    project: {
+  const specificationGlobs = config.specifications ?? defaultSpecificationGlob
+  const model = authoringModel(config.web?.browser?.modelName)
+  async function loadProject() {
+    return {
       name: basename(root),
       root,
       profiles,
       suites: Object.keys(config.suites ?? {}),
-      specifications,
+      specifications: studioCatalog(
+        await loadProjectSpecifications(
+          specificationGlobs,
+          config.language,
+          root,
+        ),
+      ),
+      model,
+    }
+  }
+  const extensions = await loadExtensions(args.extensionsPath, root)
+  const controller = new AbortController()
+  const activeRuns = new Map<string, AbortController>()
+  const server = await startStudio({
+    project: await loadProject(),
+    loadProject,
+    specificationGlobs,
+    language: config.language,
+    authoring: {
+      model,
+      propose: extensions.authorSpecification,
     },
     gateway: {
       async start(request, onEvent) {

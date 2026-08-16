@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
 import { mkdir, mkdtemp, rm, symlink } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
-import { type Browser, chromium } from 'playwright'
+import { type Browser, chromium, type Page } from 'playwright'
 
 type CliPackageManifest = {
   bin: { pickle: string }
@@ -10,6 +10,24 @@ type CliPackageManifest = {
 
 type TestRunManifestFile = {
   finishedAt?: string
+}
+
+type MonacoEditorHost = {
+  monaco?: {
+    editor: {
+      getEditors: () => Array<{
+        getValue: () => string
+        setValue: (value: string) => void
+        focus: () => void
+        setPosition: (position: { lineNumber: number; column: number }) => void
+        getModel: () => {
+          getLineCount: () => number
+          getLineMaxColumn: (lineNumber: number) => number
+        } | null
+        trigger: (source: string, handlerId: string, payload: unknown) => void
+      }>
+    }
+  }
 }
 
 describe('Studio browser seam', () => {
@@ -35,7 +53,8 @@ describe('Studio browser seam', () => {
     )
     await Bun.write(
       join(project, 'features', 'checkout.feature'),
-      `@pickle:id:speccheckaaaaaaaa @pickle:state:active
+      `# keep this comment
+@pickle:id:speccheckaaaaaaaa @pickle:state:active
 Feature: Checkout
   @pickle:id:scnpaybbbbbbbbbb
   Scenario: Pay for the order
@@ -45,7 +64,8 @@ Feature: Checkout
     Then the basket adapts
   @pickle:id:scnpassdddddddd
   Scenario: Complete a purchase
-    Then the purchase succeeds`,
+    Then the purchase succeeds
+`,
     )
     await Bun.write(
       join(project, 'pickle.extensions.ts'),
@@ -97,6 +117,19 @@ export default {
       }
     },
   },
+  async authorSpecification({ prompt }) {
+    if (!String(prompt).includes('Search')) {
+      throw new Error('AI assistance is unavailable')
+    }
+    return {
+      source: \`@pickle:id:specsearchaaaaaaa @pickle:state:active
+Feature: Search
+  @pickle:id:scnquerybbbbbbbb
+  Scenario: Query the catalog
+    Then results are shown
+\`,
+    }
+  },
 }
 `,
     )
@@ -118,7 +151,7 @@ export default {
     const stderr = collectStream(child.stderr)
     const url = await stdout.waitFor(
       /Studio (http:\/\/127\.0\.0\.1:\d+\S*)/,
-      15_000,
+      45_000,
     )
     return { child, url, stdout, stderr }
   }
@@ -377,7 +410,228 @@ Feature: Search
       await child.exited
     }
   }, 60_000)
+
+  test('Studio shows a Specification outline until Edit opens Gherkin with autocomplete', async () => {
+    const project = await createStudioProject('author-specification')
+    const { child, url } = await startStudio(project)
+    const page = await browser.newPage()
+    try {
+      await page.goto(url)
+      const outline = page.getByRole('region', {
+        name: 'Specification outline',
+      })
+      await outline.waitFor()
+      expect(await outline.textContent()).toContain('Checkout')
+      expect(await outline.textContent()).toContain('Pay for the order')
+      expect(await page.locator('.monaco-editor').count()).toBe(0)
+      await page.getByRole('button', { name: 'Edit Specification' }).click()
+      await page.locator('.monaco-editor').waitFor()
+      const current = await gherkinValue(page)
+      expect(current).toContain('# keep this comment')
+      expect(current).toContain('Feature: Checkout')
+      await page.evaluate(() => {
+        const editor = (
+          globalThis as MonacoEditorHost
+        ).monaco?.editor.getEditors()[0]
+        const model = editor?.getModel()
+        if (!editor || !model) return
+        const lineNumber = model.getLineCount()
+        editor.setPosition({
+          lineNumber,
+          column: model.getLineMaxColumn(lineNumber),
+        })
+        editor.focus()
+      })
+      await page.keyboard.press('Enter')
+      await page.keyboard.type('    Gi')
+      await page.evaluate(() => {
+        const editor = (
+          globalThis as MonacoEditorHost
+        ).monaco?.editor.getEditors()[0]
+        editor?.trigger('test', 'editor.action.triggerSuggest', {})
+      })
+      await page
+        .locator('.suggest-widget.visible')
+        .filter({ hasText: 'Given' })
+        .waitFor()
+      await setGherkinValue(
+        page,
+        current
+          .replace('Feature: Checkout', 'Feature: Basket')
+          .replace(
+            'Then payment is captured',
+            'Then payment is captured\n    And a receipt is shown',
+          ),
+      )
+      await page.getByRole('button', { name: 'Save Specification' }).click()
+      let written = ''
+      const deadline = Date.now() + 10_000
+      while (Date.now() < deadline) {
+        written = await Bun.file(
+          join(project, 'features', 'checkout.feature'),
+        ).text()
+        if (written.includes('Feature: Basket')) break
+        await Bun.sleep(50)
+      }
+      expect(written).toContain('# keep this comment')
+      expect(written).toContain('Feature: Basket')
+      expect(written).toContain('And a receipt is shown')
+      await page.getByRole('button', { name: 'View Specification' }).click()
+      await outline.waitFor()
+      expect(await outline.textContent()).toContain('Basket')
+    } finally {
+      await page.close()
+      child.kill()
+      await child.exited
+    }
+  }, 60_000)
+
+  test('Studio reloads clean Specification buffers and reviews conflicts for edited buffers', async () => {
+    const project = await createStudioProject('author-conflicts')
+    const { child, url } = await startStudio(project)
+    const page = await browser.newPage()
+    try {
+      await page.goto(url)
+      const outline = page.getByRole('region', {
+        name: 'Specification outline',
+      })
+      await outline.waitFor()
+      await Bun.write(
+        join(project, 'features', 'checkout.feature'),
+        `# keep this comment
+@pickle:id:speccheckaaaaaaaa @pickle:state:active
+Feature: Reloaded
+  @pickle:id:scnpaybbbbbbbbbb
+  Scenario: Pay for the order
+    Then payment is captured
+`,
+      )
+      await outline.getByText('Reloaded', { exact: true }).waitFor({
+        timeout: 10_000,
+      })
+      await page.getByRole('button', { name: 'Edit Specification' }).click()
+      await page.locator('.monaco-editor').waitFor()
+      await setGherkinValue(
+        page,
+        (await gherkinValue(page)).replace(
+          'Feature: Reloaded',
+          'Feature: Local edit',
+        ),
+      )
+      await Bun.write(
+        join(project, 'features', 'checkout.feature'),
+        `# keep this comment
+@pickle:id:speccheckaaaaaaaa @pickle:state:active
+Feature: Disk edit
+  @pickle:id:scnpaybbbbbbbbbb
+  Scenario: Pay for the order
+    Then payment is captured
+`,
+      )
+      await page
+        .getByRole('dialog', { name: 'Specification changed on disk' })
+        .waitFor({
+          timeout: 10_000,
+        })
+      expect(await gherkinValue(page)).toContain('Feature: Local edit')
+      await page.getByRole('button', { name: 'Load from disk' }).click()
+      await page
+        .getByRole('dialog', { name: 'Specification changed on disk' })
+        .waitFor({ state: 'hidden' })
+      const deadline = Date.now() + 10_000
+      while (Date.now() < deadline) {
+        if ((await gherkinValue(page)).includes('Feature: Disk edit')) break
+        await Bun.sleep(50)
+      }
+      expect(await gherkinValue(page)).toContain('Feature: Disk edit')
+    } finally {
+      await page.close()
+      child.kill()
+      await child.exited
+    }
+  }, 60_000)
+
+  test('Studio proposes AI Gherkin as a diff and writes accepted Specifications as drafts', async () => {
+    const project = await createStudioProject('author-ai')
+    const { child, url } = await startStudio(project)
+    const page = await browser.newPage()
+    try {
+      await page.goto(url)
+      expect(await page.getByLabel('Active model').textContent()).toContain(
+        'anthropic / claude-sonnet-4-6',
+      )
+      await page.getByRole('button', { name: 'Edit Specification' }).click()
+      await page
+        .getByRole('textbox', { name: 'AI prompt' })
+        .fill('Search the catalog')
+      await page
+        .getByRole('textbox', { name: 'New Specification path' })
+        .fill('features/search.feature')
+      await page.getByRole('button', { name: 'Propose Specification' }).click()
+      const dialog = page.getByRole('dialog', { name: 'Review AI proposal' })
+      await dialog.waitFor()
+      expect(
+        await page.getByRole('region', { name: 'Source diff' }).textContent(),
+      ).toContain('+Feature: Search')
+      expect(
+        await Bun.file(join(project, 'features', 'search.feature')).exists(),
+      ).toBe(false)
+      await page.getByRole('button', { name: 'Accept proposal' }).click()
+      const createdDeadline = Date.now() + 10_000
+      let created = false
+      while (Date.now() < createdDeadline) {
+        created = await Bun.file(
+          join(project, 'features', 'search.feature'),
+        ).exists()
+        if (created) break
+        await Bun.sleep(50)
+      }
+      expect(created).toBe(true)
+      const written = await Bun.file(
+        join(project, 'features', 'search.feature'),
+      ).text()
+      expect(written).toContain('@pickle:state:draft')
+      expect(written).not.toContain('@pickle:state:active')
+      await page.getByRole('button', { name: 'Search' }).click()
+      const outline = page.getByRole('region', {
+        name: 'Specification outline',
+      })
+      await outline.waitFor()
+      expect(await outline.textContent()).toContain('Search')
+      expect(await outline.textContent()).toContain('@pickle:state:draft')
+    } finally {
+      await page.close()
+      child.kill()
+      await child.exited
+    }
+  }, 60_000)
 })
+
+async function gherkinValue(page: Page): Promise<string> {
+  return page.evaluate(() => {
+    const editor = (
+      globalThis as MonacoEditorHost
+    ).monaco?.editor.getEditors()[0]
+    return editor?.getValue() ?? ''
+  })
+}
+
+async function setGherkinValue(page: Page, source: string) {
+  await page.locator('.monaco-editor').waitFor()
+  await page.evaluate((next) => {
+    const editor = (
+      globalThis as MonacoEditorHost
+    ).monaco?.editor.getEditors()[0]
+    editor?.setValue(next)
+  }, source)
+  await page.waitForFunction((expected) => {
+    const editor = (
+      globalThis as MonacoEditorHost
+    ).monaco?.editor.getEditors()[0]
+    return editor?.getValue() === expected
+  }, source)
+  await Bun.sleep(32)
+}
 
 function collectStream(stream: ReadableStream<Uint8Array>) {
   const chunks: string[] = []

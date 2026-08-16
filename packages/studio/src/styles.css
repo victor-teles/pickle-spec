@@ -129,3 +129,12 @@
     color: var(--foreground);
   }
 }
+
+.monaco-editor,
+.monaco-editor .overflow-guard {
+  border-radius: 0.5rem;
+}
+
+.monaco-editor .suggest-widget {
+  z-index: 40;
+}

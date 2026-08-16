@@ -1,6 +1,6 @@
 {
   "schemaVersion": 2,
-  "generatedAt": "2026-08-16T13:45:00.000Z",
+  "generatedAt": "2026-08-16T16:20:00.000Z",
   "title": "Design System: Pickle Spec Studio",
   "extensions": {
     "colorMeta": {
@@ -249,7 +249,7 @@
       },
       "mono": {
         "displayName": "Mono",
-        "purpose": "Status chips and resolved-action measurements."
+        "purpose": "Status chips, resolved-action measurements, outline tags, and Gherkin source."
       }
     },
     "shadows": [],
@@ -341,7 +341,7 @@
     "rules": [
       {
         "name": "The Bone Rule",
-        "body": "The light fill is the primary action. Do not paint navigation, tables, or idle chips with Bone.",
+        "body": "The light fill is the primary action. Do not paint navigation, tables, or idle chips with Bone. In authoring, Save Specification may use Bone while Gherkin is dirty.",
         "section": "colors"
       },
       {
@@ -351,8 +351,13 @@
       },
       {
         "name": "The Measurement Mono Rule",
-        "body": "Monospace is for data. Do not set headings, nav, or body copy in JetBrains Mono to look technical.",
+        "body": "Monospace is for data and Gherkin source. Do not set headings, nav, or body copy in JetBrains Mono to look technical.",
         "section": "typography"
+      },
+      {
+        "name": "The View-First Authoring Rule",
+        "body": "A selected Specification opens as an outline. Gherkin source appears only after Edit Specification.",
+        "section": "layout"
       },
       {
         "name": "The Flat Ledger Rule",
@@ -364,13 +369,15 @@
       "Do keep the canvas dark and cool (Night Ledger) with one-step Raised Plates.",
       "Do put the next operator action on a Bone button.",
       "Do spell the test-result state on every chip and matrix cell.",
-      "Do use JetBrains Mono for resolved actions and status, Inter for everything else.",
+      "Do keep Gherkin behind Edit Specification; view mode is the outline plate.",
+      "Do use JetBrains Mono for resolved actions, status, tags, and Gherkin source; Inter for everything else.",
       "Do keep corners at 0.4–0.5rem and borders at 1px Hairline."
     ],
     "donts": [
       "Don't add a tracked uppercase kicker above the project name.",
       "Don't introduce drop shadows, glass, or neon status dots.",
-      "Don't spend Brine Teal on chrome or marketing blocks.",
+      "Don't spend Brine Teal on chrome, marketing blocks, or Gherkin syntax highlighting.",
+      "Don't split authoring into Structured and Source tabs.",
       "Don't invent a second source of truth in the UI — feature files and Git remain off-canvas systems of record.",
       "Don't use Cucumber, Playwright, or \"self-healing\" visual language."
     ]

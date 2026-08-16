@@ -33,6 +33,6 @@ export {
   evaluatePerformanceGates,
   runWebPerformanceBenchmark,
 } from './src/web-benchmark'
-export { webProfiles } from './src/web-options'
+export { defaultModelName, webProfiles } from './src/web-options'
 export type { WebLogicalSession } from './src/web-pool'
 export { IsolationVerificationError, WebProcessPool } from './src/web-pool'

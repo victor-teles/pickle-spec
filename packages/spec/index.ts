@@ -1,4 +1,21 @@
 export type {
+  SpecificationDocument,
+  StructuredBackground,
+  StructuredChild,
+  StructuredExamples,
+  StructuredRule,
+  StructuredScenario,
+  StructuredSpecification,
+  StructuredStep,
+} from './src/editor'
+export {
+  applySpecificationSource,
+  applyStructuredSpecification,
+  ensureSpecificationState,
+  readSpecificationDocument,
+  specificationSourceDiff,
+} from './src/editor'
+export type {
   SpecificationMigrationChange,
   SpecificationMigrationFile,
   SpecificationMigrationPlan,

@@ -1,4 +1,6 @@
 export type {
+  StudioAuthoringGateway,
+  StudioAuthoringModel,
   StudioOptions,
   StudioProject,
   StudioRunGateway,
