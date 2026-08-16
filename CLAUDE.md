@@ -59,6 +59,12 @@ bun run format
 
 Write new TypeScript with 2-space indent, single quotes, and semicolons only when needed. Name variables in camelCase. Do not declare `SCREAMING_SNAKE_CASE` constants. Object keys may use CONSTANT_CASE when they match external names such as environment variables.
 
+## TypeScript
+
+When casting to a shape that library types do not expose, declare a named `type` near the top of the file. Do not inline anonymous object types in `as { ... }` casts.
+
+Cast at the point of use (`value as MyType`). Do not add a one-line helper whose only job is wrapping that cast.
+
 After you change TypeScript or JSON files, run `bun run lint` before you finish.
 
 ## Frontend

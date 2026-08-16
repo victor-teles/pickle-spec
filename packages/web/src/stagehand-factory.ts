@@ -6,7 +6,11 @@ import {
 } from '@browserbasehq/stagehand'
 import { z } from 'zod'
 import { abortError } from './abort'
-import type { ResolvedFidelity } from './fidelity'
+import {
+  type BlockedResourceType,
+  blockedResourceTypes,
+  type ResolvedFidelity,
+} from './fidelity'
 import type {
   WebAutomation,
   WebAutomationFactory,
@@ -30,6 +34,29 @@ type StagehandTimeouts = {
   navigationTimeoutMs: number
   observeTimeoutMs: number
   actTimeoutMs: number
+}
+
+type FidelityRoute = {
+  request: () => { resourceType: () => string }
+  abort: () => Promise<void>
+  continue: () => Promise<void>
+}
+
+type FidelityBrowserPage = {
+  addInitScript: (script: string) => Promise<void>
+}
+
+type FidelityBrowserContext = {
+  route?: (
+    pattern: string,
+    handler: (route: FidelityRoute) => Promise<void>,
+  ) => Promise<void>
+  unroute?: (pattern: string) => Promise<void>
+  activePage: () => Promise<FidelityBrowserPage | null>
+}
+
+function isBlockedResourceType(value: string): value is BlockedResourceType {
+  return blockedResourceTypes.includes(value as BlockedResourceType)
 }
 
 function withAbort<T>(operation: Promise<T>, signal?: AbortSignal): Promise<T> {
@@ -77,20 +104,7 @@ async function applyFidelity(
   stagehand: Stagehand,
   fidelity?: ResolvedFidelity,
 ): Promise<void> {
-  const context = stagehand.browser.context as {
-    route?: (
-      pattern: string,
-      handler: (route: {
-        request: () => { resourceType: () => string }
-        abort: () => Promise<void>
-        continue: () => Promise<void>
-      }) => Promise<void>,
-    ) => Promise<void>
-    unroute?: (pattern: string) => Promise<void>
-    activePage: () => Promise<{
-      addInitScript: (script: string) => Promise<void>
-    } | null>
-  }
+  const context = stagehand.browser.context as FidelityBrowserContext
 
   if (!fidelity || fidelity.profile === 'default') {
     if (context.unroute) await context.unroute('**/*')
@@ -102,9 +116,7 @@ async function applyFidelity(
   if (blocked.size > 0 && context.route) {
     await context.route('**/*', (route) => {
       const resourceType = route.request().resourceType()
-      if (
-        blocked.has(resourceType as ResolvedFidelity['blockResources'][number])
-      ) {
+      if (isBlockedResourceType(resourceType) && blocked.has(resourceType)) {
         return route.abort()
       }
       return route.continue()
