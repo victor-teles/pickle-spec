@@ -120,6 +120,14 @@ Set `applicationRevision` in `pickle.config.jsonc` or pass `--application-revisi
 
 `policy.adaptedResults` accepts `accept` or `reject`. The default is `accept`.
 
+Open **Plans** in Studio to review approved and candidate plans by Scenario and
+execution target profile. The comparison shows applicability metadata and
+resolved actions. Candidate evidence opens the originating test result and its
+retained test artifacts. Promotion always requires confirmation, replaces the
+Git-tracked approved plan, and removes the local candidate. Studio blocks plan
+promotion while one of its test runs is active; the CI adapted-result policy is
+visible for context but never promotes a plan automatically.
+
 ## Persist, rerun, compare, and export test runs
 
 Every `pickle run` writes an immutable test run under `.pickle/runs/`.

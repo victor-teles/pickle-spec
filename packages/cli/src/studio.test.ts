@@ -108,7 +108,15 @@ export default {
           if (scenario === 'Adapt the purchase' && profile === 'chrome') {
             return {
               state: 'passed-with-adaptation',
-              resolvedActions: [{ description: \`Adapt basket on \${profile}\` }],
+              resolvedActions: [{
+                description: \`Adapt basket on \${profile}\`,
+                replay: { operation: 'adapt', target: 'current-basket' },
+              }],
+              artifacts: [{
+                kind: 'screenshot',
+                path: ${JSON.stringify(screenshot)},
+                mediaType: 'image/png',
+              }],
             }
           }
           return {
@@ -208,9 +216,10 @@ Feature: Search
       expect(
         await page.getByRole('link', { name: 'Runs', disabled: true }).count(),
       ).toBe(1)
+      expect(await page.getByRole('link', { name: 'Plans' }).count()).toBe(1)
       expect(
         await page.getByRole('link', { name: 'Plans', disabled: true }).count(),
-      ).toBe(1)
+      ).toBe(0)
       expect(await page.getByRole('link', { name: 'Settings' }).count()).toBe(1)
       expect(
         await page
@@ -380,6 +389,176 @@ Feature: Search
     }
   }, 60_000)
 
+  test('Studio reviews evidence and explicitly promotes a candidate plan', async () => {
+    const project = await createStudioProject('review-plans')
+    const configPath = join(project, 'pickle.config.jsonc')
+    const config = JSON.parse(await Bun.file(configPath).text())
+    await Bun.write(
+      configPath,
+      JSON.stringify({
+        ...config,
+        applicationRevision: 'app-1',
+        policy: { adaptedResults: 'reject' },
+        executionTargetProfiles: { chrome: { adapter: 'custom' } },
+      }),
+    )
+    const approvedPath = join(
+      project,
+      '.pickle',
+      'plans',
+      'chrome',
+      'scnadaptcccccccc.json',
+    )
+    const candidatePath = join(
+      project,
+      '.pickle',
+      'candidates',
+      'chrome',
+      'scnadaptcccccccc.json',
+    )
+    const approved = {
+      schemaVersion: 1,
+      scenarioId: 'scnadaptcccccccc',
+      scenarioRevision: 'previous-revision',
+      executionTargetProfileId: 'chrome',
+      planFormatVersion: '1',
+      applicationRevision: 'app-1',
+      steps: [
+        {
+          resolvedActions: [
+            {
+              description: 'Adapt basket on chrome',
+              replay: { operation: 'adapt', target: 'previous-basket' },
+            },
+          ],
+        },
+      ],
+    }
+    await Bun.write(approvedPath, `${JSON.stringify(approved, null, 2)}\n`)
+    for (const cmd of [
+      ['git', 'init'],
+      ['git', 'config', 'user.email', 'studio@example.test'],
+      ['git', 'config', 'user.name', 'Studio Test'],
+      ['git', 'add', '.'],
+      ['git', 'commit', '-m', 'initial'],
+    ]) {
+      const result = Bun.spawnSync({ cmd, cwd: project })
+      expect(result.exitCode).toBe(0)
+    }
+    const gate = join(project, 'continue.txt')
+    await Bun.write(gate, 'continue')
+    const { child, url } = await startStudio(project, {
+      PICKLE_STUDIO_CONTINUE: gate,
+    })
+    const page = await browser.newPage()
+    try {
+      await page.goto(url)
+      await page
+        .getByRole('button', { name: 'Run Scenario Adapt the purchase' })
+        .click()
+      await page.getByRole('button', { name: 'Cancel test run' }).waitFor()
+      await page.getByRole('button', { name: 'Run Specification' }).waitFor({
+        timeout: 20_000,
+      })
+
+      await page.getByRole('link', { name: 'Plans' }).click()
+      await page.getByRole('heading', { name: 'Plans', exact: true }).waitFor()
+      expect(await page.getByText('CI adapted results: reject').count()).toBe(1)
+      await page
+        .getByRole('button', { name: 'Adapt the purchase · chrome' })
+        .click()
+      const comparison = page.getByRole('table', { name: 'Plan comparison' })
+      expect(await comparison.textContent()).toContain('previous-revision')
+      expect(await comparison.textContent()).toContain('Adapt basket on chrome')
+      expect(await comparison.textContent()).toContain('previous-basket')
+      expect(await comparison.textContent()).toContain('current-basket')
+
+      await page
+        .getByRole('button', { name: 'View originating test result' })
+        .click()
+      const evidence = page.getByRole('dialog', {
+        name: 'Originating test result',
+      })
+      expect(await evidence.textContent()).toContain('passed-with-adaptation')
+      expect(await evidence.textContent()).toContain('Then the basket adapts')
+      expect(await evidence.textContent()).toContain('Adapt basket on chrome')
+      expect(
+        await evidence.getByRole('img', { name: /screenshot/ }).count(),
+      ).toBe(1)
+      await evidence.getByRole('button', { name: 'Close' }).click()
+
+      await rm(gate)
+      await page.getByRole('link', { name: 'Specifications' }).click()
+      await page
+        .getByRole('button', { name: 'Run Scenario Pay for the order' })
+        .click()
+      await page.getByRole('status').filter({ hasText: 'running' }).waitFor()
+      await page.getByRole('link', { name: 'Plans' }).click()
+      expect(
+        await page
+          .getByRole('button', { name: 'Promote candidate' })
+          .isDisabled(),
+      ).toBe(true)
+      const otherPage = await browser.newPage()
+      try {
+        await otherPage.goto(url)
+        await otherPage.getByRole('link', { name: 'Plans' }).click()
+        await otherPage
+          .getByRole('button', { name: 'Adapt the purchase · chrome' })
+          .click()
+        await otherPage
+          .getByRole('button', { name: 'Promote candidate' })
+          .click()
+        await otherPage
+          .getByRole('button', { name: 'Confirm promotion' })
+          .click()
+        await otherPage
+          .getByRole('alert')
+          .filter({ hasText: 'cannot be promoted during a test run' })
+          .waitFor()
+      } finally {
+        await otherPage.close()
+      }
+      await Bun.write(gate, 'continue')
+      await page.getByRole('status').filter({ hasText: 'failed' }).waitFor({
+        timeout: 20_000,
+      })
+      const promote = page.getByRole('button', { name: 'Promote candidate' })
+      await promote.waitFor()
+      const enabledDeadline = Date.now() + 10_000
+      while (await promote.isDisabled()) {
+        if (Date.now() >= enabledDeadline) {
+          throw new Error('Promotion remained disabled after the test run')
+        }
+        await Bun.sleep(25)
+      }
+
+      await promote.click()
+      const confirmation = page.getByRole('dialog', {
+        name: 'Promote candidate plan?',
+      })
+      await confirmation.waitFor()
+      expect(JSON.parse(await Bun.file(approvedPath).text())).toEqual(approved)
+      await confirmation
+        .getByRole('button', { name: 'Confirm promotion' })
+        .click()
+      await page.getByText('No candidate plan').waitFor()
+      expect(await Bun.file(candidatePath).exists()).toBe(false)
+
+      await page.getByRole('link', { name: 'Settings' }).click()
+      const changed = page
+        .getByRole('listitem')
+        .filter({ hasText: '.pickle/plans/chrome/scnadaptcccccccc.json' })
+      await changed.waitFor()
+      await changed.getByRole('button', { name: 'Show diff' }).click()
+      expect(await changed.textContent()).toContain('Adapt basket on chrome')
+    } finally {
+      await page.close()
+      child.kill()
+      await child.exited
+    }
+  }, 60_000)
+
   test('Studio runs a single Scenario without the rest of the Specification', async () => {
     const project = await createStudioProject('single-scenario')
     const marker = join(project, 'step-started.txt')
@@ -439,20 +618,14 @@ Feature: Search
         ).monaco?.editor.getEditors()[0]
         const model = editor?.getModel()
         if (!editor || !model) return
+        editor.setValue(`${editor.getValue()}\n    Gi`)
         const lineNumber = model.getLineCount()
         editor.setPosition({
           lineNumber,
           column: model.getLineMaxColumn(lineNumber),
         })
         editor.focus()
-      })
-      await page.keyboard.press('Enter')
-      await page.keyboard.type('    Gi')
-      await page.evaluate(() => {
-        const editor = (
-          globalThis as MonacoEditorHost
-        ).monaco?.editor.getEditors()[0]
-        editor?.trigger('test', 'editor.action.triggerSuggest', {})
+        editor.trigger('test', 'editor.action.triggerSuggest', {})
       })
       await page
         .locator('.suggest-widget.visible')

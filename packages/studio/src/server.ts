@@ -1,7 +1,13 @@
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { basename, join, resolve } from 'node:path'
-import type { RunEvent, TestRunManifest } from '@pickle-spec/runner'
+import type {
+  CandidateExecutionPlan,
+  ExecutionPlan,
+  RunEvent,
+  TestResult,
+  TestRunManifest,
+} from '@pickle-spec/runner'
 import type {
   SpecificationMetadata,
   StructuredSpecification,
@@ -98,6 +104,32 @@ export interface StudioProject {
   profileDetails?: readonly StudioProfile[]
   secrets?: readonly StudioCredential[]
   readiness?: StudioRunReadiness
+  policy: { adaptedResults: 'accept' | 'reject' }
+}
+
+export interface StudioPlanEvidence {
+  testRunId: string
+  result?: TestResult
+}
+
+export interface StudioPlanReview {
+  scenario: { id: string; name: string }
+  executionTargetProfileId: string
+  approved?: ExecutionPlan
+  candidate?: CandidateExecutionPlan
+  candidateRevision?: string
+  evidence?: StudioPlanEvidence
+}
+
+export interface StudioPlanPromotionRequest {
+  scenarioId: string
+  executionTargetProfileId: string
+  expectedCandidateRevision: string
+}
+
+export interface StudioPlanGateway {
+  list(): Promise<readonly StudioPlanReview[]>
+  promote(input: StudioPlanPromotionRequest): Promise<ExecutionPlan>
 }
 
 export interface StudioRunRequest {
@@ -117,7 +149,7 @@ export interface StudioRunGateway {
   start(
     request: StudioRunRequest | undefined,
     onEvent: (event: RunEvent) => void,
-  ): Promise<{ id: string; done?: Promise<unknown> }>
+  ): Promise<{ id: string; done: Promise<unknown> }>
   snapshot(id: string): Promise<StudioRunSnapshot>
   cancel(id: string): Promise<void>
 }
@@ -146,6 +178,7 @@ export interface StudioOptions {
   documents?: SpecificationWorkspace
   authoring?: StudioAuthoringGateway
   management?: StudioManagementGateway
+  plans?: StudioPlanGateway
   git?: GitWorkspace
   specificationGlobs?: string | readonly string[]
   language?: string
@@ -218,6 +251,10 @@ type DocumentProposeRequest = {
   prompt: string
   uri?: string
   currentSource?: string
+}
+
+type PlanPromotionRequest = Partial<StudioPlanPromotionRequest> & {
+  confirmed?: boolean
 }
 
 const sessionCookie = 'pickle_studio_token'
@@ -301,6 +338,7 @@ export async function startStudio(
   const listeners = new Map<string, Set<(event: StudioStreamEvent) => void>>()
   const buffers = new Map<string, StudioStreamEvent[]>()
   const workspaceListeners = new Set<(event: WorkspaceStreamEvent) => void>()
+  const activeRuns = new Set<string>()
 
   function publish(id: string, event: StudioStreamEvent): void {
     if (!id) return
@@ -406,6 +444,54 @@ export async function startStudio(
       }
       if (url.pathname === '/api/project' && request.method === 'GET') {
         return Response.json(await currentProject())
+      }
+      if (url.pathname === '/api/plans' && request.method === 'GET') {
+        if (!options.plans) {
+          return new Response('Execution plans are unavailable', {
+            status: 501,
+          })
+        }
+        return Response.json(await options.plans.list())
+      }
+      if (url.pathname === '/api/plans/promote' && request.method === 'POST') {
+        if (!options.plans) {
+          return new Response('Execution plans are unavailable', {
+            status: 501,
+          })
+        }
+        const body = (await request.json()) as PlanPromotionRequest
+        if (body.confirmed !== true) {
+          return new Response('Plan promotion requires explicit confirmation', {
+            status: 400,
+          })
+        }
+        if (activeRuns.size > 0) {
+          return new Response(
+            'A candidate plan cannot be promoted during a test run',
+            { status: 409 },
+          )
+        }
+        if (
+          !body.scenarioId ||
+          !body.executionTargetProfileId ||
+          !body.expectedCandidateRevision
+        ) {
+          return new Response('Plan promotion request is incomplete', {
+            status: 400,
+          })
+        }
+        try {
+          return Response.json(
+            await options.plans.promote({
+              scenarioId: body.scenarioId,
+              executionTargetProfileId: body.executionTargetProfileId,
+              expectedCandidateRevision: body.expectedCandidateRevision,
+            }),
+          )
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error)
+          return new Response(message, { status: 409 })
+        }
       }
       if (url.pathname === '/api/config' && request.method === 'PUT') {
         if (!options.management) {
@@ -588,10 +674,13 @@ export async function startStudio(
             publish(runId, event)
           })
           runId = started.id
-          void started.done?.then(
-            () => publish(runId, { type: 'run-finished', run: { id: runId } }),
-            () => publish(runId, { type: 'run-finished', run: { id: runId } }),
-          )
+          activeRuns.add(started.id)
+          const finishRun = () => {
+            publish(runId, { type: 'run-finished', run: { id: runId } })
+          }
+          void started.done
+            .then(finishRun, finishRun)
+            .finally(() => activeRuns.delete(started.id))
           return Response.json({ id: started.id })
         } catch (error) {
           const message = error instanceof Error ? error.message : String(error)

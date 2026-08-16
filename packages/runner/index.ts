@@ -32,10 +32,17 @@ export {
   validateRunConfiguration,
 } from './src/configuration'
 export type {
+  CandidateExecutionPlan,
+  CandidatePlanEvidence,
   ExecutionPlan,
+  ExecutionPlanReview,
+  ExecutionPlanReviewStore,
   ExecutionPlanStep,
   ExecutionPlanStore,
+  FileExecutionPlanStore,
+  FilePlanStoreOptions,
   PlanApplicability,
+  PromoteCandidatePlanInput,
 } from './src/execution-plan'
 export {
   createFilePlanStore,
