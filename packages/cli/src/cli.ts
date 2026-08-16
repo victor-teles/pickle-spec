@@ -9,6 +9,10 @@ import type {
 } from '@pickle-spec/runner'
 import {
   createFilePlanStore,
+  formatJson,
+  formatJunit,
+  formatNdjson,
+  openTestRunStore,
   resolveRunConfiguration,
   runScenarios,
   validateTargetSelection,
@@ -42,6 +46,9 @@ interface RunArguments {
   headed?: boolean
   screenshotMode?: NonNullable<WebAdapterOptions['screenshots']>['mode']
   applicationRevision?: string
+  junitPath?: string
+  jsonPath?: string
+  ndjsonPath?: string
 }
 
 function integer(value: string, flag: string, minimum: number): number {
@@ -141,6 +148,15 @@ function parseRunArguments(argv: string[]): RunArguments {
       }
       case '--application-revision':
         args.applicationRevision = valueAfter(argv, index++)
+        break
+      case '--junit':
+        args.junitPath = valueAfter(argv, index++)
+        break
+      case '--json':
+        args.jsonPath = valueAfter(argv, index++)
+        break
+      case '--ndjson':
+        args.ndjsonPath = valueAfter(argv, index++)
         break
       default:
         throw new Error(`Unknown option: ${flag}`)
@@ -321,15 +337,36 @@ async function run(argv: string[]): Promise<number> {
       ...config.server,
       ...(args.reuseServer ? { reuseExisting: true } : {}),
     })
+    const store = openTestRunStore({
+      root: process.cwd(),
+      artifactCapture: config.artifacts?.capture,
+    })
+    const testRun = await store.create()
     const runs = await runScenarios({
       selections,
       ...resolvedConfiguration,
       plans: createFilePlanStore(process.cwd()),
       ci: Boolean(process.env.CI),
       signal: controller.signal,
-      onEvent(event) {
-        console.log(JSON.stringify({ kind: 'run-event', event }))
+      async onEvent(event) {
+        const persisted = await testRun.append(event)
+        if (event.type === 'scenario-finished') {
+          await testRun.materialize({ finished: false })
+        }
+        console.log(JSON.stringify({ kind: 'run-event', event: persisted }))
       },
+    })
+    const manifest = await testRun.materialize()
+    if (args.junitPath) await Bun.write(args.junitPath, formatJunit(manifest))
+    if (args.jsonPath) await Bun.write(args.jsonPath, formatJson(manifest))
+    if (args.ndjsonPath) {
+      await Bun.write(args.ndjsonPath, formatNdjson(await testRun.events()))
+    }
+    await store.applyRetention({
+      maxAgeMs: config.retention?.days
+        ? config.retention.days * 24 * 60 * 60 * 1000
+        : undefined,
+      maxBytes: config.retention?.maxBytes,
     })
 
     for (const scenarioRun of runs) {

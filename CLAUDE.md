@@ -148,3 +148,7 @@ Triage uses the five default canonical labels. See `docs/agents/triage-labels.md
 ### Domain docs
 
 Domain documentation uses the single-context layout. See `docs/agents/domain.md`.
+
+### Clean
+
+After an implementation is complete and before committing, run `/clean` to polish the diff. Do this even when the user asks to commit immediately — clean first, then commit.
