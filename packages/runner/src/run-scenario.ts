@@ -69,9 +69,15 @@ export interface OpenSessionInput {
   signal?: AbortSignal
 }
 
+export interface FidelityPolicy {
+  profile: 'default' | 'fast'
+  tradeOffs: readonly string[]
+}
+
 export interface ExecutionTargetAdapter {
   capabilities?: readonly string[]
   planFormatVersion?: string
+  fidelityPolicy?: FidelityPolicy
   openSession(input: OpenSessionInput): Promise<TargetSession>
   dispose?(): Promise<void>
 }
@@ -102,6 +108,7 @@ export interface TestResult {
   attempts?: number
   flaky?: boolean
   durationMs?: number
+  fidelityPolicy?: FidelityPolicy
 }
 
 interface RunEventEnvelope {
@@ -313,6 +320,9 @@ function createTestResult(
     steps,
     executionMode: input.mode,
     durationMs,
+    ...(input.adapter.fidelityPolicy
+      ? { fidelityPolicy: input.adapter.fidelityPolicy }
+      : {}),
     ...(message !== undefined ? { message } : {}),
   }
 }

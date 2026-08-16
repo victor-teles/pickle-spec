@@ -1,8 +1,10 @@
 import { mkdir } from 'node:fs/promises'
 import { basename, dirname, join, relative } from 'node:path'
-import { z } from 'zod'
+import { migrateRunArchive } from './archive-migrate'
 import type { RunEvent, TestResult, TestStepResult } from './run-scenario'
 import { openTestRunStore, type TestRunManifest } from './test-run-store'
+
+export { migrateRunArchive }
 
 export interface RunArchiveArtifact {
   path: string
@@ -35,116 +37,13 @@ export interface ImportedRunArchive {
   preservedArchivePath: string
 }
 
-const objectSchema = z.record(z.string(), z.unknown())
-
-function asObject(value: unknown, field: string): Record<string, unknown> {
-  const result = objectSchema.safeParse(value)
-  if (!result.success) throw new Error(`${field} must be an object`)
-  return result.data
-}
-
-function migrateStep(step: unknown): TestStepResult {
-  const value = asObject(step, 'archive step')
-  return {
-    step: value.step as TestStepResult['step'],
-    state: value.state as TestStepResult['state'],
-    resolvedActions: Array.isArray(value.resolvedActions)
-      ? (value.resolvedActions as TestStepResult['resolvedActions'])
-      : [],
-    ...(typeof value.message === 'string' ? { message: value.message } : {}),
-    ...(Array.isArray(value.artifacts)
-      ? { artifacts: value.artifacts as TestStepResult['artifacts'] }
-      : {}),
-  }
-}
-
-function migrateResult(result: unknown): TestResult {
-  const value = asObject(result, 'archive result')
-  const scenario = asObject(value.scenario, 'archive result.scenario')
-  return {
-    schemaVersion: 1,
-    specification: value.specification as TestResult['specification'],
-    scenario: {
-      name: String(scenario.name ?? ''),
-      ...(typeof scenario.id === 'string' ? { id: scenario.id } : {}),
-    },
-    executionTargetProfile:
-      value.executionTargetProfile as TestResult['executionTargetProfile'],
-    state: value.state as TestResult['state'],
-    steps: Array.isArray(value.steps) ? value.steps.map(migrateStep) : [],
-    ...(typeof value.executionMode === 'string'
-      ? { executionMode: value.executionMode as TestResult['executionMode'] }
-      : {}),
-    ...(typeof value.message === 'string' ? { message: value.message } : {}),
-    ...(typeof value.attempts === 'number' ? { attempts: value.attempts } : {}),
-    ...(typeof value.flaky === 'boolean' ? { flaky: value.flaky } : {}),
-    ...(typeof value.durationMs === 'number'
-      ? { durationMs: value.durationMs }
-      : {}),
-  }
-}
-
-function migrateEvent(event: unknown, index: number): RunEvent {
-  const value = asObject(event, 'archive event')
-  const base = {
-    schemaVersion: 1 as const,
-    sequence: typeof value.sequence === 'number' ? value.sequence : index + 1,
-  }
-  if (value.type === 'scenario-finished') {
-    return {
-      ...base,
-      type: 'scenario-finished',
-      result: migrateResult(value.result),
-    }
-  }
-  if (value.type === 'step-finished') {
-    return {
-      ...base,
-      type: 'step-finished',
-      result: migrateStep(value.result),
-    }
-  }
-  return { ...base, ...(value as object) } as RunEvent
-}
-
-function migrateManifest(manifest: unknown): TestRunManifest {
-  const value = asObject(manifest, 'archive manifest')
-  return {
-    schemaVersion: 1,
-    id: String(value.id ?? ''),
-    startedAt: String(value.startedAt ?? ''),
-    ...(typeof value.finishedAt === 'string'
-      ? { finishedAt: value.finishedAt }
-      : {}),
-    ...(typeof value.sourceRunId === 'string'
-      ? { sourceRunId: value.sourceRunId }
-      : {}),
-    state: value.state as TestRunManifest['state'],
-    results: Array.isArray(value.results)
-      ? value.results.map(migrateResult)
-      : [],
-  }
-}
-
-export function migrateRunArchive(value: unknown): RunArchive {
-  const archive = asObject(value, 'run archive')
-  const events = Array.isArray(archive.events) ? archive.events : []
-  return {
-    schemaVersion: 1,
-    kind: 'run-archive',
-    manifest: migrateManifest(archive.manifest),
-    events: events.map(migrateEvent),
-    artifacts: Array.isArray(archive.artifacts)
-      ? (archive.artifacts as RunArchiveArtifact[])
-      : [],
-  }
-}
-
 interface CollectedArtifact {
   absolutePath: string
   archivePath: string
   mediaType?: string
 }
+
+type MapArtifactPath = (path: string) => string
 
 function collectArtifacts(
   results: readonly TestResult[],
@@ -161,7 +60,7 @@ function collectArtifacts(
           archivePath: archivePath.startsWith('..')
             ? join('artifacts', basename(artifact.path))
             : archivePath,
-          ...(artifact.mediaType ? { mediaType: artifact.mediaType } : {}),
+          mediaType: artifact.mediaType,
         })
       }
     }
@@ -171,7 +70,7 @@ function collectArtifacts(
 
 function mapStepArtifacts(
   step: TestStepResult,
-  mapPath: (path: string) => string,
+  mapPath: MapArtifactPath,
 ): TestStepResult {
   if (!step.artifacts) return step
   return {
@@ -185,7 +84,7 @@ function mapStepArtifacts(
 
 function mapResultArtifacts(
   result: TestResult,
-  mapPath: (path: string) => string,
+  mapPath: MapArtifactPath,
 ): TestResult {
   return {
     ...result,
@@ -195,7 +94,7 @@ function mapResultArtifacts(
 
 function mapEventArtifacts(
   event: RunEvent,
-  mapPath: (path: string) => string,
+  mapPath: MapArtifactPath,
 ): RunEvent {
   if (event.type === 'scenario-finished') {
     return { ...event, result: mapResultArtifacts(event.result, mapPath) }
@@ -206,15 +105,21 @@ function mapEventArtifacts(
   return event
 }
 
-async function loadRunFiles(root: string, runId: string) {
+type LoadedRun = {
+  runDirectory: string
+  manifest: TestRunManifest
+  events: RunEvent[]
+}
+
+async function loadRunFiles(root: string, runId: string): Promise<LoadedRun> {
   const store = openTestRunStore({ root })
   const run = await store.open(runId)
   const events = await run.events()
   if (events.length === 0) throw new Error(`Unknown test run "${runId}"`)
   const runDirectory = join(root, '.pickle', 'runs', runId)
-  const manifestPath = join(runDirectory, 'manifest.json')
-  const manifest = (await Bun.file(manifestPath).exists())
-    ? ((await Bun.file(manifestPath).json()) as TestRunManifest)
+  const manifestFile = Bun.file(join(runDirectory, 'manifest.json'))
+  const manifest = (await manifestFile.exists())
+    ? ((await manifestFile.json()) as TestRunManifest)
     : await run.materialize({ finished: false })
   return { runDirectory, manifest, events }
 }
@@ -230,17 +135,15 @@ export async function writeRunArchive(
   const pathMap = new Map(
     collected.map((item) => [item.absolutePath, item.archivePath]),
   )
-  const mapPath = (path: string) => pathMap.get(path) ?? path
+  const mapPath: MapArtifactPath = (path) => pathMap.get(path) ?? path
   const artifacts: RunArchiveArtifact[] = []
   for (const item of collected) {
-    if (!(await Bun.file(item.absolutePath).exists())) continue
-    const bytes = new Uint8Array(
-      await Bun.file(item.absolutePath).arrayBuffer(),
-    )
+    const file = Bun.file(item.absolutePath)
+    if (!(await file.exists())) continue
     artifacts.push({
       path: item.archivePath,
-      content: Buffer.from(bytes).toString('base64'),
-      ...(item.mediaType ? { mediaType: item.mediaType } : {}),
+      content: Buffer.from(await file.arrayBuffer()).toString('base64'),
+      mediaType: item.mediaType,
     })
   }
 
@@ -293,7 +196,7 @@ export async function importRunArchive(
     await Bun.write(target, Buffer.from(artifact.content, 'base64'))
     pathMap.set(artifact.path, target)
   }
-  const mapPath = (path: string) =>
+  const mapPath: MapArtifactPath = (path) =>
     pathMap.get(path) ?? join(runDirectory, path)
   const events = archive.events.map((event) =>
     mapEventArtifacts(event, mapPath),

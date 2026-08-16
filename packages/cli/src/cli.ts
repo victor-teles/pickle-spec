@@ -16,6 +16,7 @@ import {
   formatJunit,
   formatNdjson,
   importRunArchive,
+  latestHistoricalDurations,
   openTestRunStore,
   resolveRunConfiguration,
   runScenarios,
@@ -69,6 +70,7 @@ interface RunArguments {
   rerunId?: string
   failures?: boolean
   adaptations?: boolean
+  fast?: boolean
 }
 
 const dayMs = 24 * 60 * 60 * 1000
@@ -191,6 +193,9 @@ function parseRunArguments(argv: string[]): RunArguments {
       case '--adaptations':
         args.adaptations = true
         break
+      case '--fast':
+        args.fast = true
+        break
       default:
         throw new Error(`Unknown option: ${flag}`)
     }
@@ -252,6 +257,7 @@ function configuredWebOptions(
   if (!web) return undefined
   return {
     ...web,
+    ...(args.fast ? { profile: 'fast' as const } : {}),
     browser: {
       ...web.browser,
       ...(args.headed ? { headless: false } : {}),
@@ -377,12 +383,20 @@ async function run(argv: string[]): Promise<number> {
       root: process.cwd(),
       artifactCapture: config.artifacts?.capture,
     })
+    const shardSelection = args.selection.shard ?? baseSelection?.shard
+    const historicalDurations = shardSelection
+      ? await latestHistoricalDurations(store)
+      : undefined
 
-    let selections = selectScenarios(specifications, {
-      ...baseSelection,
-      ...args.selection,
-      shard: args.selection.shard ?? baseSelection?.shard,
-    })
+    let selections = selectScenarios(
+      specifications,
+      {
+        ...baseSelection,
+        ...args.selection,
+        shard: shardSelection,
+      },
+      historicalDurations ? { historicalDurations } : {},
+    )
     let profileIds = args.profiles
     let sourceRunId: string | undefined
     let selectedResults: TestResult[] | undefined
@@ -400,12 +414,16 @@ async function run(argv: string[]): Promise<number> {
       if (selectedResults.length === 0) {
         throw new Error('No results match the current rerun selection')
       }
-      selections = selectScenarios(specifications, {
-        ...baseSelection,
-        ...args.selection,
-        scenarioName: undefined,
-        shard: args.selection.shard ?? baseSelection?.shard,
-      }).filter((selection) =>
+      selections = selectScenarios(
+        specifications,
+        {
+          ...baseSelection,
+          ...args.selection,
+          scenarioName: undefined,
+          shard: shardSelection,
+        },
+        historicalDurations ? { historicalDurations } : {},
+      ).filter((selection) =>
         selectedResults!.some((result) =>
           selectionMatchesResult(selection, result),
         ),

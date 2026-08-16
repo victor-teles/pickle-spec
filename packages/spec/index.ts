@@ -16,6 +16,7 @@ export { scenarioRevision } from './src/revision'
 export type {
   ScenarioSelection,
   SelectionOptions,
+  SelectScenariosContext,
   Shard,
 } from './src/selection'
 export {

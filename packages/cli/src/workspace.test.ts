@@ -1677,6 +1677,189 @@ export default {
     expect(await Bun.file(htmlPath).text()).toContain('data:image/png;base64,')
   })
 
+  test('records fast profile fidelity trade-offs through the CLI', async () => {
+    const project = join(workspace, 'fast-profile')
+    const applicationUrl = 'data:text/html,<button id="search">Search</button>'
+    await mkdir(project, { recursive: true })
+    await Bun.write(
+      join(project, 'web.feature'),
+      `@pickle:id:specwebfastaaaaaaa @pickle:state:active
+Feature: Web search
+  @pickle:id:scnwebfastbbbbbb
+  Scenario: Search from the application
+    When I search for pickles
+    Then pickle results are visible`,
+    )
+    await Bun.write(
+      join(project, 'pickle.config.jsonc'),
+      JSON.stringify({
+        schemaVersion: 1,
+        executionTargetProfile: { id: 'web' },
+        server: {
+          command: 'exit 9',
+          url: applicationUrl,
+          reuseExisting: true,
+        },
+        web: { baseUrl: applicationUrl },
+      }),
+    )
+    await Bun.write(
+      join(project, 'web.extensions.ts'),
+      `
+export default {
+  webAutomationFactory: {
+    async launch() {
+      return {
+        async openContext() {
+          return {
+            async navigate() {},
+            async observe() {
+              return [{ description: 'Search for pickles', handle: 'search' }]
+            },
+            async act() { return { success: true } },
+            async verify() {
+              return { meetsExpectation: true, actualState: 'Ready' }
+            },
+            async readIsolationState() {
+              return { cookieCount: 0, storageKeyCount: 0 }
+            },
+            async screenshot() { return new Uint8Array() },
+            async close() {},
+          }
+        },
+        close: async () => {},
+      }
+    },
+  },
+}
+`,
+    )
+
+    const run = Bun.spawnSync({
+      cmd: [
+        pickleCommand,
+        'run',
+        'web.feature',
+        '--config',
+        'pickle.config.jsonc',
+        '--extensions',
+        'web.extensions.ts',
+        '--fast',
+      ],
+      cwd: project,
+      env: { ...Bun.env },
+    })
+
+    expect(run.stderr.toString()).toBe('')
+    expect(run.exitCode).toBe(0)
+    const result = JSON.parse(run.stdout.toString().trim().split('\n').at(-1)!)
+    expect(result).toMatchObject({
+      kind: 'test-result',
+      result: {
+        fidelityPolicy: {
+          profile: 'fast',
+          tradeOffs: [
+            'block-image',
+            'block-media',
+            'block-font',
+            'disable-animations',
+          ],
+        },
+      },
+    })
+  })
+
+  test('balances shards using the latest finished test run history', async () => {
+    const project = join(workspace, 'shard-history')
+    await mkdir(project, { recursive: true })
+    await Bun.write(
+      join(project, 'pickle.config.jsonc'),
+      JSON.stringify({
+        schemaVersion: 1,
+        specifications: 'features/**/*.feature',
+        executionTargetProfile: { id: 'deterministic' },
+      }),
+    )
+    await Bun.write(
+      join(project, 'pickle.extensions.ts'),
+      await Bun.file(join(workspace, 'pickle.extensions.ts')).text(),
+    )
+    await mkdir(join(project, 'features'), { recursive: true })
+    await Bun.write(
+      join(project, 'features', 'fast.feature'),
+      `@pickle:id:specfastaaaaaaaa @pickle:state:active
+Feature: Fast checkout
+  @pickle:id:scnfastbbbbbbbbbb
+  Scenario: Fast checkout
+    Then the purchase succeeds`,
+    )
+    await Bun.write(
+      join(project, 'features', 'medium.feature'),
+      `@pickle:id:specmediumaaaaaa @pickle:state:active
+Feature: Medium checkout
+  @pickle:id:scnmediumbbbbbbbb
+  Scenario: Medium checkout
+    Then the purchase succeeds`,
+    )
+    await Bun.write(
+      join(project, 'features', 'slow.feature'),
+      `@pickle:id:specslowaaaaaaaaa @pickle:state:active
+Feature: Slow checkout
+  @pickle:id:scnslowbbbbbbbbbb
+  Scenario: Slow checkout
+    Then the purchase succeeds`,
+    )
+
+    const { openTestRunStore } = await import('@pickle-spec/runner')
+    const store = openTestRunStore({
+      root: project,
+      createId: () => 'prior-run',
+      now: () => new Date('2026-08-15T12:00:00.000Z'),
+    })
+    const priorRun = await store.create()
+    for (const [scenarioId, name, durationMs] of [
+      ['scnfastbbbbbbbbbb', 'Fast checkout', 100],
+      ['scnmediumbbbbbbbb', 'Medium checkout', 400],
+      ['scnslowbbbbbbbbbb', 'Slow checkout', 900],
+    ] as const) {
+      await priorRun.append({
+        type: 'scenario-finished',
+        result: {
+          schemaVersion: 1,
+          specification: {
+            name: `${name} spec`,
+            uri: 'features/example.feature',
+          },
+          scenario: { name, id: scenarioId },
+          executionTargetProfile: { id: 'deterministic' },
+          state: 'passed',
+          steps: [],
+          durationMs,
+        },
+      })
+    }
+    await priorRun.materialize({ finished: true })
+
+    const run = Bun.spawnSync({
+      cmd: [pickleCommand, 'run', '--shard', '2/2'],
+      cwd: project,
+      env: { ...Bun.env, PICKLE_TEST_OUTCOME: 'passed' },
+    })
+    const records = run.stdout
+      .toString()
+      .trim()
+      .split('\n')
+      .filter(Boolean)
+      .map((line) => JSON.parse(line))
+      .filter((record) => record.kind === 'test-result')
+
+    expect(run.stderr.toString()).toBe('')
+    expect(run.exitCode).toBe(0)
+    expect(records.map((record) => record.result.scenario.name)).toEqual([
+      'Medium checkout',
+    ])
+  })
+
   test('check rejects an unknown artifact capture policy', async () => {
     const project = await createCheckProject('invalid-artifact-policy', {
       config: {
