@@ -8,6 +8,7 @@ import {
   type StructuredSpecification,
   specificationSourceDiff,
 } from '@pickle-spec/spec'
+import { catalogFromSource, type GherkinCatalog } from './gherkin-language'
 
 export interface SpecificationWorkspaceOptions {
   root: string
@@ -73,6 +74,7 @@ export interface SpecificationWorkspace {
     create?: boolean
   }): Promise<SpecificationBuffer>
   propose(input: ProposeSpecificationInput): Promise<SpecificationPreview>
+  completions(): Promise<GherkinCatalog>
   watch(listener: (event: DiskChangeEvent) => void): Promise<() => void>
 }
 
@@ -215,6 +217,27 @@ export function createSpecificationWorkspace(
       return {
         ...buffer(uri, source),
         diff: specificationSourceDiff(input.currentSource ?? '', source),
+      }
+    },
+
+    async completions() {
+      const tags = new Set<string>()
+      const steps = new Set<string>()
+      for (const pattern of globs) {
+        for await (const path of new Bun.Glob(pattern).scan({
+          cwd: root,
+          onlyFiles: true,
+        })) {
+          const catalog = catalogFromSource(
+            await Bun.file(resolve(root, path)).text(),
+          )
+          for (const tag of catalog.tags) tags.add(tag)
+          for (const step of catalog.steps) steps.add(step)
+        }
+      }
+      return {
+        tags: [...tags].sort((left, right) => left.localeCompare(right)),
+        steps: [...steps].sort((left, right) => left.localeCompare(right)),
       }
     },
 

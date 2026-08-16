@@ -167,6 +167,16 @@ describe('createSpecificationWorkspace', () => {
     }
   })
 
+  test('collects Gherkin tags and steps for editor autocomplete', async () => {
+    const workspace = createSpecificationWorkspace({
+      root: await project(),
+      globs: 'features/**/*.feature',
+    })
+    const catalog = await workspace.completions()
+    expect(catalog.tags).toContain('@pickle:state:active')
+    expect(catalog.steps).toContain('Then payment is captured')
+  })
+
   test('creates an accepted AI Specification in the draft state without writing during propose', async () => {
     const root = await project()
     const workspace = createSpecificationWorkspace({

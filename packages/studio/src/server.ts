@@ -330,6 +330,12 @@ export async function startStudio(
         }
       }
       if (
+        url.pathname === '/api/documents/completions' &&
+        request.method === 'GET'
+      ) {
+        return Response.json(await documents.completions())
+      }
+      if (
         url.pathname === '/api/documents/preview' &&
         request.method === 'POST'
       ) {

@@ -33,7 +33,7 @@ A neighboring runner could copy model-driven clicks. It could not truthfully cla
 - Specifications live as Gherkin feature files in the repository. Approved execution plans belong in Git under `.pickle/plans/`.
 - Immutable test runs live under `.pickle/runs/<run-id>/` as an event stream, a materialized manifest, and separate test artifacts. They stay out of Git.
 - Studio navigation uses Specifications, Runs, Plans, and Settings as stable primary areas. Specifications is the current working room; Runs, Plans, and Settings remain visible as a disabled product map.
-- The current Studio slice lists Specifications, authors them through synchronized Structured and Source views, starts a scoped test run (one Specification, one Scenario, or all Specifications), streams live progress, and diagnoses results in the Scenario table, Needs attention list, and step timeline. Git, plan promotion, and history land in later slices.
+- The current Studio slice lists Specifications, authors them from a view-mode outline into an opt-in Gherkin editor, starts a scoped test run (one Specification, one Scenario, or all Specifications), streams live progress, and diagnoses results in the Scenario table, Needs attention list, and step timeline. Git, plan promotion, and history land in later slices.
 
 ## Capabilities and Constraints
 

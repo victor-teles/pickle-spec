@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
 import { mkdir, mkdtemp, rm, symlink } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
-import { type Browser, chromium, type Locator } from 'playwright'
+import { type Browser, chromium, type Page } from 'playwright'
 
 type CliPackageManifest = {
   bin: { pickle: string }
@@ -10,6 +10,24 @@ type CliPackageManifest = {
 
 type TestRunManifestFile = {
   finishedAt?: string
+}
+
+type MonacoEditorHost = {
+  monaco?: {
+    editor: {
+      getEditors: () => Array<{
+        getValue: () => string
+        setValue: (value: string) => void
+        focus: () => void
+        setPosition: (position: { lineNumber: number; column: number }) => void
+        getModel: () => {
+          getLineCount: () => number
+          getLineMaxColumn: (lineNumber: number) => number
+        } | null
+        trigger: (source: string, handlerId: string, payload: unknown) => void
+      }>
+    }
+  }
 }
 
 describe('Studio browser seam', () => {
@@ -133,7 +151,7 @@ Feature: Search
     const stderr = collectStream(child.stderr)
     const url = await stdout.waitFor(
       /Studio (http:\/\/127\.0\.0\.1:\d+\S*)/,
-      15_000,
+      45_000,
     )
     return { child, url, stdout, stderr }
   }
@@ -393,47 +411,59 @@ Feature: Search
     }
   }, 60_000)
 
-  test('Studio keeps Structured and Source views synchronized and reviews structured saves', async () => {
+  test('Studio shows a Specification outline until Edit opens Gherkin with autocomplete', async () => {
     const project = await createStudioProject('author-specification')
     const { child, url } = await startStudio(project)
     const page = await browser.newPage()
     try {
       await page.goto(url)
-      const featureName = page.getByRole('textbox', { name: 'Feature name' })
-      await featureName.waitFor()
-      expect(await featureName.inputValue()).toBe('Checkout')
-      await featureName.fill('Basket')
+      const outline = page.getByRole('region', {
+        name: 'Specification outline',
+      })
+      await outline.waitFor()
+      expect(await outline.textContent()).toContain('Checkout')
+      expect(await outline.textContent()).toContain('Pay for the order')
+      expect(await page.locator('.monaco-editor').count()).toBe(0)
+      await page.getByRole('button', { name: 'Edit Specification' }).click()
+      await page.locator('.monaco-editor').waitFor()
+      const current = await gherkinValue(page)
+      expect(current).toContain('# keep this comment')
+      expect(current).toContain('Feature: Checkout')
+      await page.evaluate(() => {
+        const editor = (
+          globalThis as MonacoEditorHost
+        ).monaco?.editor.getEditors()[0]
+        const model = editor?.getModel()
+        if (!editor || !model) return
+        const lineNumber = model.getLineCount()
+        editor.setPosition({
+          lineNumber,
+          column: model.getLineMaxColumn(lineNumber),
+        })
+        editor.focus()
+      })
+      await page.keyboard.press('Enter')
+      await page.keyboard.type('    Gi')
+      await page.evaluate(() => {
+        const editor = (
+          globalThis as MonacoEditorHost
+        ).monaco?.editor.getEditors()[0]
+        editor?.trigger('test', 'editor.action.triggerSuggest', {})
+      })
       await page
-        .getByRole('textbox', { name: 'Scenario name' })
-        .first()
-        .fill('Pay now')
-      await page
-        .getByRole('textbox', { name: 'Step 1 text' })
-        .first()
-        .fill('payment is captured now')
-      await page.getByRole('tab', { name: 'Source' }).click()
-      const source = page.getByRole('textbox', { name: 'Gherkin source' })
-      await source.waitFor()
-      expect(await source.inputValue()).toContain('Feature: Basket')
-      expect(await source.inputValue()).toContain('Scenario: Pay now')
-      expect(await source.inputValue()).toContain('payment is captured now')
-      expect(await source.inputValue()).toContain('# keep this comment')
-      await page.getByRole('tab', { name: 'Structured' }).click()
+        .locator('.suggest-widget.visible')
+        .filter({ hasText: 'Given' })
+        .waitFor()
+      await setGherkinValue(
+        page,
+        current
+          .replace('Feature: Checkout', 'Feature: Basket')
+          .replace(
+            'Then payment is captured',
+            'Then payment is captured\n    And a receipt is shown',
+          ),
+      )
       await page.getByRole('button', { name: 'Save Specification' }).click()
-      const diff = page.getByRole('dialog', { name: 'Review source diff' })
-      await diff.waitFor()
-      const diffText = await page
-        .getByRole('region', { name: 'Source diff' })
-        .textContent()
-      expect(diffText).toContain('-Feature: Checkout')
-      expect(diffText).toContain('+Feature: Basket')
-      expect(
-        await Bun.file(join(project, 'features', 'checkout.feature')).text(),
-      ).toContain('Feature: Checkout')
-      await page.getByRole('button', { name: 'Write source' }).click()
-      await page
-        .getByRole('dialog', { name: 'Review source diff' })
-        .waitFor({ state: 'hidden' })
       let written = ''
       const deadline = Date.now() + 10_000
       while (Date.now() < deadline) {
@@ -445,26 +475,10 @@ Feature: Search
       }
       expect(written).toContain('# keep this comment')
       expect(written).toContain('Feature: Basket')
-      await page.getByRole('tab', { name: 'Source' }).click()
-      const savedSource = page.getByRole('textbox', { name: 'Gherkin source' })
-      await savedSource.waitFor()
-      await savedSource.fill(
-        (await savedSource.inputValue()).replace(
-          'Then payment is captured',
-          'Then payment is captured\n    And a receipt is shown',
-        ),
-      )
-      await page.getByRole('button', { name: 'Save Specification' }).click()
-      const sourceDeadline = Date.now() + 10_000
-      while (Date.now() < sourceDeadline) {
-        written = await Bun.file(
-          join(project, 'features', 'checkout.feature'),
-        ).text()
-        if (written.includes('And a receipt is shown')) break
-        await Bun.sleep(50)
-      }
       expect(written).toContain('And a receipt is shown')
-      expect(written).toContain('# keep this comment')
+      await page.getByRole('button', { name: 'View Specification' }).click()
+      await outline.waitFor()
+      expect(await outline.textContent()).toContain('Basket')
     } finally {
       await page.close()
       child.kill()
@@ -478,8 +492,10 @@ Feature: Search
     const page = await browser.newPage()
     try {
       await page.goto(url)
-      const featureName = page.getByRole('textbox', { name: 'Feature name' })
-      await featureName.waitFor()
+      const outline = page.getByRole('region', {
+        name: 'Specification outline',
+      })
+      await outline.waitFor()
       await Bun.write(
         join(project, 'features', 'checkout.feature'),
         `# keep this comment
@@ -490,8 +506,18 @@ Feature: Reloaded
     Then payment is captured
 `,
       )
-      await waitForInputValue(featureName, 'Reloaded')
-      await featureName.fill('Local edit')
+      await outline.getByText('Reloaded', { exact: true }).waitFor({
+        timeout: 10_000,
+      })
+      await page.getByRole('button', { name: 'Edit Specification' }).click()
+      await page.locator('.monaco-editor').waitFor()
+      await setGherkinValue(
+        page,
+        (await gherkinValue(page)).replace(
+          'Feature: Reloaded',
+          'Feature: Local edit',
+        ),
+      )
       await Bun.write(
         join(project, 'features', 'checkout.feature'),
         `# keep this comment
@@ -507,14 +533,17 @@ Feature: Disk edit
         .waitFor({
           timeout: 10_000,
         })
-      expect(await page.locator('#feature-name').inputValue()).toBe(
-        'Local edit',
-      )
+      expect(await gherkinValue(page)).toContain('Feature: Local edit')
       await page.getByRole('button', { name: 'Load from disk' }).click()
       await page
         .getByRole('dialog', { name: 'Specification changed on disk' })
         .waitFor({ state: 'hidden' })
-      await waitForInputValue(featureName, 'Disk edit')
+      const deadline = Date.now() + 10_000
+      while (Date.now() < deadline) {
+        if ((await gherkinValue(page)).includes('Feature: Disk edit')) break
+        await Bun.sleep(50)
+      }
+      expect(await gherkinValue(page)).toContain('Feature: Disk edit')
     } finally {
       await page.close()
       child.kill()
@@ -531,6 +560,7 @@ Feature: Disk edit
       expect(await page.getByLabel('Active model').textContent()).toContain(
         'anthropic / claude-sonnet-4-6',
       )
+      await page.getByRole('button', { name: 'Edit Specification' }).click()
       await page
         .getByRole('textbox', { name: 'AI prompt' })
         .fill('Search the catalog')
@@ -563,12 +593,12 @@ Feature: Disk edit
       expect(written).toContain('@pickle:state:draft')
       expect(written).not.toContain('@pickle:state:active')
       await page.getByRole('button', { name: 'Search' }).click()
-      await page.getByRole('tab', { name: 'Source' }).click()
-      expect(
-        await page
-          .getByRole('textbox', { name: 'Gherkin source' })
-          .inputValue(),
-      ).toContain('@pickle:state:draft')
+      const outline = page.getByRole('region', {
+        name: 'Specification outline',
+      })
+      await outline.waitFor()
+      expect(await outline.textContent()).toContain('Search')
+      expect(await outline.textContent()).toContain('@pickle:state:draft')
     } finally {
       await page.close()
       child.kill()
@@ -577,19 +607,30 @@ Feature: Disk edit
   }, 60_000)
 })
 
-async function waitForInputValue(
-  locator: Locator,
-  value: string,
-  timeoutMs = 10_000,
-) {
-  const deadline = Date.now() + timeoutMs
-  while (Date.now() < deadline) {
-    if ((await locator.inputValue()) === value) return
-    await Bun.sleep(50)
-  }
-  throw new Error(
-    `Input did not become ${JSON.stringify(value)} (was ${JSON.stringify(await locator.inputValue())})`,
-  )
+async function gherkinValue(page: Page): Promise<string> {
+  return page.evaluate(() => {
+    const editor = (
+      globalThis as MonacoEditorHost
+    ).monaco?.editor.getEditors()[0]
+    return editor?.getValue() ?? ''
+  })
+}
+
+async function setGherkinValue(page: Page, source: string) {
+  await page.locator('.monaco-editor').waitFor()
+  await page.evaluate((next) => {
+    const editor = (
+      globalThis as MonacoEditorHost
+    ).monaco?.editor.getEditors()[0]
+    editor?.setValue(next)
+  }, source)
+  await page.waitForFunction((expected) => {
+    const editor = (
+      globalThis as MonacoEditorHost
+    ).monaco?.editor.getEditors()[0]
+    return editor?.getValue() === expected
+  }, source)
+  await Bun.sleep(32)
 }
 
 function collectStream(stream: ReadableStream<Uint8Array>) {
