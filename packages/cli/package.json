@@ -20,12 +20,14 @@
   "dependencies": {
     "@pickle-spec/runner": "workspace:*",
     "@pickle-spec/spec": "workspace:*",
+    "@pickle-spec/studio": "workspace:*",
     "@pickle-spec/web": "workspace:*",
     "@types/bun": "catalog:",
     "@typescript/typescript6": "catalog:",
     "zod": "catalog:"
   },
   "devDependencies": {
+    "playwright": "^1.55.0",
     "typescript": "catalog:"
   }
 }
