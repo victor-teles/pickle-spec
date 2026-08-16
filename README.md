@@ -120,6 +120,48 @@ Set `applicationRevision` in `pickle.config.jsonc` or pass `--application-revisi
 
 `policy.adaptedResults` accepts `accept` or `reject`. The default is `accept`.
 
+## Persist, rerun, compare, and export test runs
+
+Every `pickle run` writes an immutable test run under `.pickle/runs/`.
+
+To create a selective rerun from an earlier test run, use:
+
+```bash
+pickle run --rerun <run-id>
+pickle run --rerun <run-id> --failures
+pickle run --rerun <run-id> --adaptations
+pickle run --rerun <run-id> --failures --scenario "Pay for the order"
+pickle run --rerun <run-id> --profile web
+```
+
+A rerun creates a new test run and records `sourceRunId`. It never changes the source run.
+
+To move a test run between machines, export and import a run archive:
+
+```bash
+pickle export <run-id> --archive run.archive.json
+pickle import run.archive.json
+```
+
+Import preserves the original archive bytes under `.pickle/archives/` and migrates older schemas in memory.
+
+To compare compatible test runs, use:
+
+```bash
+pickle compare <baseline-id> <candidate-id>
+```
+
+Comparison matches results by Scenario identifier and execution target profile identifier. It reports state, duration, flaky, adaptation, plan, and artifact changes.
+
+To create a self-contained HTML export, use:
+
+```bash
+pickle export <run-id> --html report.html
+pickle export <run-id> --html report.html --all-artifacts
+```
+
+HTML export includes failure and adaptation artifacts by default. `--all-artifacts` embeds every available test artifact and prints a size warning when the export exceeds 10 MB.
+
 ## Add a custom adapter
 
 Create `pickle.extensions.ts` when a project needs a custom execution-target adapter:

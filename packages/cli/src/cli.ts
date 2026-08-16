@@ -1,24 +1,31 @@
 #!/usr/bin/env bun
 
-import { relative, resolve } from 'node:path'
+import { join, relative, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import type {
   ExecutionTargetAdapter,
   ExecutionTargetProfile,
   RunExtensions,
+  TestResult,
 } from '@pickle-spec/runner'
 import {
+  compareTestRuns,
   createFilePlanStore,
+  formatHtml,
   formatJson,
   formatJunit,
   formatNdjson,
+  importRunArchive,
   openTestRunStore,
   resolveRunConfiguration,
   runScenarios,
+  selectRerunResults,
   validateTargetSelection,
+  writeRunArchive,
 } from '@pickle-spec/runner'
 import {
   parseSpecification,
+  resolveScenarioId,
   type SelectionOptions,
   type SpecificationState,
   selectScenarios,
@@ -49,6 +56,9 @@ interface RunArguments {
   junitPath?: string
   jsonPath?: string
   ndjsonPath?: string
+  rerunId?: string
+  failures?: boolean
+  adaptations?: boolean
 }
 
 function integer(value: string, flag: string, minimum: number): number {
@@ -157,6 +167,15 @@ function parseRunArguments(argv: string[]): RunArguments {
         break
       case '--ndjson':
         args.ndjsonPath = valueAfter(argv, index++)
+        break
+      case '--rerun':
+        args.rerunId = valueAfter(argv, index++)
+        break
+      case '--failures':
+        args.failures = true
+        break
+      case '--adaptations':
+        args.adaptations = true
         break
       default:
         throw new Error(`Unknown option: ${flag}`)
@@ -283,6 +302,39 @@ function configuredRunExtensions(
   }
 }
 
+function scenarioSelectionId(selection: {
+  specification: { source: { uri: string }; name: string }
+  scenario: { name: string; id?: string; tags: string[] }
+}): string {
+  return (
+    selection.scenario.id ??
+    resolveScenarioId(
+      selection.specification.source.uri,
+      selection.specification.name,
+      selection.scenario.name,
+      selection.scenario.tags,
+    )
+  )
+}
+
+function resultIdentity(result: TestResult): string {
+  return `${result.scenario.id ?? result.scenario.name}::${result.executionTargetProfile.id}`
+}
+
+function selectionMatchesResult(
+  selection: {
+    specification: { source: { uri: string }; name: string }
+    scenario: { name: string; id?: string; tags: string[] }
+  },
+  result: TestResult,
+): boolean {
+  const scenarioId = scenarioSelectionId(selection)
+  return (
+    scenarioId === (result.scenario.id ?? result.scenario.name) ||
+    selection.scenario.name === result.scenario.name
+  )
+}
+
 async function run(argv: string[]): Promise<number> {
   const args = parseRunArguments(argv)
   const config = await loadConfig(args.configPath)
@@ -301,17 +353,73 @@ async function run(argv: string[]): Promise<number> {
       throw new Error(`Unknown test suite "${args.suite}"`)
     }
     const baseSelection = suiteSelection ?? config.selection
-    const selections = selectScenarios(specifications, {
+    const store = openTestRunStore({
+      root: process.cwd(),
+      artifactCapture: config.artifacts?.capture,
+    })
+
+    let selections = selectScenarios(specifications, {
       ...baseSelection,
       ...args.selection,
       shard: args.selection.shard ?? baseSelection?.shard,
     })
+    let profileIds = args.profiles
+    let sourceRunId: string | undefined
+    let selectedResults: TestResult[] | undefined
+
+    if (args.rerunId) {
+      const sourceManifest = await loadManifest(args.rerunId)
+      selectedResults = selectRerunResults(sourceManifest, {
+        failures: args.failures,
+        adaptations: args.adaptations,
+        ...(args.selection.scenarioName
+          ? { scenarioNames: [args.selection.scenarioName] }
+          : {}),
+        ...(args.profiles?.length ? { profileIds: args.profiles } : {}),
+      })
+      if (selectedResults.length === 0) {
+        throw new Error('No results match the current rerun selection')
+      }
+      const selectedScenarioIds = new Set(
+        selectedResults.map(
+          (result) => result.scenario.id ?? result.scenario.name,
+        ),
+      )
+      selections = selectScenarios(specifications, {
+        ...baseSelection,
+        ...args.selection,
+        scenarioName: undefined,
+        shard: args.selection.shard ?? baseSelection?.shard,
+      }).filter(
+        (selection) =>
+          selectedScenarioIds.has(scenarioSelectionId(selection)) ||
+          selectedResults!.some(
+            (result) => result.scenario.name === selection.scenario.name,
+          ),
+      )
+      if (selections.length === 0) {
+        throw new Error('No Scenarios match the current rerun selection')
+      }
+      profileIds = args.profiles?.length
+        ? args.profiles
+        : config.executionTargetProfiles
+          ? [
+              ...new Set(
+                selectedResults.map(
+                  (result) => result.executionTargetProfile.id,
+                ),
+              ),
+            ]
+          : undefined
+      sourceRunId = args.rerunId
+    }
+
     if (selections.length === 0)
       throw new Error('No Scenarios match the current selection')
 
     const extensions = await loadExtensions(args.extensionsPath)
     const runConfiguration = {
-      ...runConfigurationFrom(config, args.profiles),
+      ...runConfigurationFrom(config, profileIds),
       concurrency: args.concurrency ?? config.concurrency,
       applicationRevision:
         args.applicationRevision ?? config.applicationRevision,
@@ -337,25 +445,40 @@ async function run(argv: string[]): Promise<number> {
       ...config.server,
       ...(args.reuseServer ? { reuseExisting: true } : {}),
     })
-    const store = openTestRunStore({
-      root: process.cwd(),
-      artifactCapture: config.artifacts?.capture,
-    })
-    const testRun = await store.create()
-    const runs = await runScenarios({
-      selections,
-      ...resolvedConfiguration,
-      plans: createFilePlanStore(process.cwd()),
-      ci: Boolean(process.env.CI),
-      signal: controller.signal,
-      async onEvent(event) {
-        const persisted = await testRun.append(event)
-        if (event.type === 'scenario-finished') {
-          await testRun.materialize({ finished: false })
-        }
-        console.log(JSON.stringify({ kind: 'run-event', event: persisted }))
-      },
-    })
+    const testRun = await store.create(
+      sourceRunId ? { sourceRunId } : undefined,
+    )
+    const onEvent = async (
+      event: Parameters<
+        NonNullable<Parameters<typeof runScenarios>[0]['onEvent']>
+      >[0],
+    ) => {
+      const persisted = await testRun.append(event)
+      if (event.type === 'scenario-finished') {
+        await testRun.materialize({ finished: false })
+      }
+      console.log(JSON.stringify({ kind: 'run-event', event: persisted }))
+    }
+
+    const planStore = createFilePlanStore(process.cwd())
+    const runs = selectedResults
+      ? await runSelectedResultPairs({
+          selectedResults,
+          selections,
+          resolvedConfiguration,
+          plans: planStore,
+          ci: Boolean(process.env.CI),
+          signal: controller.signal,
+          onEvent,
+        })
+      : await runScenarios({
+          selections,
+          ...resolvedConfiguration,
+          plans: planStore,
+          ci: Boolean(process.env.CI),
+          signal: controller.signal,
+          onEvent,
+        })
     const manifest = await testRun.materialize()
     if (args.junitPath) await Bun.write(args.junitPath, formatJunit(manifest))
     if (args.jsonPath) await Bun.write(args.jsonPath, formatJson(manifest))
@@ -391,6 +514,46 @@ async function run(argv: string[]): Promise<number> {
   }
 }
 
+async function runSelectedResultPairs(input: {
+  selectedResults: readonly TestResult[]
+  selections: ReturnType<typeof selectScenarios>
+  resolvedConfiguration: ReturnType<typeof resolveRunConfiguration>
+  plans: ReturnType<typeof createFilePlanStore>
+  ci: boolean
+  signal: AbortSignal
+  onEvent: NonNullable<Parameters<typeof runScenarios>[0]['onEvent']>
+}) {
+  const wanted = new Set(input.selectedResults.map(resultIdentity))
+  const runs = []
+  for (const target of input.resolvedConfiguration.targets) {
+    const profileId = target.executionTargetProfile.id
+    const profileSelections = input.selections.filter((selection) =>
+      input.selectedResults.some(
+        (result) =>
+          result.executionTargetProfile.id === profileId &&
+          selectionMatchesResult(selection, result) &&
+          wanted.has(resultIdentity(result)),
+      ),
+    )
+    if (profileSelections.length === 0) continue
+    runs.push(
+      ...(await runScenarios({
+        selections: profileSelections,
+        targets: [target],
+        retry: input.resolvedConfiguration.retry,
+        timeout: input.resolvedConfiguration.timeout,
+        concurrency: input.resolvedConfiguration.concurrency,
+        applicationRevision: input.resolvedConfiguration.applicationRevision,
+        plans: input.plans,
+        ci: input.ci,
+        signal: input.signal,
+        onEvent: input.onEvent,
+      })),
+    )
+  }
+  return runs
+}
+
 function projectOptions(argv: string[]): {
   configPath?: string
   extensionsPath?: string
@@ -420,6 +583,102 @@ function migrateOptions(argv: string[]): {
   return options
 }
 
+async function loadManifest(runId: string) {
+  const store = openTestRunStore({ root: process.cwd() })
+  const run = await store.open(runId)
+  const events = await run.events()
+  if (events.length === 0) throw new Error(`Unknown test run "${runId}"`)
+  const manifestPath = join(
+    process.cwd(),
+    '.pickle',
+    'runs',
+    runId,
+    'manifest.json',
+  )
+  if (await Bun.file(manifestPath).exists()) {
+    return (await Bun.file(manifestPath).json()) as Awaited<
+      ReturnType<typeof run.materialize>
+    >
+  }
+  return run.materialize({ finished: false })
+}
+
+async function compare(argv: string[]): Promise<number> {
+  if (argv.length !== 3) {
+    throw new Error('Usage: pickle compare <baseline-id> <candidate-id>')
+  }
+  const baseline = await loadManifest(argv[1]!)
+  const candidate = await loadManifest(argv[2]!)
+  console.log(JSON.stringify(compareTestRuns(baseline, candidate), null, 2))
+  return 0
+}
+
+async function importArchive(argv: string[]): Promise<number> {
+  if (argv.length !== 2) throw new Error('Usage: pickle import <archive>')
+  const imported = await importRunArchive({
+    root: process.cwd(),
+    archivePath: resolve(argv[1]!),
+  })
+  console.log(
+    JSON.stringify({
+      kind: 'imported-run',
+      id: imported.manifest.id,
+      preservedArchivePath: imported.preservedArchivePath,
+    }),
+  )
+  return 0
+}
+
+async function exportRun(argv: string[]): Promise<number> {
+  if (argv[0] !== 'export' || !argv[1]) {
+    throw new Error(
+      'Usage: pickle export <id> (--archive <path> | --html <path>) [--all-artifacts]',
+    )
+  }
+  const runId = argv[1]
+  let archivePath: string | undefined
+  let htmlPath: string | undefined
+  let allArtifacts = false
+  for (let index = 2; index < argv.length; index++) {
+    const flag = argv[index]!
+    if (flag === '--archive') archivePath = valueAfter(argv, index++)
+    else if (flag === '--html') htmlPath = valueAfter(argv, index++)
+    else if (flag === '--all-artifacts') allArtifacts = true
+    else throw new Error(`Unknown option: ${flag}`)
+  }
+  if (!archivePath && !htmlPath) {
+    throw new Error('pickle export requires --archive or --html')
+  }
+  if (archivePath && htmlPath) {
+    throw new Error('pickle export accepts either --archive or --html')
+  }
+  if (archivePath) {
+    await writeRunArchive({
+      root: process.cwd(),
+      runId,
+      outputPath: resolve(archivePath),
+    })
+    return 0
+  }
+
+  const store = openTestRunStore({ root: process.cwd() })
+  const run = await store.open(runId)
+  const events = await run.events()
+  if (events.length === 0) throw new Error(`Unknown test run "${runId}"`)
+  const manifest = await loadManifest(runId)
+  const html = await formatHtml(manifest, events, {
+    artifacts: allArtifacts ? 'all' : 'failures-and-adaptations',
+  })
+  const warningThreshold = 10 * 1024 * 1024
+  if (allArtifacts && Buffer.byteLength(html, 'utf8') > warningThreshold) {
+    console.error(
+      `Warning: HTML export includes every available test artifact and is larger than 10 MB (${Buffer.byteLength(html, 'utf8')} bytes).`,
+    )
+  }
+  await Bun.write(resolve(htmlPath!), html)
+  return 0
+}
+
 async function main(argv: string[]): Promise<number> {
   if (argv[0] === 'init') {
     if (argv.length > 1) throw new Error('Usage: pickle init')
@@ -433,6 +692,15 @@ async function main(argv: string[]): Promise<number> {
   if (argv[0] === 'migrate') {
     await migrateProject({ ...migrateOptions(argv), report: console.log })
     return 0
+  }
+  if (argv[0] === 'compare') {
+    return compare(argv)
+  }
+  if (argv[0] === 'import') {
+    return importArchive(argv)
+  }
+  if (argv[0] === 'export') {
+    return exportRun(argv)
   }
   return run(argv)
 }
