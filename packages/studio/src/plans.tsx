@@ -39,6 +39,10 @@ function valueOrNotSet(value: string | undefined): string {
   return value ?? 'Not set'
 }
 
+function reasonMessage(reason: unknown): string {
+  return reason instanceof Error ? reason.message : String(reason)
+}
+
 function resolvedActions(plan: ExecutionPlan | undefined, step: number) {
   return plan?.steps[step]?.resolvedActions
 }
@@ -154,7 +158,7 @@ export function PlansPanel(props: PlansPanelProps) {
       )
       setError(undefined)
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : String(reason))
+      setError(reasonMessage(reason))
     } finally {
       setLoading(false)
     }
@@ -185,7 +189,7 @@ export function PlansPanel(props: PlansPanelProps) {
       setPromotionOpen(false)
       await reload()
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : String(reason))
+      setError(reasonMessage(reason))
       setPromotionOpen(false)
     }
   }

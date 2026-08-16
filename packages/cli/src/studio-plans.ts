@@ -30,7 +30,7 @@ async function loadStudioPlanReviews(
               item.executionTargetProfile.id ===
                 review.executionTargetProfileId,
           )
-          evidence = result ? { testRunId, result } : { testRunId }
+          evidence = { testRunId, result }
         } catch {
           evidence = { testRunId }
         }
@@ -41,12 +41,10 @@ async function loadStudioPlanReviews(
           name: scenarioNames.get(review.scenarioId) ?? review.scenarioId,
         },
         executionTargetProfileId: review.executionTargetProfileId,
-        ...(review.approved ? { approved: review.approved } : {}),
-        ...(review.candidate ? { candidate: review.candidate } : {}),
-        ...(review.candidateRevision
-          ? { candidateRevision: review.candidateRevision }
-          : {}),
-        ...(evidence ? { evidence } : {}),
+        approved: review.approved,
+        candidate: review.candidate,
+        candidateRevision: review.candidateRevision,
+        evidence,
       }
     }),
   )

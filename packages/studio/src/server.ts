@@ -675,13 +675,11 @@ export async function startStudio(
           })
           runId = started.id
           activeRuns.add(started.id)
+          const finishRun = () => {
+            publish(runId, { type: 'run-finished', run: { id: runId } })
+          }
           void started.done
-            .then(
-              () =>
-                publish(runId, { type: 'run-finished', run: { id: runId } }),
-              () =>
-                publish(runId, { type: 'run-finished', run: { id: runId } }),
-            )
+            .then(finishRun, finishRun)
             .finally(() => activeRuns.delete(started.id))
           return Response.json({ id: started.id })
         } catch (error) {

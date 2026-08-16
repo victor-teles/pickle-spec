@@ -113,6 +113,9 @@ function revisionOf(source: string): string {
   return new Bun.CryptoHasher('sha256').update(source).digest('hex')
 }
 
+const candidateLockRetryLimit = 200
+const candidateLockRetryDelayMs = 10
+
 function hasCode(error: unknown, code: string): boolean {
   return (
     error !== null &&
@@ -144,12 +147,12 @@ async function withCandidateLock<Value>(
       await mkdir(lockPath)
       break
     } catch (error) {
-      if (!hasCode(error, 'EEXIST') || attempt >= 200) {
+      if (!hasCode(error, 'EEXIST') || attempt >= candidateLockRetryLimit) {
         throw new Error('The candidate plan is currently being updated', {
           cause: error,
         })
       }
-      await Bun.sleep(10)
+      await Bun.sleep(candidateLockRetryDelayMs)
     }
   }
   try {
@@ -166,9 +169,7 @@ function approvedPlanFrom(candidate: CandidateExecutionPlan): ExecutionPlan {
     scenarioRevision: candidate.scenarioRevision,
     executionTargetProfileId: candidate.executionTargetProfileId,
     planFormatVersion: candidate.planFormatVersion,
-    ...(candidate.applicationRevision !== undefined
-      ? { applicationRevision: candidate.applicationRevision }
-      : {}),
+    applicationRevision: candidate.applicationRevision,
     steps: candidate.steps,
   }
 }
@@ -189,17 +190,12 @@ export function createFilePlanStore(
     },
     async saveCandidate(plan) {
       const path = planPath(root, 'candidates', plan)
+      const candidate: CandidateExecutionPlan = {
+        ...plan,
+        evidence: options.candidateEvidence,
+      }
       await withCandidateLock(path, () =>
-        replaceFile(
-          path,
-          `${JSON.stringify(
-            options.candidateEvidence
-              ? { ...plan, evidence: options.candidateEvidence }
-              : plan,
-            null,
-            2,
-          )}\n`,
-        ),
+        replaceFile(path, `${JSON.stringify(candidate, null, 2)}\n`),
       )
     },
     async listReviews(): Promise<ExecutionPlanReview[]> {
