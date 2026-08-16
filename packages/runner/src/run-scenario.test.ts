@@ -66,7 +66,7 @@ describe('runScenario', () => {
       [1, 5, 'step-finished'],
       [1, 6, 'scenario-finished'],
     ])
-    expect(run.result).toEqual({
+    expect(run.result).toMatchObject({
       schemaVersion: 1,
       specification: {
         name: 'Checkout',
@@ -101,6 +101,8 @@ describe('runScenario', () => {
         },
       ],
     })
+    expect(run.result.scenario.id).toBeString()
+    expect(run.result.durationMs).toBeGreaterThanOrEqual(0)
     expect(close).toHaveBeenCalledTimes(1)
   })
 

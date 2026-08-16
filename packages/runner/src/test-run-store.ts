@@ -26,8 +26,13 @@ export interface TestRunManifest {
   id: string
   startedAt: string
   finishedAt?: string
+  sourceRunId?: string
   state: TestResultState
   results: TestResult[]
+}
+
+export interface CreateTestRunOptions {
+  sourceRunId?: string
 }
 
 export interface TestRunSummary {
@@ -55,7 +60,7 @@ export interface RetentionResult {
 }
 
 export interface TestRunStore {
-  create(): Promise<PersistedTestRun>
+  create(options?: CreateTestRunOptions): Promise<PersistedTestRun>
   open(id: string): Promise<PersistedTestRun>
   list(): Promise<TestRunSummary[]>
   rebuildIndex(): Promise<void>
@@ -91,7 +96,11 @@ export function openTestRunStore(options: TestRunStoreOptions): TestRunStore {
     withIndex(indexPath, (db) => upsertRun(db, manifest))
   }
 
-  function persistedRunFor(id: string, startedAt: string): PersistedTestRun {
+  function persistedRunFor(
+    id: string,
+    startedAt: string,
+    sourceRunId?: string,
+  ): PersistedTestRun {
     return persistedTestRun(
       id,
       join(runsDirectory, id),
@@ -99,12 +108,20 @@ export function openTestRunStore(options: TestRunStoreOptions): TestRunStore {
       now,
       artifactCapture,
       upsertManifest,
+      sourceRunId,
     )
   }
 
   async function openRun(id: string): Promise<PersistedTestRun> {
     const events = await readEvents(join(runsDirectory, id, 'events.ndjson'))
-    return persistedRunFor(id, startedAtFrom(events, now().toISOString()))
+    const started = events.find((event) => event.type === 'run-started')
+    const sourceRunId =
+      started?.type === 'run-started' ? started.run.sourceRunId : undefined
+    return persistedRunFor(
+      id,
+      startedAtFrom(events, now().toISOString()),
+      sourceRunId,
+    )
   }
 
   async function manifestFor(id: string): Promise<TestRunManifest> {
@@ -141,12 +158,19 @@ export function openTestRunStore(options: TestRunStoreOptions): TestRunStore {
   }
 
   return {
-    async create() {
+    async create(options: CreateTestRunOptions = {}) {
       const id = createId()
       const startedAt = now().toISOString()
       await mkdir(join(runsDirectory, id), { recursive: true })
-      const run = persistedRunFor(id, startedAt)
-      await run.append({ type: 'run-started', run: { id, startedAt } })
+      const run = persistedRunFor(id, startedAt, options.sourceRunId)
+      await run.append({
+        type: 'run-started',
+        run: {
+          id,
+          startedAt,
+          ...(options.sourceRunId ? { sourceRunId: options.sourceRunId } : {}),
+        },
+      })
       return run
     },
     open: openRun,
@@ -193,6 +217,7 @@ function persistedTestRun(
   now: () => Date,
   artifactCapture: ArtifactCapturePolicy,
   onMaterialize: (manifest: TestRunManifest) => Promise<void>,
+  sourceRunId?: string,
 ): PersistedTestRun {
   const eventsPath = join(directory, 'events.ndjson')
   const manifestPath = join(directory, 'manifest.json')
@@ -229,6 +254,7 @@ function persistedTestRun(
         ...(input?.finished === false
           ? {}
           : { finishedAt: now().toISOString() }),
+        ...(sourceRunId ? { sourceRunId } : {}),
         state: aggregateState(results),
         results,
       }

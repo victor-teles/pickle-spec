@@ -1454,6 +1454,221 @@ Feature: Purchase
     ).toBe(retainedManifest)
   })
 
+  test('pickle run --rerun creates a new test run linked to its source', async () => {
+    const project = await createCheckProject('rerun-source', {
+      config: {
+        schemaVersion: 1,
+        specifications: 'features/**/*.feature',
+        executionTargetProfile: { id: 'deterministic' },
+      },
+      specification: {
+        path: 'features/purchase.feature',
+        source: `@pickle:id:specpurchaseaaaaaa @pickle:state:active
+Feature: Purchase
+  @pickle:id:scnpurchasebbbbbb
+  Scenario: Complete a purchase
+    Then the purchase succeeds
+  @pickle:id:scnpurchasecccccc
+  Scenario: Pay for the order
+    Then payment succeeds`,
+      },
+      extensions: `
+const outcomes = {
+  'the purchase succeeds': process.env.PICKLE_TEST_PURCHASE ?? 'passed',
+  'payment succeeds': process.env.PICKLE_TEST_PAYMENT ?? 'failed',
+}
+
+export default {
+  adapter: {
+    async openSession() {
+      return {
+        async executeStep(step) {
+          return {
+            state: outcomes[step.text] ?? 'passed',
+            resolvedActions: [{ description: \`Deterministic action: \${step.text}\` }],
+          }
+        },
+        async close() {},
+      }
+    },
+  },
+}
+`,
+    })
+
+    const first = Bun.spawnSync({
+      cmd: [pickleCommand, 'run'],
+      cwd: project,
+      env: {
+        ...Bun.env,
+        PICKLE_TEST_PURCHASE: 'passed',
+        PICKLE_TEST_PAYMENT: 'failed',
+      },
+    })
+    expect(first.exitCode).toBe(1)
+    const sourceManifests = [
+      ...new Bun.Glob('*/manifest.json').scanSync({
+        cwd: join(project, '.pickle', 'runs'),
+      }),
+    ]
+    expect(sourceManifests).toHaveLength(1)
+    const sourceId = dirname(sourceManifests[0]!)
+    const sourceEvents = await Bun.file(
+      join(project, '.pickle', 'runs', sourceId, 'events.ndjson'),
+    ).text()
+
+    const rerun = Bun.spawnSync({
+      cmd: [pickleCommand, 'run', '--rerun', sourceId, '--failures'],
+      cwd: project,
+      env: {
+        ...Bun.env,
+        PICKLE_TEST_PURCHASE: 'passed',
+        PICKLE_TEST_PAYMENT: 'passed',
+      },
+    })
+    expect(rerun.stderr.toString()).toBe('')
+    expect(rerun.exitCode).toBe(0)
+
+    const manifests = [
+      ...new Bun.Glob('*/manifest.json').scanSync({
+        cwd: join(project, '.pickle', 'runs'),
+      }),
+    ]
+    expect(manifests).toHaveLength(2)
+    const rerunManifestPath = manifests.find(
+      (path) => dirname(path) !== sourceId,
+    )!
+    const rerunManifest = (await Bun.file(
+      join(project, '.pickle', 'runs', rerunManifestPath),
+    ).json()) as {
+      sourceRunId?: string
+      results: Array<{ scenario: { name: string }; state: string }>
+    }
+    expect(rerunManifest.sourceRunId).toBe(sourceId)
+    expect(rerunManifest.results).toHaveLength(1)
+    expect(rerunManifest.results[0]).toMatchObject({
+      scenario: { name: 'Pay for the order' },
+      state: 'passed',
+    })
+    expect(
+      await Bun.file(
+        join(project, '.pickle', 'runs', sourceId, 'events.ndjson'),
+      ).text(),
+    ).toBe(sourceEvents)
+  })
+
+  test('pickle export and import move an immutable run archive between projects', async () => {
+    const project = await createCheckProject('export-import', {
+      config: {
+        schemaVersion: 1,
+        specifications: 'features/**/*.feature',
+        executionTargetProfile: { id: 'deterministic' },
+        artifacts: { capture: 'on-failure-or-adaptation' },
+      },
+      specification: {
+        path: 'features/purchase.feature',
+        source: `@pickle:id:specpurchaseaaaaaa @pickle:state:active
+Feature: Purchase
+  @pickle:id:scnpurchasebbbbbb
+  Scenario: Complete a purchase
+    Then the purchase succeeds`,
+      },
+      extensions: `
+export default {
+  adapter: {
+    async openSession() {
+      return {
+        async executeStep(step) {
+          const path = process.env.PICKLE_TEST_ARTIFACT
+          return {
+            state: 'failed',
+            resolvedActions: [{ description: \`Deterministic action: \${step.text}\` }],
+            artifacts: path
+              ? [{ kind: 'screenshot', path, mediaType: 'image/png' }]
+              : [],
+          }
+        },
+        async close() {},
+      }
+    },
+  },
+}
+`,
+    })
+    const artifactPath = join(project, 'failure.png')
+    await Bun.write(artifactPath, 'png-bytes')
+    const run = Bun.spawnSync({
+      cmd: [pickleCommand, 'run'],
+      cwd: project,
+      env: { ...Bun.env, PICKLE_TEST_ARTIFACT: artifactPath },
+    })
+    expect(run.exitCode).toBe(1)
+    const sourceId = dirname(
+      [
+        ...new Bun.Glob('*/manifest.json').scanSync({
+          cwd: join(project, '.pickle', 'runs'),
+        }),
+      ][0]!,
+    )
+    const archivePath = join(project, 'run.archive.json')
+    const exported = Bun.spawnSync({
+      cmd: [pickleCommand, 'export', sourceId, '--archive', archivePath],
+      cwd: project,
+      env: { ...Bun.env },
+    })
+    expect(exported.exitCode).toBe(0)
+    expect(await Bun.file(archivePath).exists()).toBe(true)
+    const originalArchive = await Bun.file(archivePath).text()
+
+    const target = await createCheckProject('import-target', {
+      config: {
+        schemaVersion: 1,
+        specifications: 'features/**/*.feature',
+        executionTargetProfile: { id: 'deterministic' },
+      },
+      specification: validSpecification,
+      extensions: 'export default {}',
+    })
+    await Bun.write(join(target, 'incoming.json'), originalArchive)
+    const imported = Bun.spawnSync({
+      cmd: [pickleCommand, 'import', 'incoming.json'],
+      cwd: target,
+      env: { ...Bun.env },
+    })
+    expect(imported.exitCode).toBe(0)
+    expect(await Bun.file(join(target, 'incoming.json')).text()).toBe(
+      originalArchive,
+    )
+    expect(
+      await Bun.file(
+        join(target, '.pickle', 'archives', `${sourceId}.json`),
+      ).text(),
+    ).toBe(originalArchive)
+    const compare = Bun.spawnSync({
+      cmd: [pickleCommand, 'compare', sourceId, sourceId],
+      cwd: target,
+      env: { ...Bun.env },
+    })
+    expect(compare.exitCode).toBe(0)
+    expect(JSON.parse(compare.stdout.toString())).toMatchObject({
+      schemaVersion: 1,
+      baselineRunId: sourceId,
+      candidateRunId: sourceId,
+      pairs: [],
+      added: [],
+      removed: [],
+    })
+
+    const htmlPath = join(project, 'report.html')
+    const html = Bun.spawnSync({
+      cmd: [pickleCommand, 'export', sourceId, '--html', htmlPath],
+      cwd: project,
+      env: { ...Bun.env },
+    })
+    expect(html.exitCode).toBe(0)
+    expect(await Bun.file(htmlPath).text()).toContain('data:image/png;base64,')
+  })
+
   test('check rejects an unknown artifact capture policy', async () => {
     const project = await createCheckProject('invalid-artifact-policy', {
       config: {

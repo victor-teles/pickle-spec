@@ -1,4 +1,23 @@
 export type {
+  ImportedRunArchive,
+  ImportRunArchiveInput,
+  RunArchive,
+  RunArchiveArtifact,
+  WriteRunArchiveInput,
+} from './src/archive'
+export {
+  importRunArchive,
+  readRunArchive,
+  writeRunArchive,
+} from './src/archive'
+export type {
+  ComparedResultPair,
+  ComparedResultSide,
+  ResultChangeKind,
+  TestRunComparison,
+} from './src/compare'
+export { compareTestRuns } from './src/compare'
+export type {
   ResolvedRunConfiguration,
   RunConfiguration,
   RunExtensionManifest,
@@ -19,7 +38,15 @@ export {
   createFilePlanStore,
   planApplies,
 } from './src/execution-plan'
-export { formatJson, formatJunit, formatNdjson } from './src/outputs'
+export type { FormatHtmlOptions, HtmlArtifactMode } from './src/outputs'
+export {
+  formatHtml,
+  formatJson,
+  formatJunit,
+  formatNdjson,
+} from './src/outputs'
+export type { RerunFilter } from './src/rerun'
+export { selectRerunResults } from './src/rerun'
 export type {
   ExecutionMode,
   ExecutionPolicy,
@@ -43,6 +70,7 @@ export type { RunScenariosInput, RunTarget } from './src/run-scenarios'
 export { runScenarios, validateTargetSelection } from './src/run-scenarios'
 export type {
   ArtifactCapturePolicy,
+  CreateTestRunOptions,
   PersistedTestRun,
   RetentionPolicy,
   RetentionResult,

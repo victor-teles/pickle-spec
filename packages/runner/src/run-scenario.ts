@@ -82,6 +82,7 @@ export interface TestResult {
   }
   scenario: {
     name: string
+    id?: string
   }
   executionTargetProfile: ExecutionTargetProfile
   state: TestResultState
@@ -90,6 +91,7 @@ export interface TestResult {
   message?: string
   attempts?: number
   flaky?: boolean
+  durationMs?: number
 }
 
 interface RunEventEnvelope {
@@ -98,7 +100,10 @@ interface RunEventEnvelope {
 }
 
 export type RunEventPayload =
-  | { type: 'run-started'; run: { id: string; startedAt: string } }
+  | {
+      type: 'run-started'
+      run: { id: string; startedAt: string; sourceRunId?: string }
+    }
   | { type: 'scenario-started'; scenario: TestResult['scenario'] }
   | { type: 'step-started'; step: ScenarioStep }
   | { type: 'step-finished'; result: TestStepResult }
@@ -281,19 +286,22 @@ function createTestResult(
   input: ScenarioAttemptInput,
   state: TestResultState,
   steps: TestStepResult[],
+  durationMs: number,
   message?: string,
 ): TestResult {
+  const scenarioId = planQuery(input).scenarioId
   return {
     schemaVersion: 1,
     specification: {
       name: input.specification.name,
       uri: input.specification.source.uri,
     },
-    scenario: { name: input.scenario.name },
+    scenario: { name: input.scenario.name, id: scenarioId },
     executionTargetProfile: input.executionTargetProfile,
     state,
     steps,
     executionMode: input.mode,
+    durationMs,
     ...(message !== undefined ? { message } : {}),
   }
 }
@@ -319,14 +327,23 @@ async function runScenarioAttempt(
     steps: TestStepResult[],
     message?: string,
   ): Promise<ScenarioRun> => {
-    const result = createTestResult(input, state, steps, message)
+    const result = createTestResult(
+      input,
+      state,
+      steps,
+      Math.max(0, Date.now() - scenarioStartedAt),
+      message,
+    )
     await emit({ type: 'scenario-finished', result })
     return { events, result }
   }
 
   await emit({
     type: 'scenario-started',
-    scenario: { name: input.scenario.name },
+    scenario: {
+      name: input.scenario.name,
+      id: planQuery(input).scenarioId,
+    },
   })
 
   if (input.scenario.tags.includes('@ignore')) {

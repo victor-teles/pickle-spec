@@ -463,6 +463,52 @@ test('retention removes eligible local data without changing retained test runs'
   ])
 })
 
+test('a rerun creates a new test run with a source-run reference', async () => {
+  const root = await tempRoot()
+  let nextId = 1
+  const store = openTestRunStore({
+    root,
+    createId: () => `run-${nextId++}`,
+    now: () => new Date('2026-08-15T12:00:00.000Z'),
+  })
+  const source = await store.create()
+  await source.append({
+    type: 'scenario-finished',
+    result: passedResult(),
+  })
+  const sourceManifest = await source.materialize()
+  const sourceEvents = await Bun.file(
+    join(root, '.pickle', 'runs', source.id, 'events.ndjson'),
+  ).text()
+
+  const rerun = await store.create({ sourceRunId: source.id })
+  await rerun.append({
+    type: 'scenario-finished',
+    result: passedResult(),
+  })
+  const rerunManifest = await rerun.materialize()
+
+  expect(rerun.id).toBe('run-2')
+  expect(rerun.id).not.toBe(source.id)
+  expect(rerunManifest.sourceRunId).toBe(source.id)
+  expect(
+    (await rerun.events()).find((event) => event.type === 'run-started'),
+  ).toMatchObject({
+    type: 'run-started',
+    run: { id: 'run-2', sourceRunId: source.id },
+  })
+  expect(
+    await Bun.file(
+      join(root, '.pickle', 'runs', source.id, 'events.ndjson'),
+    ).text(),
+  ).toBe(sourceEvents)
+  expect(
+    await Bun.file(
+      join(root, '.pickle', 'runs', source.id, 'manifest.json'),
+    ).json(),
+  ).toEqual(sourceManifest)
+})
+
 test('retention evicts the oldest runs when stored bytes exceed the limit', async () => {
   const root = await tempRoot()
   let nextId = 1
