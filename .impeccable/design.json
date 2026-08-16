@@ -1,0 +1,378 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-08-16T13:45:00.000Z",
+  "title": "Design System: Pickle Spec Studio",
+  "extensions": {
+    "colorMeta": {
+      "night-ledger": {
+        "role": "neutral",
+        "displayName": "Night Ledger",
+        "canonical": "oklch(0.145 0.012 250)",
+        "tonalRamp": [
+          "oklch(0.12 0.01 250)",
+          "oklch(0.145 0.012 250)",
+          "oklch(0.18 0.012 250)",
+          "oklch(0.28 0.012 250)",
+          "oklch(0.45 0.01 250)",
+          "oklch(0.62 0.01 250)",
+          "oklch(0.78 0.008 250)",
+          "oklch(0.93 0.006 250)"
+        ]
+      },
+      "raised-plate": {
+        "role": "neutral",
+        "displayName": "Raised Plate",
+        "canonical": "oklch(0.18 0.012 250)",
+        "tonalRamp": [
+          "oklch(0.14 0.01 250)",
+          "oklch(0.18 0.012 250)",
+          "oklch(0.22 0.012 250)",
+          "oklch(0.3 0.012 250)",
+          "oklch(0.48 0.01 250)",
+          "oklch(0.64 0.01 250)",
+          "oklch(0.8 0.008 250)",
+          "oklch(0.94 0.005 250)"
+        ]
+      },
+      "bone": {
+        "role": "primary",
+        "displayName": "Bone",
+        "canonical": "oklch(0.93 0.01 250)",
+        "tonalRamp": [
+          "oklch(0.2 0.01 250)",
+          "oklch(0.32 0.01 250)",
+          "oklch(0.45 0.01 250)",
+          "oklch(0.58 0.01 250)",
+          "oklch(0.72 0.01 250)",
+          "oklch(0.82 0.01 250)",
+          "oklch(0.93 0.01 250)",
+          "oklch(0.97 0.005 250)"
+        ]
+      },
+      "ink": {
+        "role": "neutral",
+        "displayName": "Ink",
+        "canonical": "oklch(0.145 0.012 250)",
+        "tonalRamp": [
+          "oklch(0.12 0.01 250)",
+          "oklch(0.145 0.012 250)",
+          "oklch(0.22 0.012 250)",
+          "oklch(0.35 0.01 250)",
+          "oklch(0.5 0.01 250)",
+          "oklch(0.68 0.01 250)",
+          "oklch(0.82 0.008 250)",
+          "oklch(0.94 0.005 250)"
+        ]
+      },
+      "mute": {
+        "role": "neutral",
+        "displayName": "Mute",
+        "canonical": "oklch(0.72 0.015 250)",
+        "tonalRamp": [
+          "oklch(0.28 0.015 250)",
+          "oklch(0.4 0.015 250)",
+          "oklch(0.52 0.015 250)",
+          "oklch(0.62 0.015 250)",
+          "oklch(0.72 0.015 250)",
+          "oklch(0.8 0.01 250)",
+          "oklch(0.88 0.008 250)",
+          "oklch(0.95 0.005 250)"
+        ]
+      },
+      "hairline": {
+        "role": "neutral",
+        "displayName": "Hairline",
+        "canonical": "oklch(0.3 0.012 250)",
+        "tonalRamp": [
+          "oklch(0.16 0.01 250)",
+          "oklch(0.22 0.012 250)",
+          "oklch(0.3 0.012 250)",
+          "oklch(0.4 0.01 250)",
+          "oklch(0.55 0.01 250)",
+          "oklch(0.7 0.008 250)",
+          "oklch(0.84 0.006 250)",
+          "oklch(0.94 0.004 250)"
+        ]
+      },
+      "well": {
+        "role": "neutral",
+        "displayName": "Well",
+        "canonical": "oklch(0.22 0.012 250)",
+        "tonalRamp": [
+          "oklch(0.16 0.01 250)",
+          "oklch(0.22 0.012 250)",
+          "oklch(0.28 0.012 250)",
+          "oklch(0.38 0.01 250)",
+          "oklch(0.52 0.01 250)",
+          "oklch(0.68 0.008 250)",
+          "oklch(0.82 0.006 250)",
+          "oklch(0.94 0.004 250)"
+        ]
+      },
+      "brine-tint": {
+        "role": "secondary",
+        "displayName": "Brine Tint",
+        "canonical": "oklch(0.24 0.025 185)",
+        "tonalRamp": [
+          "oklch(0.16 0.02 185)",
+          "oklch(0.24 0.025 185)",
+          "oklch(0.34 0.04 185)",
+          "oklch(0.46 0.06 185)",
+          "oklch(0.58 0.07 185)",
+          "oklch(0.7 0.07 185)",
+          "oklch(0.82 0.04 185)",
+          "oklch(0.94 0.015 185)"
+        ]
+      },
+      "brine-teal": {
+        "role": "secondary",
+        "displayName": "Brine Teal",
+        "canonical": "oklch(0.74 0.08 185)",
+        "tonalRamp": [
+          "oklch(0.16 0.03 185)",
+          "oklch(0.28 0.05 185)",
+          "oklch(0.4 0.07 185)",
+          "oklch(0.52 0.08 185)",
+          "oklch(0.64 0.08 185)",
+          "oklch(0.74 0.08 185)",
+          "oklch(0.84 0.05 185)",
+          "oklch(0.94 0.02 185)"
+        ]
+      },
+      "brine-ink": {
+        "role": "secondary",
+        "displayName": "Brine Ink",
+        "canonical": "oklch(0.16 0.03 185)",
+        "tonalRamp": [
+          "oklch(0.14 0.03 185)",
+          "oklch(0.16 0.03 185)",
+          "oklch(0.28 0.04 185)",
+          "oklch(0.42 0.05 185)",
+          "oklch(0.56 0.05 185)",
+          "oklch(0.7 0.04 185)",
+          "oklch(0.84 0.02 185)",
+          "oklch(0.94 0.01 185)"
+        ]
+      },
+      "plan-amber": {
+        "role": "tertiary",
+        "displayName": "Plan Amber",
+        "canonical": "oklch(0.8 0.11 85)",
+        "tonalRamp": [
+          "oklch(0.22 0.05 85)",
+          "oklch(0.34 0.08 85)",
+          "oklch(0.46 0.1 85)",
+          "oklch(0.58 0.11 85)",
+          "oklch(0.7 0.11 85)",
+          "oklch(0.8 0.11 85)",
+          "oklch(0.88 0.07 85)",
+          "oklch(0.95 0.03 85)"
+        ]
+      },
+      "plan-ink": {
+        "role": "tertiary",
+        "displayName": "Plan Ink",
+        "canonical": "oklch(0.22 0.05 85)",
+        "tonalRamp": [
+          "oklch(0.18 0.04 85)",
+          "oklch(0.22 0.05 85)",
+          "oklch(0.34 0.06 85)",
+          "oklch(0.48 0.07 85)",
+          "oklch(0.62 0.07 85)",
+          "oklch(0.76 0.06 85)",
+          "oklch(0.86 0.04 85)",
+          "oklch(0.95 0.02 85)"
+        ]
+      },
+      "failure-oxide": {
+        "role": "primary",
+        "displayName": "Failure Oxide",
+        "canonical": "oklch(0.7 0.14 32)",
+        "tonalRamp": [
+          "oklch(0.16 0.03 32)",
+          "oklch(0.28 0.08 32)",
+          "oklch(0.4 0.12 32)",
+          "oklch(0.52 0.14 32)",
+          "oklch(0.62 0.14 32)",
+          "oklch(0.7 0.14 32)",
+          "oklch(0.82 0.08 32)",
+          "oklch(0.94 0.03 32)"
+        ]
+      },
+      "failure-ink": {
+        "role": "neutral",
+        "displayName": "Failure Ink",
+        "canonical": "oklch(0.16 0.03 32)",
+        "tonalRamp": [
+          "oklch(0.14 0.03 32)",
+          "oklch(0.16 0.03 32)",
+          "oklch(0.28 0.05 32)",
+          "oklch(0.42 0.06 32)",
+          "oklch(0.56 0.06 32)",
+          "oklch(0.7 0.05 32)",
+          "oklch(0.84 0.03 32)",
+          "oklch(0.95 0.01 32)"
+        ]
+      },
+      "focus-ring": {
+        "role": "neutral",
+        "displayName": "Focus Ring",
+        "canonical": "oklch(0.86 0.02 250)",
+        "tonalRamp": [
+          "oklch(0.2 0.02 250)",
+          "oklch(0.35 0.02 250)",
+          "oklch(0.5 0.02 250)",
+          "oklch(0.64 0.02 250)",
+          "oklch(0.74 0.02 250)",
+          "oklch(0.86 0.02 250)",
+          "oklch(0.92 0.015 250)",
+          "oklch(0.97 0.008 250)"
+        ]
+      }
+    },
+    "typographyMeta": {
+      "headline": {
+        "displayName": "Headline",
+        "purpose": "Project name in the Studio header. No display size exists."
+      },
+      "title": {
+        "displayName": "Title",
+        "purpose": "Section titles such as Test run."
+      },
+      "body": {
+        "displayName": "Body",
+        "purpose": "Activity lists, empty copy, and nav items."
+      },
+      "label": {
+        "displayName": "Label",
+        "purpose": "Table headers, timeline headings, and button labels."
+      },
+      "mono": {
+        "displayName": "Mono",
+        "purpose": "Status chips and resolved-action measurements."
+      }
+    },
+    "shadows": [],
+    "motion": [
+      {
+        "name": "color-shift",
+        "value": "transition-colors",
+        "purpose": "Buttons change fill only. No translate, blur, or shadow motion."
+      }
+    ],
+    "breakpoints": [{ "name": "lg", "value": "1024px" }]
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "Bone fill for the next operator action, typically Start test run.",
+      "html": "<button class=\"ds-btn-primary\" type=\"button\">Start test run</button>",
+      "css": ".ds-btn-primary { display: inline-flex; align-items: center; justify-content: center; height: 2.25rem; padding: 0 0.75rem; border: none; border-radius: 0.4rem; background: var(--primary); color: var(--primary-foreground); font-family: \"Inter\", ui-sans-serif, system-ui, sans-serif; font-size: 0.875rem; font-weight: 500; white-space: nowrap; cursor: pointer; transition: background-color 150ms ease; } .ds-btn-primary:hover { background: oklch(0.93 0.01 250 / 0.9); } .ds-btn-primary:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; } .ds-btn-primary:disabled { opacity: 0.5; pointer-events: none; }"
+    },
+    {
+      "name": "Outline Button",
+      "kind": "button",
+      "refersTo": "button-outline",
+      "description": "Hairline matrix cell for a non-failed result.",
+      "html": "<button class=\"ds-btn-outline\" type=\"button\">passed</button>",
+      "css": ".ds-btn-outline { display: inline-flex; align-items: center; justify-content: center; height: 2rem; padding: 0 0.625rem; border: 1px solid var(--border); border-radius: 0.4rem; background: var(--card); color: var(--card-foreground); font-family: \"Inter\", ui-sans-serif, system-ui, sans-serif; font-size: 0.875rem; font-weight: 500; cursor: pointer; transition: background-color 150ms ease, color 150ms ease; } .ds-btn-outline:hover { background: var(--accent); color: var(--accent-foreground); } .ds-btn-outline:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }"
+    },
+    {
+      "name": "Destructive Button",
+      "kind": "button",
+      "refersTo": "button-destructive",
+      "description": "Failed matrix cell. Oxide fill, dark ink.",
+      "html": "<button class=\"ds-btn-destructive\" type=\"button\">failed</button>",
+      "css": ".ds-btn-destructive { display: inline-flex; align-items: center; justify-content: center; height: 2rem; padding: 0 0.625rem; border: none; border-radius: 0.4rem; background: var(--destructive); color: var(--destructive-foreground); font-family: \"Inter\", ui-sans-serif, system-ui, sans-serif; font-size: 0.875rem; font-weight: 500; cursor: pointer; } .ds-btn-destructive:hover { background: oklch(0.7 0.14 32 / 0.9); } .ds-btn-destructive:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }"
+    },
+    {
+      "name": "Failed Badge",
+      "kind": "chip",
+      "refersTo": "badge-failed",
+      "description": "Labeled test-result chip for failed and infrastructure-error.",
+      "html": "<span class=\"ds-badge ds-badge-failed\">failed</span>",
+      "css": ".ds-badge { display: inline-flex; align-items: center; border-radius: 0.4rem; padding: 0.125rem 0.5rem; font-family: \"JetBrains Mono\", ui-monospace, monospace; font-size: 0.75rem; font-weight: 500; border: 1px solid transparent; } .ds-badge-failed { background: var(--destructive); color: var(--destructive-foreground); }"
+    },
+    {
+      "name": "Adaptation Badge",
+      "kind": "chip",
+      "refersTo": "badge-adaptation",
+      "description": "Labeled chip for passed-with-adaptation.",
+      "html": "<span class=\"ds-badge ds-badge-adaptation\">passed-with-adaptation</span>",
+      "css": ".ds-badge { display: inline-flex; align-items: center; border-radius: 0.4rem; padding: 0.125rem 0.5rem; font-family: \"JetBrains Mono\", ui-monospace, monospace; font-size: 0.75rem; font-weight: 500; border: 1px solid transparent; } .ds-badge-adaptation { background: var(--adaptation); color: var(--adaptation-foreground); }"
+    },
+    {
+      "name": "Passed Badge",
+      "kind": "chip",
+      "refersTo": "badge-passed",
+      "description": "Labeled chip for a passed result.",
+      "html": "<span class=\"ds-badge ds-badge-passed\">passed</span>",
+      "css": ".ds-badge { display: inline-flex; align-items: center; border-radius: 0.4rem; padding: 0.125rem 0.5rem; font-family: \"JetBrains Mono\", ui-monospace, monospace; font-size: 0.75rem; font-weight: 500; border: 1px solid transparent; } .ds-badge-passed { background: var(--passed); color: var(--passed-foreground); }"
+    },
+    {
+      "name": "Studio Nav",
+      "kind": "nav",
+      "refersTo": "nav-active",
+      "description": "Text-only area nav. Active item sits in a brine tint well.",
+      "html": "<nav class=\"ds-nav\" aria-label=\"Studio\"><a class=\"ds-nav-link\" href=\"#specifications\">Specifications</a><a class=\"ds-nav-link ds-nav-link-active\" href=\"#runs\">Runs</a><a class=\"ds-nav-link\" href=\"#plans\">Plans</a><a class=\"ds-nav-link\" href=\"#settings\">Settings</a></nav>",
+      "css": ".ds-nav { display: flex; gap: 0.25rem; } .ds-nav-link { border-radius: 0.4rem; padding: 0.375rem 0.75rem; font-family: \"Inter\", ui-sans-serif, system-ui, sans-serif; font-size: 0.875rem; color: var(--muted-foreground); text-decoration: none; } .ds-nav-link:hover { background: var(--secondary); } .ds-nav-link-active { background: var(--accent); color: var(--accent-foreground); } .ds-nav-link:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }"
+    },
+    {
+      "name": "Ledger Plate",
+      "kind": "card",
+      "refersTo": "card",
+      "description": "Raised plate for the target matrix and timeline entries. Hairline only.",
+      "html": "<section class=\"ds-plate\"><h3 class=\"ds-plate-title\">Pay for the order · chrome</h3><p class=\"ds-plate-body\">Then payment is captured</p></section>",
+      "css": ".ds-plate { background: var(--card); color: var(--card-foreground); border: 1px solid var(--border); border-radius: 0.5rem; padding: 0.75rem 1rem; } .ds-plate-title { margin: 0 0 0.5rem; font-family: \"Inter\", ui-sans-serif, system-ui, sans-serif; font-size: 0.875rem; font-weight: 500; } .ds-plate-body { margin: 0; font-family: \"Inter\", ui-sans-serif, system-ui, sans-serif; font-size: 0.875rem; }"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Spec Ledger",
+    "overview": "Studio is a bound technical ledger that happens to run on a screen. Feature files are the page; test results are the ink; an adaptation is a distinct mark, never a silent rewrite. The operator sits in a dark room with a local project, reading live state the way one reads a night-shift instrument — not a marketing dashboard.\n\nThe atmosphere is clinical lab, executed at the craft level of dark developer tools (Vercel, Cursor): near-black cool field, hairline plates, one light primary action, and color reserved for result state. Density is high. Chrome is thin. Empty space is leftover work, not a lifestyle.",
+    "keyCharacteristics": [
+      "Dark cool field with one-step raised plates, never a drop shadow",
+      "Bone-white primary action; teal, amber, and oxide only name a test-result state",
+      "Inter for UI, JetBrains Mono for measurements and resolved actions",
+      "Compact 8px corners, 9px controls, hairline borders",
+      "Status is a labeled chip, never a color-only dot"
+    ],
+    "rules": [
+      {
+        "name": "The Bone Rule",
+        "body": "The light fill is the primary action. Do not paint navigation, tables, or idle chips with Bone.",
+        "section": "colors"
+      },
+      {
+        "name": "The State Ink Rule",
+        "body": "Teal, amber, and oxide appear only on labeled result chips or a failed matrix cell. They do not tint the page.",
+        "section": "colors"
+      },
+      {
+        "name": "The Measurement Mono Rule",
+        "body": "Monospace is for data. Do not set headings, nav, or body copy in JetBrains Mono to look technical.",
+        "section": "typography"
+      },
+      {
+        "name": "The Flat Ledger Rule",
+        "body": "Surfaces are flat at rest and in motion. Do not add drop shadows, glows, or stacked cards to fake hierarchy.",
+        "section": "elevation"
+      }
+    ],
+    "dos": [
+      "Do keep the canvas dark and cool (Night Ledger) with one-step Raised Plates.",
+      "Do put the next operator action on a Bone button.",
+      "Do spell the test-result state on every chip and matrix cell.",
+      "Do use JetBrains Mono for resolved actions and status, Inter for everything else.",
+      "Do keep corners at 0.4–0.5rem and borders at 1px Hairline."
+    ],
+    "donts": [
+      "Don't add a tracked uppercase kicker above the project name.",
+      "Don't introduce drop shadows, glass, or neon status dots.",
+      "Don't spend Brine Teal on chrome or marketing blocks.",
+      "Don't invent a second source of truth in the UI — feature files and Git remain off-canvas systems of record.",
+      "Don't use Cucumber, Playwright, or \"self-healing\" visual language."
+    ]
+  }
+}

@@ -10,6 +10,7 @@ This repository is a Bun + Turborepo monorepo:
 - `packages/runner` — scheduling, run events, and test results
 - `packages/web` — Stagehand execution-target adapter
 - `packages/cli` — executable package composition
+- `packages/studio` — local Studio UI
 - `apps/example` — sample Specifications
 
 Use `bun run lint`, `bun run typecheck`, and `bun run test` from the repo root. Typecheck and test run through Turborepo. Lint and format use Biome from the repo root.
@@ -138,6 +139,20 @@ Then, run index.ts
 ```sh
 bun --hot ./index.ts
 ```
+
+## Studio UI
+
+Studio lives in `packages/studio`. Visual style is shadcn Mira on Base UI (`style: "base-mira"` in `packages/studio/components.json`).
+
+Every UI control must be a shadcn Mira primitive (or compose those primitives). Do not hand-roll a styled `<button>`, `<a>`, `<span>`, table chrome, or layout block that duplicates a registry component. Wrapping `@base-ui/react` yourself is not a substitute for adding the shadcn primitive — Mira only applies when the component comes from the registry.
+
+Before creating a new component or block:
+
+1. Search the shadcn registry for an existing primitive (`search_items_in_registries` / `view_items_in_registries`, or `bunx shadcn@latest search <name>` from `packages/studio`).
+2. If it exists, add it with `bunx shadcn@latest add <name>` from `packages/studio` so Mira is applied.
+3. Extend the generated file in `packages/studio/src/components/ui` only when the product needs a domain variant (for example result-state chips). Do not fork a parallel component.
+
+Product screens in `frontend.tsx` import from `./components/ui/*`. They do not invent a second button, badge, or control vocabulary.
 
 For more information, read the Bun API docs in `node_modules/bun-types/docs/**.mdx`.
 

@@ -121,9 +121,23 @@ export type RunEventPayload =
       type: 'run-started'
       run: { id: string; startedAt: string; sourceRunId?: string }
     }
-  | { type: 'scenario-started'; scenario: TestResult['scenario'] }
-  | { type: 'step-started'; step: ScenarioStep }
-  | { type: 'step-finished'; result: TestStepResult }
+  | {
+      type: 'scenario-started'
+      scenario: TestResult['scenario']
+      executionTargetProfile?: ExecutionTargetProfile
+    }
+  | {
+      type: 'step-started'
+      step: ScenarioStep
+      scenario?: TestResult['scenario']
+      executionTargetProfile?: ExecutionTargetProfile
+    }
+  | {
+      type: 'step-finished'
+      result: TestStepResult
+      scenario?: TestResult['scenario']
+      executionTargetProfile?: ExecutionTargetProfile
+    }
   | { type: 'scenario-finished'; result: TestResult; scheduleIndex?: number }
 
 export type RunEvent = RunEventEnvelope & RunEventPayload
@@ -327,6 +341,16 @@ function createTestResult(
   }
 }
 
+function attemptIdentity(input: ScenarioAttemptInput) {
+  return {
+    scenario: {
+      name: input.scenario.name,
+      id: planQuery(input).scenarioId,
+    },
+    executionTargetProfile: input.executionTargetProfile,
+  }
+}
+
 async function runScenarioAttempt(
   input: ScenarioAttemptInput,
 ): Promise<ScenarioRun> {
@@ -361,10 +385,7 @@ async function runScenarioAttempt(
 
   await emit({
     type: 'scenario-started',
-    scenario: {
-      name: input.scenario.name,
-      id: planQuery(input).scenarioId,
-    },
+    ...attemptIdentity(input),
   })
 
   if (input.scenario.tags.includes(ignoreTag)) {
@@ -402,7 +423,7 @@ async function runScenarioAttempt(
   const steps: TestStepResult[] = []
   const recordStep = async (result: TestStepResult): Promise<void> => {
     steps.push(result)
-    await emit({ type: 'step-finished', result })
+    await emit({ type: 'step-finished', result, ...attemptIdentity(input) })
   }
   let state: TestResultState = input.signal?.aborted ? 'cancelled' : 'passed'
   let message: string | undefined = input.signal?.aborted
@@ -417,7 +438,7 @@ async function runScenarioAttempt(
         break
       }
 
-      await emit({ type: 'step-started', step })
+      await emit({ type: 'step-started', step, ...attemptIdentity(input) })
       let execution: StepExecution
       try {
         const deadline = stepDeadline(input.timeout, scenarioStartedAt)
@@ -501,9 +522,15 @@ export async function runScenario(
       ...input,
       mode: selected.mode,
       ...(selected.plan ? { plan: selected.plan } : {}),
-      // Collect attempt events locally so retries can be resequenced.
-      onEvent: undefined,
-      // Attempts own one logical session; retries are orchestrated here.
+      onEvent: async (event) => {
+        if (event.type === 'scenario-finished') return
+        const versionedEvent = {
+          ...event,
+          sequence: events.length + 1,
+        } as RunEvent
+        events.push(versionedEvent)
+        await input.onEvent?.(versionedEvent)
+      },
       retry: undefined,
     })
     const shouldRetryInfrastructure =
@@ -518,12 +545,11 @@ export async function runScenario(
     const result = withAttemptMetadata(run.result, attempt)
 
     for (const event of run.events) {
+      if (event.type !== 'scenario-finished') continue
       const versionedEvent = {
         ...event,
         sequence: events.length + 1,
-        ...(event.type === 'scenario-finished' && !shouldRetry
-          ? { result }
-          : {}),
+        ...(shouldRetry ? {} : { result }),
       } as RunEvent
       events.push(versionedEvent)
       await input.onEvent?.(versionedEvent)

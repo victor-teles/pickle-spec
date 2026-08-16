@@ -1,0 +1,56 @@
+import { Cancel01Icon, Tick02Icon } from '@hugeicons/core-free-icons'
+import { HugeiconsIcon } from '@hugeicons/react'
+import { cn } from '../../lib/utils'
+import { Spinner } from './spinner'
+
+export type ResultMarkState =
+  | 'idle'
+  | 'running'
+  | 'passed'
+  | 'passed-with-adaptation'
+  | 'failed'
+  | 'skipped'
+  | 'cancelled'
+  | 'infrastructure-error'
+
+const settleClass =
+  'size-3.5 origin-center animate-in fade-in zoom-in-95 duration-200 ease-[cubic-bezier(0.23,1,0.32,1)] motion-reduce:animate-none'
+
+function ResultMark(props: { state: ResultMarkState; className?: string }) {
+  if (props.state === 'running') {
+    return <Spinner className={props.className} />
+  }
+  if (props.state === 'passed' || props.state === 'passed-with-adaptation') {
+    return (
+      <HugeiconsIcon
+        icon={Tick02Icon}
+        strokeWidth={2}
+        aria-hidden
+        className={cn(
+          settleClass,
+          props.state === 'passed-with-adaptation'
+            ? 'text-adaptation'
+            : 'text-passed',
+          props.className,
+        )}
+      />
+    )
+  }
+  if (
+    props.state === 'failed' ||
+    props.state === 'infrastructure-error' ||
+    props.state === 'cancelled'
+  ) {
+    return (
+      <HugeiconsIcon
+        icon={Cancel01Icon}
+        strokeWidth={2}
+        aria-hidden
+        className={cn(settleClass, 'text-destructive', props.className)}
+      />
+    )
+  }
+  return null
+}
+
+export { ResultMark }
