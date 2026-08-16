@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
 import { mkdir, mkdtemp, rm, symlink } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
-import { type Browser, chromium } from 'playwright'
+import { type Browser, chromium, type Locator } from 'playwright'
 
 type CliPackageManifest = {
   bin: { pickle: string }
@@ -35,7 +35,8 @@ describe('Studio browser seam', () => {
     )
     await Bun.write(
       join(project, 'features', 'checkout.feature'),
-      `@pickle:id:speccheckaaaaaaaa @pickle:state:active
+      `# keep this comment
+@pickle:id:speccheckaaaaaaaa @pickle:state:active
 Feature: Checkout
   @pickle:id:scnpaybbbbbbbbbb
   Scenario: Pay for the order
@@ -45,7 +46,8 @@ Feature: Checkout
     Then the basket adapts
   @pickle:id:scnpassdddddddd
   Scenario: Complete a purchase
-    Then the purchase succeeds`,
+    Then the purchase succeeds
+`,
     )
     await Bun.write(
       join(project, 'pickle.extensions.ts'),
@@ -96,6 +98,19 @@ export default {
         async close() {},
       }
     },
+  },
+  async authorSpecification({ prompt }) {
+    if (!String(prompt).includes('Search')) {
+      throw new Error('AI assistance is unavailable')
+    }
+    return {
+      source: \`@pickle:id:specsearchaaaaaaa @pickle:state:active
+Feature: Search
+  @pickle:id:scnquerybbbbbbbb
+  Scenario: Query the catalog
+    Then results are shown
+\`,
+    }
   },
 }
 `,
@@ -377,7 +392,205 @@ Feature: Search
       await child.exited
     }
   }, 60_000)
+
+  test('Studio keeps Structured and Source views synchronized and reviews structured saves', async () => {
+    const project = await createStudioProject('author-specification')
+    const { child, url } = await startStudio(project)
+    const page = await browser.newPage()
+    try {
+      await page.goto(url)
+      const featureName = page.getByRole('textbox', { name: 'Feature name' })
+      await featureName.waitFor()
+      expect(await featureName.inputValue()).toBe('Checkout')
+      await featureName.fill('Basket')
+      await page
+        .getByRole('textbox', { name: 'Scenario name' })
+        .first()
+        .fill('Pay now')
+      await page
+        .getByRole('textbox', { name: 'Step 1 text' })
+        .first()
+        .fill('payment is captured now')
+      await page.getByRole('tab', { name: 'Source' }).click()
+      const source = page.getByRole('textbox', { name: 'Gherkin source' })
+      await source.waitFor()
+      expect(await source.inputValue()).toContain('Feature: Basket')
+      expect(await source.inputValue()).toContain('Scenario: Pay now')
+      expect(await source.inputValue()).toContain('payment is captured now')
+      expect(await source.inputValue()).toContain('# keep this comment')
+      await page.getByRole('tab', { name: 'Structured' }).click()
+      await page.getByRole('button', { name: 'Save Specification' }).click()
+      const diff = page.getByRole('dialog', { name: 'Review source diff' })
+      await diff.waitFor()
+      const diffText = await page
+        .getByRole('region', { name: 'Source diff' })
+        .textContent()
+      expect(diffText).toContain('-Feature: Checkout')
+      expect(diffText).toContain('+Feature: Basket')
+      expect(
+        await Bun.file(join(project, 'features', 'checkout.feature')).text(),
+      ).toContain('Feature: Checkout')
+      await page.getByRole('button', { name: 'Write source' }).click()
+      await page
+        .getByRole('dialog', { name: 'Review source diff' })
+        .waitFor({ state: 'hidden' })
+      let written = ''
+      const deadline = Date.now() + 10_000
+      while (Date.now() < deadline) {
+        written = await Bun.file(
+          join(project, 'features', 'checkout.feature'),
+        ).text()
+        if (written.includes('Feature: Basket')) break
+        await Bun.sleep(50)
+      }
+      expect(written).toContain('# keep this comment')
+      expect(written).toContain('Feature: Basket')
+      await page.getByRole('tab', { name: 'Source' }).click()
+      const savedSource = page.getByRole('textbox', { name: 'Gherkin source' })
+      await savedSource.waitFor()
+      await savedSource.fill(
+        (await savedSource.inputValue()).replace(
+          'Then payment is captured',
+          'Then payment is captured\n    And a receipt is shown',
+        ),
+      )
+      await page.getByRole('button', { name: 'Save Specification' }).click()
+      const sourceDeadline = Date.now() + 10_000
+      while (Date.now() < sourceDeadline) {
+        written = await Bun.file(
+          join(project, 'features', 'checkout.feature'),
+        ).text()
+        if (written.includes('And a receipt is shown')) break
+        await Bun.sleep(50)
+      }
+      expect(written).toContain('And a receipt is shown')
+      expect(written).toContain('# keep this comment')
+    } finally {
+      await page.close()
+      child.kill()
+      await child.exited
+    }
+  }, 60_000)
+
+  test('Studio reloads clean Specification buffers and reviews conflicts for edited buffers', async () => {
+    const project = await createStudioProject('author-conflicts')
+    const { child, url } = await startStudio(project)
+    const page = await browser.newPage()
+    try {
+      await page.goto(url)
+      const featureName = page.getByRole('textbox', { name: 'Feature name' })
+      await featureName.waitFor()
+      await Bun.write(
+        join(project, 'features', 'checkout.feature'),
+        `# keep this comment
+@pickle:id:speccheckaaaaaaaa @pickle:state:active
+Feature: Reloaded
+  @pickle:id:scnpaybbbbbbbbbb
+  Scenario: Pay for the order
+    Then payment is captured
+`,
+      )
+      await waitForInputValue(featureName, 'Reloaded')
+      await featureName.fill('Local edit')
+      await Bun.write(
+        join(project, 'features', 'checkout.feature'),
+        `# keep this comment
+@pickle:id:speccheckaaaaaaaa @pickle:state:active
+Feature: Disk edit
+  @pickle:id:scnpaybbbbbbbbbb
+  Scenario: Pay for the order
+    Then payment is captured
+`,
+      )
+      await page
+        .getByRole('dialog', { name: 'Specification changed on disk' })
+        .waitFor({
+          timeout: 10_000,
+        })
+      expect(await page.locator('#feature-name').inputValue()).toBe(
+        'Local edit',
+      )
+      await page.getByRole('button', { name: 'Load from disk' }).click()
+      await page
+        .getByRole('dialog', { name: 'Specification changed on disk' })
+        .waitFor({ state: 'hidden' })
+      await waitForInputValue(featureName, 'Disk edit')
+    } finally {
+      await page.close()
+      child.kill()
+      await child.exited
+    }
+  }, 60_000)
+
+  test('Studio proposes AI Gherkin as a diff and writes accepted Specifications as drafts', async () => {
+    const project = await createStudioProject('author-ai')
+    const { child, url } = await startStudio(project)
+    const page = await browser.newPage()
+    try {
+      await page.goto(url)
+      expect(await page.getByLabel('Active model').textContent()).toContain(
+        'anthropic / claude-sonnet-4-6',
+      )
+      await page
+        .getByRole('textbox', { name: 'AI prompt' })
+        .fill('Search the catalog')
+      await page
+        .getByRole('textbox', { name: 'New Specification path' })
+        .fill('features/search.feature')
+      await page.getByRole('button', { name: 'Propose Specification' }).click()
+      const dialog = page.getByRole('dialog', { name: 'Review AI proposal' })
+      await dialog.waitFor()
+      expect(
+        await page.getByRole('region', { name: 'Source diff' }).textContent(),
+      ).toContain('+Feature: Search')
+      expect(
+        await Bun.file(join(project, 'features', 'search.feature')).exists(),
+      ).toBe(false)
+      await page.getByRole('button', { name: 'Accept proposal' }).click()
+      const createdDeadline = Date.now() + 10_000
+      let created = false
+      while (Date.now() < createdDeadline) {
+        created = await Bun.file(
+          join(project, 'features', 'search.feature'),
+        ).exists()
+        if (created) break
+        await Bun.sleep(50)
+      }
+      expect(created).toBe(true)
+      const written = await Bun.file(
+        join(project, 'features', 'search.feature'),
+      ).text()
+      expect(written).toContain('@pickle:state:draft')
+      expect(written).not.toContain('@pickle:state:active')
+      await page.getByRole('button', { name: 'Search' }).click()
+      await page.getByRole('tab', { name: 'Source' }).click()
+      expect(
+        await page
+          .getByRole('textbox', { name: 'Gherkin source' })
+          .inputValue(),
+      ).toContain('@pickle:state:draft')
+    } finally {
+      await page.close()
+      child.kill()
+      await child.exited
+    }
+  }, 60_000)
 })
+
+async function waitForInputValue(
+  locator: Locator,
+  value: string,
+  timeoutMs = 10_000,
+) {
+  const deadline = Date.now() + timeoutMs
+  while (Date.now() < deadline) {
+    if ((await locator.inputValue()) === value) return
+    await Bun.sleep(50)
+  }
+  throw new Error(
+    `Input did not become ${JSON.stringify(value)} (was ${JSON.stringify(await locator.inputValue())})`,
+  )
+}
 
 function collectStream(stream: ReadableStream<Uint8Array>) {
   const chunks: string[] = []

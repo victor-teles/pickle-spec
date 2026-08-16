@@ -2,7 +2,17 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { basename, join, resolve } from 'node:path'
 import type { RunEvent, TestRunManifest } from '@pickle-spec/runner'
+import {
+  type StructuredSpecification,
+  specificationSourceDiff,
+} from '@pickle-spec/spec'
 import tailwind from 'bun-plugin-tailwind'
+import {
+  createSpecificationWorkspace,
+  type DiskChangeEvent,
+  DocumentConflictError,
+  type SpecificationWorkspace,
+} from './documents'
 
 export interface StudioScenario {
   id: string
@@ -16,12 +26,18 @@ export interface StudioSpecification {
   scenarios: readonly StudioScenario[]
 }
 
+export interface StudioAuthoringModel {
+  provider: string
+  name: string
+}
+
 export interface StudioProject {
   name: string
   root: string
   profiles: readonly string[]
   suites: readonly string[]
   specifications: readonly StudioSpecification[]
+  model?: StudioAuthoringModel
 }
 
 export interface StudioRunRequest {
@@ -46,9 +62,22 @@ export interface StudioRunGateway {
   cancel(id: string): Promise<void>
 }
 
+export interface StudioAuthoringGateway {
+  model: StudioAuthoringModel
+  propose?: (input: {
+    prompt: string
+    currentSource?: string
+  }) => Promise<{ source: string }>
+}
+
 export interface StudioOptions {
   project: StudioProject
+  loadProject?: () => Promise<StudioProject> | StudioProject
   gateway?: StudioRunGateway
+  documents?: SpecificationWorkspace
+  authoring?: StudioAuthoringGateway
+  specificationGlobs?: string | readonly string[]
+  language?: string
   hostname?: string
   port?: number
   token?: string
@@ -70,6 +99,39 @@ type HtmlAsset = {
 type StudioStreamEvent =
   | RunEvent
   | { type: 'run-finished'; run: { id: string } }
+
+type WorkspaceStreamEvent = DiskChangeEvent & { type: 'disk-changed' }
+
+type StudioSocketData =
+  | {
+      kind: 'run'
+      runId: string
+      listener?: (event: StudioStreamEvent) => void
+    }
+  | {
+      kind: 'workspace'
+      listener?: (event: WorkspaceStreamEvent) => void
+    }
+
+type DocumentPreviewRequest = {
+  uri: string
+  source: string
+  specification?: StructuredSpecification
+  diffAgainst?: string
+}
+
+type DocumentWriteRequest = {
+  uri: string
+  source: string
+  expectedRevision?: string
+  create?: boolean
+}
+
+type DocumentProposeRequest = {
+  prompt: string
+  uri?: string
+  currentSource?: string
+}
 
 const sessionCookie = 'pickle_studio_token'
 const loopbackHosts = new Set(['127.0.0.1', 'localhost', '::1'])
@@ -141,8 +203,16 @@ export async function startStudio(
   }
   const token = options.token ?? crypto.randomUUID()
   const ui = await buildUi()
+  const documents =
+    options.documents ??
+    createSpecificationWorkspace({
+      root: options.project.root,
+      globs: options.specificationGlobs ?? 'features/**/*.feature',
+      language: options.language,
+    })
   const listeners = new Map<string, Set<(event: StudioStreamEvent) => void>>()
   const buffers = new Map<string, StudioStreamEvent[]>()
+  const workspaceListeners = new Set<(event: WorkspaceStreamEvent) => void>()
 
   function publish(id: string, event: StudioStreamEvent): void {
     if (!id) return
@@ -158,14 +228,47 @@ export async function startStudio(
     return !header || header === origin
   }
 
-  const server = Bun.serve<{
-    runId: string
-    listener?: (event: StudioStreamEvent) => void
-  }>({
+  async function currentProject(): Promise<StudioProject> {
+    const project = options.loadProject
+      ? await options.loadProject()
+      : options.project
+    return {
+      ...project,
+      model: options.authoring?.model ?? project.model,
+    }
+  }
+
+  function conflictResponse(error: DocumentConflictError, source: string) {
+    return Response.json(
+      {
+        code: error.code,
+        uri: error.uri,
+        diskSource: error.diskSource,
+        revision: error.revision,
+        diff: specificationSourceDiff(source, error.diskSource),
+      },
+      { status: 409 },
+    )
+  }
+
+  const stopWatch = await documents.watch((event) => {
+    const payload: WorkspaceStreamEvent = { type: 'disk-changed', ...event }
+    for (const listener of workspaceListeners) listener(payload)
+  })
+
+  const server = Bun.serve<StudioSocketData>({
     hostname,
     port: options.port ?? 0,
     websocket: {
       open(ws) {
+        if (ws.data.kind === 'workspace') {
+          const listener = (event: WorkspaceStreamEvent) => {
+            ws.send(JSON.stringify(event))
+          }
+          workspaceListeners.add(listener)
+          ws.data = { kind: 'workspace', listener }
+          return
+        }
         const runId = ws.data.runId
         for (const event of buffers.get(runId) ?? []) {
           ws.send(JSON.stringify(event))
@@ -176,10 +279,14 @@ export async function startStudio(
         const set = listeners.get(runId) ?? new Set()
         set.add(listener)
         listeners.set(runId, set)
-        ws.data = { runId, listener }
+        ws.data = { kind: 'run', runId, listener }
       },
       message() {},
       close(ws) {
+        if (ws.data.kind === 'workspace') {
+          if (ws.data.listener) workspaceListeners.delete(ws.data.listener)
+          return
+        }
         if (!ws.data.listener) return
         listeners.get(ws.data.runId)?.delete(ws.data.listener)
       },
@@ -210,7 +317,87 @@ export async function startStudio(
         return new Response('Unauthorized', { status: 401 })
       }
       if (url.pathname === '/api/project' && request.method === 'GET') {
-        return Response.json(options.project)
+        return Response.json(await currentProject())
+      }
+      if (url.pathname === '/api/documents' && request.method === 'GET') {
+        const uri = url.searchParams.get('uri')
+        if (!uri) return new Response('Missing uri', { status: 400 })
+        try {
+          return Response.json(await documents.read(uri))
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error)
+          return new Response(message, { status: 404 })
+        }
+      }
+      if (
+        url.pathname === '/api/documents/preview' &&
+        request.method === 'POST'
+      ) {
+        const body = (await request.json()) as DocumentPreviewRequest
+        try {
+          return Response.json(
+            documents.preview({
+              uri: body.uri,
+              source: body.source,
+              specification: body.specification,
+              diffAgainst: body.diffAgainst,
+            }),
+          )
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error)
+          return new Response(message, { status: 400 })
+        }
+      }
+      if (url.pathname === '/api/documents' && request.method === 'PUT') {
+        const body = (await request.json()) as DocumentWriteRequest
+        try {
+          return Response.json(
+            await documents.write({
+              uri: body.uri,
+              source: body.source,
+              expectedRevision: body.expectedRevision,
+              create: body.create,
+            }),
+          )
+        } catch (error) {
+          if (error instanceof DocumentConflictError) {
+            return conflictResponse(error, body.source)
+          }
+          const message = error instanceof Error ? error.message : String(error)
+          return new Response(message, { status: 400 })
+        }
+      }
+      if (
+        url.pathname === '/api/documents/propose' &&
+        request.method === 'POST'
+      ) {
+        if (!options.authoring?.propose) {
+          return new Response('AI assistance is unavailable', { status: 501 })
+        }
+        const body = (await request.json()) as DocumentProposeRequest
+        try {
+          return Response.json(
+            await documents.propose({
+              prompt: body.prompt,
+              uri: body.uri,
+              currentSource: body.currentSource,
+              author: options.authoring.propose,
+            }),
+          )
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error)
+          return new Response(message, { status: 400 })
+        }
+      }
+      if (
+        url.pathname === '/api/workspace/events' &&
+        request.method === 'GET'
+      ) {
+        const upgraded = server.upgrade(request, {
+          data: { kind: 'workspace' },
+        })
+        if (upgraded) return
+        return new Response('WebSocket upgrade failed', { status: 400 })
       }
       if (url.pathname === '/api/runs' && request.method === 'POST') {
         if (!options.gateway) {
@@ -260,7 +447,9 @@ export async function startStudio(
       const eventsMatch = url.pathname.match(/^\/api\/runs\/([^/]+)\/events$/)
       if (eventsMatch && request.method === 'GET') {
         const runId = decodeURIComponent(eventsMatch[1]!)
-        const upgraded = server.upgrade(request, { data: { runId } })
+        const upgraded = server.upgrade(request, {
+          data: { kind: 'run', runId },
+        })
         if (upgraded) return
         return new Response('WebSocket upgrade failed', { status: 400 })
       }
@@ -284,6 +473,7 @@ export async function startStudio(
     url,
     token,
     stop() {
+      stopWatch()
       server.stop(true)
       void rm(ui.outdir, { recursive: true, force: true })
     },
