@@ -7,7 +7,6 @@ export type {
 } from './src/archive'
 export {
   importRunArchive,
-  migrateRunArchive,
   readRunArchive,
   writeRunArchive,
 } from './src/archive'

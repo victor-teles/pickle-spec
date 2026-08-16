@@ -1,5 +1,5 @@
 import { mkdir } from 'node:fs/promises'
-import { dirname, join, relative } from 'node:path'
+import { basename, dirname, join, relative } from 'node:path'
 import type { RunEvent, TestResult, TestStepResult } from './run-scenario'
 import { openTestRunStore, type TestRunManifest } from './test-run-store'
 
@@ -142,91 +142,90 @@ interface CollectedArtifact {
 }
 
 function collectArtifacts(
-  manifest: TestRunManifest,
-  events: RunEvent[],
+  results: readonly TestResult[],
   runDirectory: string,
 ): CollectedArtifact[] {
   const byAbsolute = new Map<string, CollectedArtifact>()
-  const consider = (path: string, mediaType: string | undefined): void => {
-    if (byAbsolute.has(path)) return
-    const archivePath = relative(runDirectory, path)
-    byAbsolute.set(path, {
-      absolutePath: path,
-      archivePath: archivePath.startsWith('..')
-        ? join('artifacts', path.split('/').at(-1) ?? 'artifact.bin')
-        : archivePath,
-      ...(mediaType ? { mediaType } : {}),
-    })
-  }
-
-  for (const result of manifest.results) {
+  for (const result of results) {
     for (const step of result.steps) {
       for (const artifact of step.artifacts ?? []) {
-        consider(artifact.path, artifact.mediaType)
-      }
-    }
-  }
-  for (const event of events) {
-    if (event.type === 'scenario-finished') {
-      for (const step of event.result.steps) {
-        for (const artifact of step.artifacts ?? []) {
-          consider(artifact.path, artifact.mediaType)
-        }
-      }
-    }
-    if (event.type === 'step-finished') {
-      for (const artifact of event.result.artifacts ?? []) {
-        consider(artifact.path, artifact.mediaType)
+        if (byAbsolute.has(artifact.path)) continue
+        const archivePath = relative(runDirectory, artifact.path)
+        byAbsolute.set(artifact.path, {
+          absolutePath: artifact.path,
+          archivePath: archivePath.startsWith('..')
+            ? join('artifacts', basename(artifact.path))
+            : archivePath,
+          ...(artifact.mediaType ? { mediaType: artifact.mediaType } : {}),
+        })
       }
     }
   }
   return [...byAbsolute.values()]
 }
 
-function remapArtifactPath(
-  path: string,
-  pathMap: Map<string, string>,
-  runDirectory: string,
-): string {
-  return pathMap.get(path) ?? join(runDirectory, path)
+function mapStepArtifacts(
+  step: TestStepResult,
+  mapPath: (path: string) => string,
+): TestStepResult {
+  if (!step.artifacts) return step
+  return {
+    ...step,
+    artifacts: step.artifacts.map((artifact) => ({
+      ...artifact,
+      path: mapPath(artifact.path),
+    })),
+  }
 }
 
-function remapResult(
+function mapResultArtifacts(
   result: TestResult,
-  pathMap: Map<string, string>,
-  runDirectory: string,
+  mapPath: (path: string) => string,
 ): TestResult {
   return {
     ...result,
-    steps: result.steps.map((step) => ({
-      ...step,
-      ...(step.artifacts
-        ? {
-            artifacts: step.artifacts.map((artifact) => ({
-              ...artifact,
-              path: remapArtifactPath(artifact.path, pathMap, runDirectory),
-            })),
-          }
-        : {}),
-    })),
+    steps: result.steps.map((step) => mapStepArtifacts(step, mapPath)),
   }
+}
+
+function mapEventArtifacts(
+  event: RunEvent,
+  mapPath: (path: string) => string,
+): RunEvent {
+  if (event.type === 'scenario-finished') {
+    return { ...event, result: mapResultArtifacts(event.result, mapPath) }
+  }
+  if (event.type === 'step-finished') {
+    return { ...event, result: mapStepArtifacts(event.result, mapPath) }
+  }
+  return event
+}
+
+async function loadRunFiles(root: string, runId: string) {
+  const store = openTestRunStore({ root })
+  const run = await store.open(runId)
+  const events = await run.events()
+  if (events.length === 0) throw new Error(`Unknown test run "${runId}"`)
+  const runDirectory = join(root, '.pickle', 'runs', runId)
+  const manifestPath = join(runDirectory, 'manifest.json')
+  const manifest = (await Bun.file(manifestPath).exists())
+    ? ((await Bun.file(manifestPath).json()) as TestRunManifest)
+    : await run.materialize({ finished: false })
+  return { runDirectory, manifest, events }
 }
 
 export async function writeRunArchive(
   input: WriteRunArchiveInput,
 ): Promise<RunArchive> {
-  const store = openTestRunStore({ root: input.root })
-  const run = await store.open(input.runId)
-  const events = await run.events()
-  if (events.length === 0) {
-    throw new Error(`Unknown test run "${input.runId}"`)
-  }
-  const runDirectory = join(input.root, '.pickle', 'runs', input.runId)
-  const manifestPath = join(runDirectory, 'manifest.json')
-  const manifest = (await Bun.file(manifestPath).exists())
-    ? ((await Bun.file(manifestPath).json()) as TestRunManifest)
-    : await run.materialize({ finished: false })
-  const collected = collectArtifacts(manifest, events, runDirectory)
+  const { runDirectory, manifest, events } = await loadRunFiles(
+    input.root,
+    input.runId,
+  )
+  const collected = collectArtifacts(manifest.results, runDirectory)
+  const pathMap = new Map(
+    collected.map((item) => [item.absolutePath, item.archivePath]),
+  )
+  const mapPath = (path: string) => pathMap.get(path) ?? path
   const artifacts: RunArchiveArtifact[] = []
   for (const item of collected) {
     if (!(await Bun.file(item.absolutePath).exists())) continue
@@ -240,66 +239,16 @@ export async function writeRunArchive(
     })
   }
 
-  const pathMap = new Map(
-    collected.map((item) => [item.absolutePath, item.archivePath]),
-  )
-  const archivedManifest: TestRunManifest = {
-    ...manifest,
-    results: manifest.results.map((result) => ({
-      ...result,
-      steps: result.steps.map((step) => ({
-        ...step,
-        ...(step.artifacts
-          ? {
-              artifacts: step.artifacts.map((artifact) => ({
-                ...artifact,
-                path: pathMap.get(artifact.path) ?? artifact.path,
-              })),
-            }
-          : {}),
-      })),
-    })),
-  }
-  const archivedEvents = events.map((event) => {
-    if (event.type === 'scenario-finished') {
-      return {
-        ...event,
-        result: {
-          ...event.result,
-          steps: event.result.steps.map((step) => ({
-            ...step,
-            ...(step.artifacts
-              ? {
-                  artifacts: step.artifacts.map((artifact) => ({
-                    ...artifact,
-                    path: pathMap.get(artifact.path) ?? artifact.path,
-                  })),
-                }
-              : {}),
-          })),
-        },
-      }
-    }
-    if (event.type === 'step-finished' && event.result.artifacts) {
-      return {
-        ...event,
-        result: {
-          ...event.result,
-          artifacts: event.result.artifacts.map((artifact) => ({
-            ...artifact,
-            path: pathMap.get(artifact.path) ?? artifact.path,
-          })),
-        },
-      }
-    }
-    return event
-  })
-
   const archive: RunArchive = {
     schemaVersion: 1,
     kind: 'run-archive',
-    manifest: archivedManifest,
-    events: archivedEvents,
+    manifest: {
+      ...manifest,
+      results: manifest.results.map((result) =>
+        mapResultArtifacts(result, mapPath),
+      ),
+    },
+    events: events.map((event) => mapEventArtifacts(event, mapPath)),
     artifacts,
   }
   await mkdir(dirname(input.outputPath), { recursive: true })
@@ -339,36 +288,15 @@ export async function importRunArchive(
     await Bun.write(target, Buffer.from(artifact.content, 'base64'))
     pathMap.set(artifact.path, target)
   }
-
-  const events = archive.events.map((event) => {
-    if (event.type === 'scenario-finished') {
-      return {
-        ...event,
-        result: remapResult(event.result, pathMap, runDirectory),
-      }
-    }
-    if (event.type === 'step-finished') {
-      return {
-        ...event,
-        result: {
-          ...event.result,
-          ...(event.result.artifacts
-            ? {
-                artifacts: event.result.artifacts.map((artifact) => ({
-                  ...artifact,
-                  path: remapArtifactPath(artifact.path, pathMap, runDirectory),
-                })),
-              }
-            : {}),
-        },
-      }
-    }
-    return event
-  })
+  const mapPath = (path: string) =>
+    pathMap.get(path) ?? join(runDirectory, path)
+  const events = archive.events.map((event) =>
+    mapEventArtifacts(event, mapPath),
+  )
   const manifest: TestRunManifest = {
     ...archive.manifest,
     results: archive.manifest.results.map((result) =>
-      remapResult(result, pathMap, runDirectory),
+      mapResultArtifacts(result, mapPath),
     ),
   }
 
@@ -380,12 +308,7 @@ export async function importRunArchive(
     join(runDirectory, 'manifest.json'),
     `${JSON.stringify(manifest, null, 2)}\n`,
   )
-
   await openTestRunStore({ root: input.root }).rebuildIndex()
 
-  return {
-    manifest,
-    events,
-    preservedArchivePath,
-  }
+  return { manifest, events, preservedArchivePath }
 }

@@ -317,10 +317,6 @@ function scenarioSelectionId(selection: {
   )
 }
 
-function resultIdentity(result: TestResult): string {
-  return `${result.scenario.id ?? result.scenario.name}::${result.executionTargetProfile.id}`
-}
-
 function selectionMatchesResult(
   selection: {
     specification: { source: { uri: string }; name: string }
@@ -328,9 +324,9 @@ function selectionMatchesResult(
   },
   result: TestResult,
 ): boolean {
-  const scenarioId = scenarioSelectionId(selection)
   return (
-    scenarioId === (result.scenario.id ?? result.scenario.name) ||
+    scenarioSelectionId(selection) ===
+      (result.scenario.id ?? result.scenario.name) ||
     selection.scenario.name === result.scenario.name
   )
 }
@@ -368,7 +364,7 @@ async function run(argv: string[]): Promise<number> {
     let selectedResults: TestResult[] | undefined
 
     if (args.rerunId) {
-      const sourceManifest = await loadManifest(args.rerunId)
+      const { manifest: sourceManifest } = await loadPersistedRun(args.rerunId)
       selectedResults = selectRerunResults(sourceManifest, {
         failures: args.failures,
         adaptations: args.adaptations,
@@ -380,22 +376,15 @@ async function run(argv: string[]): Promise<number> {
       if (selectedResults.length === 0) {
         throw new Error('No results match the current rerun selection')
       }
-      const selectedScenarioIds = new Set(
-        selectedResults.map(
-          (result) => result.scenario.id ?? result.scenario.name,
-        ),
-      )
       selections = selectScenarios(specifications, {
         ...baseSelection,
         ...args.selection,
         scenarioName: undefined,
         shard: args.selection.shard ?? baseSelection?.shard,
-      }).filter(
-        (selection) =>
-          selectedScenarioIds.has(scenarioSelectionId(selection)) ||
-          selectedResults!.some(
-            (result) => result.scenario.name === selection.scenario.name,
-          ),
+      }).filter((selection) =>
+        selectedResults!.some((result) =>
+          selectionMatchesResult(selection, result),
+        ),
       )
       if (selections.length === 0) {
         throw new Error('No Scenarios match the current rerun selection')
@@ -461,23 +450,27 @@ async function run(argv: string[]): Promise<number> {
     }
 
     const planStore = createFilePlanStore(process.cwd())
+    const shared = {
+      plans: planStore,
+      ci: Boolean(process.env.CI),
+      signal: controller.signal,
+      onEvent,
+    }
     const runs = selectedResults
       ? await runSelectedResultPairs({
           selectedResults,
           selections,
-          resolvedConfiguration,
-          plans: planStore,
-          ci: Boolean(process.env.CI),
-          signal: controller.signal,
-          onEvent,
+          targets: resolvedConfiguration.targets,
+          retry: resolvedConfiguration.retry,
+          timeout: resolvedConfiguration.timeout,
+          concurrency: resolvedConfiguration.concurrency,
+          applicationRevision: resolvedConfiguration.applicationRevision,
+          ...shared,
         })
       : await runScenarios({
           selections,
           ...resolvedConfiguration,
-          plans: planStore,
-          ci: Boolean(process.env.CI),
-          signal: controller.signal,
-          onEvent,
+          ...shared,
         })
     const manifest = await testRun.materialize()
     if (args.junitPath) await Bun.write(args.junitPath, formatJunit(manifest))
@@ -514,40 +507,29 @@ async function run(argv: string[]): Promise<number> {
   }
 }
 
-async function runSelectedResultPairs(input: {
-  selectedResults: readonly TestResult[]
-  selections: ReturnType<typeof selectScenarios>
-  resolvedConfiguration: ReturnType<typeof resolveRunConfiguration>
-  plans: ReturnType<typeof createFilePlanStore>
-  ci: boolean
-  signal: AbortSignal
-  onEvent: NonNullable<Parameters<typeof runScenarios>[0]['onEvent']>
-}) {
-  const wanted = new Set(input.selectedResults.map(resultIdentity))
+async function runSelectedResultPairs(
+  input: {
+    selectedResults: readonly TestResult[]
+    selections: ReturnType<typeof selectScenarios>
+    targets: ReturnType<typeof resolveRunConfiguration>['targets']
+  } & Omit<Parameters<typeof runScenarios>[0], 'selections' | 'targets'>,
+) {
   const runs = []
-  for (const target of input.resolvedConfiguration.targets) {
+  for (const target of input.targets) {
     const profileId = target.executionTargetProfile.id
     const profileSelections = input.selections.filter((selection) =>
       input.selectedResults.some(
         (result) =>
           result.executionTargetProfile.id === profileId &&
-          selectionMatchesResult(selection, result) &&
-          wanted.has(resultIdentity(result)),
+          selectionMatchesResult(selection, result),
       ),
     )
     if (profileSelections.length === 0) continue
     runs.push(
       ...(await runScenarios({
+        ...input,
         selections: profileSelections,
         targets: [target],
-        retry: input.resolvedConfiguration.retry,
-        timeout: input.resolvedConfiguration.timeout,
-        concurrency: input.resolvedConfiguration.concurrency,
-        applicationRevision: input.resolvedConfiguration.applicationRevision,
-        plans: input.plans,
-        ci: input.ci,
-        signal: input.signal,
-        onEvent: input.onEvent,
       })),
     )
   }
@@ -583,7 +565,7 @@ function migrateOptions(argv: string[]): {
   return options
 }
 
-async function loadManifest(runId: string) {
+async function loadPersistedRun(runId: string) {
   const store = openTestRunStore({ root: process.cwd() })
   const run = await store.open(runId)
   const events = await run.events()
@@ -595,21 +577,27 @@ async function loadManifest(runId: string) {
     runId,
     'manifest.json',
   )
-  if (await Bun.file(manifestPath).exists()) {
-    return (await Bun.file(manifestPath).json()) as Awaited<
-      ReturnType<typeof run.materialize>
-    >
-  }
-  return run.materialize({ finished: false })
+  const manifest = (await Bun.file(manifestPath).exists())
+    ? ((await Bun.file(manifestPath).json()) as Awaited<
+        ReturnType<typeof run.materialize>
+      >)
+    : await run.materialize({ finished: false })
+  return { manifest, events }
 }
 
 async function compare(argv: string[]): Promise<number> {
   if (argv.length !== 3) {
     throw new Error('Usage: pickle compare <baseline-id> <candidate-id>')
   }
-  const baseline = await loadManifest(argv[1]!)
-  const candidate = await loadManifest(argv[2]!)
-  console.log(JSON.stringify(compareTestRuns(baseline, candidate), null, 2))
+  const baseline = await loadPersistedRun(argv[1]!)
+  const candidate = await loadPersistedRun(argv[2]!)
+  console.log(
+    JSON.stringify(
+      compareTestRuns(baseline.manifest, candidate.manifest),
+      null,
+      2,
+    ),
+  )
   return 0
 }
 
@@ -661,18 +649,15 @@ async function exportRun(argv: string[]): Promise<number> {
     return 0
   }
 
-  const store = openTestRunStore({ root: process.cwd() })
-  const run = await store.open(runId)
-  const events = await run.events()
-  if (events.length === 0) throw new Error(`Unknown test run "${runId}"`)
-  const manifest = await loadManifest(runId)
+  const { manifest, events } = await loadPersistedRun(runId)
   const html = await formatHtml(manifest, events, {
     artifacts: allArtifacts ? 'all' : 'failures-and-adaptations',
   })
+  const htmlBytes = Buffer.byteLength(html, 'utf8')
   const warningThreshold = 10 * 1024 * 1024
-  if (allArtifacts && Buffer.byteLength(html, 'utf8') > warningThreshold) {
+  if (allArtifacts && htmlBytes > warningThreshold) {
     console.error(
-      `Warning: HTML export includes every available test artifact and is larger than 10 MB (${Buffer.byteLength(html, 'utf8')} bytes).`,
+      `Warning: HTML export includes every available test artifact and is larger than 10 MB (${htmlBytes} bytes).`,
     )
   }
   await Bun.write(resolve(htmlPath!), html)
