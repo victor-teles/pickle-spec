@@ -5,6 +5,7 @@ import { Button } from './components/ui/button'
 import { LoadingState } from './components/ui/loading-state'
 import { ResultMark } from './components/ui/result-mark'
 import { cn } from './lib/utils'
+import { PlansPanel } from './plans'
 import {
   attentionCells,
   type ClientEvent,
@@ -21,62 +22,19 @@ import {
 import { SettingsPanel } from './settings'
 import { SpecificationEditor } from './specification-editor'
 import './styles.css'
-
-type StudioScenario = {
-  id: string
-  name: string
-  canRun?: boolean
-}
-
-type StudioSpecification = {
-  id: string
-  name: string
-  uri: string
-  state?: string
-  tags?: string[]
-  links?: Array<{ namespace: string; id: string }>
-  canRun?: boolean
-  runReasons?: string[]
-  scenarios: StudioScenario[]
-}
-
-type StudioProject = {
-  name: string
-  root: string
-  profiles: string[]
-  suites: string[]
-  specifications: StudioSpecification[]
-  model?: {
-    provider: string
-    name: string
-  }
-  links?: Record<string, string>
-  suiteDetails?: Array<{
-    name: string
-    paths?: string | string[]
-    tagExpression?: string
-    states?: string[]
-    scenarioName?: string
-  }>
-  profileDetails?: Array<{
-    id: string
-    adapter: string
-    capabilities?: string[]
-  }>
-  secrets?: Array<{ name: string; present: boolean }>
-  readiness?: { ready: boolean; reasons: string[] }
-}
-
-type StudioRunRequest = {
-  paths?: string[]
-  scenarioName?: string
-}
+import type {
+  StudioProject,
+  StudioRunRequest,
+  StudioScenario,
+  StudioSpecification,
+} from './server'
+import { TestResultTimeline } from './test-result-timeline'
 
 const token = new URLSearchParams(location.search).get('token') ?? ''
 const areas = [
   { name: 'Specifications', available: true },
   { name: 'Runs', available: false },
-  { name: 'Plans', available: false },
+  { name: 'Plans', available: true },
   { name: 'Settings', available: true },
 ] as const
 
@@ -116,10 +74,6 @@ function StatusBadge(props: { state: StatusBadgeState }) {
       {statusText(props.state)}
     </Badge>
   )
-}
-
-function artifactUrl(path: string): string {
-  return `/api/artifact?path=${encodeURIComponent(path)}&token=${encodeURIComponent(token)}`
 }
 
 function matrixCellVariant(state: MatrixCell['state']) {
@@ -310,6 +264,12 @@ function StudioApp() {
             onError={setError}
           />
         </div>
+      ) : currentArea === 'Plans' ? (
+        <PlansPanel
+          adaptedResultsPolicy={project.policy.adaptedResults}
+          running={running}
+          api={api}
+        />
       ) : (
         <div className="grid min-h-0 flex-1 lg:grid-cols-[16rem_1fr]">
           <SpecificationList
@@ -458,7 +418,9 @@ function StudioApp() {
                         </ul>
                       </div>
                     ) : null}
-                    <Timeline cell={view.selected} />
+                    {view.selected?.result ? (
+                      <TestResultTimeline result={view.selected.result} />
+                    ) : null}
                   </div>
                 )}
               </>
@@ -476,7 +438,7 @@ function StudioApp() {
 }
 
 function SpecificationList(props: {
-  specifications: StudioSpecification[]
+  specifications: readonly StudioSpecification[]
   selectedId?: string
   running: boolean
   canRun: boolean
@@ -541,9 +503,9 @@ function SpecificationList(props: {
 }
 
 function ScenarioTable(props: {
-  profiles: string[]
-  scenarios: StudioScenario[]
-  cells: MatrixCell[]
+  profiles: readonly string[]
+  scenarios: readonly StudioScenario[]
+  cells: readonly MatrixCell[]
   selected?: MatrixCell
   running: boolean
   onSelect: (cell: MatrixCell) => void
@@ -646,56 +608,6 @@ function ScenarioTable(props: {
         </tbody>
       </table>
     </div>
-  )
-}
-
-function Timeline(props: { cell?: MatrixCell }) {
-  const result = props.cell?.result
-  if (!result) return null
-  return (
-    <section className="space-y-3">
-      <h3 className="text-sm font-medium">
-        {result.scenario.name} · {result.executionTargetProfile.id}
-      </h3>
-      <ol aria-label="Step timeline" className="space-y-3">
-        {result.steps.map((step) => (
-          <li
-            key={`${step.step.text}:${step.resolvedActions.map((action) => action.description).join(',')}`}
-            className="rounded-md border border-border bg-card px-4 py-3 transition-[border-color] duration-150 ease-[cubic-bezier(0.23,1,0.32,1)] hover:border-foreground/15 motion-reduce:transition-none"
-          >
-            <p className="font-medium">
-              {`${step.step.keyword.trim()} ${step.step.text}`}
-            </p>
-            <ul className="mt-2 space-y-1 font-mono text-xs">
-              {step.resolvedActions.map((action) => (
-                <li key={action.description}>{action.description}</li>
-              ))}
-            </ul>
-            {step.message ? (
-              <p className="mt-2 text-sm text-destructive">{step.message}</p>
-            ) : null}
-            {step.artifacts?.map((artifact) =>
-              artifact.mediaType?.startsWith('image/') ? (
-                <img
-                  key={artifact.path}
-                  alt={`${artifact.kind} for ${result.scenario.name}`}
-                  src={artifactUrl(artifact.path)}
-                  className="mt-3 max-h-64 rounded-md border border-border"
-                />
-              ) : (
-                <a
-                  key={artifact.path}
-                  href={artifactUrl(artifact.path)}
-                  className="mt-2 inline-block text-sm text-primary underline-offset-4 hover:underline"
-                >
-                  {artifact.kind}
-                </a>
-              ),
-            )}
-          </li>
-        ))}
-      </ol>
-    </section>
   )
 }
 

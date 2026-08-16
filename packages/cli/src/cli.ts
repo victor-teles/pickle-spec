@@ -27,6 +27,7 @@ import {
   startProjectRun,
 } from './execute-run'
 import { checkProject, initializeProject, migrateProject } from './project'
+import { createStudioPlanGateway } from './studio-plans'
 import {
   loadStudioProject,
   patchStudioConfig,
@@ -429,6 +430,7 @@ async function studio(argv: string[]): Promise<number> {
         return studioRunReadiness(context, request, current, specifications)
       },
     },
+    plans: createStudioPlanGateway(root, loadProject),
     gateway: {
       async start(request, onEvent) {
         const runController = new AbortController()

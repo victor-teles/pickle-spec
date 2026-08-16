@@ -431,7 +431,9 @@ export async function startProjectRun(input: {
       for (const event of await testRun.events()) {
         await input.onEvent?.(event)
       }
-      const planStore = createFilePlanStore(root)
+      const planStore = createFilePlanStore(root, {
+        candidateEvidence: { testRunId: testRun.id },
+      })
       const shared = {
         plans: planStore,
         ci: Boolean(process.env.CI),
