@@ -1,4 +1,10 @@
-import { StrictMode, useEffect, useMemo, useState } from 'react'
+import {
+  type KeyboardEvent,
+  StrictMode,
+  useEffect,
+  useMemo,
+  useState,
+} from 'react'
 import { createRoot } from 'react-dom/client'
 import { Badge } from './components/ui/badge'
 import { Button } from './components/ui/button'
@@ -30,14 +36,25 @@ import type {
   StudioSpecification,
 } from './server'
 import { TestResultTimeline } from './test-result-timeline'
+import { useVirtualWindow } from './virtualization'
 
 const token = new URLSearchParams(location.search).get('token') ?? ''
+if (token) {
+  const address = new URL(location.href)
+  address.searchParams.delete('token')
+  history.replaceState(
+    null,
+    '',
+    `${address.pathname}${address.search}${address.hash}`,
+  )
+}
 const areas = [
   { name: 'Specifications', available: true },
   { name: 'Runs', available: true },
   { name: 'Plans', available: true },
   { name: 'Settings', available: true },
 ] as const
+const specificationRowHeight = 32
 
 async function api<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(path, {
@@ -99,6 +116,7 @@ function StudioApp() {
     useState<(typeof areas)[number]['name']>('Specifications')
   const [view, setView] = useState<RunView>(emptyRunView)
   const [authoring, setAuthoring] = useState(false)
+  const [attentionOrder, setAttentionOrder] = useState<string[]>()
   const running = view.phase === 'running'
 
   useEffect(() => {
@@ -120,7 +138,7 @@ function StudioApp() {
     if (!runId) return
     const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:'
     const socket = new WebSocket(
-      `${protocol}//${location.host}/api/runs/${runId}/events?token=${encodeURIComponent(token)}`,
+      `${protocol}//${location.host}/api/runs/${runId}/events`,
     )
     socket.onmessage = (message) => {
       const event = JSON.parse(String(message.data)) as ClientEvent
@@ -130,6 +148,21 @@ function StudioApp() {
   }, [runId])
 
   const attention = useMemo(() => attentionCells(view.cells), [view.cells])
+  const displayedAttention = useMemo(() => {
+    if (!attentionOrder) return attention
+    const positions = new Map(
+      attentionOrder.map((key, index) => [key, index] as const),
+    )
+    return [...attention].sort((left, right) => {
+      const leftPosition =
+        positions.get(cellKey(left.scenarioId, left.profileId)) ??
+        attentionOrder.length
+      const rightPosition =
+        positions.get(cellKey(right.scenarioId, right.profileId)) ??
+        attentionOrder.length
+      return leftPosition - rightPosition
+    })
+  }, [attention, attentionOrder])
   const aggregate = statusLabel(view)
   const selected =
     project?.specifications.find((item) => item.id === selectedId) ??
@@ -272,12 +305,7 @@ function StudioApp() {
           api={api}
         />
       ) : currentArea === 'Runs' ? (
-        <HistoryPanel
-          api={api}
-          token={token}
-          runPhase={view.phase}
-          onRerun={startRun}
-        />
+        <HistoryPanel api={api} runPhase={view.phase} onRerun={startRun} />
       ) : (
         <div className="grid min-h-0 flex-1 lg:grid-cols-[16rem_1fr]">
           <SpecificationList
@@ -390,13 +418,31 @@ function StudioApp() {
                           aria-label="Needs attention"
                           aria-live="polite"
                           className="space-y-2"
+                          onFocusCapture={() =>
+                            setAttentionOrder(
+                              (current) =>
+                                current ??
+                                attention.map((cell) =>
+                                  cellKey(cell.scenarioId, cell.profileId),
+                                ),
+                            )
+                          }
+                          onBlurCapture={(event) => {
+                            if (
+                              !(event.relatedTarget instanceof Node) ||
+                              !event.currentTarget.contains(event.relatedTarget)
+                            ) {
+                              setAttentionOrder(undefined)
+                            }
+                          }}
                         >
-                          {attention.map((cell) => (
+                          {displayedAttention.map((cell) => (
                             <li key={cellKey(cell.scenarioId, cell.profileId)}>
-                              <button
+                              <Button
                                 type="button"
+                                variant="outline"
                                 className={cn(
-                                  'flex w-full min-w-0 flex-col gap-1 rounded-md border bg-card px-3 py-2 text-left text-sm outline-none transition-[transform,background-color,border-color] duration-150 ease-[cubic-bezier(0.23,1,0.32,1)] hover:bg-muted/30 active:scale-[0.99] focus-visible:border-foreground/30 motion-reduce:transition-none motion-reduce:active:scale-100',
+                                  'h-auto w-full min-w-0 flex-col items-stretch gap-1 bg-card px-3 py-2 text-left',
                                   isSelectedCell(view.selected, cell)
                                     ? 'border-foreground/25'
                                     : 'border-border',
@@ -420,7 +466,7 @@ function StudioApp() {
                                 <span className="text-xs text-muted-foreground">
                                   {cell.profileId} · Open step timeline
                                 </span>
-                              </button>
+                              </Button>
                             </li>
                           ))}
                         </ul>
@@ -453,6 +499,49 @@ function SpecificationList(props: {
   onSelect: (id: string) => void
   onRunAll: () => void
 }) {
+  const virtual = useVirtualWindow<HTMLUListElement>({
+    count: props.specifications.length,
+    itemSize: specificationRowHeight,
+  })
+  const visibleSpecifications = props.specifications.slice(
+    virtual.start,
+    virtual.end,
+  )
+  const [pendingFocus, setPendingFocus] = useState<number>()
+  const focusTargetVisible =
+    pendingFocus !== undefined &&
+    pendingFocus >= virtual.start &&
+    pendingFocus < virtual.end
+
+  useEffect(() => {
+    if (pendingFocus === undefined || !focusTargetVisible) return
+    const target = virtual.scrollRef.current?.querySelector<HTMLElement>(
+      `[data-specification-index="${pendingFocus}"]`,
+    )
+    if (!target) return
+    target.focus()
+    setPendingFocus(undefined)
+  }, [focusTargetVisible, pendingFocus, virtual.scrollRef])
+
+  function moveFocus(event: KeyboardEvent, index: number) {
+    let nextIndex: number | undefined
+    if (event.key === 'ArrowDown') {
+      nextIndex = Math.min(props.specifications.length - 1, index + 1)
+    } else if (event.key === 'ArrowUp') {
+      nextIndex = Math.max(0, index - 1)
+    } else if (event.key === 'Home') {
+      nextIndex = 0
+    } else if (event.key === 'End') {
+      nextIndex = props.specifications.length - 1
+    }
+    if (nextIndex === undefined || nextIndex === index) return
+    event.preventDefault()
+    const list = virtual.scrollRef.current
+    if (!list) return
+    setPendingFocus(nextIndex)
+    list.scrollTop = nextIndex * specificationRowHeight
+  }
+
   return (
     <nav
       aria-label="Specifications"
@@ -466,15 +555,27 @@ function SpecificationList(props: {
           None in this project.
         </p>
       ) : (
-        <ul className="flex min-h-0 flex-1 flex-col gap-px overflow-auto px-2 pb-2">
-          {props.specifications.map((specification) => {
+        <ul
+          ref={virtual.containerRef}
+          className="flex min-h-0 flex-1 flex-col overflow-auto px-2 pb-2"
+        >
+          {virtual.before > 0 ? (
+            <li
+              aria-hidden="true"
+              className="shrink-0"
+              style={{ height: virtual.before }}
+            />
+          ) : null}
+          {visibleSpecifications.map((specification, visibleIndex) => {
+            const index = virtual.start + visibleIndex
             const current = specification.id === props.selectedId
             return (
-              <li key={specification.id}>
+              <li key={specification.id} className="h-8 shrink-0">
                 <Button
                   type="button"
                   variant="ghost"
                   size="lg"
+                  data-specification-index={index}
                   aria-label={specification.name}
                   aria-current={current ? 'true' : undefined}
                   className={cn(
@@ -482,6 +583,7 @@ function SpecificationList(props: {
                     current && 'bg-accent font-medium text-accent-foreground',
                   )}
                   onClick={() => props.onSelect(specification.id)}
+                  onKeyDown={(event) => moveFocus(event, index)}
                 >
                   <span className="min-w-0 truncate">{specification.name}</span>
                   <span aria-hidden="true" className="font-mono">
@@ -491,6 +593,13 @@ function SpecificationList(props: {
               </li>
             )
           })}
+          {virtual.after > 0 ? (
+            <li
+              aria-hidden="true"
+              className="shrink-0"
+              style={{ height: virtual.after }}
+            />
+          ) : null}
         </ul>
       )}
       <div className="border-t border-border p-2">
@@ -526,7 +635,7 @@ function ScenarioTable(props: {
   }
 
   return (
-    <div className="overflow-auto rounded-lg border border-border bg-card">
+    <div className="w-full min-w-0 max-w-full overflow-auto rounded-lg border border-border bg-card">
       <table aria-label="Scenarios" className="w-full text-sm">
         <thead>
           <tr className="border-b border-border">

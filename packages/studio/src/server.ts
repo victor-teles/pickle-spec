@@ -213,6 +213,7 @@ export interface StudioOptions {
   specificationGlobs?: string | readonly string[]
   language?: string
   hostname?: string
+  allowRemoteAccess?: boolean
   port?: number
   token?: string
   open?: boolean
@@ -297,6 +298,32 @@ const loopbackHosts = new Set(['127.0.0.1', 'localhost', '::1'])
 
 const htmlEntry = join(import.meta.dir, 'index.html')
 
+function browserHostname(hostname: string): string {
+  return hostname.includes(':') ? `[${hostname}]` : hostname
+}
+
+function secureResponse(response: Response, origin: string): Response {
+  const websocketOrigin = origin.replace(/^http/, 'ws')
+  response.headers.set('cache-control', 'no-store')
+  response.headers.set(
+    'content-security-policy',
+    [
+      "default-src 'none'",
+      "base-uri 'none'",
+      `connect-src 'self' ${websocketOrigin}`,
+      "font-src 'self' data:",
+      "form-action 'self'",
+      "frame-ancestors 'none'",
+      "img-src 'self' data: blob:",
+      "script-src 'self'",
+      "style-src 'self' 'unsafe-inline'",
+    ].join('; '),
+  )
+  response.headers.set('referrer-policy', 'no-referrer')
+  response.headers.set('x-content-type-options', 'nosniff')
+  return response
+}
+
 async function buildUi(): Promise<HtmlAsset> {
   const outdir = await mkdtemp(join(tmpdir(), 'pickle-studio-ui-'))
   const result = await Bun.build({
@@ -355,9 +382,15 @@ export async function startStudio(
   options: StudioOptions,
 ): Promise<StudioServer> {
   const hostname = options.hostname ?? '127.0.0.1'
-  if (!loopbackHosts.has(hostname)) {
+  const remote = !loopbackHosts.has(hostname)
+  if (remote && !options.allowRemoteAccess) {
+    throw new Error(
+      `Studio refuses to bind to ${hostname} without explicit remote access`,
+    )
+  }
+  if (remote) {
     console.warn(
-      `Studio is bound to ${hostname}. Remote access exposes the session token.`,
+      `Remote Studio access is enabled on ${hostname}. The session token grants access to local project data; use a trusted network.`,
     )
   }
   const token = options.token ?? crypto.randomUUID()
@@ -454,17 +487,20 @@ export async function startStudio(
     },
     async fetch(request, server) {
       const url = new URL(request.url)
-      const origin = `http://${hostname}:${server.port}`
+      const origin = `http://${browserHostname(hostname)}:${server.port}`
       if (url.pathname === '/' || url.pathname === '/index.html') {
         if (!authorized(request, origin)) {
           return new Response('Unauthorized', { status: 401 })
         }
-        return new Response(ui.index, {
-          headers: {
-            'content-type': 'text/html; charset=utf-8',
-            'set-cookie': `${sessionCookie}=${encodeURIComponent(token)}; Path=/; HttpOnly; SameSite=Strict`,
-          },
-        })
+        return secureResponse(
+          new Response(ui.index, {
+            headers: {
+              'content-type': 'text/html; charset=utf-8',
+              'set-cookie': `${sessionCookie}=${encodeURIComponent(token)}; Path=/; HttpOnly; SameSite=Strict`,
+            },
+          }),
+          origin,
+        )
       }
       const asset =
         ui.files.get(url.pathname) ?? ui.files.get(basename(url.pathname))
@@ -472,13 +508,13 @@ export async function startStudio(
         if (!authorized(request, origin)) {
           return new Response('Unauthorized', { status: 401 })
         }
-        return new Response(asset)
+        return secureResponse(new Response(asset), origin)
       }
       if (!authorized(request, origin)) {
         return new Response('Unauthorized', { status: 401 })
       }
       if (url.pathname === '/api/project' && request.method === 'GET') {
-        return Response.json(await currentProject())
+        return secureResponse(Response.json(await currentProject()), origin)
       }
       if (url.pathname === '/api/history' && request.method === 'GET') {
         if (!options.history) {
@@ -856,7 +892,7 @@ export async function startStudio(
     },
   })
 
-  const url = `http://${hostname}:${server.port}/?token=${token}`
+  const url = `http://${browserHostname(hostname)}:${server.port}/?token=${token}`
   if (options.open) openBrowser(url)
 
   return {

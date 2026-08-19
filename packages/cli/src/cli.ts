@@ -64,6 +64,14 @@ interface RunArguments {
   fast?: boolean
 }
 
+interface StudioArguments {
+  configPath?: string
+  extensionsPath?: string
+  remoteHost?: string
+  open: boolean
+  port?: number
+}
+
 const dayMs = 24 * 60 * 60 * 1000
 
 function integer(value: string, flag: string, minimum: number): number {
@@ -356,19 +364,9 @@ async function exportRun(argv: string[]): Promise<number> {
   return 0
 }
 
-function parseStudioArguments(argv: string[]): {
-  configPath?: string
-  extensionsPath?: string
-  open: boolean
-  port?: number
-} {
+function parseStudioArguments(argv: string[]): StudioArguments {
   if (argv[0] !== 'studio') throw new Error('Usage: pickle studio [options]')
-  const options: {
-    configPath?: string
-    extensionsPath?: string
-    open: boolean
-    port?: number
-  } = { open: true }
+  const options: StudioArguments = { open: true }
   for (let index = 1; index < argv.length; index++) {
     const flag = argv[index]!
     if (flag === '--no-open') options.open = false
@@ -377,6 +375,7 @@ function parseStudioArguments(argv: string[]): {
     else if (flag === '--config') options.configPath = valueAfter(argv, index++)
     else if (flag === '--extensions')
       options.extensionsPath = valueAfter(argv, index++)
+    else if (flag === '--remote') options.remoteHost = valueAfter(argv, index++)
     else throw new Error(`Unknown option: ${flag}`)
   }
   return options
@@ -487,6 +486,8 @@ async function studio(argv: string[]): Promise<number> {
         activeRuns.get(id)?.abort()
       },
     },
+    hostname: args.remoteHost,
+    allowRemoteAccess: Boolean(args.remoteHost),
     open: args.open,
     port: args.port,
   })

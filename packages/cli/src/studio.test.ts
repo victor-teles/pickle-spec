@@ -2,6 +2,8 @@ import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
 import { mkdir, mkdtemp, rm, symlink } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
+import AxeBuilder from '@axe-core/playwright'
+import { openTestRunStore } from '@pickle-spec/runner'
 import { type Browser, chromium, type Page } from 'playwright'
 
 type CliPackageManifest = {
@@ -93,6 +95,12 @@ export default {
           }
           const profile = input.executionTargetProfile.id
           const scenario = input.scenario.name
+          if (
+            process.env.PICKLE_STUDIO_STAGGER_RESULTS &&
+            scenario === 'Pay for the order'
+          ) {
+            await Bun.sleep(750)
+          }
           if (scenario === 'Pay for the order' && profile === 'chrome') {
             return {
               state: 'failed',
@@ -150,9 +158,10 @@ Feature: Search
   async function startStudio(
     project: string,
     env: Record<string, string> = {},
+    args: string[] = [],
   ) {
     const child = Bun.spawn({
-      cmd: [pickleCommand, 'studio', '--no-open'],
+      cmd: [pickleCommand, 'studio', '--no-open', ...args],
       cwd: project,
       env: { ...Bun.env, ...env },
       stdout: 'pipe',
@@ -273,6 +282,310 @@ Feature: Search
       await child.exited
     }
   }, 30_000)
+
+  test('Studio protects the local session token and rejects untrusted origins', async () => {
+    const project = await createStudioProject('secure-local-session')
+    const { child, url } = await startStudio(project)
+    const page = await browser.newPage()
+    try {
+      const studioUrl = new URL(url)
+      const token = studioUrl.searchParams.get('token')
+      expect(token).toBeTruthy()
+
+      const apiUrl = new URL('/api/project', studioUrl)
+      expect((await fetch(apiUrl)).status).toBe(401)
+      expect(
+        (
+          await fetch(apiUrl, {
+            headers: {
+              Authorization: `Bearer ${token}`,
+              Origin: 'https://attacker.example',
+            },
+          })
+        ).status,
+      ).toBe(401)
+
+      const response = await fetch(apiUrl, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          Origin: studioUrl.origin,
+        },
+      })
+      expect(response.status).toBe(200)
+      expect(response.headers.get('content-security-policy')).toContain(
+        "default-src 'none'",
+      )
+      expect(response.headers.get('referrer-policy')).toBe('no-referrer')
+      expect(response.headers.get('x-content-type-options')).toBe('nosniff')
+
+      await page.goto(url)
+      await page.waitForURL((current) => !current.searchParams.has('token'))
+      expect(new URL(page.url()).searchParams.has('token')).toBe(false)
+    } finally {
+      await page.close()
+      child.kill()
+      await child.exited
+    }
+  }, 30_000)
+
+  test('Studio requires an explicit remote host and prints a security warning', async () => {
+    const project = await createStudioProject('explicit-remote-access')
+    const child = Bun.spawn({
+      cmd: [pickleCommand, 'studio', '--no-open', '--remote', '0.0.0.0'],
+      cwd: project,
+      env: Bun.env,
+      stdout: 'pipe',
+      stderr: 'pipe',
+    })
+    const stdout = collectStream(child.stdout)
+    const stderr = collectStream(child.stderr)
+    try {
+      const url = await stdout.waitFor(
+        /Studio (http:\/\/0\.0\.0\.0:\d+\S*)/,
+        10_000,
+      )
+      expect(new URL(url).hostname).toBe('0.0.0.0')
+      expect(
+        await stderr.waitFor(/(Remote Studio access is enabled[^\n]+)/, 10_000),
+      ).toContain('session token')
+    } finally {
+      child.kill()
+      await child.exited
+    }
+  }, 20_000)
+
+  test('Studio workflows have no automated WCAG 2.2 AA violations', async () => {
+    const project = await createStudioProject('accessible-workflows')
+    const { child, url } = await startStudio(project)
+    const context = await browser.newContext()
+    const page = await context.newPage()
+    try {
+      await page.goto(url)
+      await page
+        .getByRole('heading', { name: 'accessible-workflows' })
+        .waitFor()
+
+      for (const area of ['Specifications', 'Runs', 'Plans', 'Settings']) {
+        await page.getByRole('link', { name: area }).click()
+        const results = await new AxeBuilder({ page })
+          .withTags(['wcag2a', 'wcag2aa', 'wcag21aa', 'wcag22aa'])
+          .analyze()
+        expect(results.violations).toEqual([])
+      }
+    } finally {
+      await context.close()
+      child.kill()
+      await child.exited
+    }
+  }, 45_000)
+
+  test('keyboard focus stays visible and live results do not reorder under interaction', async () => {
+    const project = await createStudioProject('stable-live-focus')
+    await Bun.write(
+      join(project, 'features', 'checkout.feature'),
+      `@pickle:id:speccheckaaaaaaaa @pickle:state:active
+Feature: Checkout
+  @pickle:id:scnadaptcccccccc
+  Scenario: Adapt the purchase
+    Then the basket adapts
+  @pickle:id:scnpaybbbbbbbbbb
+  Scenario: Pay for the order
+    Then payment is captured
+  @pickle:id:scnpassdddddddd
+  Scenario: Complete a purchase
+    Then the purchase succeeds
+`,
+    )
+    const { child, url } = await startStudio(project, {
+      PICKLE_STUDIO_STAGGER_RESULTS: '1',
+    })
+    const page = await browser.newPage()
+    try {
+      await page.goto(url)
+      const run = page.getByRole('button', { name: 'Run Specification' })
+      await tabTo(page, run)
+      expect(
+        await run.evaluate((element) => element.matches(':focus-visible')),
+      ).toBe(true)
+      await page.keyboard.press('Enter')
+
+      const attention = page.getByRole('list', { name: 'Needs attention' })
+      const adaptation = attention.getByRole('button', {
+        name: /Adapt the purchase.*passed-with-adaptation/,
+      })
+      await adaptation.waitFor()
+      await adaptation.focus()
+      expect(
+        await attention.getByRole('listitem').first().textContent(),
+      ).toContain('Adapt the purchase')
+
+      await attention
+        .getByRole('button', { name: /Pay for the order.*failed/ })
+        .waitFor()
+      expect(
+        await adaptation.evaluate((element) => element.matches(':focus')),
+      ).toBe(true)
+      expect(
+        await attention.getByRole('listitem').first().textContent(),
+      ).toContain('Adapt the purchase')
+    } finally {
+      await page.close()
+      child.kill()
+      await child.exited
+    }
+  }, 45_000)
+
+  test('reduced-motion users can review core results on a smaller screen', async () => {
+    const project = await createStudioProject('responsive-result-review')
+    const gate = join(project, 'continue.txt')
+    const { child, url } = await startStudio(project, {
+      PICKLE_STUDIO_CONTINUE: gate,
+    })
+    const context = await browser.newContext({
+      reducedMotion: 'reduce',
+      viewport: { width: 390, height: 844 },
+    })
+    const page = await context.newPage()
+    try {
+      await page.goto(url)
+      const run = page.getByRole('button', { name: 'Run Specification' })
+      await tabTo(page, run)
+      await page.keyboard.press('Enter')
+      await page.getByRole('status').filter({ hasText: 'running' }).waitFor()
+      expect(
+        await page
+          .locator('html')
+          .evaluate(
+            (element) => element.getAnimations({ subtree: true }).length,
+          ),
+      ).toBe(0)
+
+      await Bun.write(gate, 'continue')
+      await page
+        .getByRole('status')
+        .filter({ hasText: 'failed' })
+        .waitFor({ timeout: 20_000 })
+      const timeline = page.getByRole('list', { name: 'Step timeline' })
+      expect(await timeline.textContent()).toContain('Payment was declined')
+      const scenarioLayout = await page
+        .getByRole('table', { name: 'Scenarios' })
+        .locator('..')
+        .evaluate((element) => ({
+          clientWidth: element.clientWidth,
+          scrollWidth: element.scrollWidth,
+          parentClientWidth: element.parentElement?.clientWidth,
+          parentScrollWidth: element.parentElement?.scrollWidth,
+        }))
+      expect(scenarioLayout.scrollWidth).toBeGreaterThan(
+        scenarioLayout.clientWidth,
+      )
+      expect(scenarioLayout.parentScrollWidth).toBe(
+        scenarioLayout.parentClientWidth,
+      )
+    } finally {
+      await context.close()
+      child.kill()
+      await child.exited
+    }
+  }, 60_000)
+
+  test('Studio virtualizes large Specification collections', async () => {
+    const project = await createStudioProject('large-specifications')
+    await Promise.all(
+      Array.from({ length: 250 }, (_, index) => {
+        const suffix = String(index).padStart(3, '0')
+        return Bun.write(
+          join(project, 'features', `fixture-${suffix}.feature`),
+          `@pickle:state:active
+Feature: Fixture ${suffix}
+  Scenario: Review fixture ${suffix}
+    Then fixture ${suffix} is available
+`,
+        )
+      }),
+    )
+    const { child, url } = await startStudio(project)
+    const page = await browser.newPage()
+    try {
+      await page.goto(url)
+      const catalog = page.getByRole('navigation', {
+        name: 'Specifications',
+      })
+      const collection = catalog.getByRole('list')
+      await collection.getByRole('button', { name: 'Checkout' }).waitFor()
+      expect(await collection.getByRole('button').count()).toBeLessThan(60)
+      expect(
+        await collection.getByRole('button', { name: 'Fixture 249' }).count(),
+      ).toBe(0)
+
+      await collection.getByRole('button', { name: 'Checkout' }).focus()
+      await page.keyboard.press('End')
+      const finalSpecification = collection.getByRole('button', {
+        name: 'Fixture 249',
+      })
+      await finalSpecification.waitFor()
+      expect(
+        await finalSpecification.evaluate((element) =>
+          element.matches(':focus'),
+        ),
+      ).toBe(true)
+      expect(await collection.getByRole('button').count()).toBeLessThan(60)
+    } finally {
+      await page.close()
+      child.kill()
+      await child.exited
+    }
+  }, 45_000)
+
+  test('Studio virtualizes large run and reviewed-result collections', async () => {
+    const project = await createStudioProject('large-run-history')
+    await createLargeHistory(project)
+    const { child, url } = await startStudio(project)
+    const page = await browser.newPage()
+    try {
+      await page.goto(url)
+      await page.getByRole('link', { name: 'Runs' }).click()
+      const history = page.getByRole('table', { name: 'Test run history' })
+      const largeRun = history.getByRole('row').filter({
+        hasText: 'run-large-results',
+      })
+      await largeRun.waitFor()
+      expect(await history.getByRole('row').count()).toBeLessThan(60)
+
+      const historyScroller = history.locator('..').locator('..')
+      await historyScroller.evaluate((element) => {
+        element.scrollTop = element.scrollHeight
+      })
+      await history.getByText('run-000').waitFor()
+      expect(await history.getByRole('row').count()).toBeLessThan(60)
+      await historyScroller.evaluate((element) => {
+        element.scrollTop = 0
+      })
+      await largeRun.waitFor()
+
+      await largeRun.getByRole('button', { name: 'Review run' }).click()
+      const results = page.getByRole('table', { name: 'Test run results' })
+      await results.getByText('Scenario 000').waitFor()
+      expect(await results.getByRole('row').count()).toBeLessThan(60)
+
+      const resultScroller = results.locator('..').locator('..')
+      await resultScroller.evaluate((element) => {
+        element.scrollTop = element.scrollHeight
+      })
+      await results.getByText('Scenario 249').waitFor()
+      expect(await results.getByRole('row').count()).toBeLessThan(60)
+
+      await page
+        .getByRole('button', { name: 'Delete eligible history' })
+        .click()
+      await page.getByText('No local test runs yet.').waitFor()
+      expect(await history.getByRole('row').count()).toBe(1)
+    } finally {
+      await page.close()
+      child.kill()
+      await child.exited
+    }
+  }, 60_000)
 
   test('Studio starts a web test run and diagnoses live results', async () => {
     const project = await createStudioProject('live-diagnosis')
@@ -1326,6 +1639,68 @@ async function setGherkinValue(page: Page, source: string) {
     return editor?.getValue() === expected
   }, source)
   await Bun.sleep(32)
+}
+
+async function tabTo(page: Page, target: ReturnType<Page['locator']>) {
+  for (let index = 0; index < 50; index++) {
+    await page.keyboard.press('Tab')
+    if (await target.evaluate((element) => element.matches(':focus'))) {
+      return
+    }
+  }
+  throw new Error('Keyboard focus did not reach the target')
+}
+
+async function createLargeHistory(project: string) {
+  const historySize = 150
+  let nextRun = 0
+  const store = openTestRunStore({
+    root: project,
+    createId() {
+      const index = nextRun++
+      return index === historySize
+        ? 'run-large-results'
+        : `run-${String(index).padStart(3, '0')}`
+    },
+    now() {
+      return new Date(Date.UTC(2026, 0, 1, 0, 0, nextRun))
+    },
+  })
+
+  for (let index = 0; index < historySize; index++) {
+    const run = await store.create({ suite: 'large-history' })
+    await run.append({
+      type: 'scenario-finished',
+      result: largeResult(index),
+    })
+    await run.materialize()
+  }
+
+  const largeRun = await store.create({ suite: 'large-results' })
+  for (let index = 0; index < 250; index++) {
+    await largeRun.append({
+      type: 'scenario-finished',
+      result: largeResult(index),
+      scheduleIndex: index,
+    })
+  }
+  await largeRun.materialize()
+}
+
+function largeResult(index: number) {
+  const suffix = String(index).padStart(3, '0')
+  return {
+    schemaVersion: 1 as const,
+    specification: {
+      name: 'Large project history',
+      uri: 'features/large-history.feature',
+    },
+    scenario: { id: `scenario-${suffix}`, name: `Scenario ${suffix}` },
+    executionTargetProfile: { id: 'chrome', adapter: 'custom' },
+    state: 'passed' as const,
+    steps: [],
+    durationMs: index + 1,
+  }
 }
 
 function collectStream(stream: ReadableStream<Uint8Array>) {
