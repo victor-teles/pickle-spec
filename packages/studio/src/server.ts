@@ -1,11 +1,21 @@
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { basename, join, resolve } from 'node:path'
-import type { RunEvent, TestRunManifest } from '@pickle-spec/runner'
-import {
-  type StructuredSpecification,
-  specificationSourceDiff,
+import type {
+  CandidateExecutionPlan,
+  ExecutionPlan,
+  HtmlArtifactMode,
+  RunEvent,
+  TestResult,
+  TestRunComparison,
+  TestRunManifest,
+  TestRunSummary,
+} from '@pickle-spec/runner'
+import type {
+  SpecificationMetadata,
+  StructuredSpecification,
 } from '@pickle-spec/spec'
+import { specificationSourceDiff } from '@pickle-spec/spec'
 import tailwind from 'bun-plugin-tailwind'
 import {
   createSpecificationWorkspace,
@@ -13,17 +23,71 @@ import {
   DocumentConflictError,
   type SpecificationWorkspace,
 } from './documents'
+import { createGitWorkspace, type GitWorkspace } from './git'
 
 export interface StudioScenario {
   id: string
   name: string
+  canRun?: boolean
+}
+
+export interface StudioExternalLink {
+  namespace: string
+  id: string
 }
 
 export interface StudioSpecification {
   id: string
   name: string
   uri: string
+  state?: 'draft' | 'active' | 'deprecated'
+  tags?: readonly string[]
+  links?: readonly StudioExternalLink[]
+  canRun?: boolean
+  runReasons?: readonly string[]
   scenarios: readonly StudioScenario[]
+}
+
+export interface StudioSuite {
+  name: string
+  paths?: string | readonly string[]
+  tagExpression?: string
+  states?: readonly ('draft' | 'active' | 'deprecated')[]
+  scenarioName?: string
+}
+
+export interface StudioProfile {
+  id: string
+  adapter: string
+  capabilities?: readonly string[]
+}
+
+export interface StudioCredential {
+  name: string
+  present: boolean
+}
+
+export interface StudioRunReadiness {
+  ready: boolean
+  reasons: readonly string[]
+}
+
+export interface StudioConfigPatch {
+  suites?: Record<
+    string,
+    {
+      paths?: string | readonly string[]
+      tagExpression?: string
+      states?: readonly ('draft' | 'active' | 'deprecated')[]
+      scenarioName?: string
+    }
+  >
+  executionTargetProfiles?: Record<
+    string,
+    { adapter: string; capabilities?: readonly string[] }
+  >
+  links?: Record<string, string>
+  secrets?: Record<string, { keychain: string }>
 }
 
 export interface StudioAuthoringModel {
@@ -38,6 +102,37 @@ export interface StudioProject {
   suites: readonly string[]
   specifications: readonly StudioSpecification[]
   model?: StudioAuthoringModel
+  links?: Readonly<Record<string, string>>
+  suiteDetails?: readonly StudioSuite[]
+  profileDetails?: readonly StudioProfile[]
+  secrets?: readonly StudioCredential[]
+  readiness?: StudioRunReadiness
+  policy: { adaptedResults: 'accept' | 'reject' }
+}
+
+export interface StudioPlanEvidence {
+  testRunId: string
+  result?: TestResult
+}
+
+export interface StudioPlanReview {
+  scenario: { id: string; name: string }
+  executionTargetProfileId: string
+  approved?: ExecutionPlan
+  candidate?: CandidateExecutionPlan
+  candidateRevision?: string
+  evidence?: StudioPlanEvidence
+}
+
+export interface StudioPlanPromotionRequest {
+  scenarioId: string
+  executionTargetProfileId: string
+  expectedCandidateRevision: string
+}
+
+export interface StudioPlanGateway {
+  list(): Promise<readonly StudioPlanReview[]>
+  promote(input: StudioPlanPromotionRequest): Promise<ExecutionPlan>
 }
 
 export interface StudioRunRequest {
@@ -45,6 +140,10 @@ export interface StudioRunRequest {
   profiles?: readonly string[]
   paths?: readonly string[]
   scenarioName?: string
+  scenarioId?: string
+  rerunId?: string
+  failures?: boolean
+  adaptations?: boolean
 }
 
 export interface StudioRunSnapshot {
@@ -57,9 +156,31 @@ export interface StudioRunGateway {
   start(
     request: StudioRunRequest | undefined,
     onEvent: (event: RunEvent) => void,
-  ): Promise<{ id: string; done?: Promise<unknown> }>
+  ): Promise<{ id: string; done: Promise<unknown> }>
   snapshot(id: string): Promise<StudioRunSnapshot>
   cancel(id: string): Promise<void>
+}
+
+export interface StudioHistoryGateway {
+  list(): Promise<StudioHistory>
+  compare(
+    baselineRunId: string,
+    candidateRunId: string,
+  ): Promise<TestRunComparison>
+  importArchive(bytes: Uint8Array): Promise<TestRunManifest>
+  exportArchive(runId: string): Promise<string>
+  exportHtml(runId: string, artifacts: HtmlArtifactMode): Promise<string>
+  deleteEligible(): Promise<{ removed: string[] }>
+}
+
+export interface StudioRetentionPolicy {
+  maxAgeMs: number
+  maxBytes: number
+}
+
+export interface StudioHistory {
+  runs: readonly TestRunSummary[]
+  retention: StudioRetentionPolicy
 }
 
 export interface StudioAuthoringGateway {
@@ -70,12 +191,25 @@ export interface StudioAuthoringGateway {
   }) => Promise<{ source: string }>
 }
 
+export interface StudioManagementGateway {
+  saveConfig(patch: StudioConfigPatch): Promise<StudioProject>
+  saveCredential(input: {
+    name: string
+    secret: string
+  }): Promise<StudioProject>
+  readiness(request?: StudioRunRequest): Promise<StudioRunReadiness>
+}
+
 export interface StudioOptions {
   project: StudioProject
   loadProject?: () => Promise<StudioProject> | StudioProject
   gateway?: StudioRunGateway
+  history?: StudioHistoryGateway
   documents?: SpecificationWorkspace
   authoring?: StudioAuthoringGateway
+  management?: StudioManagementGateway
+  plans?: StudioPlanGateway
+  git?: GitWorkspace
   specificationGlobs?: string | readonly string[]
   language?: string
   hostname?: string
@@ -113,10 +247,31 @@ type StudioSocketData =
       listener?: (event: WorkspaceStreamEvent) => void
     }
 
+type CredentialWriteRequest = {
+  name?: string
+  secret?: string
+}
+
+type HistoryComparisonRequest = {
+  baselineRunId?: string
+  candidateRunId?: string
+}
+
+type GitPathsRequest = {
+  paths?: string[]
+}
+
+type GitCommitRequest = {
+  message?: string
+  confirmed?: boolean
+  paths?: string[]
+}
+
 type DocumentPreviewRequest = {
   uri: string
   source: string
   specification?: StructuredSpecification
+  metadata?: SpecificationMetadata
   diffAgainst?: string
 }
 
@@ -131,6 +286,10 @@ type DocumentProposeRequest = {
   prompt: string
   uri?: string
   currentSource?: string
+}
+
+type PlanPromotionRequest = Partial<StudioPlanPromotionRequest> & {
+  confirmed?: boolean
 }
 
 const sessionCookie = 'pickle_studio_token'
@@ -210,9 +369,11 @@ export async function startStudio(
       globs: options.specificationGlobs ?? 'features/**/*.feature',
       language: options.language,
     })
+  const git = options.git ?? createGitWorkspace(options.project.root)
   const listeners = new Map<string, Set<(event: StudioStreamEvent) => void>>()
   const buffers = new Map<string, StudioStreamEvent[]>()
   const workspaceListeners = new Set<(event: WorkspaceStreamEvent) => void>()
+  const activeRuns = new Set<string>()
 
   function publish(id: string, event: StudioStreamEvent): void {
     if (!id) return
@@ -319,6 +480,225 @@ export async function startStudio(
       if (url.pathname === '/api/project' && request.method === 'GET') {
         return Response.json(await currentProject())
       }
+      if (url.pathname === '/api/history' && request.method === 'GET') {
+        if (!options.history) {
+          return new Response('Test run history is unavailable', {
+            status: 501,
+          })
+        }
+        return Response.json(await options.history.list())
+      }
+      if (
+        url.pathname === '/api/history/compare' &&
+        request.method === 'POST'
+      ) {
+        if (!options.history) {
+          return new Response('Test run history is unavailable', {
+            status: 501,
+          })
+        }
+        const body = (await request.json()) as HistoryComparisonRequest
+        if (!body.baselineRunId || !body.candidateRunId) {
+          return new Response('Select two test runs to compare', {
+            status: 400,
+          })
+        }
+        return Response.json(
+          await options.history.compare(
+            body.baselineRunId,
+            body.candidateRunId,
+          ),
+        )
+      }
+      if (url.pathname === '/api/history/import' && request.method === 'POST') {
+        if (!options.history) {
+          return new Response('Test run history is unavailable', {
+            status: 501,
+          })
+        }
+        try {
+          return Response.json(
+            await options.history.importArchive(
+              new Uint8Array(await request.arrayBuffer()),
+            ),
+          )
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error)
+          return new Response(message, { status: 400 })
+        }
+      }
+      if (
+        url.pathname === '/api/history/retention' &&
+        request.method === 'POST'
+      ) {
+        if (!options.history) {
+          return new Response('Test run history is unavailable', {
+            status: 501,
+          })
+        }
+        return Response.json(await options.history.deleteEligible())
+      }
+      const historyExportMatch = url.pathname.match(
+        /^\/api\/history\/([^/]+)\/(html|archive)$/,
+      )
+      if (historyExportMatch && request.method === 'GET') {
+        if (!options.history) {
+          return new Response('Test run history is unavailable', {
+            status: 501,
+          })
+        }
+        const runId = decodeURIComponent(historyExportMatch[1]!)
+        const kind = historyExportMatch[2]
+        if (kind === 'archive') {
+          return new Response(await options.history.exportArchive(runId), {
+            headers: {
+              'content-type': 'application/json; charset=utf-8',
+              'content-disposition': `attachment; filename="${runId}.pickle-run.json"`,
+            },
+          })
+        }
+        const artifacts =
+          url.searchParams.get('artifacts') === 'all'
+            ? 'all'
+            : 'failures-and-adaptations'
+        return new Response(
+          await options.history.exportHtml(runId, artifacts),
+          {
+            headers: {
+              'content-type': 'text/html; charset=utf-8',
+              'content-disposition': `attachment; filename="${runId}.html"`,
+            },
+          },
+        )
+      }
+      if (url.pathname === '/api/plans' && request.method === 'GET') {
+        if (!options.plans) {
+          return new Response('Execution plans are unavailable', {
+            status: 501,
+          })
+        }
+        return Response.json(await options.plans.list())
+      }
+      if (url.pathname === '/api/plans/promote' && request.method === 'POST') {
+        if (!options.plans) {
+          return new Response('Execution plans are unavailable', {
+            status: 501,
+          })
+        }
+        const body = (await request.json()) as PlanPromotionRequest
+        if (body.confirmed !== true) {
+          return new Response('Plan promotion requires explicit confirmation', {
+            status: 400,
+          })
+        }
+        if (activeRuns.size > 0) {
+          return new Response(
+            'A candidate plan cannot be promoted during a test run',
+            { status: 409 },
+          )
+        }
+        if (
+          !body.scenarioId ||
+          !body.executionTargetProfileId ||
+          !body.expectedCandidateRevision
+        ) {
+          return new Response('Plan promotion request is incomplete', {
+            status: 400,
+          })
+        }
+        try {
+          return Response.json(
+            await options.plans.promote({
+              scenarioId: body.scenarioId,
+              executionTargetProfileId: body.executionTargetProfileId,
+              expectedCandidateRevision: body.expectedCandidateRevision,
+            }),
+          )
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error)
+          return new Response(message, { status: 409 })
+        }
+      }
+      if (url.pathname === '/api/config' && request.method === 'PUT') {
+        if (!options.management) {
+          return new Response('Project configuration is unavailable', {
+            status: 501,
+          })
+        }
+        try {
+          const patch = (await request.json()) as StudioConfigPatch
+          return Response.json(await options.management.saveConfig(patch))
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error)
+          return new Response(message, { status: 400 })
+        }
+      }
+      if (url.pathname === '/api/credentials' && request.method === 'PUT') {
+        if (!options.management) {
+          return new Response('Credentials are unavailable', { status: 501 })
+        }
+        try {
+          const body = (await request.json()) as CredentialWriteRequest
+          return Response.json(
+            await options.management.saveCredential({
+              name: body.name ?? '',
+              secret: body.secret ?? '',
+            }),
+          )
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error)
+          return new Response(message, { status: 400 })
+        }
+      }
+      if (url.pathname === '/api/run-readiness' && request.method === 'POST') {
+        if (!options.management) {
+          return Response.json(
+            (await currentProject()).readiness ?? { ready: true, reasons: [] },
+          )
+        }
+        const body = (await request
+          .json()
+          .catch(() => ({}))) as StudioRunRequest
+        return Response.json(await options.management.readiness(body))
+      }
+      if (url.pathname === '/api/git' && request.method === 'GET') {
+        return Response.json(await git.status())
+      }
+      if (url.pathname === '/api/git/stage' && request.method === 'POST') {
+        const body = (await request.json()) as GitPathsRequest
+        try {
+          return Response.json(await git.stage(body.paths ?? []))
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error)
+          return new Response(message, { status: 400 })
+        }
+      }
+      if (url.pathname === '/api/git/commit' && request.method === 'POST') {
+        const body = (await request.json()) as GitCommitRequest
+        try {
+          return Response.json(
+            await git.commit({
+              message: body.message ?? '',
+              confirmed: Boolean(body.confirmed),
+              paths: body.paths ?? [],
+            }),
+          )
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error)
+          return new Response(message, { status: 400 })
+        }
+      }
+      if (
+        url.pathname === '/api/git/pull-request' &&
+        request.method === 'POST'
+      ) {
+        try {
+          return Response.json(await git.pullRequest())
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error)
+          return new Response(message, { status: 400 })
+        }
+      }
       if (url.pathname === '/api/documents' && request.method === 'GET') {
         const uri = url.searchParams.get('uri')
         if (!uri) return new Response('Missing uri', { status: 400 })
@@ -346,6 +726,7 @@ export async function startStudio(
               uri: body.uri,
               source: body.source,
               specification: body.specification,
+              metadata: body.metadata,
               diffAgainst: body.diffAgainst,
             }),
           )
@@ -419,10 +800,13 @@ export async function startStudio(
             publish(runId, event)
           })
           runId = started.id
-          void started.done?.then(
-            () => publish(runId, { type: 'run-finished', run: { id: runId } }),
-            () => publish(runId, { type: 'run-finished', run: { id: runId } }),
-          )
+          activeRuns.add(started.id)
+          const finishRun = () => {
+            publish(runId, { type: 'run-finished', run: { id: runId } })
+          }
+          void started.done
+            .then(finishRun, finishRun)
+            .finally(() => activeRuns.delete(started.id))
           return Response.json({ id: started.id })
         } catch (error) {
           const message = error instanceof Error ? error.message : String(error)

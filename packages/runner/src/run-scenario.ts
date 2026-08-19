@@ -119,7 +119,13 @@ interface RunEventEnvelope {
 export type RunEventPayload =
   | {
       type: 'run-started'
-      run: { id: string; startedAt: string; sourceRunId?: string }
+      run: {
+        id: string
+        startedAt: string
+        sourceRunId?: string
+        suite?: string
+        applicationRevision?: string
+      }
     }
   | {
       type: 'scenario-started'

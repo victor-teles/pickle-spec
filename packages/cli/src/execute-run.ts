@@ -51,6 +51,7 @@ export interface ProjectRunOptions {
   screenshotMode?: NonNullable<WebAdapterOptions['screenshots']>['mode']
   applicationRevision?: string
   rerunId?: string
+  scenarioIds?: string[]
   failures?: boolean
   adaptations?: boolean
   fast?: boolean
@@ -233,11 +234,10 @@ function selectionMatchesResult(
   },
   result: TestResult,
 ): boolean {
-  return (
-    scenarioSelectionId(selection) ===
-      (result.scenario.id ?? result.scenario.name) ||
-    selection.scenario.name === result.scenario.name
-  )
+  if (result.scenario.id) {
+    return scenarioSelectionId(selection) === result.scenario.id
+  }
+  return selection.scenario.name === result.scenario.name
 }
 
 async function runSelectedResultPairs(
@@ -294,9 +294,16 @@ export async function startProjectRun(input: {
     root,
     artifactCapture: input.config.artifacts?.capture,
   })
-  const testRun = await store.create(
-    args.rerunId ? { sourceRunId: args.rerunId } : undefined,
-  )
+  const testRun = await store.create({
+    ...(args.rerunId ? { sourceRunId: args.rerunId } : {}),
+    ...(args.suite ? { suite: args.suite } : {}),
+    ...((args.applicationRevision ?? input.config.applicationRevision)
+      ? {
+          applicationRevision:
+            args.applicationRevision ?? input.config.applicationRevision,
+        }
+      : {}),
+  })
 
   const done = new Promise<{
     runs: ScenarioRun[]
@@ -350,9 +357,11 @@ export async function startProjectRun(input: {
         selectedResults = selectRerunResults(sourceManifest, {
           failures: args.failures,
           adaptations: args.adaptations,
-          ...(args.selection?.scenarioName
-            ? { scenarioNames: [args.selection.scenarioName] }
-            : {}),
+          ...(args.scenarioIds?.length
+            ? { scenarioIds: args.scenarioIds }
+            : args.selection?.scenarioName
+              ? { scenarioNames: [args.selection.scenarioName] }
+              : {}),
           ...(args.profiles?.length ? { profileIds: args.profiles } : {}),
         })
         if (selectedResults.length === 0) {
@@ -431,7 +440,9 @@ export async function startProjectRun(input: {
       for (const event of await testRun.events()) {
         await input.onEvent?.(event)
       }
-      const planStore = createFilePlanStore(root)
+      const planStore = createFilePlanStore(root, {
+        candidateEvidence: { testRunId: testRun.id },
+      })
       const shared = {
         plans: planStore,
         ci: Boolean(process.env.CI),

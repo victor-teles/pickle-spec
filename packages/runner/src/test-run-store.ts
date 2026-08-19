@@ -28,18 +28,27 @@ export interface TestRunManifest {
   startedAt: string
   finishedAt?: string
   sourceRunId?: string
+  suite?: string
+  applicationRevision?: string
   state: TestResultState
   results: TestResult[]
 }
 
 export interface CreateTestRunOptions {
   sourceRunId?: string
+  suite?: string
+  applicationRevision?: string
 }
 
 export interface TestRunSummary {
   id: string
   startedAt: string
   finishedAt?: string
+  sourceRunId?: string
+  suite?: string
+  executionTargetProfileIds: string[]
+  applicationRevision?: string
+  durationMs?: number
   state: TestResultState
   resultCount: number
 }
@@ -69,6 +78,7 @@ export interface TestRunStore {
 }
 
 const dayMs = 24 * 60 * 60 * 1000
+const indexSchemaVersion = 2
 
 export const defaultRetention = {
   maxAgeMs: 30 * dayMs,
@@ -100,7 +110,7 @@ export function openTestRunStore(options: TestRunStoreOptions): TestRunStore {
   function persistedRunFor(
     id: string,
     startedAt: string,
-    sourceRunId?: string,
+    metadata: CreateTestRunOptions = {},
   ): PersistedTestRun {
     return persistedTestRun(
       id,
@@ -109,7 +119,7 @@ export function openTestRunStore(options: TestRunStoreOptions): TestRunStore {
       now,
       artifactCapture,
       upsertManifest,
-      sourceRunId,
+      metadata,
     )
   }
 
@@ -118,11 +128,17 @@ export function openTestRunStore(options: TestRunStoreOptions): TestRunStore {
     const started = events.find((event) => event.type === 'run-started')
     const sourceRunId =
       started?.type === 'run-started' ? started.run.sourceRunId : undefined
-    return persistedRunFor(
-      id,
-      startedAtFrom(events, now().toISOString()),
+    const suite =
+      started?.type === 'run-started' ? started.run.suite : undefined
+    const applicationRevision =
+      started?.type === 'run-started'
+        ? started.run.applicationRevision
+        : undefined
+    return persistedRunFor(id, startedAtFrom(events, now().toISOString()), {
       sourceRunId,
-    )
+      suite,
+      applicationRevision,
+    })
   }
 
   async function manifestFor(id: string): Promise<TestRunManifest> {
@@ -155,6 +171,7 @@ export function openTestRunStore(options: TestRunStoreOptions): TestRunStore {
     withIndex(indexPath, (db) => {
       db.run('DELETE FROM runs')
       for (const manifest of manifests) upsertRun(db, manifest)
+      db.run(`PRAGMA user_version = ${indexSchemaVersion}`)
     })
   }
 
@@ -163,20 +180,29 @@ export function openTestRunStore(options: TestRunStoreOptions): TestRunStore {
       const id = createId()
       const startedAt = now().toISOString()
       await mkdir(join(runsDirectory, id), { recursive: true })
-      const run = persistedRunFor(id, startedAt, options.sourceRunId)
+      const run = persistedRunFor(id, startedAt, options)
       await run.append({
         type: 'run-started',
         run: {
           id,
           startedAt,
           ...(options.sourceRunId ? { sourceRunId: options.sourceRunId } : {}),
+          ...(options.suite ? { suite: options.suite } : {}),
+          ...(options.applicationRevision
+            ? { applicationRevision: options.applicationRevision }
+            : {}),
         },
       })
       return run
     },
     open: openRun,
     async list() {
-      if (!(await Bun.file(indexPath).exists())) await rebuild()
+      if (
+        !(await Bun.file(indexPath).exists()) ||
+        indexVersion(indexPath) < indexSchemaVersion
+      ) {
+        await rebuild()
+      }
       return withIndex(indexPath, listRuns)
     },
     rebuildIndex: rebuild,
@@ -218,7 +244,7 @@ function persistedTestRun(
   now: () => Date,
   artifactCapture: ArtifactCapturePolicy,
   onMaterialize: (manifest: TestRunManifest) => Promise<void>,
-  sourceRunId?: string,
+  metadata: CreateTestRunOptions,
 ): PersistedTestRun {
   const eventsPath = join(directory, 'events.ndjson')
   const manifestPath = join(directory, 'manifest.json')
@@ -264,7 +290,11 @@ function persistedTestRun(
         ...(input?.finished === false
           ? {}
           : { finishedAt: now().toISOString() }),
-        ...(sourceRunId ? { sourceRunId } : {}),
+        ...(metadata.sourceRunId ? { sourceRunId: metadata.sourceRunId } : {}),
+        ...(metadata.suite ? { suite: metadata.suite } : {}),
+        ...(metadata.applicationRevision
+          ? { applicationRevision: metadata.applicationRevision }
+          : {}),
         state: aggregateState(results),
         results,
       }
@@ -279,9 +309,17 @@ interface IndexedRun {
   id: string
   startedAt: string
   finishedAt: string | null
+  sourceRunId: string | null
+  suite: string | null
+  executionTargetProfileIds: string
+  applicationRevision: string | null
+  durationMs: number | null
   state: TestResultState
   resultCount: number
 }
+
+type IndexColumn = { name: string }
+type IndexedSchemaVersion = Record<'user_version', number>
 
 function openIndex(path: string): Database {
   const db = new Database(path, { create: true })
@@ -290,10 +328,32 @@ function openIndex(path: string): Database {
       id TEXT PRIMARY KEY,
       started_at TEXT NOT NULL,
       finished_at TEXT,
+      source_run_id TEXT,
+      suite TEXT,
+      execution_target_profile_ids TEXT NOT NULL DEFAULT '[]',
+      application_revision TEXT,
+      duration_ms INTEGER,
       state TEXT NOT NULL,
       result_count INTEGER NOT NULL
     )
   `)
+  const columns = new Set(
+    db
+      .query('PRAGMA table_info(runs)')
+      .all()
+      .map((row) => (row as IndexColumn).name),
+  )
+  const additions = [
+    ['source_run_id', 'TEXT'],
+    ['suite', 'TEXT'],
+    ['execution_target_profile_ids', "TEXT NOT NULL DEFAULT '[]'"],
+    ['application_revision', 'TEXT'],
+    ['duration_ms', 'INTEGER'],
+  ] as const
+  for (const [name, definition] of additions) {
+    if (!columns.has(name))
+      db.run(`ALTER TABLE runs ADD COLUMN ${name} ${definition}`)
+  }
   return db
 }
 
@@ -304,6 +364,13 @@ function withIndex<Value>(path: string, use: (db: Database) => Value): Value {
   } finally {
     db.close()
   }
+}
+
+function indexVersion(path: string): number {
+  return withIndex(path, (db) => {
+    const row = db.query('PRAGMA user_version').get() as IndexedSchemaVersion
+    return row.user_version
+  })
 }
 
 function startedAtFrom(events: readonly RunEvent[], fallback: string): string {
@@ -319,18 +386,40 @@ function byOldest(left: TestRunManifest, right: TestRunManifest): number {
 }
 
 function upsertRun(db: Database, manifest: TestRunManifest): void {
+  const executionTargetProfileIds = [
+    ...new Set(
+      manifest.results.map((result) => result.executionTargetProfile.id),
+    ),
+  ].sort()
+  const durationMs = manifest.finishedAt
+    ? Date.parse(manifest.finishedAt) - Date.parse(manifest.startedAt)
+    : undefined
   db.run(
-    `INSERT INTO runs (id, started_at, finished_at, state, result_count)
-     VALUES (?, ?, ?, ?, ?)
+    `INSERT INTO runs (
+       id, started_at, finished_at, source_run_id, suite,
+       execution_target_profile_ids, application_revision, duration_ms,
+       state, result_count
+     )
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT(id) DO UPDATE SET
        started_at = excluded.started_at,
        finished_at = excluded.finished_at,
+       source_run_id = excluded.source_run_id,
+       suite = excluded.suite,
+       execution_target_profile_ids = excluded.execution_target_profile_ids,
+       application_revision = excluded.application_revision,
+       duration_ms = excluded.duration_ms,
        state = excluded.state,
        result_count = excluded.result_count`,
     [
       manifest.id,
       manifest.startedAt,
       manifest.finishedAt ?? null,
+      manifest.sourceRunId ?? null,
+      manifest.suite ?? null,
+      JSON.stringify(executionTargetProfileIds),
+      manifest.applicationRevision ?? null,
+      durationMs ?? null,
       manifest.state,
       manifest.results.length,
     ],
@@ -340,7 +429,12 @@ function upsertRun(db: Database, manifest: TestRunManifest): void {
 function listRuns(db: Database): TestRunSummary[] {
   return db
     .query(
-      'SELECT id, started_at AS startedAt, finished_at AS finishedAt, state, result_count AS resultCount FROM runs ORDER BY id',
+      `SELECT id, started_at AS startedAt, finished_at AS finishedAt,
+        source_run_id AS sourceRunId, suite,
+        execution_target_profile_ids AS executionTargetProfileIds,
+        application_revision AS applicationRevision, duration_ms AS durationMs,
+        state, result_count AS resultCount
+       FROM runs ORDER BY id`,
     )
     .all()
     .map((row) => {
@@ -349,6 +443,17 @@ function listRuns(db: Database): TestRunSummary[] {
         id: indexed.id,
         startedAt: indexed.startedAt,
         ...(indexed.finishedAt ? { finishedAt: indexed.finishedAt } : {}),
+        ...(indexed.sourceRunId ? { sourceRunId: indexed.sourceRunId } : {}),
+        ...(indexed.suite ? { suite: indexed.suite } : {}),
+        executionTargetProfileIds: JSON.parse(
+          indexed.executionTargetProfileIds,
+        ) as string[],
+        ...(indexed.applicationRevision
+          ? { applicationRevision: indexed.applicationRevision }
+          : {}),
+        ...(indexed.durationMs !== null
+          ? { durationMs: indexed.durationMs }
+          : {}),
         state: indexed.state,
         resultCount: indexed.resultCount,
       }

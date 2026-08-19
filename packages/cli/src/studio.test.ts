@@ -45,6 +45,9 @@ describe('Studio browser seam', () => {
       JSON.stringify({
         schemaVersion: 1,
         specifications: 'features/**/*.feature',
+        links: {
+          jira: 'https://example.test/browse/{id}',
+        },
         executionTargetProfiles: {
           chrome: { adapter: 'custom' },
           firefox: { adapter: 'custom' },
@@ -105,7 +108,15 @@ export default {
           if (scenario === 'Adapt the purchase' && profile === 'chrome') {
             return {
               state: 'passed-with-adaptation',
-              resolvedActions: [{ description: \`Adapt basket on \${profile}\` }],
+              resolvedActions: [{
+                description: \`Adapt basket on \${profile}\`,
+                replay: { operation: 'adapt', target: 'current-basket' },
+              }],
+              artifacts: [{
+                kind: 'screenshot',
+                path: ${JSON.stringify(screenshot)},
+                mediaType: 'image/png',
+              }],
             }
           }
           return {
@@ -202,17 +213,20 @@ Feature: Search
       expect(
         await page.getByRole('link', { name: 'Specifications' }).count(),
       ).toBe(1)
+      expect(await page.getByRole('link', { name: 'Runs' }).count()).toBe(1)
       expect(
         await page.getByRole('link', { name: 'Runs', disabled: true }).count(),
-      ).toBe(1)
+      ).toBe(0)
+      expect(await page.getByRole('link', { name: 'Plans' }).count()).toBe(1)
       expect(
         await page.getByRole('link', { name: 'Plans', disabled: true }).count(),
-      ).toBe(1)
+      ).toBe(0)
+      expect(await page.getByRole('link', { name: 'Settings' }).count()).toBe(1)
       expect(
         await page
           .getByRole('link', { name: 'Settings', disabled: true })
           .count(),
-      ).toBe(1)
+      ).toBe(0)
       expect(
         await page.getByRole('status').filter({ hasText: 'Ready' }).count(),
       ).toBe(1)
@@ -349,6 +363,206 @@ Feature: Search
     }
   }, 60_000)
 
+  test('Studio manages immutable history and portable runs', async () => {
+    const project = await createStudioProject('run-history')
+    const configPath = join(project, 'pickle.config.jsonc')
+    const config = await Bun.file(configPath).json()
+    await Bun.write(
+      configPath,
+      JSON.stringify({
+        ...config,
+        applicationRevision: 'app-42',
+        retention: { days: 14, maxBytes: 1 },
+      }),
+    )
+    const { child, url } = await startStudio(project)
+    const page = await browser.newPage()
+    try {
+      await page.goto(url)
+      await page.getByRole('button', { name: 'Run Specification' }).click()
+      await page
+        .getByRole('status')
+        .filter({ hasText: 'failed' })
+        .waitFor({ timeout: 20_000 })
+      await page.getByRole('link', { name: 'Runs' }).click()
+
+      const history = page.getByRole('table', { name: 'Test run history' })
+      expect(await history.getByRole('row').count()).toBe(2)
+      const run = history.getByRole('row').nth(1)
+      expect(await run.textContent()).toContain('Ad hoc selection')
+      expect(await run.textContent()).toContain('chrome, firefox')
+      expect(await run.textContent()).toContain('app-42')
+      expect(await run.textContent()).toContain('failed')
+      expect(await run.textContent()).toContain('6 results')
+
+      await run.getByRole('button', { name: 'Rerun failures' }).click()
+      await history.getByRole('row').nth(2).waitFor({ timeout: 20_000 })
+      expect(await history.getByRole('row').count()).toBe(3)
+      expect(await history.getByRole('row').nth(1).textContent()).toContain(
+        'Rerun of',
+      )
+
+      const comparisonSelection = history.getByRole('checkbox')
+      await comparisonSelection.nth(0).click()
+      await comparisonSelection.nth(1).click()
+      await page.getByRole('button', { name: 'Compare selected runs' }).click()
+      const comparison = page.getByRole('table', { name: 'Run comparison' })
+      expect(await comparison.textContent()).toContain('Pay for the order')
+      expect(await comparison.textContent()).toContain('chrome')
+
+      await history
+        .getByRole('row')
+        .nth(2)
+        .getByRole('button', { name: 'Review run' })
+        .click()
+      const results = page.getByRole('table', { name: 'Test run results' })
+      expect(await results.textContent()).toContain('Pay for the order')
+      expect(
+        await results.getByRole('button', { name: 'Rerun Scenario' }).count(),
+      ).toBeGreaterThan(0)
+      expect(
+        await results.getByRole('button', { name: 'Rerun target' }).count(),
+      ).toBeGreaterThan(0)
+      expect(
+        await page.getByRole('button', { name: 'Rerun adaptations' }).count(),
+      ).toBe(1)
+
+      await page.getByRole('button', { name: 'Rerun adaptations' }).click()
+      await history.getByRole('row').nth(3).waitFor({ timeout: 20_000 })
+      expect(await history.getByRole('row').nth(1).textContent()).toContain(
+        '1 result',
+      )
+      await results
+        .getByRole('button', { name: 'Rerun Scenario' })
+        .first()
+        .click()
+      await history.getByRole('row').nth(4).waitFor({ timeout: 20_000 })
+      await history.getByText('2 results').first().waitFor({ timeout: 20_000 })
+      expect(await history.getByRole('row').nth(1).textContent()).toContain(
+        '2 results',
+      )
+      await results
+        .getByRole('button', { name: 'Rerun target' })
+        .first()
+        .click()
+      await history.getByRole('row').nth(5).waitFor({ timeout: 20_000 })
+      await history.getByText('3 results').first().waitFor({ timeout: 20_000 })
+      expect(await history.getByRole('row').nth(1).textContent()).toContain(
+        '3 results',
+      )
+
+      expect(await page.getByText('14 days · 1 B').count()).toBe(1)
+      expect(
+        await page.getByRole('link', { name: 'Export HTML' }).count(),
+      ).toBe(1)
+      const defaultHtmlHref = await page
+        .getByRole('link', { name: 'Export HTML' })
+        .getAttribute('href')
+      const defaultHtml = await page.evaluate(
+        async (href) => (await fetch(href!)).text(),
+        defaultHtmlHref,
+      )
+      expect(defaultHtml).toContain('<!DOCTYPE html>')
+      expect(defaultHtml).toContain('data:image/png;base64,')
+      await page
+        .getByRole('checkbox', { name: 'Include all artifacts' })
+        .click()
+      expect(
+        await page
+          .getByRole('link', { name: 'Export HTML' })
+          .getAttribute('href'),
+      ).toContain('artifacts=all')
+
+      const archivePath = join(project, 'importable-run.json')
+      const archiveHref = await page
+        .getByRole('link', { name: 'Export archive' })
+        .getAttribute('href')
+      const archive = JSON.parse(
+        await page.evaluate(
+          async (href) => (await fetch(href!)).text(),
+          archiveHref,
+        ),
+      )
+      archive.manifest.id = 'run-imported'
+      for (const event of archive.events) {
+        if (event.type === 'run-started') event.run.id = 'run-imported'
+      }
+      const importBytes = `${JSON.stringify(archive, null, 2)}\n`
+      await Bun.write(archivePath, importBytes)
+      await page.getByLabel('Import run archive').setInputFiles(archivePath)
+      await history.getByText('run-imported').waitFor({ timeout: 20_000 })
+      expect(
+        await Bun.file(
+          join(project, '.pickle', 'archives', 'run-imported.json'),
+        ).text(),
+      ).toBe(importBytes)
+
+      await page
+        .getByRole('button', { name: 'Delete eligible history' })
+        .click()
+      await page.getByText(/Deleted \d+ local test runs/).waitFor()
+      expect(
+        await Bun.file(
+          join(project, '.pickle', 'archives', 'run-imported.json'),
+        ).text(),
+      ).toBe(importBytes)
+    } finally {
+      await page.close()
+      child.kill()
+      await child.exited
+    }
+  }, 60_000)
+
+  test('Studio reruns one durable Scenario when names repeat', async () => {
+    const project = await createStudioProject('scenario-rerun-identity')
+    await Bun.write(
+      join(project, 'features', 'checkout.feature'),
+      `@pickle:id:speccheckaaaaaaaa @pickle:state:active
+Feature: Checkout
+  @pickle:id:scnfirstbbbbbbbbb
+  Scenario: Complete a purchase
+    Then the first purchase succeeds
+  @pickle:id:scnsecondcccccccc
+  Scenario: Complete a purchase
+    Then the second purchase succeeds
+`,
+    )
+    const { child, url } = await startStudio(project)
+    const page = await browser.newPage()
+    try {
+      await page.goto(url)
+      await page.getByRole('button', { name: 'Run Specification' }).click()
+      await page
+        .getByRole('status')
+        .filter({ hasText: 'passed' })
+        .waitFor({ timeout: 20_000 })
+      await page.getByRole('link', { name: 'Runs' }).click()
+      const history = page.getByRole('table', { name: 'Test run history' })
+      await history
+        .getByRole('row')
+        .nth(1)
+        .getByRole('button', { name: 'Review run' })
+        .click()
+      const results = page.getByRole('table', { name: 'Test run results' })
+      await results.waitFor()
+      expect(await results.getByRole('row').count()).toBe(5)
+
+      await results
+        .getByRole('button', { name: 'Rerun Scenario' })
+        .first()
+        .click()
+      await history.getByRole('row').nth(2).waitFor({ timeout: 20_000 })
+      await history.getByText('2 results').waitFor({ timeout: 20_000 })
+      expect(await history.getByRole('row').nth(1).textContent()).toContain(
+        'Rerun of',
+      )
+    } finally {
+      await page.close()
+      child.kill()
+      await child.exited
+    }
+  }, 60_000)
+
   test('Studio cancels a live test run without starting another', async () => {
     const project = await createStudioProject('cancel-run')
     const marker = join(project, 'step-started.txt')
@@ -369,6 +583,176 @@ Feature: Search
       await page.getByRole('button', { name: 'Run Specification' }).waitFor({
         timeout: 20_000,
       })
+    } finally {
+      await page.close()
+      child.kill()
+      await child.exited
+    }
+  }, 60_000)
+
+  test('Studio reviews evidence and explicitly promotes a candidate plan', async () => {
+    const project = await createStudioProject('review-plans')
+    const configPath = join(project, 'pickle.config.jsonc')
+    const config = JSON.parse(await Bun.file(configPath).text())
+    await Bun.write(
+      configPath,
+      JSON.stringify({
+        ...config,
+        applicationRevision: 'app-1',
+        policy: { adaptedResults: 'reject' },
+        executionTargetProfiles: { chrome: { adapter: 'custom' } },
+      }),
+    )
+    const approvedPath = join(
+      project,
+      '.pickle',
+      'plans',
+      'chrome',
+      'scnadaptcccccccc.json',
+    )
+    const candidatePath = join(
+      project,
+      '.pickle',
+      'candidates',
+      'chrome',
+      'scnadaptcccccccc.json',
+    )
+    const approved = {
+      schemaVersion: 1,
+      scenarioId: 'scnadaptcccccccc',
+      scenarioRevision: 'previous-revision',
+      executionTargetProfileId: 'chrome',
+      planFormatVersion: '1',
+      applicationRevision: 'app-1',
+      steps: [
+        {
+          resolvedActions: [
+            {
+              description: 'Adapt basket on chrome',
+              replay: { operation: 'adapt', target: 'previous-basket' },
+            },
+          ],
+        },
+      ],
+    }
+    await Bun.write(approvedPath, `${JSON.stringify(approved, null, 2)}\n`)
+    for (const cmd of [
+      ['git', 'init'],
+      ['git', 'config', 'user.email', 'studio@example.test'],
+      ['git', 'config', 'user.name', 'Studio Test'],
+      ['git', 'add', '.'],
+      ['git', 'commit', '-m', 'initial'],
+    ]) {
+      const result = Bun.spawnSync({ cmd, cwd: project })
+      expect(result.exitCode).toBe(0)
+    }
+    const gate = join(project, 'continue.txt')
+    await Bun.write(gate, 'continue')
+    const { child, url } = await startStudio(project, {
+      PICKLE_STUDIO_CONTINUE: gate,
+    })
+    const page = await browser.newPage()
+    try {
+      await page.goto(url)
+      await page
+        .getByRole('button', { name: 'Run Scenario Adapt the purchase' })
+        .click()
+      await page.getByRole('button', { name: 'Cancel test run' }).waitFor()
+      await page.getByRole('button', { name: 'Run Specification' }).waitFor({
+        timeout: 20_000,
+      })
+
+      await page.getByRole('link', { name: 'Plans' }).click()
+      await page.getByRole('heading', { name: 'Plans', exact: true }).waitFor()
+      expect(await page.getByText('CI adapted results: reject').count()).toBe(1)
+      await page
+        .getByRole('button', { name: 'Adapt the purchase · chrome' })
+        .click()
+      const comparison = page.getByRole('table', { name: 'Plan comparison' })
+      expect(await comparison.textContent()).toContain('previous-revision')
+      expect(await comparison.textContent()).toContain('Adapt basket on chrome')
+      expect(await comparison.textContent()).toContain('previous-basket')
+      expect(await comparison.textContent()).toContain('current-basket')
+
+      await page
+        .getByRole('button', { name: 'View originating test result' })
+        .click()
+      const evidence = page.getByRole('dialog', {
+        name: 'Originating test result',
+      })
+      expect(await evidence.textContent()).toContain('passed-with-adaptation')
+      expect(await evidence.textContent()).toContain('Then the basket adapts')
+      expect(await evidence.textContent()).toContain('Adapt basket on chrome')
+      expect(
+        await evidence.getByRole('img', { name: /screenshot/ }).count(),
+      ).toBe(1)
+      await evidence.getByRole('button', { name: 'Close' }).click()
+
+      await rm(gate)
+      await page.getByRole('link', { name: 'Specifications' }).click()
+      await page
+        .getByRole('button', { name: 'Run Scenario Pay for the order' })
+        .click()
+      await page.getByRole('status').filter({ hasText: 'running' }).waitFor()
+      await page.getByRole('link', { name: 'Plans' }).click()
+      expect(
+        await page
+          .getByRole('button', { name: 'Promote candidate' })
+          .isDisabled(),
+      ).toBe(true)
+      const otherPage = await browser.newPage()
+      try {
+        await otherPage.goto(url)
+        await otherPage.getByRole('link', { name: 'Plans' }).click()
+        await otherPage
+          .getByRole('button', { name: 'Adapt the purchase · chrome' })
+          .click()
+        await otherPage
+          .getByRole('button', { name: 'Promote candidate' })
+          .click()
+        await otherPage
+          .getByRole('button', { name: 'Confirm promotion' })
+          .click()
+        await otherPage
+          .getByRole('alert')
+          .filter({ hasText: 'cannot be promoted during a test run' })
+          .waitFor()
+      } finally {
+        await otherPage.close()
+      }
+      await Bun.write(gate, 'continue')
+      await page.getByRole('status').filter({ hasText: 'failed' }).waitFor({
+        timeout: 20_000,
+      })
+      const promote = page.getByRole('button', { name: 'Promote candidate' })
+      await promote.waitFor()
+      const enabledDeadline = Date.now() + 10_000
+      while (await promote.isDisabled()) {
+        if (Date.now() >= enabledDeadline) {
+          throw new Error('Promotion remained disabled after the test run')
+        }
+        await Bun.sleep(25)
+      }
+
+      await promote.click()
+      const confirmation = page.getByRole('dialog', {
+        name: 'Promote candidate plan?',
+      })
+      await confirmation.waitFor()
+      expect(JSON.parse(await Bun.file(approvedPath).text())).toEqual(approved)
+      await confirmation
+        .getByRole('button', { name: 'Confirm promotion' })
+        .click()
+      await page.getByText('No candidate plan').waitFor()
+      expect(await Bun.file(candidatePath).exists()).toBe(false)
+
+      await page.getByRole('link', { name: 'Settings' }).click()
+      const changed = page
+        .getByRole('listitem')
+        .filter({ hasText: '.pickle/plans/chrome/scnadaptcccccccc.json' })
+      await changed.waitFor()
+      await changed.getByRole('button', { name: 'Show diff' }).click()
+      expect(await changed.textContent()).toContain('Adapt basket on chrome')
     } finally {
       await page.close()
       child.kill()
@@ -435,20 +819,14 @@ Feature: Search
         ).monaco?.editor.getEditors()[0]
         const model = editor?.getModel()
         if (!editor || !model) return
+        editor.setValue(`${editor.getValue()}\n    Gi`)
         const lineNumber = model.getLineCount()
         editor.setPosition({
           lineNumber,
           column: model.getLineMaxColumn(lineNumber),
         })
         editor.focus()
-      })
-      await page.keyboard.press('Enter')
-      await page.keyboard.type('    Gi')
-      await page.evaluate(() => {
-        const editor = (
-          globalThis as MonacoEditorHost
-        ).monaco?.editor.getEditors()[0]
-        editor?.trigger('test', 'editor.action.triggerSuggest', {})
+        editor.trigger('test', 'editor.action.triggerSuggest', {})
       })
       await page
         .locator('.suggest-widget.visible')
@@ -599,6 +977,323 @@ Feature: Disk edit
       await outline.waitFor()
       expect(await outline.textContent()).toContain('Search')
       expect(await outline.textContent()).toContain('@pickle:state:draft')
+    } finally {
+      await page.close()
+      child.kill()
+      await child.exited
+    }
+  }, 60_000)
+
+  test('Studio edits Specification state, tags, and external links', async () => {
+    const project = await createStudioProject('manage-metadata')
+    const { child, url } = await startStudio(project)
+    const page = await browser.newPage()
+    try {
+      await page.goto(url)
+      await page
+        .getByRole('region', { name: 'Specification metadata' })
+        .waitFor()
+      await page.getByRole('button', { name: 'Edit metadata' }).click()
+      await page.getByRole('button', { name: 'draft', exact: true }).click()
+      await page.getByLabel('Specification tags').fill('@checkout @regression')
+      await page.getByLabel('Link namespace').fill('jira')
+      await page.getByLabel('Link id').fill('PROJ-12')
+      await page.getByRole('button', { name: 'Add link' }).click()
+      await page.getByRole('button', { name: 'Save metadata' }).click()
+      const dialog = page.getByRole('dialog', {
+        name: 'Review Specification metadata',
+      })
+      await dialog.waitFor()
+      expect(
+        await page.getByRole('region', { name: 'Source diff' }).textContent(),
+      ).toContain('@pickle:state:draft')
+      await dialog.getByRole('button', { name: 'Save metadata' }).click()
+      const deadline = Date.now() + 10_000
+      let written = ''
+      while (Date.now() < deadline) {
+        written = await Bun.file(
+          join(project, 'features', 'checkout.feature'),
+        ).text()
+        if (written.includes('@pickle:state:draft')) break
+        await Bun.sleep(50)
+      }
+      expect(written).toContain('# keep this comment')
+      expect(written).toContain('@pickle:state:draft')
+      expect(written).not.toContain('@pickle:state:active')
+      expect(written).toContain('@checkout')
+      expect(written).toContain('@regression')
+      expect(written).toContain('@jira:PROJ-12')
+    } finally {
+      await page.close()
+      child.kill()
+      await child.exited
+    }
+  }, 60_000)
+
+  test('Studio creates named test suites and execution target profiles', async () => {
+    const project = await createStudioProject('manage-config')
+    const { child, url } = await startStudio(project)
+    const page = await browser.newPage()
+    try {
+      await page.goto(url)
+      await page.getByRole('link', { name: 'Settings' }).click()
+      await page.getByRole('heading', { name: 'Test suites' }).waitFor()
+      await page.getByLabel('Suite name').fill('smoke')
+      await page.getByLabel('Suite paths').fill('features/**/*.feature')
+      await page.getByLabel('Suite tag expression').fill('@smoke')
+      await page.getByLabel('Suite states').fill('active, draft')
+      await page.getByRole('button', { name: 'Save test suite' }).click()
+      await page.getByRole('button', { name: 'New test suite' }).click()
+      await page.getByLabel('Suite name').fill('checkout')
+      await page.getByLabel('Suite paths').fill('features/checkout.feature')
+      await page.getByRole('button', { name: 'Save test suite' }).click()
+      await page.getByLabel('Profile id').fill('safari')
+      await page.getByLabel('Profile adapter').fill('custom')
+      await page.getByLabel('Profile capabilities').fill('geolocation')
+      await page
+        .getByRole('button', { name: 'Save execution target profile' })
+        .click()
+      const deadline = Date.now() + 10_000
+      let config = ''
+      while (Date.now() < deadline) {
+        config = await Bun.file(join(project, 'pickle.config.jsonc')).text()
+        if (
+          config.includes('"smoke"') &&
+          config.includes('"checkout"') &&
+          config.includes('"safari"')
+        )
+          break
+        await Bun.sleep(50)
+      }
+      expect(config).toContain('"smoke"')
+      expect(config).toContain('"checkout"')
+      expect(config).toContain('"tagExpression": "@smoke"')
+      expect(config).toContain('"safari"')
+      expect(config).toContain('"geolocation"')
+    } finally {
+      await page.close()
+      child.kill()
+      await child.exited
+    }
+  }, 60_000)
+
+  test('Studio withholds the test-run action until the selection is valid', async () => {
+    const project = await createStudioProject('validate-run')
+    await Bun.write(
+      join(project, 'features', 'checkout.feature'),
+      `# keep this comment
+@pickle:id:speccheckaaaaaaaa @pickle:state:active
+Feature: Checkout
+  @pickle:id:scnpaybbbbbbbbbb @pickle:requires:geolocation
+  Scenario: Pay for the order
+    Then payment is captured
+`,
+    )
+    const { child, url } = await startStudio(project)
+    const page = await browser.newPage()
+    try {
+      await page.goto(url)
+      await page.getByRole('heading', { name: 'Checkout' }).waitFor()
+      expect(
+        await page.getByRole('button', { name: 'Run Specification' }).count(),
+      ).toBe(0)
+      expect(
+        await page
+          .getByRole('status')
+          .filter({ hasText: 'geolocation' })
+          .count(),
+      ).toBeGreaterThan(0)
+      await page.getByRole('link', { name: 'Settings' }).click()
+      await page.getByRole('button', { name: 'chrome' }).click()
+      await page.getByLabel('Profile capabilities').fill('geolocation')
+      await page
+        .getByRole('button', { name: 'Save execution target profile' })
+        .click()
+      await page.getByRole('button', { name: 'firefox' }).click()
+      await page.getByLabel('Profile capabilities').fill('geolocation')
+      await page
+        .getByRole('button', { name: 'Save execution target profile' })
+        .click()
+      await page.getByRole('link', { name: 'Specifications' }).click()
+      await page.getByRole('button', { name: 'Run Specification' }).waitFor({
+        timeout: 10_000,
+      })
+    } finally {
+      await page.close()
+      child.kill()
+      await child.exited
+    }
+  }, 60_000)
+
+  test('Studio stores credentials in a keychain store and keeps references in project configuration', async () => {
+    const project = await createStudioProject('manage-secrets')
+    const keychain = join(project, 'keychain')
+    const { child, url } = await startStudio(project, {
+      PICKLE_KEYCHAIN_DIR: keychain,
+    })
+    const page = await browser.newPage()
+    try {
+      await page.goto(url)
+      await page.getByRole('link', { name: 'Settings' }).click()
+      await page.getByLabel('Credential name').fill('ANTHROPIC_API_KEY')
+      await page.getByLabel('Credential secret').fill('sk-test-secret')
+      await page.getByRole('button', { name: 'Save credential' }).click()
+      await page.getByText('ANTHROPIC_API_KEY (present)').waitFor({
+        timeout: 10_000,
+      })
+      const config = await Bun.file(join(project, 'pickle.config.jsonc')).text()
+      expect(config).toContain('ANTHROPIC_API_KEY')
+      expect(config).toContain('keychain')
+      expect(config).not.toContain('sk-test-secret')
+      expect(await Bun.file(join(keychain, 'ANTHROPIC_API_KEY')).text()).toBe(
+        'sk-test-secret',
+      )
+    } finally {
+      await page.close()
+      child.kill()
+      await child.exited
+    }
+  }, 60_000)
+
+  test('Studio shows Git diffs, commits after confirmation, and never pushes', async () => {
+    const project = await createStudioProject('manage-git')
+    const remote = join(workspace, 'manage-git-remote.git')
+    await Bun.spawnSync({ cmd: ['git', 'init', '--bare', remote] })
+    await Bun.spawnSync({
+      cmd: ['git', 'init'],
+      cwd: project,
+    })
+    await Bun.spawnSync({
+      cmd: ['git', 'config', 'user.email', 'studio@example.test'],
+      cwd: project,
+    })
+    await Bun.spawnSync({
+      cmd: ['git', 'config', 'user.name', 'Studio Test'],
+      cwd: project,
+    })
+    await Bun.spawnSync({
+      cmd: ['git', 'add', 'features/checkout.feature', 'pickle.config.jsonc'],
+      cwd: project,
+    })
+    await Bun.spawnSync({
+      cmd: ['git', 'commit', '-m', 'initial'],
+      cwd: project,
+    })
+    await Bun.spawnSync({
+      cmd: ['git', 'remote', 'add', 'origin', remote],
+      cwd: project,
+    })
+    await Bun.spawnSync({
+      cmd: [
+        'git',
+        'remote',
+        'add',
+        'github',
+        'git@github.com:example/pickle-spec.git',
+      ],
+      cwd: project,
+    })
+    const branch =
+      Bun.spawnSync({
+        cmd: ['git', 'branch', '--show-current'],
+        cwd: project,
+      })
+        .stdout.toString()
+        .trim() || 'main'
+    await Bun.spawnSync({
+      cmd: ['git', 'update-ref', `refs/remotes/github/${branch}`, 'HEAD'],
+      cwd: project,
+    })
+    await Bun.spawnSync({
+      cmd: ['git', 'branch', `--set-upstream-to=github/${branch}`],
+      cwd: project,
+    })
+    await Bun.write(
+      join(project, 'features', 'checkout.feature'),
+      `# keep this comment
+@pickle:id:speccheckaaaaaaaa @pickle:state:active
+Feature: Basket
+  @pickle:id:scnpaybbbbbbbbbb
+  Scenario: Pay for the order
+    Then payment is captured
+`,
+    )
+    const ghLog = join(project, 'gh.log')
+    const gh = join(project, 'bin', 'gh')
+    await mkdir(join(project, 'bin'), { recursive: true })
+    await Bun.write(
+      gh,
+      `#!/bin/sh
+echo "$@" >> "$GH_LOG"
+if echo " $* " | grep -q " push "; then exit 1; fi
+if [ "$1" = "pr" ]; then
+  echo "https://github.com/example/pickle-spec/pull/1"
+  exit 0
+fi
+exit 0
+`,
+    )
+    await Bun.spawnSync({ cmd: ['chmod', '+x', gh] })
+    const { child, url } = await startStudio(project, {
+      PATH: `${join(project, 'bin')}:${Bun.env.PATH ?? ''}`,
+      GH_LOG: ghLog,
+    })
+    const page = await browser.newPage()
+    try {
+      await page.goto(url)
+      await page.getByRole('link', { name: 'Settings' }).click()
+      await page.getByRole('heading', { name: 'Repository' }).waitFor()
+      const changed = page
+        .getByRole('listitem')
+        .filter({ hasText: 'features/checkout.feature' })
+      await changed.waitFor()
+      await changed.getByRole('button', { name: 'Show diff' }).click()
+      expect(
+        await changed
+          .getByRole('region', { name: 'features/checkout.feature diff' })
+          .textContent(),
+      ).toContain('Basket')
+      await changed
+        .getByRole('checkbox', { name: 'features/checkout.feature' })
+        .click()
+      await page.getByRole('button', { name: 'Stage selected' }).click()
+      await changed.getByText('staged').waitFor()
+      await page.getByLabel('Commit message').fill('Update Checkout')
+      await page
+        .getByRole('button', { name: 'Commit selected changes' })
+        .click()
+      await page
+        .getByRole('dialog', { name: 'Commit selected changes?' })
+        .waitFor()
+      await page.getByRole('button', { name: 'Confirm commit' }).click()
+      const deadline = Date.now() + 10_000
+      let log = ''
+      while (Date.now() < deadline) {
+        const result = Bun.spawnSync({
+          cmd: ['git', 'log', '-1', '--pretty=%s'],
+          cwd: project,
+        })
+        log = result.stdout.toString().trim()
+        if (log === 'Update Checkout') break
+        await Bun.sleep(50)
+      }
+      expect(log).toBe('Update Checkout')
+      const remoteHeads = Bun.spawnSync({
+        cmd: ['git', 'ls-remote', remote, 'HEAD'],
+      })
+      expect(remoteHeads.stdout.toString().trim()).toBe('')
+      await page.getByRole('button', { name: 'Create pull request' }).click()
+      const ghDeadline = Date.now() + 10_000
+      let ghInvoked = ''
+      while (Date.now() < ghDeadline) {
+        if (await Bun.file(ghLog).exists()) {
+          ghInvoked = await Bun.file(ghLog).text()
+          if (ghInvoked.includes('pr create --web')) break
+        }
+        await Bun.sleep(50)
+      }
+      expect(ghInvoked).toContain('pr create --web')
+      expect(ghInvoked).not.toContain('push')
     } finally {
       await page.close()
       child.kill()

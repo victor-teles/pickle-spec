@@ -150,3 +150,29 @@ test('compareTestRuns falls back to Scenario name when identifiers are absent', 
     ],
   })
 })
+
+test('compareTestRuns does not pair different durable Scenario identifiers by name', () => {
+  const renamed: TestRunManifest = {
+    ...baseline,
+    id: 'run-renamed',
+    results: [
+      {
+        ...baseline.results[0]!,
+        scenario: {
+          name: baseline.results[0]!.scenario.name,
+          id: 'scn-different-scenario',
+        },
+      },
+    ],
+  }
+
+  expect(compareTestRuns(baseline, renamed)).toMatchObject({
+    pairs: [],
+    removed: [
+      { scenarioId: 'scn-complete-a-purchase' },
+      { scenarioId: 'scn-pay-for-the-order' },
+      { scenarioId: 'scn-skip-the-purchase' },
+    ],
+    added: [{ scenarioId: 'scn-different-scenario' }],
+  })
+})

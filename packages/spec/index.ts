@@ -1,5 +1,7 @@
 export type {
+  ExternalLink,
   SpecificationDocument,
+  SpecificationMetadata,
   StructuredBackground,
   StructuredChild,
   StructuredExamples,
@@ -9,9 +11,12 @@ export type {
   StructuredStep,
 } from './src/editor'
 export {
+  applySpecificationMetadata,
   applySpecificationSource,
   applyStructuredSpecification,
+  authorTags,
   ensureSpecificationState,
+  parseExternalLinks,
   readSpecificationDocument,
   specificationSourceDiff,
 } from './src/editor'

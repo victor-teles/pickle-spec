@@ -49,6 +49,10 @@ export interface ProjectArtifacts {
   capture?: ArtifactCapturePolicy
 }
 
+export interface ProjectSecretRef {
+  keychain: string
+}
+
 export interface PickleConfig {
   schemaVersion: 1
   language?: string
@@ -65,6 +69,8 @@ export interface PickleConfig {
   server?: ServerConfig
   retention?: ProjectRetention
   artifacts?: ProjectArtifacts
+  links?: Record<string, string>
+  secrets?: Record<string, ProjectSecretRef>
 }
 
 function toExecutionTargetProfile(
@@ -301,6 +307,28 @@ const pickleConfigSchema = strictObject('configuration', {
       })
       .optional(),
   }).optional(),
+  links: z
+    .record(
+      nonemptyKey('links'),
+      z
+        .string({ error: 'links templates must be a string' })
+        .refine((value) => value.includes('{id}'), {
+          error: 'links templates must include {id}',
+        }),
+    )
+    .optional(),
+  secrets: z
+    .record(
+      nonemptyKey('secrets'),
+      strictObject('secrets', {
+        keychain: z
+          .string({ error: 'secrets.keychain must not be empty' })
+          .refine((value) => value.trim().length > 0, {
+            error: 'secrets.keychain must not be empty',
+          }),
+      }),
+    )
+    .optional(),
 }).transform((config) => config as PickleConfig)
 
 function validateConfig(value: unknown): PickleConfig {
@@ -378,4 +406,20 @@ export async function loadConfig(
       `Invalid configuration ${selectedPath}: ${reason}. Correct the value and run pickle check again.`,
     )
   }
+}
+
+export async function saveConfig(
+  config: PickleConfig,
+  configPath = defaultConfigFile,
+  root = process.cwd(),
+): Promise<void> {
+  const selectedPath = configPath
+  if (!selectedPath.endsWith('.jsonc') && !selectedPath.endsWith('.json')) {
+    throw new Error('Configuration must use pickle.config.jsonc')
+  }
+  validateConfig(config)
+  await Bun.write(
+    resolve(root, selectedPath),
+    `${JSON.stringify(config, null, 2)}\n`,
+  )
 }

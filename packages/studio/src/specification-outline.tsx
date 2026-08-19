@@ -1,4 +1,10 @@
 // biome-ignore-all lint/suspicious/noArrayIndexKey: Gherkin children are ordered and may share names
+import { Button } from './components/ui/button'
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from './components/ui/collapsible'
 import type {
   StructuredChild,
   StructuredSpecification,
@@ -23,12 +29,21 @@ function OutlineName(props: { name: string }) {
   return <span className="text-sm">{props.name}</span>
 }
 
+function scenarioNames(items: readonly StructuredChild[]): string[] {
+  const names: string[] = []
+  for (const child of items) {
+    if (child.kind === 'rule') names.push(...scenarioNames(child.children))
+    if (child.kind === 'scenario' && child.name) names.push(child.name)
+  }
+  return names
+}
+
 function OutlineRows(props: {
   items: readonly StructuredChild[]
   depth: number
 }) {
   return (
-    <ol className={props.depth > 0 ? 'space-y-2 pl-4' : 'space-y-2'}>
+    <ol className={props.depth > 0 ? 'space-y-1 pl-4' : 'space-y-1'}>
       {props.items.map((child, index) => (
         <li key={`${child.kind}-${child.name}-${index}`} className="space-y-1">
           {child.kind === 'rule' ? (
@@ -79,21 +94,27 @@ function OutlineRows(props: {
 export function SpecificationOutline(props: {
   specification: StructuredSpecification
 }) {
+  const names = scenarioNames(props.specification.children)
   return (
-    <section
-      aria-label="Specification outline"
-      className="space-y-3 rounded-lg border border-border bg-card px-4 py-3"
-    >
-      <div className="space-y-1">
-        <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
-          <span className="text-xs text-muted-foreground">Feature</span>
-          <span className="text-sm font-medium">
-            {props.specification.name}
-          </span>
-        </div>
-        <TagList tags={props.specification.tags} />
+    <section aria-label="Specification outline" className="space-y-1">
+      <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+        <span className="text-xs text-muted-foreground">Feature</span>
+        <span className="text-sm font-medium">{props.specification.name}</span>
       </div>
-      <OutlineRows items={props.specification.children} depth={0} />
+      <TagList tags={props.specification.tags} />
+      {names.length > 0 ? (
+        <p className="text-sm text-muted-foreground">{names.join(' · ')}</p>
+      ) : null}
+      <Collapsible>
+        <CollapsibleTrigger
+          render={<Button type="button" size="sm" variant="outline" />}
+        >
+          Show structure
+        </CollapsibleTrigger>
+        <CollapsibleContent className="pt-2">
+          <OutlineRows items={props.specification.children} depth={0} />
+        </CollapsibleContent>
+      </Collapsible>
     </section>
   )
 }

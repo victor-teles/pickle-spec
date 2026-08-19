@@ -1,8 +1,10 @@
 import { describe, expect, test } from 'bun:test'
 import {
+  applySpecificationMetadata,
   applySpecificationSource,
   applyStructuredSpecification,
   ensureSpecificationState,
+  parseExternalLinks,
   readSpecificationDocument,
   specificationSourceDiff,
 } from '../index'
@@ -276,5 +278,50 @@ Feature: Search
     expect(next).toContain('@pickle:state:draft')
     expect(next).not.toContain('@pickle:state:active')
     expect(next).toContain('Feature: Search')
+  })
+})
+
+describe('applySpecificationMetadata', () => {
+  test('updates Specification state, author tags, and namespaced external links', () => {
+    const source = `# keep this comment
+@pickle:id:specaaaaaaaaaaaa @pickle:state:active @smoke
+Feature: Checkout
+  Scenario: Pay
+    Then payment is captured
+`
+    const next = applySpecificationMetadata(source, {
+      state: 'draft',
+      tags: ['@checkout', '@regression'],
+      links: [{ namespace: 'jira', id: 'PROJ-12' }],
+    })
+    expect(next).toContain('# keep this comment')
+    expect(next).toContain('@pickle:id:specaaaaaaaaaaaa')
+    expect(next).toContain('@pickle:state:draft')
+    expect(next).not.toContain('@pickle:state:active')
+    expect(next).toContain('@checkout')
+    expect(next).toContain('@regression')
+    expect(next).not.toContain('@smoke')
+    expect(next).toContain('@jira:PROJ-12')
+    expect(next).toContain('Feature: Checkout')
+  })
+})
+
+describe('parseExternalLinks', () => {
+  test('maps namespaced tags onto external links using configured namespaces', () => {
+    expect(
+      parseExternalLinks(
+        [
+          '@pickle:id:specaaaaaaaaaaaa',
+          '@pickle:state:active',
+          '@smoke',
+          '@jira:PROJ-12',
+          '@gh:23',
+        ],
+        ['jira', 'gh'],
+      ),
+    ).toEqual([
+      { namespace: 'jira', id: 'PROJ-12' },
+      { namespace: 'gh', id: '23' },
+    ])
   })
 })

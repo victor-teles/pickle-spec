@@ -4,7 +4,9 @@ import { Badge } from './components/ui/badge'
 import { Button } from './components/ui/button'
 import { LoadingState } from './components/ui/loading-state'
 import { ResultMark } from './components/ui/result-mark'
+import { HistoryPanel } from './history'
 import { cn } from './lib/utils'
+import { PlansPanel } from './plans'
 import {
   attentionCells,
   type ClientEvent,
@@ -18,44 +20,23 @@ import {
   statusLabel,
   type TestResultState,
 } from './run-view'
+import { SettingsPanel } from './settings'
 import { SpecificationEditor } from './specification-editor'
 import './styles.css'
-
-type StudioScenario = {
-  id: string
-  name: string
-}
-
-type StudioSpecification = {
-  id: string
-  name: string
-  uri: string
-  scenarios: StudioScenario[]
-}
-
-type StudioProject = {
-  name: string
-  root: string
-  profiles: string[]
-  suites: string[]
-  specifications: StudioSpecification[]
-  model?: {
-    provider: string
-    name: string
-  }
-}
-
-type StudioRunRequest = {
-  paths?: string[]
-  scenarioName?: string
-}
+import type {
+  StudioProject,
+  StudioRunRequest,
+  StudioScenario,
+  StudioSpecification,
+} from './server'
+import { TestResultTimeline } from './test-result-timeline'
 
 const token = new URLSearchParams(location.search).get('token') ?? ''
 const areas = [
   { name: 'Specifications', available: true },
-  { name: 'Runs', available: false },
-  { name: 'Plans', available: false },
-  { name: 'Settings', available: false },
+  { name: 'Runs', available: true },
+  { name: 'Plans', available: true },
+  { name: 'Settings', available: true },
 ] as const
 
 async function api<T>(path: string, init?: RequestInit): Promise<T> {
@@ -96,10 +77,6 @@ function StatusBadge(props: { state: StatusBadgeState }) {
   )
 }
 
-function artifactUrl(path: string): string {
-  return `/api/artifact?path=${encodeURIComponent(path)}&token=${encodeURIComponent(token)}`
-}
-
 function matrixCellVariant(state: MatrixCell['state']) {
   if (state === 'failed' || state === 'infrastructure-error') {
     return 'destructive'
@@ -118,7 +95,10 @@ function StudioApp() {
   const [error, setError] = useState<string>()
   const [runId, setRunId] = useState<string>()
   const [selectedId, setSelectedId] = useState<string>()
+  const [currentArea, setCurrentArea] =
+    useState<(typeof areas)[number]['name']>('Specifications')
   const [view, setView] = useState<RunView>(emptyRunView)
+  const [authoring, setAuthoring] = useState(false)
   const running = view.phase === 'running'
 
   useEffect(() => {
@@ -154,6 +134,9 @@ function StudioApp() {
   const selected =
     project?.specifications.find((item) => item.id === selectedId) ??
     project?.specifications[0]
+  const canRunAll = Boolean(project?.readiness?.ready ?? true)
+  const specCanRun = selected?.canRun ?? canRunAll
+  const runReasons = selected?.runReasons ?? project?.readiness?.reasons
 
   async function reloadProject() {
     const value = await api<StudioProject>('/api/project')
@@ -227,7 +210,7 @@ function StudioApp() {
   }
 
   return (
-    <div className="flex min-h-screen flex-col">
+    <div className="flex h-screen flex-col overflow-hidden">
       <header className="flex items-center justify-between border-b border-border bg-card px-6 py-3">
         <h1 className="text-xl font-semibold tracking-tight">{project.name}</h1>
         <StatusBadge state={aggregate} />
@@ -236,156 +219,237 @@ function StudioApp() {
         aria-label="Studio"
         className="flex gap-px border-b border-border px-2 py-1"
       >
-        {areas.map((area) => (
-          <a
-            key={area.name}
-            href={`#${area.name.toLowerCase()}`}
-            aria-current={area.available ? 'page' : undefined}
-            aria-disabled={area.available ? undefined : true}
-            tabIndex={area.available ? undefined : -1}
-            className={cn(
-              'inline-flex h-7 items-center rounded-md px-2 text-xs/relaxed transition-colors duration-150 ease-[cubic-bezier(0.23,1,0.32,1)] motion-reduce:transition-none',
-              area.available
-                ? 'bg-accent text-accent-foreground'
-                : 'cursor-not-allowed text-muted-foreground opacity-60',
-            )}
+        {areas.map((item) => (
+          <Button
+            key={item.name}
+            variant={
+              item.available && item.name === currentArea
+                ? 'secondary'
+                : 'ghost'
+            }
+            render={
+              <a
+                href={`#${item.name.toLowerCase()}`}
+                aria-current={
+                  item.available && item.name === currentArea
+                    ? 'page'
+                    : undefined
+                }
+                aria-disabled={item.available ? undefined : true}
+                tabIndex={item.available ? undefined : -1}
+              />
+            }
+            className={
+              item.available
+                ? undefined
+                : 'pointer-events-none text-muted-foreground opacity-60'
+            }
             onClick={(event) => {
-              if (!area.available) event.preventDefault()
+              if (!item.available) {
+                event.preventDefault()
+                return
+              }
+              setCurrentArea(item.name)
             }}
           >
-            {area.name}
-          </a>
+            {item.name}
+          </Button>
         ))}
       </nav>
-      <div className="grid min-h-0 flex-1 lg:grid-cols-[16rem_1fr]">
-        <SpecificationList
-          specifications={project.specifications}
-          selectedId={selected?.id}
+      {currentArea === 'Settings' ? (
+        <div className="min-h-0 flex-1 overflow-auto">
+          <SettingsPanel
+            project={project}
+            api={api}
+            onProject={setProject}
+            onError={setError}
+          />
+        </div>
+      ) : currentArea === 'Plans' ? (
+        <PlansPanel
+          adaptedResultsPolicy={project.policy.adaptedResults}
           running={running}
-          onSelect={setSelectedId}
-          onRunAll={() => void startRun({})}
+          api={api}
         />
-        <main className="min-w-0 space-y-6 p-6" aria-busy={running}>
-          {error ? (
-            <p role="alert" className="text-sm text-destructive">
-              {error}
-            </p>
-          ) : null}
-          {selected ? (
-            <>
-              <div className="flex flex-wrap items-start justify-between gap-3">
-                <div className="min-w-0 space-y-1">
-                  <h2 className="text-lg font-medium">{selected.name}</h2>
-                  <p className="truncate font-mono text-xs text-muted-foreground">
-                    {selected.uri}
-                  </p>
-                </div>
-                {running && runId ? (
-                  <Button
-                    type="button"
-                    variant="destructive"
-                    onClick={() => void cancelRun()}
+      ) : currentArea === 'Runs' ? (
+        <HistoryPanel
+          api={api}
+          token={token}
+          runPhase={view.phase}
+          onRerun={startRun}
+        />
+      ) : (
+        <div className="grid min-h-0 flex-1 lg:grid-cols-[16rem_1fr]">
+          <SpecificationList
+            specifications={project.specifications}
+            selectedId={selected?.id}
+            running={running}
+            canRun={canRunAll}
+            onSelect={setSelectedId}
+            onRunAll={() => void startRun({})}
+          />
+          <main
+            className="flex min-h-0 min-w-0 flex-1 flex-col"
+            aria-busy={running}
+          >
+            {error ? (
+              <p role="alert" className="px-6 pt-6 text-sm text-destructive">
+                {error}
+              </p>
+            ) : null}
+            {selected ? (
+              <>
+                <header
+                  className={
+                    authoring
+                      ? 'flex min-h-0 flex-1 flex-col space-y-3 border-b border-border px-6 py-4'
+                      : 'shrink-0 space-y-3 border-b border-border px-6 py-4'
+                  }
+                >
+                  <div className="flex shrink-0 flex-wrap items-start justify-between gap-3">
+                    <div className="min-w-0 space-y-1">
+                      <h2 className="text-lg font-medium">{selected.name}</h2>
+                      <p className="truncate font-mono text-xs text-muted-foreground">
+                        {selected.uri}
+                      </p>
+                    </div>
+                    {running && runId ? (
+                      <Button
+                        type="button"
+                        variant="destructive"
+                        onClick={() => void cancelRun()}
+                      >
+                        Cancel test run
+                      </Button>
+                    ) : specCanRun ? (
+                      <Button
+                        type="button"
+                        disabled={running}
+                        onClick={() => void startRun({ paths: [selected.uri] })}
+                      >
+                        Run Specification
+                      </Button>
+                    ) : null}
+                  </div>
+                  {!specCanRun && runReasons?.length ? (
+                    <p role="status" className="text-sm text-muted-foreground">
+                      {runReasons.join(' ')}
+                    </p>
+                  ) : null}
+                  <div
+                    className={
+                      authoring ? 'flex min-h-0 flex-1 flex-col' : undefined
+                    }
                   >
-                    Cancel test run
-                  </Button>
-                ) : (
-                  <Button
-                    type="button"
-                    disabled={running}
-                    onClick={() => void startRun({ paths: [selected.uri] })}
-                  >
-                    Run Specification
-                  </Button>
-                )}
-              </div>
-              <SpecificationEditor
-                uri={selected.uri}
-                model={project.model}
-                api={api}
-                onCatalogChange={async () => {
-                  await reloadProject()
-                }}
-                onCreated={(uri) => {
-                  void reloadProject().then((value) => {
-                    const created = value.specifications.find(
-                      (item) => item.uri === uri,
-                    )
-                    if (created) setSelectedId(created.id)
-                  })
-                }}
-                onError={(message) => setError(message)}
-              />
-              <ScenarioTable
-                profiles={project.profiles}
-                scenarios={selected.scenarios}
-                cells={view.cells}
-                selected={view.selected}
-                running={running}
-                onSelect={(cell) =>
-                  setView((current) => pinCell(current, cell))
-                }
-                onRun={(scenarioName) =>
-                  void startRun({ paths: [selected.uri], scenarioName })
-                }
-              />
-            </>
-          ) : (
-            <p className="text-sm text-muted-foreground">
-              No Specifications found. Add a feature file matching the project
-              configuration.
-            </p>
-          )}
-          {attention.length > 0 ? (
-            <div>
-              <h3 className="mb-2 text-sm font-medium">Needs attention</h3>
-              <ul
-                aria-label="Needs attention"
-                aria-live="polite"
-                className="space-y-2"
-              >
-                {attention.map((cell) => (
-                  <li key={cellKey(cell.scenarioId, cell.profileId)}>
-                    <button
-                      type="button"
-                      className={cn(
-                        'flex w-full min-w-0 flex-col gap-1 rounded-md border bg-card px-3 py-2 text-left text-sm outline-none transition-[transform,background-color,border-color] duration-150 ease-[cubic-bezier(0.23,1,0.32,1)] hover:bg-muted/30 active:scale-[0.99] focus-visible:border-foreground/30 motion-reduce:transition-none motion-reduce:active:scale-100',
-                        isSelectedCell(view.selected, cell)
-                          ? 'border-foreground/25'
-                          : 'border-border',
-                      )}
-                      onClick={() =>
+                    <SpecificationEditor
+                      uri={selected.uri}
+                      model={project.model}
+                      namespaces={Object.keys(project.links ?? {})}
+                      linkTemplates={project.links}
+                      api={api}
+                      onModeChange={(mode) => setAuthoring(mode === 'edit')}
+                      onCatalogChange={async () => {
+                        await reloadProject()
+                      }}
+                      onCreated={(uri) => {
+                        void reloadProject().then((value) => {
+                          const created = value.specifications.find(
+                            (item) => item.uri === uri,
+                          )
+                          if (created) setSelectedId(created.id)
+                        })
+                      }}
+                      onError={(message) => setError(message)}
+                    />
+                  </div>
+                </header>
+                {authoring ? null : (
+                  <div className="min-h-0 flex-1 space-y-6 overflow-auto px-6 py-4">
+                    <ScenarioTable
+                      profiles={project.profiles}
+                      scenarios={selected.scenarios}
+                      cells={view.cells}
+                      selected={view.selected}
+                      running={running}
+                      onSelect={(cell) =>
                         setView((current) => pinCell(current, cell))
                       }
-                    >
-                      <span className="flex min-w-0 items-center gap-2">
-                        <span className="min-w-0 flex-1 truncate">
-                          {cell.scenarioName}
-                        </span>
-                        <Badge variant={badgeVariant(cell.state)}>
-                          <ResultMark key={cell.state} state={cell.state} />
-                          {cell.state}
-                        </Badge>
-                      </span>
-                      <span className="text-xs text-muted-foreground">
-                        {cell.profileId} · Open step timeline
-                      </span>
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          ) : null}
-          <Timeline cell={view.selected} />
-        </main>
-      </div>
+                      onRun={(scenarioName) =>
+                        void startRun({
+                          paths: [selected.uri],
+                          scenarioName,
+                        })
+                      }
+                    />
+                    {attention.length > 0 ? (
+                      <div>
+                        <h3 className="mb-2 text-sm font-medium">
+                          Needs attention
+                        </h3>
+                        <ul
+                          aria-label="Needs attention"
+                          aria-live="polite"
+                          className="space-y-2"
+                        >
+                          {attention.map((cell) => (
+                            <li key={cellKey(cell.scenarioId, cell.profileId)}>
+                              <button
+                                type="button"
+                                className={cn(
+                                  'flex w-full min-w-0 flex-col gap-1 rounded-md border bg-card px-3 py-2 text-left text-sm outline-none transition-[transform,background-color,border-color] duration-150 ease-[cubic-bezier(0.23,1,0.32,1)] hover:bg-muted/30 active:scale-[0.99] focus-visible:border-foreground/30 motion-reduce:transition-none motion-reduce:active:scale-100',
+                                  isSelectedCell(view.selected, cell)
+                                    ? 'border-foreground/25'
+                                    : 'border-border',
+                                )}
+                                onClick={() =>
+                                  setView((current) => pinCell(current, cell))
+                                }
+                              >
+                                <span className="flex min-w-0 items-center gap-2">
+                                  <span className="min-w-0 flex-1 truncate">
+                                    {cell.scenarioName}
+                                  </span>
+                                  <Badge variant={badgeVariant(cell.state)}>
+                                    <ResultMark
+                                      key={cell.state}
+                                      state={cell.state}
+                                    />
+                                    {cell.state}
+                                  </Badge>
+                                </span>
+                                <span className="text-xs text-muted-foreground">
+                                  {cell.profileId} · Open step timeline
+                                </span>
+                              </button>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    ) : null}
+                    {view.selected?.result ? (
+                      <TestResultTimeline result={view.selected.result} />
+                    ) : null}
+                  </div>
+                )}
+              </>
+            ) : (
+              <p className="p-6 text-sm text-muted-foreground">
+                No Specifications found. Add a feature file matching the project
+                configuration.
+              </p>
+            )}
+          </main>
+        </div>
+      )}
     </div>
   )
 }
 
 function SpecificationList(props: {
-  specifications: StudioSpecification[]
+  specifications: readonly StudioSpecification[]
   selectedId?: string
   running: boolean
+  canRun: boolean
   onSelect: (id: string) => void
   onRunAll: () => void
 }) {
@@ -430,24 +494,26 @@ function SpecificationList(props: {
         </ul>
       )}
       <div className="border-t border-border p-2">
-        <Button
-          type="button"
-          variant="outline"
-          className="w-full"
-          disabled={props.running || props.specifications.length === 0}
-          onClick={props.onRunAll}
-        >
-          Run all Specifications
-        </Button>
+        {props.canRun ? (
+          <Button
+            type="button"
+            variant="outline"
+            className="w-full"
+            disabled={props.running || props.specifications.length === 0}
+            onClick={props.onRunAll}
+          >
+            Run all Specifications
+          </Button>
+        ) : null}
       </div>
     </nav>
   )
 }
 
 function ScenarioTable(props: {
-  profiles: string[]
-  scenarios: StudioScenario[]
-  cells: MatrixCell[]
+  profiles: readonly string[]
+  scenarios: readonly StudioScenario[]
+  cells: readonly MatrixCell[]
   selected?: MatrixCell
   running: boolean
   onSelect: (cell: MatrixCell) => void
@@ -531,16 +597,18 @@ function ScenarioTable(props: {
                   )
                 })}
                 <td className="px-3 py-2 text-right">
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    disabled={props.running}
-                    aria-label={`Run Scenario ${scenario.name}`}
-                    onClick={() => props.onRun(scenario.name)}
-                  >
-                    Run
-                  </Button>
+                  {scenario.canRun !== false ? (
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      disabled={props.running}
+                      aria-label={`Run Scenario ${scenario.name}`}
+                      onClick={() => props.onRun(scenario.name)}
+                    >
+                      Run
+                    </Button>
+                  ) : null}
                 </td>
               </tr>
             ))
@@ -548,56 +616,6 @@ function ScenarioTable(props: {
         </tbody>
       </table>
     </div>
-  )
-}
-
-function Timeline(props: { cell?: MatrixCell }) {
-  const result = props.cell?.result
-  if (!result) return null
-  return (
-    <section className="space-y-3">
-      <h3 className="text-sm font-medium">
-        {result.scenario.name} · {result.executionTargetProfile.id}
-      </h3>
-      <ol aria-label="Step timeline" className="space-y-3">
-        {result.steps.map((step) => (
-          <li
-            key={`${step.step.text}:${step.resolvedActions.map((action) => action.description).join(',')}`}
-            className="rounded-md border border-border bg-card px-4 py-3 transition-[border-color] duration-150 ease-[cubic-bezier(0.23,1,0.32,1)] hover:border-foreground/15 motion-reduce:transition-none"
-          >
-            <p className="font-medium">
-              {`${step.step.keyword.trim()} ${step.step.text}`}
-            </p>
-            <ul className="mt-2 space-y-1 font-mono text-xs">
-              {step.resolvedActions.map((action) => (
-                <li key={action.description}>{action.description}</li>
-              ))}
-            </ul>
-            {step.message ? (
-              <p className="mt-2 text-sm text-destructive">{step.message}</p>
-            ) : null}
-            {step.artifacts?.map((artifact) =>
-              artifact.mediaType?.startsWith('image/') ? (
-                <img
-                  key={artifact.path}
-                  alt={`${artifact.kind} for ${result.scenario.name}`}
-                  src={artifactUrl(artifact.path)}
-                  className="mt-3 max-h-64 rounded-md border border-border"
-                />
-              ) : (
-                <a
-                  key={artifact.path}
-                  href={artifactUrl(artifact.path)}
-                  className="mt-2 inline-block text-sm text-primary underline-offset-4 hover:underline"
-                >
-                  {artifact.kind}
-                </a>
-              ),
-            )}
-          </li>
-        ))}
-      </ol>
-    </section>
   )
 }
 
