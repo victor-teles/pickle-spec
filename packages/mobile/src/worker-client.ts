@@ -76,6 +76,7 @@ class NodeWorkerClient implements MobileWorkerClient {
   private nextRequestId = 1
   private disposed = false
   private ready = false
+  private failure?: Error
   private stderr = ''
 
   constructor(options: NodeWorkerClientOptions) {
@@ -89,9 +90,13 @@ class NodeWorkerClient implements MobileWorkerClient {
     signal?: AbortSignal,
   ): Promise<MobileWorkerResponse> {
     if (this.disposed) throw new Error('The mobile worker is disposed')
+    if (this.failure) throw this.failure
     if (signal?.aborted) throw new DOMException('Aborted', 'AbortError')
     await this.start()
     if (this.disposed) throw new Error('The mobile worker was disposed')
+    if (this.failure) throw this.failure
+    const child = this.child
+    if (!child) throw new Error('The mobile worker is not running')
 
     const id = this.nextRequestId++
     const response = new Promise<MobileWorkerResponse>((resolve, reject) => {
@@ -113,7 +118,7 @@ class NodeWorkerClient implements MobileWorkerClient {
     })
 
     try {
-      this.child?.stdin.write(
+      child.stdin.write(
         `${JSON.stringify({
           version: mobileWorkerProtocolVersion,
           type: 'request',
@@ -121,7 +126,7 @@ class NodeWorkerClient implements MobileWorkerClient {
           payload: request,
         })}\n`,
       )
-      this.child?.stdin.flush()
+      child.stdin.flush()
     } catch (error) {
       const pending = this.pending.get(id)
       this.pending.delete(id)
@@ -162,14 +167,14 @@ class NodeWorkerClient implements MobileWorkerClient {
       this.rejectStart = reject
 
       void new Response(child.stderr).text().then((stderr) => {
-        this.stderr += stderr
+        this.stderr = stderr
       })
       void this.readMessages(child, () => {
         this.ready = true
         this.rejectStart = undefined
         resolve()
       }).catch((error) => {
-        void this.fail(
+        this.fail(
           error instanceof Error ? error : new Error(errorMessage(error)),
         )
       })
@@ -181,7 +186,7 @@ class NodeWorkerClient implements MobileWorkerClient {
           `Mobile worker exited before disposal (code ${code})` +
             (detail ? `: ${detail}` : ''),
         )
-        void this.fail(error)
+        this.fail(error)
       })
     })
   }
@@ -228,10 +233,11 @@ class NodeWorkerClient implements MobileWorkerClient {
     else pending.reject(new Error(message.error))
   }
 
-  private async fail(error: Error): Promise<void> {
-    this.rejectStart?.(error)
+  private fail(error: Error): void {
+    this.failure ??= error
+    this.rejectStart?.(this.failure)
     this.rejectStart = undefined
-    for (const pending of this.pending.values()) pending.reject(error)
+    for (const pending of this.pending.values()) pending.reject(this.failure)
     this.pending.clear()
     this.child?.kill(15)
   }

@@ -21,6 +21,11 @@ function gateway(
   }
 }
 
+const application = {
+  id: 'com.example.checkout',
+  binaryPath: '/tmp/checkout.apk',
+}
+
 test('serializes mutable operations within one Android logical session', async () => {
   let active = 0
   let maximumActive = 0
@@ -45,10 +50,7 @@ test('serializes mutable operations within one Android logical session', async (
     version: 1,
     type: 'open-session',
     sessionId: 'session-1',
-    application: {
-      id: 'com.example.checkout',
-      binaryPath: '/tmp/checkout.apk',
-    },
+    application,
     mode: 'adaptive',
   })
 
@@ -94,10 +96,7 @@ test('supplies Replay plan actions to the matching step', async () => {
     version: 1,
     type: 'open-session',
     sessionId: 'session-1',
-    application: {
-      id: 'com.example.checkout',
-      binaryPath: '/tmp/checkout.apk',
-    },
+    application,
     mode: 'replay',
     plan: {
       steps: [
@@ -152,10 +151,7 @@ test('cancellation stops the active device operation before the session can be r
     version: 1 as const,
     type: 'open-session' as const,
     sessionId: 'session-1',
-    application: {
-      id: 'com.example.checkout',
-      binaryPath: '/tmp/checkout.apk',
-    },
+    application,
     mode: 'adaptive' as const,
   }
   await runtime.handle(openRequest)

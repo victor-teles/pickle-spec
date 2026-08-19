@@ -1,6 +1,7 @@
 import type { ExecutionTargetAdapter } from '@pickle-spec/runner'
 import {
   createNodeWorkerClient,
+  type MobileWorkerClient,
   type MobileWorkerFactory,
 } from './worker-client'
 import {
@@ -29,7 +30,7 @@ export function createMobileAdapter(
   options: MobileAdapterOptions,
   workerFactory?: MobileWorkerFactory,
 ): MobileExecutionTargetAdapter {
-  let worker: ReturnType<MobileWorkerFactory> | undefined
+  let worker: MobileWorkerClient | undefined
   const ensureWorker = () => {
     worker ??=
       workerFactory?.() ??

@@ -19,6 +19,11 @@ const scenario = {
   steps: [{ keyword: 'When', text: 'I pay', type: 'action' as const }],
 }
 
+const application = {
+  id: 'com.example.checkout',
+  binaryPath: '/tmp/checkout.apk',
+}
+
 function workerClient(
   overrides: Partial<MobileWorkerClient> = {},
 ): MobileWorkerClient {
@@ -46,10 +51,7 @@ test('discovers Android Emulator targets without exposing worker or vendor types
   }))
   const adapter = createMobileAdapter(
     {
-      application: {
-        id: 'com.example.checkout',
-        binaryPath: '/tmp/checkout.apk',
-      },
+      application,
     },
     () => workerClient({ request }),
   )
@@ -96,10 +98,7 @@ test('opens and closes one isolated Android logical session through the worker',
   })
   const adapter = createMobileAdapter(
     {
-      application: {
-        id: 'com.example.checkout',
-        binaryPath: '/tmp/checkout.apk',
-      },
+      application,
       targetId: 'emulator-5554',
     },
     () => workerClient({ request }),
@@ -119,10 +118,7 @@ test('opens and closes one isolated Android logical session through the worker',
     version: 1,
     type: 'open-session',
     targetId: 'emulator-5554',
-    application: {
-      id: 'com.example.checkout',
-      binaryPath: '/tmp/checkout.apk',
-    },
+    application,
     mode: 'adaptive',
   })
   expect(requests[1]).toMatchObject({
@@ -177,10 +173,7 @@ test('executes mobile steps and returns common runner actions and artifacts', as
   })
   const adapter = createMobileAdapter(
     {
-      application: {
-        id: 'com.example.checkout',
-        binaryPath: '/tmp/checkout.apk',
-      },
+      application,
       artifactDirectory: '/tmp/artifacts',
     },
     () => workerClient({ request }),
@@ -240,10 +233,7 @@ test('cancels the worker session on abort and disposes the worker before reuse',
   const controller = new AbortController()
   const adapter = createMobileAdapter(
     {
-      application: {
-        id: 'com.example.checkout',
-        binaryPath: '/tmp/checkout.apk',
-      },
+      application,
     },
     () =>
       workerClient({
@@ -298,10 +288,7 @@ test('cancels installation when abort occurs while the logical session opens', a
   const controller = new AbortController()
   const adapter = createMobileAdapter(
     {
-      application: {
-        id: 'com.example.checkout',
-        binaryPath: '/tmp/checkout.apk',
-      },
+      application,
     },
     () => workerClient({ request }),
   )

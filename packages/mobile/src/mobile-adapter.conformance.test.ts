@@ -19,6 +19,11 @@ const scenario = {
   ],
 }
 
+const application = {
+  id: 'com.example.checkout',
+  binaryPath: '/tmp/checkout.apk',
+}
+
 function conformanceWorker(): MobileWorkerClient {
   const sessions = new Map<
     string,
@@ -88,10 +93,7 @@ defineAdapterConformanceSuite({
   createAdapter: () =>
     createMobileAdapter(
       {
-        application: {
-          id: 'com.example.checkout',
-          binaryPath: '/tmp/checkout.apk',
-        },
+        application,
       },
       conformanceWorker,
     ),

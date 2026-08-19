@@ -154,7 +154,6 @@ export const workerRequestMessageSchema = z.strictObject({
 })
 
 export type AndroidTarget = z.infer<typeof androidTargetSchema>
-export type AndroidTargetState = AndroidTarget['state']
 export type AndroidApplication = z.infer<typeof androidApplicationSchema>
 export type MobileStep = z.infer<typeof mobileStepSchema>
 export type WorkerResolvedAction = z.infer<typeof workerResolvedActionSchema>

@@ -4,6 +4,33 @@ import {
   AgentDeviceGateway,
 } from './agent-device-gateway'
 
+const androidEmulator = {
+  platform: 'android',
+  target: 'mobile',
+  kind: 'emulator',
+  id: 'emulator-5554',
+  name: 'Pixel 9 API 35',
+  booted: true,
+  identifiers: {},
+  android: { serial: 'emulator-5554' },
+}
+
+const application = {
+  id: 'com.example.checkout',
+  binaryPath: '/tmp/checkout.apk',
+}
+
+const runningAppState = {
+  platform: 'android',
+  package: application.id,
+  activity: '.MainActivity',
+}
+
+interface OpenTestSessionOptions {
+  targetId?: string
+  artifactDirectory?: string
+}
+
 function fakeClient(
   overrides: Partial<AgentDeviceClientPort> = {},
 ): AgentDeviceClientPort {
@@ -41,46 +68,59 @@ function fakeClient(
   }
 }
 
+function emulatorClient(
+  overrides: Partial<AgentDeviceClientPort> = {},
+): AgentDeviceClientPort {
+  return fakeClient({
+    devices: {
+      async list() {
+        return [androidEmulator]
+      },
+      async capabilities() {
+        throw new Error('Unexpected capabilities request')
+      },
+    },
+    command: {
+      async appState() {
+        return runningAppState
+      },
+      async wait() {},
+    },
+    ...overrides,
+  })
+}
+
+async function openTestSession(
+  gateway: AgentDeviceGateway,
+  options: OpenTestSessionOptions = {},
+): Promise<void> {
+  await gateway.openSession({
+    sessionId: 'session-1',
+    targetId: options.targetId,
+    application,
+    artifactDirectory: options.artifactDirectory,
+  })
+}
+
 test('discovers compatible Android Emulator targets and normalizes capabilities', async () => {
   const close = mock(async () => {})
   const client = fakeClient({
     devices: {
       async list() {
         return [
+          androidEmulator,
           {
-            platform: 'android',
-            target: 'mobile',
-            kind: 'emulator',
-            id: 'emulator-5554',
-            name: 'Pixel 9 API 35',
-            booted: true,
-            identifiers: {},
-            android: { serial: 'emulator-5554' },
-          },
-          {
-            platform: 'android',
-            target: 'mobile',
+            ...androidEmulator,
             kind: 'device',
             id: 'physical-1',
             name: 'Physical phone',
-            booted: true,
-            identifiers: {},
             android: { serial: 'physical-1' },
           },
         ]
       },
       async capabilities() {
         return {
-          device: {
-            platform: 'android',
-            target: 'mobile',
-            kind: 'emulator',
-            id: 'emulator-5554',
-            name: 'Pixel 9 API 35',
-            booted: true,
-            identifiers: {},
-            android: { serial: 'emulator-5554' },
-          },
+          device: androidEmulator,
           availableCommands: ['snapshot', 'screenshot', 'logs', 'find'],
         }
       },
@@ -91,8 +131,8 @@ test('discovers compatible Android Emulator targets and normalizes capabilities'
 
   expect(await gateway.discoverTargets()).toEqual([
     {
-      id: 'emulator-5554',
-      name: 'Pixel 9 API 35',
+      id: androidEmulator.id,
+      name: androidEmulator.name,
       state: 'booted',
       capabilities: [
         'android',
@@ -108,31 +148,8 @@ test('discovers compatible Android Emulator targets and normalizes capabilities'
 test('reinstalls, opens, and verifies the configured application for a logical session', async () => {
   const reinstall = mock(async () => {})
   const open = mock(async () => {})
-  const appState = mock(async () => ({
-    platform: 'android' as const,
-    package: 'com.example.checkout',
-    activity: '.MainActivity',
-  }))
-  const client = fakeClient({
-    devices: {
-      async list() {
-        return [
-          {
-            platform: 'android',
-            target: 'mobile',
-            kind: 'emulator',
-            id: 'emulator-5554',
-            name: 'Pixel 9 API 35',
-            booted: true,
-            identifiers: {},
-            android: { serial: 'emulator-5554' },
-          },
-        ]
-      },
-      async capabilities() {
-        throw new Error('Unexpected capabilities request')
-      },
-    },
+  const appState = mock(async () => runningAppState)
+  const client = emulatorClient({
     apps: { reinstall, open },
     command: { appState, async wait() {} },
   })
@@ -141,27 +158,24 @@ test('reinstalls, opens, and verifies the configured application for a logical s
   await expect(
     gateway.openSession({
       sessionId: 'session-1',
-      targetId: 'emulator-5554',
-      application: {
-        id: 'com.example.checkout',
-        binaryPath: '/tmp/checkout.apk',
-      },
+      targetId: androidEmulator.id,
+      application,
     }),
-  ).resolves.toEqual({ targetId: 'emulator-5554' })
+  ).resolves.toEqual({ targetId: androidEmulator.id })
   expect(reinstall).toHaveBeenCalledWith({
-    app: 'com.example.checkout',
-    appPath: '/tmp/checkout.apk',
+    app: application.id,
+    appPath: application.binaryPath,
     platform: 'android',
-    serial: 'emulator-5554',
+    serial: androidEmulator.android.serial,
   })
   expect(open).toHaveBeenCalledWith({
-    app: 'com.example.checkout',
+    app: application.id,
     platform: 'android',
-    serial: 'emulator-5554',
+    serial: androidEmulator.android.serial,
   })
   expect(appState).toHaveBeenCalledWith({
     platform: 'android',
-    serial: 'emulator-5554',
+    serial: androidEmulator.android.serial,
   })
 })
 
@@ -187,25 +201,11 @@ test('cancels a logical session while Android target discovery is in flight', as
   const gateway = new AgentDeviceGateway(() => client)
   const opening = gateway.openSession({
     sessionId: 'session-1',
-    application: {
-      id: 'com.example.checkout',
-      binaryPath: '/tmp/checkout.apk',
-    },
+    application,
   })
 
   await gateway.cancelSession('session-1')
-  resolveDevices([
-    {
-      platform: 'android',
-      target: 'mobile',
-      kind: 'emulator',
-      id: 'emulator-5554',
-      name: 'Pixel 9 API 35',
-      booted: true,
-      identifiers: {},
-      android: { serial: 'emulator-5554' },
-    },
-  ])
+  resolveDevices([androidEmulator])
 
   await expect(opening).rejects.toThrow('Aborted')
   expect(reinstall).not.toHaveBeenCalled()
@@ -217,48 +217,14 @@ test('normalizes Adaptive actions and screenshot artifacts without vendor result
   const screenshot = mock(async (options: { path?: string }) => ({
     path: options.path ?? '',
   }))
-  const client = fakeClient({
-    devices: {
-      async list() {
-        return [
-          {
-            platform: 'android',
-            target: 'mobile',
-            kind: 'emulator',
-            id: 'emulator-5554',
-            name: 'Pixel 9 API 35',
-            booted: true,
-            identifiers: {},
-            android: { serial: 'emulator-5554' },
-          },
-        ]
-      },
-      async capabilities() {
-        throw new Error('Unexpected capabilities request')
-      },
-    },
-    apps: { async reinstall() {}, async open() {} },
-    command: {
-      async appState() {
-        return {
-          platform: 'android',
-          package: 'com.example.checkout',
-          activity: '.MainActivity',
-        }
-      },
-      async wait() {},
-    },
-    interactions: { find },
-    capture: { screenshot },
-  })
-  const gateway = new AgentDeviceGateway(() => client)
-  await gateway.openSession({
-    sessionId: 'session-1',
-    targetId: 'emulator-5554',
-    application: {
-      id: 'com.example.checkout',
-      binaryPath: '/tmp/checkout.apk',
-    },
+  const gateway = new AgentDeviceGateway(() =>
+    emulatorClient({
+      interactions: { find },
+      capture: { screenshot },
+    }),
+  )
+  await openTestSession(gateway, {
+    targetId: androidEmulator.id,
     artifactDirectory: '/tmp/pickle-mobile-artifacts',
   })
 
@@ -286,7 +252,7 @@ test('normalizes Adaptive actions and screenshot artifacts without vendor result
   })
   expect(find).toHaveBeenCalledWith({
     platform: 'android',
-    serial: 'emulator-5554',
+    serial: androidEmulator.android.serial,
     query: 'Pay now',
     action: 'click',
   })
@@ -297,46 +263,10 @@ test('normalizes Adaptive actions and screenshot artifacts without vendor result
 
 test('replays normalized actions and adapts when a replay action is unavailable', async () => {
   const find = mock(async (_options: unknown) => {})
-  const client = fakeClient({
-    devices: {
-      async list() {
-        return [
-          {
-            platform: 'android',
-            target: 'mobile',
-            kind: 'emulator',
-            id: 'emulator-5554',
-            name: 'Pixel 9 API 35',
-            booted: true,
-            identifiers: {},
-            android: { serial: 'emulator-5554' },
-          },
-        ]
-      },
-      async capabilities() {
-        throw new Error('Unexpected capabilities request')
-      },
-    },
-    apps: { async reinstall() {}, async open() {} },
-    command: {
-      async appState() {
-        return {
-          platform: 'android',
-          package: 'com.example.checkout',
-          activity: '.MainActivity',
-        }
-      },
-      async wait() {},
-    },
-    interactions: { find },
-  })
-  const gateway = new AgentDeviceGateway(() => client)
-  await gateway.openSession({
-    sessionId: 'session-1',
-    application: {
-      id: 'com.example.checkout',
-      binaryPath: '/tmp/checkout.apk',
-    },
+  const gateway = new AgentDeviceGateway(() =>
+    emulatorClient({ interactions: { find } }),
+  )
+  await openTestSession(gateway, {
     artifactDirectory: '/tmp/pickle-mobile-artifacts',
   })
 
@@ -369,13 +299,13 @@ test('replays normalized actions and adapts when a replay action is unavailable'
   expect(find.mock.calls.map((call) => call[0])).toEqual([
     {
       platform: 'android',
-      serial: 'emulator-5554',
+      serial: androidEmulator.android.serial,
       query: 'Saved pay button',
       action: 'click',
     },
     {
       platform: 'android',
-      serial: 'emulator-5554',
+      serial: androidEmulator.android.serial,
       query: 'Confirm order',
       action: 'click',
     },
@@ -383,51 +313,16 @@ test('replays normalized actions and adapts when a replay action is unavailable'
 })
 
 test('classifies unexpected worker and device errors as infrastructure errors', async () => {
-  const client = fakeClient({
-    devices: {
-      async list() {
-        return [
-          {
-            platform: 'android',
-            target: 'mobile',
-            kind: 'emulator',
-            id: 'emulator-5554',
-            name: 'Pixel 9 API 35',
-            booted: true,
-            identifiers: {},
-            android: { serial: 'emulator-5554' },
-          },
-        ]
+  const gateway = new AgentDeviceGateway(() =>
+    emulatorClient({
+      interactions: {
+        async find() {
+          throw new Error('ADB disconnected')
+        },
       },
-      async capabilities() {
-        throw new Error('Unexpected capabilities request')
-      },
-    },
-    apps: { async reinstall() {}, async open() {} },
-    command: {
-      async appState() {
-        return {
-          platform: 'android',
-          package: 'com.example.checkout',
-          activity: '.MainActivity',
-        }
-      },
-      async wait() {},
-    },
-    interactions: {
-      async find() {
-        throw new Error('ADB disconnected')
-      },
-    },
-  })
-  const gateway = new AgentDeviceGateway(() => client)
-  await gateway.openSession({
-    sessionId: 'session-1',
-    application: {
-      id: 'com.example.checkout',
-      binaryPath: '/tmp/checkout.apk',
-    },
-  })
+    }),
+  )
+  await openTestSession(gateway)
 
   await expect(
     gateway.executeStep({
@@ -443,51 +338,16 @@ test('classifies unexpected worker and device errors as infrastructure errors', 
 })
 
 test('reports requested screenshot capture failures as infrastructure errors', async () => {
-  const client = fakeClient({
-    devices: {
-      async list() {
-        return [
-          {
-            platform: 'android',
-            target: 'mobile',
-            kind: 'emulator',
-            id: 'emulator-5554',
-            name: 'Pixel 9 API 35',
-            booted: true,
-            identifiers: {},
-            android: { serial: 'emulator-5554' },
-          },
-        ]
+  const gateway = new AgentDeviceGateway(() =>
+    emulatorClient({
+      capture: {
+        async screenshot() {
+          throw new Error('Screenshot helper is unavailable')
+        },
       },
-      async capabilities() {
-        throw new Error('Unexpected capabilities request')
-      },
-    },
-    apps: { async reinstall() {}, async open() {} },
-    command: {
-      async appState() {
-        return {
-          platform: 'android',
-          package: 'com.example.checkout',
-          activity: '.MainActivity',
-        }
-      },
-      async wait() {},
-    },
-    interactions: { async find() {} },
-    capture: {
-      async screenshot() {
-        throw new Error('Screenshot helper is unavailable')
-      },
-    },
-  })
-  const gateway = new AgentDeviceGateway(() => client)
-  await gateway.openSession({
-    sessionId: 'session-1',
-    application: {
-      id: 'com.example.checkout',
-      binaryPath: '/tmp/checkout.apk',
-    },
+    }),
+  )
+  await openTestSession(gateway, {
     artifactDirectory: '/tmp/pickle-mobile-artifacts',
   })
 
@@ -509,47 +369,10 @@ test('retains session ownership when close fails so disposal can retry', async (
     closeAttempts++
     if (closeAttempts === 1) throw new Error('Close failed')
   })
-  const client = fakeClient({
-    devices: {
-      async list() {
-        return [
-          {
-            platform: 'android',
-            target: 'mobile',
-            kind: 'emulator',
-            id: 'emulator-5554',
-            name: 'Pixel 9 API 35',
-            booted: true,
-            identifiers: {},
-            android: { serial: 'emulator-5554' },
-          },
-        ]
-      },
-      async capabilities() {
-        throw new Error('Unexpected capabilities request')
-      },
-    },
-    apps: { async reinstall() {}, async open() {} },
-    command: {
-      async appState() {
-        return {
-          platform: 'android',
-          package: 'com.example.checkout',
-          activity: '.MainActivity',
-        }
-      },
-      async wait() {},
-    },
-    sessions: { close },
-  })
-  const gateway = new AgentDeviceGateway(() => client)
-  await gateway.openSession({
-    sessionId: 'session-1',
-    application: {
-      id: 'com.example.checkout',
-      binaryPath: '/tmp/checkout.apk',
-    },
-  })
+  const gateway = new AgentDeviceGateway(() =>
+    emulatorClient({ sessions: { close } }),
+  )
+  await openTestSession(gateway)
 
   await expect(gateway.closeSession('session-1')).rejects.toThrow(
     'Close failed',
