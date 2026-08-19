@@ -3,7 +3,7 @@ import type {
   TestRunManifest,
   TestRunSummary,
 } from '@pickle-spec/runner'
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Badge } from './components/ui/badge'
 import { Button } from './components/ui/button'
 import { Checkbox } from './components/ui/checkbox'
@@ -23,12 +23,14 @@ import type {
   StudioRunRequest,
   StudioRunSnapshot,
 } from './server'
+import { useVirtualWindow } from './virtualization'
 
 type StudioApi = <Value>(path: string, init?: RequestInit) => Promise<Value>
+const historyRowHeight = 80
+const resultRowHeight = 56
 
 interface HistoryPanelProps {
   api: StudioApi
-  token: string
   runPhase: 'idle' | 'running' | 'finished'
   onRerun: (request: StudioRunRequest) => Promise<void>
 }
@@ -76,8 +78,23 @@ export function HistoryPanel(props: HistoryPanelProps) {
   const [selectedRunIds, setSelectedRunIds] = useState<string[]>([])
   const [comparison, setComparison] = useState<TestRunComparison>()
   const [reviewed, setReviewed] = useState<TestRunManifest>()
+  const reviewedSectionRef = useRef<HTMLElement>(null)
   const [includeAllArtifacts, setIncludeAllArtifacts] = useState(false)
   const runs = useMemo(() => sortedRuns(history), [history])
+  const runWindow = useVirtualWindow<HTMLDivElement>({
+    count: runs.length,
+    itemSize: historyRowHeight,
+  })
+  const visibleRuns = runs.slice(runWindow.start, runWindow.end)
+  const reviewedResults = reviewed?.results ?? []
+  const resultWindow = useVirtualWindow<HTMLDivElement>({
+    count: reviewedResults.length,
+    itemSize: resultRowHeight,
+  })
+  const visibleResults = reviewedResults.slice(
+    resultWindow.start,
+    resultWindow.end,
+  )
 
   const loadHistory = useCallback(async () => {
     setHistory(await props.api<StudioHistory>('/api/history'))
@@ -93,6 +110,10 @@ export function HistoryPanel(props: HistoryPanelProps) {
       cancelled = true
     }
   }, [loadHistory, props.runPhase])
+
+  useEffect(() => {
+    if (reviewed) reviewedSectionRef.current?.focus()
+  }, [reviewed])
 
   async function compareSelected() {
     if (selectedRunIds.length !== 2) return
@@ -206,7 +227,13 @@ export function HistoryPanel(props: HistoryPanelProps) {
           {notice}
         </p>
       ) : null}
-      <div className="rounded-lg border border-border bg-card">
+      <section
+        ref={runWindow.containerRef}
+        aria-label="Scrollable test run history"
+        // biome-ignore lint/a11y/noNoninteractiveTabindex: keyboard users must be able to scroll a virtualized region
+        tabIndex={0}
+        className="max-h-[32rem] overflow-auto rounded-lg border border-border bg-card"
+      >
         <Table aria-label="Test run history">
           <TableHeader>
             <TableRow>
@@ -222,8 +249,9 @@ export function HistoryPanel(props: HistoryPanelProps) {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {runs.map((run) => (
-              <TableRow key={run.id}>
+            <VirtualTableSpacer height={runWindow.before} colSpan={9} />
+            {visibleRuns.map((run) => (
+              <TableRow key={run.id} style={{ height: historyRowHeight }}>
                 <TableCell>
                   <Checkbox
                     aria-label={`Select ${run.id} for comparison`}
@@ -299,6 +327,7 @@ export function HistoryPanel(props: HistoryPanelProps) {
                 </TableCell>
               </TableRow>
             ))}
+            <VirtualTableSpacer height={runWindow.after} colSpan={9} />
           </TableBody>
         </Table>
         {runs.length === 0 ? (
@@ -306,12 +335,17 @@ export function HistoryPanel(props: HistoryPanelProps) {
             No local test runs yet.
           </p>
         ) : null}
-      </div>
+      </section>
 
       {comparison ? <RunComparison comparison={comparison} /> : null}
 
       {reviewed ? (
-        <section className="space-y-3" aria-label={`Test run ${reviewed.id}`}>
+        <section
+          ref={reviewedSectionRef}
+          className="space-y-3"
+          aria-label={`Test run ${reviewed.id}`}
+          tabIndex={-1}
+        >
           <header className="flex flex-wrap items-center justify-between gap-3">
             <div>
               <h3 className="text-sm font-medium">Test run {reviewed.id}</h3>
@@ -342,9 +376,12 @@ export function HistoryPanel(props: HistoryPanelProps) {
               </Button>
               <Button
                 variant="outline"
+                nativeButton={false}
                 render={
                   <a
-                    href={`/api/history/${encodeURIComponent(reviewed.id)}/archive?token=${encodeURIComponent(props.token)}`}
+                    href={`/api/history/${encodeURIComponent(reviewed.id)}/archive`}
+                    // biome-ignore lint/a11y/noRedundantRoles: override Base UI's injected button role
+                    role="link"
                     download
                   />
                 }
@@ -353,9 +390,12 @@ export function HistoryPanel(props: HistoryPanelProps) {
               </Button>
               <Button
                 variant="outline"
+                nativeButton={false}
                 render={
                   <a
-                    href={`/api/history/${encodeURIComponent(reviewed.id)}/html?token=${encodeURIComponent(props.token)}&artifacts=${artifactMode}`}
+                    href={`/api/history/${encodeURIComponent(reviewed.id)}/html?artifacts=${artifactMode}`}
+                    // biome-ignore lint/a11y/noRedundantRoles: override Base UI's injected button role
+                    role="link"
                     download
                   />
                 }
@@ -374,7 +414,13 @@ export function HistoryPanel(props: HistoryPanelProps) {
               </span>
             </div>
           </header>
-          <div className="rounded-lg border border-border bg-card">
+          <section
+            ref={resultWindow.containerRef}
+            aria-label="Scrollable test run results"
+            // biome-ignore lint/a11y/noNoninteractiveTabindex: keyboard users must be able to scroll a virtualized region
+            tabIndex={0}
+            className="max-h-[32rem] overflow-auto rounded-lg border border-border bg-card"
+          >
             <Table aria-label="Test run results">
               <TableHeader>
                 <TableRow>
@@ -386,9 +432,11 @@ export function HistoryPanel(props: HistoryPanelProps) {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {reviewed.results.map((result) => (
+                <VirtualTableSpacer height={resultWindow.before} colSpan={5} />
+                {visibleResults.map((result) => (
                   <TableRow
                     key={`${result.scenario.id ?? result.scenario.name}:${result.executionTargetProfile.id}`}
+                    style={{ height: resultRowHeight }}
                   >
                     <TableCell>{result.scenario.name}</TableCell>
                     <TableCell>{result.executionTargetProfile.id}</TableCell>
@@ -430,9 +478,10 @@ export function HistoryPanel(props: HistoryPanelProps) {
                     </TableCell>
                   </TableRow>
                 ))}
+                <VirtualTableSpacer height={resultWindow.after} colSpan={5} />
               </TableBody>
             </Table>
-          </div>
+          </section>
           {reviewedRun ? null : (
             <p className="text-xs text-muted-foreground">
               This test run is no longer in local history.
@@ -459,6 +508,24 @@ export function HistoryPanel(props: HistoryPanelProps) {
         </section>
       ) : null}
     </main>
+  )
+}
+
+type VirtualTableSpacerProps = {
+  height: number
+  colSpan: number
+}
+
+function VirtualTableSpacer(props: VirtualTableSpacerProps) {
+  if (props.height === 0) return null
+  return (
+    <TableRow aria-hidden="true" className="border-0 hover:bg-transparent">
+      <TableCell
+        colSpan={props.colSpan}
+        className="p-0"
+        style={{ height: props.height }}
+      />
+    </TableRow>
   )
 }
 

@@ -57,8 +57,12 @@ function LinkLabel(props: { link: ExternalLink; href?: string }) {
   return (
     <Button
       variant="link"
+      nativeButton={false}
       className="h-auto px-0"
-      render={<a href={props.href} />}
+      render={
+        // biome-ignore lint/a11y/noRedundantRoles: override Base UI's injected button role
+        <a href={props.href} role="link" />
+      }
     >
       {label}
     </Button>

@@ -105,6 +105,10 @@
   }
 }
 
+.pixel-spinner-cell {
+  animation: pixel-on 650ms ease-in-out var(--pixel-delay) infinite;
+}
+
 .shimmer-label {
   background-image: linear-gradient(
     90deg,
@@ -120,8 +124,12 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  [data-slot="spinner"] > span {
+  :root *,
+  :root *::before,
+  :root *::after {
+    scroll-behavior: auto;
     animation: none;
+    transition: none;
   }
   .shimmer-label {
     animation: none;

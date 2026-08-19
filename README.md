@@ -80,6 +80,23 @@ Create `pickle.config.jsonc` in the project root:
 
 Set the API key for the configured model provider. Bun loads environment variables from `.env`. For local Chrome, Stagehand needs that key on `model.apiKey`: set `web.browser.modelApiKey` or the provider env var (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GOOGLE_API_KEY`, `GEMINI_API_KEY`, or `GOOGLE_GENERATIVE_AI_API_KEY`). `web.browser.modelName` must be a Stagehand-supported `provider/model` value; Pickle Spec rejects unknown names before it starts browsers.
 
+## Open Studio
+
+Studio binds to loopback and opens the configured project by default:
+
+```bash
+pickle studio
+```
+
+Remote access requires an explicit host and prints a security warning:
+
+```bash
+pickle studio --remote 192.168.1.20
+```
+
+The session token grants access to local project data. Use remote access only on
+a trusted network.
+
 ## Run Specifications
 
 To run the configured Specification glob, use:
