@@ -3,7 +3,7 @@ import type {
   TestRunManifest,
   TestRunSummary,
 } from '@pickle-spec/runner'
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Badge } from './components/ui/badge'
 import { Button } from './components/ui/button'
 import { Checkbox } from './components/ui/checkbox'
@@ -78,6 +78,7 @@ export function HistoryPanel(props: HistoryPanelProps) {
   const [selectedRunIds, setSelectedRunIds] = useState<string[]>([])
   const [comparison, setComparison] = useState<TestRunComparison>()
   const [reviewed, setReviewed] = useState<TestRunManifest>()
+  const reviewedSectionRef = useRef<HTMLElement>(null)
   const [includeAllArtifacts, setIncludeAllArtifacts] = useState(false)
   const runs = useMemo(() => sortedRuns(history), [history])
   const runWindow = useVirtualWindow<HTMLDivElement>({
@@ -109,6 +110,10 @@ export function HistoryPanel(props: HistoryPanelProps) {
       cancelled = true
     }
   }, [loadHistory, props.runPhase])
+
+  useEffect(() => {
+    if (reviewed) reviewedSectionRef.current?.focus()
+  }, [reviewed])
 
   async function compareSelected() {
     if (selectedRunIds.length !== 2) return
@@ -225,6 +230,8 @@ export function HistoryPanel(props: HistoryPanelProps) {
       <section
         ref={runWindow.containerRef}
         aria-label="Scrollable test run history"
+        // biome-ignore lint/a11y/noNoninteractiveTabindex: keyboard users must be able to scroll a virtualized region
+        tabIndex={0}
         className="max-h-[32rem] overflow-auto rounded-lg border border-border bg-card"
       >
         <Table aria-label="Test run history">
@@ -244,7 +251,7 @@ export function HistoryPanel(props: HistoryPanelProps) {
           <TableBody>
             <VirtualTableSpacer height={runWindow.before} colSpan={9} />
             {visibleRuns.map((run) => (
-              <TableRow key={run.id} className="h-20">
+              <TableRow key={run.id} style={{ height: historyRowHeight }}>
                 <TableCell>
                   <Checkbox
                     aria-label={`Select ${run.id} for comparison`}
@@ -333,7 +340,12 @@ export function HistoryPanel(props: HistoryPanelProps) {
       {comparison ? <RunComparison comparison={comparison} /> : null}
 
       {reviewed ? (
-        <section className="space-y-3" aria-label={`Test run ${reviewed.id}`}>
+        <section
+          ref={reviewedSectionRef}
+          className="space-y-3"
+          aria-label={`Test run ${reviewed.id}`}
+          tabIndex={-1}
+        >
           <header className="flex flex-wrap items-center justify-between gap-3">
             <div>
               <h3 className="text-sm font-medium">Test run {reviewed.id}</h3>
@@ -364,9 +376,12 @@ export function HistoryPanel(props: HistoryPanelProps) {
               </Button>
               <Button
                 variant="outline"
+                nativeButton={false}
                 render={
                   <a
                     href={`/api/history/${encodeURIComponent(reviewed.id)}/archive`}
+                    // biome-ignore lint/a11y/noRedundantRoles: override Base UI's injected button role
+                    role="link"
                     download
                   />
                 }
@@ -375,9 +390,12 @@ export function HistoryPanel(props: HistoryPanelProps) {
               </Button>
               <Button
                 variant="outline"
+                nativeButton={false}
                 render={
                   <a
                     href={`/api/history/${encodeURIComponent(reviewed.id)}/html?artifacts=${artifactMode}`}
+                    // biome-ignore lint/a11y/noRedundantRoles: override Base UI's injected button role
+                    role="link"
                     download
                   />
                 }
@@ -399,6 +417,8 @@ export function HistoryPanel(props: HistoryPanelProps) {
           <section
             ref={resultWindow.containerRef}
             aria-label="Scrollable test run results"
+            // biome-ignore lint/a11y/noNoninteractiveTabindex: keyboard users must be able to scroll a virtualized region
+            tabIndex={0}
             className="max-h-[32rem] overflow-auto rounded-lg border border-border bg-card"
           >
             <Table aria-label="Test run results">
@@ -416,7 +436,7 @@ export function HistoryPanel(props: HistoryPanelProps) {
                 {visibleResults.map((result) => (
                   <TableRow
                     key={`${result.scenario.id ?? result.scenario.name}:${result.executionTargetProfile.id}`}
-                    className="h-14"
+                    style={{ height: resultRowHeight }}
                   >
                     <TableCell>{result.scenario.name}</TableCell>
                     <TableCell>{result.executionTargetProfile.id}</TableCell>

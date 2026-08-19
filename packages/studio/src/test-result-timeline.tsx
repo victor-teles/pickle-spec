@@ -73,8 +73,12 @@ export function TestResultTimeline(props: {
                 <Button
                   key={artifact.path}
                   variant="ghost"
+                  nativeButton={false}
                   className="mt-3 h-auto w-fit p-0 hover:bg-transparent"
-                  render={<a href={artifactUrl(artifact.path)} />}
+                  render={
+                    // biome-ignore lint/a11y/noRedundantRoles: override Base UI's injected button role
+                    <a href={artifactUrl(artifact.path)} role="link" />
+                  }
                 >
                   <img
                     alt={`${artifact.kind} for ${result.scenario.name}`}
@@ -86,8 +90,12 @@ export function TestResultTimeline(props: {
                 <Button
                   key={artifact.path}
                   variant="link"
+                  nativeButton={false}
                   className="mt-2 h-auto px-0"
-                  render={<a href={artifactUrl(artifact.path)} />}
+                  render={
+                    // biome-ignore lint/a11y/noRedundantRoles: override Base UI's injected button role
+                    <a href={artifactUrl(artifact.path)} role="link" />
+                  }
                 >
                   {artifact.kind}
                 </Button>

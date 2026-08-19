@@ -57,12 +57,11 @@ const areas = [
 const specificationRowHeight = 32
 
 async function api<T>(path: string, init?: RequestInit): Promise<T> {
+  const headers = new Headers(init?.headers)
+  if (token) headers.set('authorization', `Bearer ${token}`)
   const response = await fetch(path, {
     ...init,
-    headers: {
-      ...(init?.headers ?? {}),
-      Authorization: `Bearer ${token}`,
-    },
+    headers,
   })
   if (!response.ok) throw new Error(await response.text())
   return response.json() as Promise<T>
@@ -255,6 +254,7 @@ function StudioApp() {
         {areas.map((item) => (
           <Button
             key={item.name}
+            nativeButton={false}
             variant={
               item.available && item.name === currentArea
                 ? 'secondary'
@@ -263,6 +263,8 @@ function StudioApp() {
             render={
               <a
                 href={`#${item.name.toLowerCase()}`}
+                // biome-ignore lint/a11y/noRedundantRoles: override Base UI's injected button role
+                role="link"
                 aria-current={
                   item.available && item.name === currentArea
                     ? 'page'
@@ -570,7 +572,11 @@ function SpecificationList(props: {
             const index = virtual.start + visibleIndex
             const current = specification.id === props.selectedId
             return (
-              <li key={specification.id} className="h-8 shrink-0">
+              <li
+                key={specification.id}
+                className="shrink-0"
+                style={{ height: specificationRowHeight }}
+              >
                 <Button
                   type="button"
                   variant="ghost"
@@ -579,7 +585,7 @@ function SpecificationList(props: {
                   aria-label={specification.name}
                   aria-current={current ? 'true' : undefined}
                   className={cn(
-                    'h-8 w-full min-w-0 justify-between p-2 text-left',
+                    'h-full w-full min-w-0 justify-between p-2 text-left',
                     current && 'bg-accent font-medium text-accent-foreground',
                   )}
                   onClick={() => props.onSelect(specification.id)}
