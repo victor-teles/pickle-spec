@@ -1,14 +1,12 @@
 {
-  "name": "@pickle-spec/runner",
+  "name": "@pickle-spec/mobile",
   "version": "1.0.2",
   "type": "module",
   "exports": {
-    ".": "./index.ts",
-    "./testing": "./testing.ts"
+    ".": "./index.ts"
   },
   "files": [
     "index.ts",
-    "testing.ts",
     "src/*.ts",
     "!src/*.test.ts"
   ],
@@ -17,7 +15,9 @@
     "test": "bun test"
   },
   "dependencies": {
+    "@pickle-spec/runner": "workspace:*",
     "@pickle-spec/spec": "workspace:*",
+    "agent-device": "catalog:",
     "zod": "catalog:"
   },
   "devDependencies": {

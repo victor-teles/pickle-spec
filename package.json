@@ -13,6 +13,7 @@
       "@cucumber/messages": "^26.0.1",
       "@types/bun": "latest",
       "@typescript/typescript6": "^6.0.2",
+      "agent-device": "^0.20.10",
       "turbo": "^2.8.1",
       "typescript": "^7.0.2",
       "zod": "^4"

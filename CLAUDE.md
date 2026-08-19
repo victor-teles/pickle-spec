@@ -3,6 +3,7 @@ This repository is a Bun + Turborepo monorepo:
 - `packages/spec` — Specification parsing and selection
 - `packages/runner` — scheduling, run events, and test results
 - `packages/web` — Stagehand execution-target adapter
+- `packages/mobile` — Android execution-target adapter and Node worker
 - `packages/cli` — executable package composition
 - `packages/studio` — local Studio UI
 - `apps/example` — sample Specifications
