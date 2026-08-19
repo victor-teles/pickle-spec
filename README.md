@@ -1,6 +1,8 @@
 # Pickle Spec
 
-Pickle Spec runs Gherkin Specifications against execution targets. The current web adapter uses Stagehand for browser automation.
+Pickle Spec runs Gherkin Specifications against execution targets. The web
+adapter uses Stagehand for browser automation, and the mobile adapter uses
+`agent-device` for Android Emulator automation.
 
 ## Package ownership
 
@@ -11,6 +13,7 @@ Each scoped package owns one public boundary.
 | `@pickle-spec/spec` | Parse Specifications and select Scenarios. |
 | `@pickle-spec/runner` | Schedule Scenarios and produce run events and test results. |
 | `@pickle-spec/web` | Adapt Stagehand operations to the runner contract. |
+| `@pickle-spec/mobile` | Adapt Android Emulator operations through an isolated Node worker. |
 | `@pickle-spec/cli` | Compose configuration and public package interfaces. |
 
 The `apps/example` workspace contains sample Specifications.
