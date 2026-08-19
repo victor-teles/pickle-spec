@@ -5,7 +5,7 @@ import type {
 } from '@pickle-spec/runner'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Badge } from './components/ui/badge'
-import { Button } from './components/ui/button'
+import { Button, ButtonLink } from './components/ui/button'
 import { Checkbox } from './components/ui/checkbox'
 import { Input } from './components/ui/input'
 import { Label } from './components/ui/label'
@@ -31,6 +31,7 @@ interface HistoryPanelProps {
   token: string
   runPhase: 'idle' | 'running' | 'finished'
   onRerun: (request: StudioRunRequest) => Promise<void>
+  specification: { name: string; uri: string }
 }
 
 function durationLabel(durationMs: number | undefined): string {
@@ -77,14 +78,22 @@ export function HistoryPanel(props: HistoryPanelProps) {
   const [comparison, setComparison] = useState<TestRunComparison>()
   const [reviewed, setReviewed] = useState<TestRunManifest>()
   const [includeAllArtifacts, setIncludeAllArtifacts] = useState(false)
-  const runs = useMemo(() => sortedRuns(history), [history])
+  const runs = useMemo(
+    () =>
+      sortedRuns(history).filter((run) =>
+        run.specificationUris.includes(props.specification.uri),
+      ),
+    [history, props.specification.uri],
+  )
 
   const loadHistory = useCallback(async () => {
     setHistory(await props.api<StudioHistory>('/api/history'))
   }, [props.api])
+  const shouldLoadHistory =
+    props.runPhase !== 'running' || history === undefined
 
   useEffect(() => {
-    if (props.runPhase === 'running') return
+    if (!shouldLoadHistory) return
     let cancelled = false
     loadHistory().catch((reason: unknown) => {
       if (!cancelled) setError(reasonMessage(reason))
@@ -92,7 +101,7 @@ export function HistoryPanel(props: HistoryPanelProps) {
     return () => {
       cancelled = true
     }
-  }, [loadHistory, props.runPhase])
+  }, [loadHistory, shouldLoadHistory])
 
   async function compareSelected() {
     if (selectedRunIds.length !== 2) return
@@ -168,12 +177,17 @@ export function HistoryPanel(props: HistoryPanelProps) {
     : undefined
 
   return (
-    <main className="min-h-0 flex-1 space-y-5 overflow-auto px-6 py-4">
+    <section
+      aria-labelledby="run-history-title"
+      className="min-h-0 flex-1 space-y-5 overflow-auto px-6 py-4"
+    >
       <header className="flex flex-wrap items-start justify-between gap-3">
         <div className="space-y-1">
-          <h2 className="text-lg font-medium">Test run history</h2>
+          <h3 id="run-history-title" className="text-sm font-medium">
+            Test run history
+          </h3>
           <p className="text-sm text-muted-foreground">
-            Review immutable local test runs and their portable results.
+            Runs containing {props.specification.name}.
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -206,107 +220,110 @@ export function HistoryPanel(props: HistoryPanelProps) {
           {notice}
         </p>
       ) : null}
-      <div className="rounded-lg border border-border bg-card">
-        <Table aria-label="Test run history">
-          <TableHeader>
-            <TableRow>
-              <TableHead>Compare</TableHead>
-              <TableHead>Started</TableHead>
-              <TableHead>Suite</TableHead>
-              <TableHead>Targets</TableHead>
-              <TableHead>Application revision</TableHead>
-              <TableHead>Duration</TableHead>
-              <TableHead>State</TableHead>
-              <TableHead>Results</TableHead>
-              <TableHead>Actions</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {runs.map((run) => (
-              <TableRow key={run.id}>
-                <TableCell>
-                  <Checkbox
-                    aria-label={`Select ${run.id} for comparison`}
-                    checked={selectedRunIds.includes(run.id)}
-                    disabled={
-                      !selectedRunIds.includes(run.id) &&
-                      selectedRunIds.length === 2
-                    }
-                    onCheckedChange={(checked) =>
-                      setSelectedRunIds((current) =>
-                        checked
-                          ? [...current, run.id]
-                          : current.filter((id) => id !== run.id),
-                      )
-                    }
-                  />
-                </TableCell>
-                <TableCell>
-                  <span className="block">
-                    {new Date(run.startedAt).toLocaleString()}
-                  </span>
-                  <span className="font-mono text-muted-foreground">
-                    {run.id}
-                  </span>
-                </TableCell>
-                <TableCell>{run.suite ?? 'Ad hoc selection'}</TableCell>
-                <TableCell>
-                  {run.executionTargetProfileIds.join(', ') || 'None'}
-                </TableCell>
-                <TableCell>{run.applicationRevision ?? 'Not set'}</TableCell>
-                <TableCell>{durationLabel(run.durationMs)}</TableCell>
-                <TableCell>
-                  <Badge variant={stateVariant(run.state)}>
-                    <ResultMark state={run.state} />
-                    {run.state}
-                  </Badge>
-                </TableCell>
-                <TableCell>{resultCountLabel(run.resultCount)}</TableCell>
-                <TableCell>
-                  <div className="flex items-center gap-2">
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={() => void reviewRun(run.id)}
-                    >
-                      Review run
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      disabled={
-                        props.runPhase === 'running' ||
-                        (run.state !== 'failed' &&
-                          run.state !== 'infrastructure-error')
-                      }
-                      onClick={() =>
-                        void props.onRerun({
-                          rerunId: run.id,
-                          failures: true,
-                        })
-                      }
-                    >
-                      Rerun failures
-                    </Button>
-                  </div>
-                  {run.sourceRunId ? (
-                    <span className="mt-1 block text-muted-foreground">
-                      Rerun of {run.sourceRunId}
-                    </span>
-                  ) : null}
-                </TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-        {runs.length === 0 ? (
-          <p className="p-4 text-sm text-muted-foreground">
-            No local test runs yet.
+      {runs.length === 0 ? (
+        <div className="rounded-lg border border-dashed border-border px-4 py-8 text-center">
+          <p className="text-sm text-muted-foreground">
+            No test runs for this Specification yet.
           </p>
-        ) : null}
-      </div>
+        </div>
+      ) : (
+        <div className="rounded-lg border border-border bg-card">
+          <Table aria-label="Test run history">
+            <TableHeader>
+              <TableRow>
+                <TableHead>Compare</TableHead>
+                <TableHead>Started</TableHead>
+                <TableHead>Suite</TableHead>
+                <TableHead>Targets</TableHead>
+                <TableHead>Application revision</TableHead>
+                <TableHead>Duration</TableHead>
+                <TableHead>State</TableHead>
+                <TableHead>Results</TableHead>
+                <TableHead>Actions</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {runs.map((run) => (
+                <TableRow key={run.id}>
+                  <TableCell>
+                    <Checkbox
+                      aria-label={`Select ${run.id} for comparison`}
+                      checked={selectedRunIds.includes(run.id)}
+                      disabled={
+                        !selectedRunIds.includes(run.id) &&
+                        selectedRunIds.length === 2
+                      }
+                      onCheckedChange={(checked) =>
+                        setSelectedRunIds((current) =>
+                          checked
+                            ? [...current, run.id]
+                            : current.filter((id) => id !== run.id),
+                        )
+                      }
+                    />
+                  </TableCell>
+                  <TableCell>
+                    <span className="block">
+                      {new Date(run.startedAt).toLocaleString()}
+                    </span>
+                    <span className="font-mono text-muted-foreground">
+                      {run.id}
+                    </span>
+                  </TableCell>
+                  <TableCell>{run.suite ?? 'Ad hoc selection'}</TableCell>
+                  <TableCell>
+                    {run.executionTargetProfileIds.join(', ') || 'None'}
+                  </TableCell>
+                  <TableCell>{run.applicationRevision ?? 'Not set'}</TableCell>
+                  <TableCell>{durationLabel(run.durationMs)}</TableCell>
+                  <TableCell>
+                    <Badge variant={stateVariant(run.state)}>
+                      <ResultMark state={run.state} />
+                      {run.state}
+                    </Badge>
+                  </TableCell>
+                  <TableCell>{resultCountLabel(run.resultCount)}</TableCell>
+                  <TableCell>
+                    <div className="flex items-center gap-2">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => void reviewRun(run.id)}
+                      >
+                        Review run
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        disabled={
+                          props.runPhase === 'running' ||
+                          (run.state !== 'failed' &&
+                            run.state !== 'infrastructure-error')
+                        }
+                        onClick={() =>
+                          void props.onRerun({
+                            rerunId: run.id,
+                            failures: true,
+                          })
+                        }
+                      >
+                        Rerun failures
+                      </Button>
+                    </div>
+                    {run.sourceRunId ? (
+                      <span className="mt-1 block text-muted-foreground">
+                        Rerun of {run.sourceRunId}
+                      </span>
+                    ) : null}
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
+      )}
 
       {comparison ? <RunComparison comparison={comparison} /> : null}
 
@@ -340,28 +357,20 @@ export function HistoryPanel(props: HistoryPanelProps) {
               >
                 Rerun adaptations
               </Button>
-              <Button
+              <ButtonLink
                 variant="outline"
-                render={
-                  <a
-                    href={`/api/history/${encodeURIComponent(reviewed.id)}/archive?token=${encodeURIComponent(props.token)}`}
-                    download
-                  />
-                }
+                href={`/api/history/${encodeURIComponent(reviewed.id)}/archive?token=${encodeURIComponent(props.token)}`}
+                download
               >
                 Export archive
-              </Button>
-              <Button
+              </ButtonLink>
+              <ButtonLink
                 variant="outline"
-                render={
-                  <a
-                    href={`/api/history/${encodeURIComponent(reviewed.id)}/html?token=${encodeURIComponent(props.token)}&artifacts=${artifactMode}`}
-                    download
-                  />
-                }
+                href={`/api/history/${encodeURIComponent(reviewed.id)}/html?token=${encodeURIComponent(props.token)}&artifacts=${artifactMode}`}
+                download
               >
                 Export HTML
-              </Button>
+              </ButtonLink>
               <span className="flex items-center gap-2">
                 <Checkbox
                   id="complete-artifacts"
@@ -446,7 +455,8 @@ export function HistoryPanel(props: HistoryPanelProps) {
           <div>
             <h3 className="text-sm font-medium">Retention</h3>
             <p className="text-xs text-muted-foreground">
-              {retentionDays} days · {bytesLabel(history.retention.maxBytes)}
+              All local runs · {retentionDays} days ·{' '}
+              {bytesLabel(history.retention.maxBytes)}
             </p>
           </div>
           <Button
@@ -458,7 +468,7 @@ export function HistoryPanel(props: HistoryPanelProps) {
           </Button>
         </section>
       ) : null}
-    </main>
+    </section>
   )
 }
 

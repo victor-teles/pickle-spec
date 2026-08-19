@@ -156,32 +156,14 @@ export default {
 
     expect(stderr).toBe('')
     expect(exitCode).toBe(0)
-    const records = stdout
-      .trim()
-      .split('\n')
-      .map((line) => JSON.parse(line))
-    expect(
-      records
-        .filter((record) => record.kind === 'run-event')
-        .map((record) => record.event.type),
-    ).toEqual([
-      'scenario-started',
-      'step-started',
-      'step-finished',
-      'step-started',
-      'step-finished',
-      'scenario-finished',
-    ])
-    expect(records.at(-1)).toMatchObject({
-      kind: 'test-result',
-      result: {
-        schemaVersion: 1,
-        specification: { name: 'Purchase' },
-        scenario: { name: 'Complete a purchase' },
-        executionTargetProfile: { id: 'deterministic' },
-        state: 'passed',
-      },
-    })
+    expect(stdout).toContain('RUN  pickle run')
+    expect(stdout).toContain(
+      'purchase.feature > Purchase > Complete a purchase [deterministic]',
+    )
+    expect(stdout).toContain('Scenarios  1 passed (1)')
+    expect(stdout).toContain('Duration')
+    expect(stdout).not.toContain('"kind":"run-event"')
+    expect(stdout).not.toContain('"kind":"test-result"')
     expect(stdout).not.toContain('gherkinDocument')
     expect(stdout).not.toContain('Stagehand')
   })
@@ -662,6 +644,8 @@ Feature: Checkout
           'deterministic.config.jsonc',
           '--extensions',
           'pickle.extensions.ts',
+          '--reporter',
+          'ndjson',
         ],
         cwd: workspace,
         env: { ...Bun.env, PICKLE_TEST_OUTCOME: expected.outcome },
@@ -702,6 +686,8 @@ Feature: Checkout
         'deterministic.config.jsonc',
         '--extensions',
         'pickle.extensions.ts',
+        '--reporter',
+        'ndjson',
       ],
       cwd: workspace,
       env: {
@@ -826,6 +812,8 @@ export default {
         'pickle.config.jsonc',
         '--extensions',
         'web.extensions.ts',
+        '--reporter',
+        'ndjson',
       ],
       cwd: workspace,
       env: { ...Bun.env },
@@ -913,7 +901,7 @@ Feature: Search
     )
 
     const run = Bun.spawnSync({
-      cmd: [pickleCommand, 'run', '--suite', 'smoke'],
+      cmd: [pickleCommand, 'run', '--suite', 'smoke', '--reporter', 'ndjson'],
       cwd: project,
       env: { ...Bun.env, PICKLE_TEST_OUTCOME: 'passed' },
     })
@@ -986,7 +974,7 @@ export default {
     })
 
     const run = Bun.spawnSync({
-      cmd: [pickleCommand, 'run'],
+      cmd: [pickleCommand, 'run', '--reporter', 'ndjson'],
       cwd: project,
       env: { ...Bun.env },
     })
@@ -1168,7 +1156,7 @@ Feature: Purchase
     )
 
     const first = Bun.spawnSync({
-      cmd: [pickleCommand, 'run', '--profile', 'web'],
+      cmd: [pickleCommand, 'run', '--profile', 'web', '--reporter', 'ndjson'],
       cwd: project,
       env: { ...Bun.env, PICKLE_TEST_OUTCOME: 'passed' },
     })
@@ -1197,7 +1185,7 @@ Feature: Purchase
     await Bun.write(candidatePath, 'stale-candidate')
 
     const replay = Bun.spawnSync({
-      cmd: [pickleCommand, 'run', '--profile', 'web'],
+      cmd: [pickleCommand, 'run', '--profile', 'web', '--reporter', 'ndjson'],
       cwd: project,
       env: { ...Bun.env, PICKLE_TEST_OUTCOME: 'passed' },
     })
@@ -1212,7 +1200,14 @@ Feature: Purchase
     expect(await Bun.file(candidatePath).text()).toBe('stale-candidate')
 
     const otherProfile = Bun.spawnSync({
-      cmd: [pickleCommand, 'run', '--profile', 'android'],
+      cmd: [
+        pickleCommand,
+        'run',
+        '--profile',
+        'android',
+        '--reporter',
+        'ndjson',
+      ],
       cwd: project,
       env: { ...Bun.env, PICKLE_TEST_OUTCOME: 'passed' },
     })
@@ -1244,7 +1239,7 @@ Feature: Purchase
       }),
     )
     const rejected = Bun.spawnSync({
-      cmd: [pickleCommand, 'run', '--profile', 'web'],
+      cmd: [pickleCommand, 'run', '--profile', 'web', '--reporter', 'ndjson'],
       cwd: project,
       env: { ...Bun.env, PICKLE_TEST_OUTCOME: 'passed-with-adaptation' },
     })
@@ -1312,6 +1307,8 @@ Feature: Purchase
         jsonPath,
         '--ndjson',
         ndjsonPath,
+        '--reporter',
+        'ndjson',
       ],
       cwd: project,
       env: { ...Bun.env, PICKLE_TEST_OUTCOME: 'passed' },
@@ -1745,6 +1742,8 @@ export default {
         '--extensions',
         'web.extensions.ts',
         '--fast',
+        '--reporter',
+        'ndjson',
       ],
       cwd: project,
       env: { ...Bun.env },
@@ -1841,7 +1840,7 @@ Feature: Slow checkout
     await priorRun.materialize({ finished: true })
 
     const run = Bun.spawnSync({
-      cmd: [pickleCommand, 'run', '--shard', '2/2'],
+      cmd: [pickleCommand, 'run', '--shard', '2/2', '--reporter', 'ndjson'],
       cwd: project,
       env: { ...Bun.env, PICKLE_TEST_OUTCOME: 'passed' },
     })

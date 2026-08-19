@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Badge } from './components/ui/badge'
-import { Button } from './components/ui/button'
+import { Button, ButtonLink } from './components/ui/button'
 import { Input } from './components/ui/input'
 import { Label } from './components/ui/label'
 import type {
@@ -55,29 +55,19 @@ function LinkLabel(props: { link: ExternalLink; href?: string }) {
   const label = `${props.link.namespace}:${props.link.id}`
   if (!props.href) return <span className="font-mono text-xs">{label}</span>
   return (
-    <Button
-      variant="link"
-      className="h-auto px-0"
-      render={<a href={props.href} />}
-    >
+    <ButtonLink variant="link" className="h-auto px-0" href={props.href}>
       {label}
-    </Button>
+    </ButtonLink>
   )
 }
 
 export function SpecificationMetadataForm(props: {
   buffer: SpecificationBuffer
+  source: string
   namespaces: readonly string[]
   templates?: Readonly<Record<string, string>>
   api: <T>(path: string, init?: RequestInit) => Promise<T>
-  onReview: (input: {
-    title: string
-    description: string
-    diff: string
-    confirmLabel: string
-    onConfirm: () => Promise<void>
-  }) => void
-  onWrite: (source: string) => Promise<void>
+  onChange: (source: string) => void
   onError: (message: string | undefined) => void
 }) {
   const tags = props.buffer.specification.tags
@@ -109,7 +99,7 @@ export function SpecificationMetadataForm(props: {
           headers: { 'content-type': 'application/json' },
           body: JSON.stringify({
             uri: props.buffer.uri,
-            source: props.buffer.source,
+            source: props.source,
             metadata: {
               state,
               tags: tagText
@@ -125,17 +115,8 @@ export function SpecificationMetadataForm(props: {
         setEditing(false)
         return
       }
-      props.onReview({
-        title: 'Review Specification metadata',
-        description:
-          'State, tags, and external links update Gherkin tags. Confirm to write the Specification.',
-        diff: preview.diff,
-        confirmLabel: 'Save metadata',
-        onConfirm: async () => {
-          await props.onWrite(preview.source)
-          setEditing(false)
-        },
-      })
+      props.onChange(preview.source)
+      setEditing(false)
     } catch (reason) {
       props.onError(reasonMessage(reason))
     }
@@ -290,7 +271,7 @@ export function SpecificationMetadataForm(props: {
           Cancel
         </Button>
         <Button type="button" onClick={() => void save()}>
-          Save metadata
+          Apply metadata
         </Button>
       </div>
     </section>

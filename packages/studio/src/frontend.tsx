@@ -4,6 +4,14 @@ import { Badge } from './components/ui/badge'
 import { Button } from './components/ui/button'
 import { LoadingState } from './components/ui/loading-state'
 import { ResultMark } from './components/ui/result-mark'
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from './components/ui/table'
 import { HistoryPanel } from './history'
 import { cn } from './lib/utils'
 import { PlansPanel } from './plans'
@@ -32,12 +40,7 @@ import type {
 import { TestResultTimeline } from './test-result-timeline'
 
 const token = new URLSearchParams(location.search).get('token') ?? ''
-const areas = [
-  { name: 'Specifications', available: true },
-  { name: 'Runs', available: true },
-  { name: 'Plans', available: true },
-  { name: 'Settings', available: true },
-] as const
+const areas = ['Specifications', 'Plans', 'Settings'] as const
 
 async function api<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(path, {
@@ -96,7 +99,10 @@ function StudioApp() {
   const [runId, setRunId] = useState<string>()
   const [selectedId, setSelectedId] = useState<string>()
   const [currentArea, setCurrentArea] =
-    useState<(typeof areas)[number]['name']>('Specifications')
+    useState<(typeof areas)[number]>('Specifications')
+  const [specificationSection, setSpecificationSection] = useState<
+    'scenarios' | 'history'
+  >('scenarios')
   const [view, setView] = useState<RunView>(emptyRunView)
   const [authoring, setAuthoring] = useState(false)
   const running = view.phase === 'running'
@@ -215,47 +221,23 @@ function StudioApp() {
         <h1 className="text-xl font-semibold tracking-tight">{project.name}</h1>
         <StatusBadge state={aggregate} />
       </header>
-      <nav
-        aria-label="Studio"
-        className="flex gap-px border-b border-border px-2 py-1"
-      >
-        {areas.map((item) => (
-          <Button
-            key={item.name}
-            variant={
-              item.available && item.name === currentArea
-                ? 'secondary'
-                : 'ghost'
-            }
-            render={
-              <a
-                href={`#${item.name.toLowerCase()}`}
-                aria-current={
-                  item.available && item.name === currentArea
-                    ? 'page'
-                    : undefined
-                }
-                aria-disabled={item.available ? undefined : true}
-                tabIndex={item.available ? undefined : -1}
-              />
-            }
-            className={
-              item.available
-                ? undefined
-                : 'pointer-events-none text-muted-foreground opacity-60'
-            }
-            onClick={(event) => {
-              if (!item.available) {
-                event.preventDefault()
-                return
-              }
-              setCurrentArea(item.name)
-            }}
-          >
-            {item.name}
-          </Button>
-        ))}
-      </nav>
+      {authoring ? null : (
+        <nav
+          aria-label="Studio"
+          className="flex gap-px border-b border-border px-2 py-1"
+        >
+          {areas.map((area) => (
+            <Button
+              key={area}
+              variant={area === currentArea ? 'secondary' : 'ghost'}
+              aria-current={area === currentArea ? 'page' : undefined}
+              onClick={() => setCurrentArea(area)}
+            >
+              {area}
+            </Button>
+          ))}
+        </nav>
+      )}
       {currentArea === 'Settings' ? (
         <div className="min-h-0 flex-1 overflow-auto">
           <SettingsPanel
@@ -271,23 +253,26 @@ function StudioApp() {
           running={running}
           api={api}
         />
-      ) : currentArea === 'Runs' ? (
-        <HistoryPanel
-          api={api}
-          token={token}
-          runPhase={view.phase}
-          onRerun={startRun}
-        />
       ) : (
-        <div className="grid min-h-0 flex-1 lg:grid-cols-[16rem_1fr]">
-          <SpecificationList
-            specifications={project.specifications}
-            selectedId={selected?.id}
-            running={running}
-            canRun={canRunAll}
-            onSelect={setSelectedId}
-            onRunAll={() => void startRun({})}
-          />
+        <div
+          className={cn(
+            'min-h-0 flex-1',
+            authoring ? 'flex' : 'grid lg:grid-cols-[16rem_1fr]',
+          )}
+        >
+          {authoring ? null : (
+            <SpecificationList
+              specifications={project.specifications}
+              selectedId={selected?.id}
+              running={running}
+              canRun={canRunAll}
+              onSelect={(id) => {
+                setSelectedId(id)
+                setSpecificationSection('scenarios')
+              }}
+              onRunAll={() => void startRun({})}
+            />
+          )}
           <main
             className="flex min-h-0 min-w-0 flex-1 flex-col"
             aria-busy={running}
@@ -313,21 +298,13 @@ function StudioApp() {
                         {selected.uri}
                       </p>
                     </div>
-                    {running && runId ? (
+                    {authoring && running && runId ? (
                       <Button
                         type="button"
                         variant="destructive"
                         onClick={() => void cancelRun()}
                       >
                         Cancel test run
-                      </Button>
-                    ) : specCanRun ? (
-                      <Button
-                        type="button"
-                        disabled={running}
-                        onClick={() => void startRun({ paths: [selected.uri] })}
-                      >
-                        Run Specification
                       </Button>
                     ) : null}
                   </div>
@@ -337,33 +314,111 @@ function StudioApp() {
                     </p>
                   ) : null}
                   <div
-                    className={
-                      authoring ? 'flex min-h-0 flex-1 flex-col' : undefined
-                    }
+                    className={cn(
+                      authoring
+                        ? 'flex min-h-0 flex-1 flex-col'
+                        : 'flex flex-wrap items-center gap-2',
+                    )}
                   >
-                    <SpecificationEditor
-                      uri={selected.uri}
-                      model={project.model}
-                      namespaces={Object.keys(project.links ?? {})}
-                      linkTemplates={project.links}
-                      api={api}
-                      onModeChange={(mode) => setAuthoring(mode === 'edit')}
-                      onCatalogChange={async () => {
-                        await reloadProject()
-                      }}
-                      onCreated={(uri) => {
-                        void reloadProject().then((value) => {
-                          const created = value.specifications.find(
-                            (item) => item.uri === uri,
-                          )
-                          if (created) setSelectedId(created.id)
-                        })
-                      }}
-                      onError={(message) => setError(message)}
-                    />
+                    {authoring ? null : (
+                      <nav
+                        aria-label="Specification"
+                        className="flex w-fit gap-px rounded-md bg-muted/50 p-0.5"
+                      >
+                        <Button
+                          type="button"
+                          variant={
+                            specificationSection === 'scenarios'
+                              ? 'secondary'
+                              : 'ghost'
+                          }
+                          aria-current={
+                            specificationSection === 'scenarios'
+                              ? 'page'
+                              : undefined
+                          }
+                          onClick={() => setSpecificationSection('scenarios')}
+                        >
+                          Scenarios
+                        </Button>
+                        <Button
+                          type="button"
+                          variant={
+                            specificationSection === 'history'
+                              ? 'secondary'
+                              : 'ghost'
+                          }
+                          aria-current={
+                            specificationSection === 'history'
+                              ? 'page'
+                              : undefined
+                          }
+                          onClick={() => setSpecificationSection('history')}
+                        >
+                          History
+                        </Button>
+                      </nav>
+                    )}
+                    <div
+                      className={cn(
+                        authoring
+                          ? 'flex min-h-0 flex-1 flex-col'
+                          : 'ml-auto flex shrink-0 items-center gap-2',
+                      )}
+                    >
+                      {authoring ? null : running && runId ? (
+                        <Button
+                          type="button"
+                          variant="destructive"
+                          onClick={() => void cancelRun()}
+                        >
+                          Cancel test run
+                        </Button>
+                      ) : specCanRun ? (
+                        <Button
+                          type="button"
+                          disabled={running}
+                          onClick={() =>
+                            void startRun({ paths: [selected.uri] })
+                          }
+                        >
+                          Run Specification
+                        </Button>
+                      ) : null}
+                      {specificationSection === 'scenarios' ? (
+                        <SpecificationEditor
+                          uri={selected.uri}
+                          namespaces={Object.keys(project.links ?? {})}
+                          linkTemplates={project.links}
+                          api={api}
+                          onModeChange={(mode) => setAuthoring(mode === 'edit')}
+                          onCatalogChange={async () => {
+                            await reloadProject()
+                          }}
+                          onCreated={(uri) => {
+                            void reloadProject().then((value) => {
+                              const created = value.specifications.find(
+                                (item) => item.uri === uri,
+                              )
+                              if (created) setSelectedId(created.id)
+                            })
+                          }}
+                          onError={(message) => setError(message)}
+                        />
+                      ) : null}
+                    </div>
                   </div>
                 </header>
-                {authoring ? null : (
+                {authoring ? null : specificationSection === 'history' ? (
+                  <HistoryPanel
+                    key={selected.uri}
+                    api={api}
+                    token={token}
+                    runPhase={view.phase}
+                    specification={selected}
+                    onRerun={startRun}
+                  />
+                ) : (
                   <div className="min-h-0 flex-1 space-y-6 overflow-auto px-6 py-4">
                     <ScenarioTable
                       profiles={project.profiles}
@@ -526,49 +581,45 @@ function ScenarioTable(props: {
   }
 
   return (
-    <div className="overflow-auto rounded-lg border border-border bg-card">
-      <table aria-label="Scenarios" className="w-full text-sm">
-        <thead>
-          <tr className="border-b border-border">
-            <th scope="col" className="px-3 py-2 text-left font-medium">
-              Scenario
-            </th>
+    <div className="overflow-hidden rounded-lg border border-border bg-card">
+      <Table
+        aria-label="Scenarios"
+        className="text-sm"
+        style={{ tableLayout: 'fixed' }}
+      >
+        <TableHeader>
+          <TableRow>
+            <TableHead className="px-3 py-2">Scenario</TableHead>
             {props.profiles.map((profile) => (
-              <th
-                key={profile}
-                scope="col"
-                className="px-3 py-2 text-left font-medium"
-              >
+              <TableHead key={profile} className="w-24 px-3 py-2">
                 {profile}
-              </th>
+              </TableHead>
             ))}
-            <th scope="col" className="px-3 py-2 text-right font-medium">
+            <TableHead className="w-16 px-3 py-2 text-right">
               <span className="sr-only">Run</span>
-            </th>
-          </tr>
-        </thead>
-        <tbody>
+            </TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
           {props.scenarios.length === 0 ? (
-            <tr>
-              <td
+            <TableRow>
+              <TableCell
                 colSpan={2 + props.profiles.length}
                 className="px-3 py-6 text-muted-foreground"
               >
                 This Specification has no Scenarios.
-              </td>
-            </tr>
+              </TableCell>
+            </TableRow>
           ) : (
             props.scenarios.map((scenario) => (
-              <tr
-                key={scenario.id}
-                className="border-b border-border last:border-0"
-              >
-                <th
+              <TableRow key={scenario.id}>
+                <TableHead
                   scope="row"
-                  className="max-w-56 truncate px-3 py-2 text-left font-medium"
+                  className="max-w-0 truncate px-3 py-2"
+                  title={scenario.name}
                 >
                   {scenario.name}
-                </th>
+                </TableHead>
                 {props.profiles.map((profile) => {
                   const cell = cellFor(scenario.id, profile)
                   const label = `${scenario.name} ${profile} ${cell?.state ?? 'pending'}`
@@ -576,7 +627,7 @@ function ScenarioTable(props: {
                     ? isSelectedCell(props.selected, cell)
                     : false
                   return (
-                    <td key={profile} className="px-3 py-2">
+                    <TableCell key={profile} className="w-24 px-3 py-2">
                       {cell ? (
                         <Button
                           type="button"
@@ -593,10 +644,10 @@ function ScenarioTable(props: {
                       ) : (
                         <span className="text-muted-foreground">pending</span>
                       )}
-                    </td>
+                    </TableCell>
                   )
                 })}
-                <td className="px-3 py-2 text-right">
+                <TableCell className="w-16 px-3 py-2 text-right">
                   {scenario.canRun !== false ? (
                     <Button
                       type="button"
@@ -609,12 +660,12 @@ function ScenarioTable(props: {
                       Run
                     </Button>
                   ) : null}
-                </td>
-              </tr>
+                </TableCell>
+              </TableRow>
             ))
           )}
-        </tbody>
-      </table>
+        </TableBody>
+      </Table>
     </div>
   )
 }

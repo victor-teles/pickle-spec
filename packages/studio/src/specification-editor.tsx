@@ -14,7 +14,6 @@ import { Textarea } from './components/ui/textarea'
 import { GherkinEditor } from './gherkin-editor'
 import type { GherkinCatalog } from './gherkin-language'
 import { SpecificationMetadataForm } from './specification-metadata'
-import { SpecificationOutline } from './specification-outline'
 
 export type StructuredStep = {
   keyword: string
@@ -70,11 +69,6 @@ export type SpecificationBuffer = {
 
 export type SpecificationPreview = SpecificationBuffer & { diff: string }
 
-export type StudioAuthoringModel = {
-  provider: string
-  name: string
-}
-
 type ReviewState = {
   title: string
   description: string
@@ -126,7 +120,6 @@ function conflictFromReason(reason: unknown): ConflictState | undefined {
 
 export function SpecificationEditor(props: {
   uri: string
-  model?: StudioAuthoringModel
   namespaces?: readonly string[]
   linkTemplates?: Readonly<Record<string, string>>
   api: <T>(path: string, init?: RequestInit) => Promise<T>
@@ -327,100 +320,89 @@ export function SpecificationEditor(props: {
   return (
     <div
       className={
-        mode === 'edit' ? 'flex min-h-0 flex-1 flex-col gap-3' : 'space-y-3'
+        mode === 'edit' ? 'flex min-h-0 flex-1 flex-col gap-3' : undefined
       }
     >
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-          <p
-            role="status"
-            aria-label="Active model"
-            className="font-mono text-xs text-muted-foreground"
-          >
-            {props.model
-              ? `${props.model.provider} / ${props.model.name}`
-              : 'Model not configured'}
-          </p>
-          {mode === 'edit' && dirty ? (
-            <p
-              role="status"
-              className="font-mono text-xs text-muted-foreground"
-            >
-              Unsaved Gherkin
-            </p>
-          ) : null}
-        </div>
-        {mode === 'view' ? (
-          <Button
-            type="button"
-            variant="outline"
-            onClick={() => setEditorMode('edit')}
-          >
-            Edit Specification
-          </Button>
-        ) : (
-          <div className="flex flex-wrap gap-2">
-            <Button type="button" variant="outline" onClick={requestView}>
-              View Specification
-            </Button>
-            <Button type="button" onClick={() => void save()} disabled={!dirty}>
-              Save Specification
-            </Button>
-          </div>
-        )}
-      </div>
       {mode === 'view' ? (
+        <Button
+          type="button"
+          variant="outline"
+          onClick={() => setEditorMode('edit')}
+        >
+          Edit Specification
+        </Button>
+      ) : (
         <>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            {dirty ? (
+              <p
+                role="status"
+                className="font-mono text-xs text-muted-foreground"
+              >
+                Unsaved Gherkin
+              </p>
+            ) : null}
+            <div className="ml-auto flex flex-wrap gap-2">
+              <Button type="button" variant="outline" onClick={requestView}>
+                View Specification
+              </Button>
+              <Button
+                type="button"
+                onClick={() => void save()}
+                disabled={!dirty}
+              >
+                Save Specification
+              </Button>
+            </div>
+          </div>
           <SpecificationMetadataForm
             key={buffer.uri}
             buffer={buffer}
+            source={source}
             namespaces={props.namespaces ?? []}
             templates={props.linkTemplates}
             api={props.api}
-            onReview={setReview}
-            onWrite={write}
+            onChange={setSource}
             onError={props.onError}
           />
-          <SpecificationOutline specification={buffer.specification} />
-        </>
-      ) : (
-        <div className="flex min-h-0 flex-1 flex-col gap-3">
-          <GherkinEditor
-            source={source}
-            catalog={catalog}
-            onChange={setSource}
-          />
-          <div className="space-y-2 rounded-lg border border-border bg-card p-3">
-            <Label htmlFor="specification-prompt">AI assistance</Label>
-            <Textarea
-              id="specification-prompt"
-              aria-label="AI prompt"
-              placeholder="Describe a change or a new Specification"
-              value={prompt}
-              onChange={(event) => setPrompt(event.target.value)}
+          <div className="flex min-h-0 flex-1 flex-col gap-3">
+            <GherkinEditor
+              source={source}
+              catalog={catalog}
+              onChange={setSource}
             />
-            <div className="space-y-1">
-              <Label htmlFor="new-specification-uri">
-                New Specification path
-              </Label>
-              <Input
-                id="new-specification-uri"
-                aria-label="New Specification path"
-                placeholder="features/search.feature"
-                value={newUri}
-                onChange={(event) => setNewUri(event.target.value)}
+            <div className="space-y-2 rounded-lg border border-border bg-card p-3">
+              <Label htmlFor="specification-prompt">AI assistance</Label>
+              <Textarea
+                id="specification-prompt"
+                aria-label="AI prompt"
+                placeholder="Describe a change or a new Specification"
+                value={prompt}
+                onChange={(event) => setPrompt(event.target.value)}
               />
+              <div className="space-y-1">
+                <Label htmlFor="new-specification-uri">
+                  New Specification path
+                </Label>
+                <Input
+                  id="new-specification-uri"
+                  aria-label="New Specification path"
+                  placeholder="features/search.feature"
+                  value={newUri}
+                  onChange={(event) => setNewUri(event.target.value)}
+                />
+              </div>
+              <Button
+                type="button"
+                variant="outline"
+                disabled={!prompt.trim()}
+                onClick={() => void propose()}
+              >
+                Propose Specification
+              </Button>
             </div>
-            <Button
-              type="button"
-              variant="outline"
-              disabled={!prompt.trim()}
-              onClick={() => void propose()}
-            >
-              Propose Specification
-            </Button>
           </div>
-        </div>
+        </>
       )}
       <Dialog
         open={Boolean(review)}

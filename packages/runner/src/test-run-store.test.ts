@@ -247,6 +247,7 @@ test('rebuilds the query index from persisted test runs after it is deleted', as
     {
       id: 'run-1',
       executionTargetProfileIds: ['deterministic'],
+      specificationUris: ['features/checkout.feature'],
       startedAt: '2026-08-15T12:00:00.000Z',
       finishedAt: '2026-08-15T12:00:00.000Z',
       durationMs: 0,
@@ -256,6 +257,7 @@ test('rebuilds the query index from persisted test runs after it is deleted', as
     {
       id: 'run-2',
       executionTargetProfileIds: ['deterministic'],
+      specificationUris: ['features/checkout.feature'],
       startedAt: '2026-08-15T12:00:00.000Z',
       finishedAt: '2026-08-15T12:00:00.000Z',
       durationMs: 0,
@@ -307,6 +309,7 @@ test('lists immutable history metadata for Studio after rebuilding the index', a
       id: 'run-history',
       suite: 'checkout',
       executionTargetProfileIds: ['android', 'deterministic'],
+      specificationUris: ['features/checkout.feature'],
       applicationRevision: 'app-42',
       startedAt: '2026-08-15T12:00:00.000Z',
       finishedAt: '2026-08-15T12:00:03.500Z',
@@ -349,6 +352,7 @@ test('backfills history metadata when opening an older query index', async () =>
     {
       id: 'run-existing',
       executionTargetProfileIds: ['deterministic'],
+      specificationUris: ['features/checkout.feature'],
       applicationRevision: 'app-42',
       startedAt: '2026-08-15T12:00:00.000Z',
       finishedAt: '2026-08-15T12:00:00.000Z',
@@ -381,6 +385,7 @@ test('rebuilds the query index from an events-only test run', async () => {
     {
       id: 'run-recovered',
       executionTargetProfileIds: ['deterministic'],
+      specificationUris: ['features/checkout.feature'],
       startedAt: '2026-08-15T12:00:00.000Z',
       state: 'passed',
       resultCount: 1,
@@ -584,6 +589,7 @@ test('retention removes eligible local data without changing retained test runs'
     {
       id: 'run-2',
       executionTargetProfileIds: ['deterministic'],
+      specificationUris: ['features/checkout.feature'],
       startedAt: '2026-08-15T00:00:00.000Z',
       finishedAt: '2026-08-15T00:00:00.000Z',
       durationMs: 0,
@@ -675,6 +681,7 @@ test('retention evicts the oldest runs when stored bytes exceed the limit', asyn
     {
       id: 'run-2',
       executionTargetProfileIds: ['deterministic'],
+      specificationUris: ['features/checkout.feature'],
       startedAt: '2026-08-15T00:00:00.000Z',
       finishedAt: '2026-08-15T00:00:00.000Z',
       durationMs: 0,

@@ -3,6 +3,7 @@ import {
   localBrowser,
   type ModelConfig,
   Stagehand,
+  type StagehandCreateOptions,
 } from '@browserbasehq/stagehand'
 import { z } from 'zod'
 import { abortError } from './abort'
@@ -233,17 +234,20 @@ export const stagehandFactory: WebAutomationFactory = {
         defaultDomSettleTimeoutMs
       const cache = context.browser.cache ?? options.cache
 
-      stagehand = await Stagehand.create({
+      const model: ModelConfig = {
+        modelName: modelName as ModelConfig['modelName'],
+      }
+      if (modelApiKey !== undefined) model.apiKey = modelApiKey
+      const createOptions: StagehandCreateOptions = {
         browser,
-        model: {
-          modelName: modelName as ModelConfig['modelName'],
-          apiKey: modelApiKey,
-        },
+        model,
         logging: { level: 'off', format: 'json' },
         selfHeal,
         domSettleTimeoutMs,
-        cache,
-      })
+      }
+      if (cache !== undefined) createOptions.cache = cache
+
+      stagehand = await Stagehand.create(createOptions)
       return stagehand
     }
 

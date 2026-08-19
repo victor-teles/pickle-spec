@@ -1,5 +1,5 @@
 import type { ResolvedAction } from '@pickle-spec/runner'
-import { Button } from './components/ui/button'
+import { ButtonLink } from './components/ui/button'
 
 type TimelineResult = {
   scenario: { name: string }
@@ -72,27 +72,27 @@ export function TestResultTimeline(props: {
             ) : null}
             {step.artifacts?.map((artifact) =>
               artifact.mediaType?.startsWith('image/') ? (
-                <Button
+                <ButtonLink
                   key={artifact.path}
                   variant="ghost"
                   className="mt-3 h-auto w-fit p-0 hover:bg-transparent"
-                  render={<a href={artifactUrl(artifact.path)} />}
+                  href={artifactUrl(artifact.path)}
                 >
                   <img
                     alt={`${artifact.kind} for ${result.scenario.name}`}
                     src={artifactUrl(artifact.path)}
                     className="max-h-64 rounded-md border border-border"
                   />
-                </Button>
+                </ButtonLink>
               ) : (
-                <Button
+                <ButtonLink
                   key={artifact.path}
                   variant="link"
                   className="mt-2 h-auto px-0"
-                  render={<a href={artifactUrl(artifact.path)} />}
+                  href={artifactUrl(artifact.path)}
                 >
                   {artifact.kind}
-                </Button>
+                </ButtonLink>
               ),
             )}
           </li>

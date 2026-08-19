@@ -47,6 +47,7 @@ export interface TestRunSummary {
   sourceRunId?: string
   suite?: string
   executionTargetProfileIds: string[]
+  specificationUris: string[]
   applicationRevision?: string
   durationMs?: number
   state: TestResultState
@@ -78,7 +79,7 @@ export interface TestRunStore {
 }
 
 const dayMs = 24 * 60 * 60 * 1000
-const indexSchemaVersion = 2
+const indexSchemaVersion = 3
 
 export const defaultRetention = {
   maxAgeMs: 30 * dayMs,
@@ -312,6 +313,7 @@ interface IndexedRun {
   sourceRunId: string | null
   suite: string | null
   executionTargetProfileIds: string
+  specificationUris: string
   applicationRevision: string | null
   durationMs: number | null
   state: TestResultState
@@ -331,6 +333,7 @@ function openIndex(path: string): Database {
       source_run_id TEXT,
       suite TEXT,
       execution_target_profile_ids TEXT NOT NULL DEFAULT '[]',
+      specification_uris TEXT NOT NULL DEFAULT '[]',
       application_revision TEXT,
       duration_ms INTEGER,
       state TEXT NOT NULL,
@@ -347,6 +350,7 @@ function openIndex(path: string): Database {
     ['source_run_id', 'TEXT'],
     ['suite', 'TEXT'],
     ['execution_target_profile_ids', "TEXT NOT NULL DEFAULT '[]'"],
+    ['specification_uris', "TEXT NOT NULL DEFAULT '[]'"],
     ['application_revision', 'TEXT'],
     ['duration_ms', 'INTEGER'],
   ] as const
@@ -391,22 +395,27 @@ function upsertRun(db: Database, manifest: TestRunManifest): void {
       manifest.results.map((result) => result.executionTargetProfile.id),
     ),
   ].sort()
+  const specificationUris = [
+    ...new Set(manifest.results.map((result) => result.specification.uri)),
+  ].sort()
   const durationMs = manifest.finishedAt
     ? Date.parse(manifest.finishedAt) - Date.parse(manifest.startedAt)
     : undefined
   db.run(
     `INSERT INTO runs (
        id, started_at, finished_at, source_run_id, suite,
-       execution_target_profile_ids, application_revision, duration_ms,
+       execution_target_profile_ids, specification_uris,
+       application_revision, duration_ms,
        state, result_count
      )
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT(id) DO UPDATE SET
        started_at = excluded.started_at,
        finished_at = excluded.finished_at,
        source_run_id = excluded.source_run_id,
        suite = excluded.suite,
        execution_target_profile_ids = excluded.execution_target_profile_ids,
+       specification_uris = excluded.specification_uris,
        application_revision = excluded.application_revision,
        duration_ms = excluded.duration_ms,
        state = excluded.state,
@@ -418,6 +427,7 @@ function upsertRun(db: Database, manifest: TestRunManifest): void {
       manifest.sourceRunId ?? null,
       manifest.suite ?? null,
       JSON.stringify(executionTargetProfileIds),
+      JSON.stringify(specificationUris),
       manifest.applicationRevision ?? null,
       durationMs ?? null,
       manifest.state,
@@ -432,6 +442,7 @@ function listRuns(db: Database): TestRunSummary[] {
       `SELECT id, started_at AS startedAt, finished_at AS finishedAt,
         source_run_id AS sourceRunId, suite,
         execution_target_profile_ids AS executionTargetProfileIds,
+        specification_uris AS specificationUris,
         application_revision AS applicationRevision, duration_ms AS durationMs,
         state, result_count AS resultCount
        FROM runs ORDER BY id`,
@@ -448,6 +459,7 @@ function listRuns(db: Database): TestRunSummary[] {
         executionTargetProfileIds: JSON.parse(
           indexed.executionTargetProfileIds,
         ) as string[],
+        specificationUris: JSON.parse(indexed.specificationUris) as string[],
         ...(indexed.applicationRevision
           ? { applicationRevision: indexed.applicationRevision }
           : {}),

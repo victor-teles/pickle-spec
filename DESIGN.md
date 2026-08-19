@@ -195,12 +195,12 @@ A restrained night palette: cool neutrals plus one light action, with three sema
 
 ## Layout
 
-A full-height column: header, then a single-row area nav, then a master-detail ledger. The left rail (16rem) lists Specifications. The main pane holds the selected Specification, a view-mode outline of Feature / Rule / Scenario / tags (Gherkin source only after Edit Specification), the Scenario table (profile columns plus a per-row Run), Needs attention, and the step timeline. Padding is 1.5rem in the main stage, 0.75rem in the header, 0.25rem in the nav. Rhythm is 1rem inside a rail, 1.5rem between table and timeline.
+A full-height column: header, then a single-row area nav, then a master-detail ledger. The left rail (16rem) lists Specifications. The main pane holds the selected Specification, contextual Scenarios / History navigation, the Scenario table (profile columns plus a per-row Run), Needs attention, and the step timeline. Run Specification and Edit Specification form one right-aligned action group in view mode and remain adjacent when the row wraps. Gherkin source and metadata appear only after Edit Specification. Padding is 1.5rem in the main stage, 0.75rem in the header, 0.25rem in the nav. Rhythm is 1rem inside a rail, 1.5rem between table and timeline.
 
-There is no marketing container or max-width. Studio is an app shell. Specifications is the current room. Runs, Plans, and Settings remain in the area nav as a disabled product map.
+There is no marketing container or max-width. Studio is an app shell. Specifications is the current room. History belongs to the selected Specification; Plans and Settings remain global areas.
 
 ### Named Rules
-**The View-First Authoring Rule.** A selected Specification opens as an outline. Gherkin source appears only after Edit Specification.
+**The Scenario-First Rule.** A selected Specification opens directly on its Scenario table. Gherkin source and metadata appear only after Edit Specification.
 
 ## Elevation & Depth
 
@@ -220,7 +220,7 @@ Quiet Mira instrument controls. Color names a result; geometry stays compact so 
 ### Buttons
 - **Style:** shadcn Mira (`base-mira`). `text-xs/relaxed`, height 1.75rem default / 1.5rem small, `rounded-md`, no shadow. Pressed state scales to 0.98 in 100ms. Focus is a 1px current-color hairline, never a ring.
 - **Primary:** Bone fill, Ink text. Hover is Bone at 80% opacity. Used for Run Specification on the selected file, and for Save Specification while Gherkin is dirty.
-- **Outline:** Hairline border, translucent input fill. Used for pending and running matrix cells, per-Scenario Run, Run all Specifications, Edit Specification, View Specification, and Propose Specification.
+- **Outline:** Hairline border, translucent input fill. Used for pending and running matrix cells, per-Scenario Run, Run all Specifications, Edit Specification, View Specification, Edit metadata, and Propose Specification.
 - **Passed:** Brine Teal tint and ink, with a Tick. Used for a passed matrix cell.
 - **Adaptation:** Plan Amber tint and ink. Used for `passed-with-adaptation` matrix cells.
 - **Destructive:** Failure Oxide tint and ink (not a solid fill). Used for a failed matrix cell and for Cancel during a live run.
@@ -237,16 +237,13 @@ Quiet Mira instrument controls. Color names a result; geometry stays compact so 
 - **Internal Padding:** 0.75rem–1rem
 
 ### Navigation
-- Mira-sized text links: height 1.75rem, `text-xs/relaxed`, `rounded-md`. Active is Brine Tint with Bone text. Unavailable areas are Mute at 60% opacity, `aria-disabled`, and not in the tab order. No icons. Areas are Specifications, Runs, Plans, Settings.
+- Mira-sized buttons: height 1.75rem, `text-xs/relaxed`, `rounded-md`. Active is Brine Tint with Bone text. No icons. Global areas are Specifications, Plans, and Settings. Scenarios and History switch context within the selected Specification.
 
 ### Specification list
 Left rail, 16rem. Group label is 2rem tall at `text-xs`. Each Specification is a Mira sidebar menu item (`h-8`, `text-xs`, `p-2`) with the Scenario count in JetBrains Mono. The selected item is a Brine Tint well.
 
-### Specification outline
-Default authoring surface. A Raised Plate listing Feature, Background, Rule, Scenario / Scenario Outline, and Examples by keyword and name. Author-facing tags stay in JetBrains Mono 0.625rem (`@pickle:state:*`, suite tags). `@pickle:id:*` stays in Gherkin source, not the outline. Unnamed Background / Rule / Examples show the keyword only. Switching Specifications returns to this view.
-
 ### Gherkin editor
-Opt-in after Edit Specification. Monaco on a Well plate, theme `pickle-ledger` (Night Ledger field, Bone text, Mute comments, no brine / amber / oxide on tokens). Completions cover Gherkin keywords, Specification state tags, and project steps. AI assistance (prompt, optional new path, Propose Specification) sits under the editor, never in view mode. Unsaved Gherkin is a Mute mono status; leaving edit with a dirty buffer opens a discard dialog.
+Opt-in after Edit Specification. Metadata controls belong to this mode and apply changes to the same unsaved source buffer. Monaco sits on a Well plate with the `pickle-ledger` theme (Night Ledger field, Bone text, Mute comments, no brine / amber / oxide on tokens). Completions cover Gherkin keywords, Specification state tags, and project steps. AI assistance (prompt, optional new path, Propose Specification) sits under the editor, never in view mode. The configured model remains in Settings instead of repeating on the Specification screen. Unsaved Gherkin is a Mute mono status; leaving edit with a dirty buffer opens a discard dialog.
 
 ### Scenario table
 Signature component: a bordered plate table for the selected Specification. Row headers are Scenario names; columns are execution target profiles, then a per-row Run. Before a run, profile cells read pending. A result cell is a small button whose label is the result state, with the Drive pixel grid while running and a Tick or Cancel mark when finished. The selected cell uses a stronger hairline, not a ring; the timeline follows the worst Needs attention cell until the operator pins one.
@@ -262,7 +259,7 @@ A vertical list of Hairline plates. Step intent in Sans; resolved actions in Mon
 ### Do:
 - **Do** keep the canvas dark and cool (Night Ledger) with one-step Raised Plates.
 - **Do** put the next operator action on a Bone button (Run Specification, or Save Specification while editing), and swap Run for Cancel while a test run is live.
-- **Do** keep Gherkin behind Edit Specification; view mode is the outline plate.
+- **Do** keep view mode focused on Scenarios and History; Gherkin and metadata stay behind Edit Specification.
 - **Do** spell the test-result state on every chip and matrix cell, with the Drive pixel grid while running and a Tick or Cancel mark when the cell finishes.
 - **Do** use JetBrains Mono for resolved actions, status, tags, and Gherkin source; Inter for everything else.
 - **Do** keep Mira density on controls (compact type, no shadow) and Hairline plates on the ledger.

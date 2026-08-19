@@ -95,7 +95,9 @@ pickle run "features/**/*.feature" --concurrency 5 --retries 1
 pickle run "features/**/*.feature" --screenshot on-step
 ```
 
-The command writes versioned run-event and test-result records as newline-delimited JSON.
+The default reporter prints each Scenario as it finishes and ends with a compact
+summary. Use `--reporter ndjson` when an integration needs the versioned
+run-event and test-result records as newline-delimited JSON.
 
 ## Run Adaptive and Replay modes
 
