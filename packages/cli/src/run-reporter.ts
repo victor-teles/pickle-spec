@@ -1,10 +1,17 @@
-import type { RunEvent, ScenarioRun, TestResult } from '@pickle-spec/runner'
+import type {
+  RunEvent,
+  ScenarioRun,
+  ScheduledTestResult,
+  TestResult,
+} from '@pickle-spec/runner'
 
 export type RunReporterName = 'default' | 'ndjson'
 
 export interface RunReporter {
   start(): void
+  prepare?(schedule: readonly ScheduledTestResult[]): void
   event(event: RunEvent): void
+  complete?(result: TestResult): void
   finish(runs: readonly ScenarioRun[], durationMs: number): void
 }
 
@@ -16,6 +23,7 @@ type RunReporterOptions = {
   version?: string
   color?: boolean
   columns?: number
+  progressive?: boolean
   now?: () => Date
 }
 
@@ -28,6 +36,11 @@ type SpecificationGroup = {
   uri: string
   name: string
   scenarios: Map<string, ScenarioGroup>
+}
+
+type PendingSpecificationBlock = {
+  uri: string
+  scheduleIndexes: number[]
 }
 
 type ResultPresentation = {
@@ -230,6 +243,98 @@ function groupResults(results: readonly TestResult[]): SpecificationGroup[] {
   )
 }
 
+function groupSchedule(
+  schedule: readonly ScheduledTestResult[],
+): PendingSpecificationBlock[] {
+  const blocks = new Map<string, PendingSpecificationBlock>()
+  schedule.forEach((result, scheduleIndex) => {
+    let block = blocks.get(result.specification.uri)
+    if (!block) {
+      block = { uri: result.specification.uri, scheduleIndexes: [] }
+      blocks.set(result.specification.uri, block)
+    }
+    block.scheduleIndexes.push(scheduleIndex)
+  })
+  return [...blocks.values()].sort((left, right) =>
+    left.uri.localeCompare(right.uri),
+  )
+}
+
+function orderedScheduleFromResults(
+  results: readonly TestResult[],
+): ScheduledTestResult[] {
+  return groupResults(results).flatMap((specification) =>
+    [...specification.scenarios.values()].flatMap((scenario) =>
+      scenario.results.map((result) => ({
+        specification: result.specification,
+        scenario: result.scenario,
+        executionTargetProfile: result.executionTargetProfile,
+      })),
+    ),
+  )
+}
+
+function scheduledResultMatches(
+  scheduled: ScheduledTestResult,
+  result: TestResult,
+): boolean {
+  const scenarioMatches = scheduled.scenario.id
+    ? scheduled.scenario.id === result.scenario.id
+    : scheduled.scenario.name === result.scenario.name
+  return (
+    scheduled.specification.uri === result.specification.uri &&
+    scenarioMatches &&
+    scheduled.executionTargetProfile.id === result.executionTargetProfile.id
+  )
+}
+
+type SpecificationWriterOptions = {
+  write: WriteLine
+  color: boolean
+  columns?: number
+  multipleProfiles: boolean
+}
+
+function writeSpecification(
+  specification: SpecificationGroup,
+  options: SpecificationWriterOptions,
+): void {
+  writeWrapped(options.write, ' ', specification.uri, '   ', options.columns)
+  writeWrapped(
+    options.write,
+    '   ',
+    specification.name,
+    '     ',
+    options.columns,
+  )
+  for (const scenario of specification.scenarios.values()) {
+    for (const result of scenario.results) {
+      const profile = options.multipleProfiles
+        ? `[${result.executionTargetProfile.id}] `
+        : ''
+      const plainPrefix = `     ${resultPresentations[result.state].mark} ${profile}`
+      const styledPrefix = `     ${stateMark(result.state, options.color)} ${profile}`
+      writeWrapped(
+        options.write,
+        styledPrefix,
+        `${scenario.name} [${durationLabel(result.durationMs ?? 0)}]${resultSuffix(result)}`,
+        ' '.repeat(plainPrefix.length),
+        options.columns,
+        plainPrefix.length,
+      )
+      for (const messageLine of result.message?.split('\n') ?? []) {
+        writeWrapped(
+          options.write,
+          '       ',
+          messageLine,
+          '       ',
+          options.columns,
+        )
+      }
+    }
+  }
+}
+
 function testResultSummary(results: readonly TestResult[]): string {
   const entries = Object.entries(
     resultPresentations,
@@ -249,7 +354,65 @@ function createDefaultReporter(options: RunReporterOptions): RunReporter {
   const version = options.version ?? 'unknown'
   const color = options.color ?? false
   const columns = options.columns
+  const progressive = options.progressive ?? false
   let startTime = ''
+  let schedule: readonly ScheduledTestResult[] = []
+  let completedResults: Array<TestResult | undefined> = []
+  let pendingBlocks: PendingSpecificationBlock[] = []
+  let nextBlockIndex = 0
+  let wroteSpecification = false
+  let multipleProfiles = false
+
+  function prepare(nextSchedule: readonly ScheduledTestResult[]): void {
+    schedule = nextSchedule
+    completedResults = Array.from({ length: nextSchedule.length })
+    pendingBlocks = groupSchedule(nextSchedule)
+    nextBlockIndex = 0
+    wroteSpecification = false
+    multipleProfiles =
+      new Set(nextSchedule.map((result) => result.executionTargetProfile.id))
+        .size > 1
+  }
+
+  function flushReadyBlocks(): void {
+    while (nextBlockIndex < pendingBlocks.length) {
+      const block = pendingBlocks[nextBlockIndex]!
+      const results = block.scheduleIndexes.map(
+        (scheduleIndex) => completedResults[scheduleIndex],
+      )
+      if (results.some((result) => !result)) return
+      const [specification] = groupResults(results as TestResult[])
+      if (!specification) return
+      if (wroteSpecification) write('')
+      writeSpecification(specification, {
+        write,
+        color,
+        columns,
+        multipleProfiles,
+      })
+      wroteSpecification = true
+      nextBlockIndex++
+    }
+  }
+
+  function complete(result: TestResult): void {
+    const scheduleIndex = schedule.findIndex(
+      (scheduled, index) =>
+        !completedResults[index] && scheduledResultMatches(scheduled, result),
+    )
+    if (scheduleIndex < 0) {
+      if (
+        schedule.some((scheduled) => scheduledResultMatches(scheduled, result))
+      ) {
+        return
+      }
+      throw new Error(
+        `Completed unscheduled Scenario "${result.scenario.name}" for execution target profile "${result.executionTargetProfile.id}"`,
+      )
+    }
+    completedResults[scheduleIndex] = result
+    if (progressive) flushReadyBlocks()
+  }
 
   return {
     start() {
@@ -265,39 +428,17 @@ function createDefaultReporter(options: RunReporterOptions): RunReporter {
       )
       write('')
     },
+    prepare,
     event() {},
+    complete,
     finish(runs, durationMs) {
       const results = runs.map((run) => run.result)
-      const multipleProfiles =
-        new Set(results.map((result) => result.executionTargetProfile.id))
-          .size > 1
+      if (schedule.length === 0) prepare(orderedScheduleFromResults(results))
+      if (completedResults.some((result) => !result)) {
+        for (const result of results) complete(result)
+      }
+      flushReadyBlocks()
       const specifications = groupResults(results)
-
-      specifications.forEach((specification, specificationIndex) => {
-        if (specificationIndex > 0) write('')
-        writeWrapped(write, ' ', specification.uri, '   ', columns)
-        writeWrapped(write, '   ', specification.name, '     ', columns)
-        for (const scenario of specification.scenarios.values()) {
-          for (const result of scenario.results) {
-            const profile = multipleProfiles
-              ? `[${result.executionTargetProfile.id}] `
-              : ''
-            const plainPrefix = `     ${resultPresentations[result.state].mark} ${profile}`
-            const styledPrefix = `     ${stateMark(result.state, color)} ${profile}`
-            writeWrapped(
-              write,
-              styledPrefix,
-              `${scenario.name} [${durationLabel(result.durationMs ?? 0)}]${resultSuffix(result)}`,
-              ' '.repeat(plainPrefix.length),
-              columns,
-              plainPrefix.length,
-            )
-            for (const messageLine of result.message?.split('\n') ?? []) {
-              writeWrapped(write, '       ', messageLine, '       ', columns)
-            }
-          }
-        }
-      })
 
       write('')
       write(` Specifications  ${specifications.length}`)
@@ -330,10 +471,11 @@ export function terminalReporterCapabilities(
   isTerminal: boolean | undefined,
   columns: number | undefined,
   noColor: string | undefined,
-): Pick<RunReporterOptions, 'color' | 'columns'> {
+): Pick<RunReporterOptions, 'color' | 'columns' | 'progressive'> {
   return {
     color: Boolean(isTerminal) && noColor === undefined,
     columns,
+    progressive: !isTerminal,
   }
 }
 

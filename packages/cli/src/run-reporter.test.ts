@@ -99,6 +99,174 @@ test('renders a successful test run as a stable Specification-first tree', () =>
  Duration        1.46s`)
 })
 
+test('streams contiguous ready Specification blocks in final report order', () => {
+  const runs = [
+    passedRun({
+      specificationUri: 'features/a.feature',
+      specificationName: 'First',
+      scenarioId: 'scenario-a-one',
+      scenarioName: 'First Scenario',
+      profileId: 'web',
+      durationMs: 10,
+    }),
+    passedRun({
+      specificationUri: 'features/a.feature',
+      specificationName: 'First',
+      scenarioId: 'scenario-a-one',
+      scenarioName: 'First Scenario',
+      profileId: 'android',
+      durationMs: 20,
+    }),
+    passedRun({
+      specificationUri: 'features/a.feature',
+      specificationName: 'First',
+      scenarioId: 'scenario-a-two',
+      scenarioName: 'Second Scenario',
+      profileId: 'web',
+      durationMs: 30,
+    }),
+    passedRun({
+      specificationUri: 'features/a.feature',
+      specificationName: 'First',
+      scenarioId: 'scenario-a-two',
+      scenarioName: 'Second Scenario',
+      profileId: 'android',
+      durationMs: 40,
+    }),
+    passedRun({
+      specificationUri: 'features/b.feature',
+      specificationName: 'Second',
+      scenarioId: 'scenario-b',
+      scenarioName: 'Ready early',
+      profileId: 'web',
+      durationMs: 50,
+    }),
+    passedRun({
+      specificationUri: 'features/b.feature',
+      specificationName: 'Second',
+      scenarioId: 'scenario-b',
+      scenarioName: 'Ready early',
+      profileId: 'android',
+      durationMs: 60,
+    }),
+  ]
+  const schedule = runs.map(({ result }) => ({
+    specification: result.specification,
+    scenario: result.scenario,
+    executionTargetProfile: result.executionTargetProfile,
+  }))
+  const options = {
+    projectRoot: '/workspace/project',
+    version: '1.0.2',
+    color: false,
+    columns: 120,
+    progressive: true,
+    now: () => new Date(2026, 7, 20, 14, 32, 7),
+  }
+  const progressiveLines: string[] = []
+  const progressiveReporter = createRunReporter('default', {
+    ...options,
+    write: (line) => progressiveLines.push(line),
+  })
+
+  progressiveReporter.start()
+  progressiveReporter.prepare?.(schedule)
+  for (const index of [4, 5, 3, 1, 0]) {
+    progressiveReporter.complete?.(runs[index]!.result)
+  }
+  expect(progressiveLines.join('\n')).not.toContain('features/a.feature')
+  expect(progressiveLines.join('\n')).not.toContain('features/b.feature')
+
+  progressiveReporter.complete?.(runs[2]!.result)
+  progressiveReporter.complete?.(runs[4]!.result)
+  expect(progressiveLines.join('\n')).toContain('features/b.feature')
+  progressiveReporter.finish(runs, 100)
+
+  const finishOnlyLines: string[] = []
+  const finishOnlyReporter = createRunReporter('default', {
+    ...options,
+    write: (line) => finishOnlyLines.push(line),
+  })
+  finishOnlyReporter.start()
+  finishOnlyReporter.finish(runs, 100)
+
+  expect(progressiveLines).toEqual(finishOnlyLines)
+  expect(progressiveLines.join('\n')).toContain(
+    '✓ [web] First Scenario [10ms]\n' +
+      '     ✓ [android] First Scenario [20ms]\n' +
+      '     ✓ [web] Second Scenario [30ms]\n' +
+      '     ✓ [android] Second Scenario [40ms]',
+  )
+})
+
+test('keeps schedule and completion callbacks out of NDJSON output', () => {
+  const run = passedRun({
+    specificationUri: 'features/a.feature',
+    specificationName: 'First',
+    scenarioId: 'scenario-a',
+    scenarioName: 'Scenario A',
+    profileId: 'web',
+    durationMs: 10,
+  })
+  const lines: string[] = []
+  const reporter = createRunReporter('ndjson', {
+    write: (line) => lines.push(line),
+  })
+
+  reporter.start()
+  reporter.prepare?.([
+    {
+      specification: run.result.specification,
+      scenario: run.result.scenario,
+      executionTargetProfile: run.result.executionTargetProfile,
+    },
+  ])
+  reporter.complete?.(run.result)
+  expect(lines).toEqual([])
+
+  reporter.finish([run], 10)
+  expect(lines).toHaveLength(1)
+  expect(JSON.parse(lines[0]!)).toEqual({
+    kind: 'test-result',
+    result: run.result,
+  })
+})
+
+test('keeps interactive human output buffered until the run finishes', () => {
+  const run = passedRun({
+    specificationUri: 'features/a.feature',
+    specificationName: 'First',
+    scenarioId: 'scenario-a',
+    scenarioName: 'Scenario A',
+    profileId: 'web',
+    durationMs: 10,
+  })
+  const lines: string[] = []
+  const reporter = createRunReporter('default', {
+    write: (line) => lines.push(line),
+    projectRoot: '/workspace/project',
+    version: '1.0.2',
+    color: true,
+    columns: 120,
+    progressive: false,
+    now: () => new Date(2026, 7, 20, 14, 32, 7),
+  })
+
+  reporter.start()
+  reporter.prepare?.([
+    {
+      specification: run.result.specification,
+      scenario: run.result.scenario,
+      executionTargetProfile: run.result.executionTargetProfile,
+    },
+  ])
+  reporter.complete?.(run.result)
+  expect(lines.join('\n')).not.toContain('features/a.feature')
+
+  reporter.finish([run], 10)
+  expect(lines.join('\n')).toContain('features/a.feature')
+})
+
 test('uses color only as supplemental terminal state information', () => {
   const run = passedRun({
     specificationUri: 'src/google.feature',
@@ -269,14 +437,17 @@ test('enables color only for a TTY when NO_COLOR is absent', () => {
   expect(terminalReporterCapabilities(true, 100, undefined)).toEqual({
     color: true,
     columns: 100,
+    progressive: false,
   })
   expect(terminalReporterCapabilities(true, 100, '')).toEqual({
     color: false,
     columns: 100,
+    progressive: false,
   })
   expect(terminalReporterCapabilities(false, undefined, undefined)).toEqual({
     color: false,
     columns: undefined,
+    progressive: true,
   })
 })
 

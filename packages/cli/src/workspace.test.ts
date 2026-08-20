@@ -941,7 +941,17 @@ Feature: Search
           android: { adapter: 'android', capabilities: ['geolocation'] },
         },
       },
-      specification: validSpecification,
+      specification: {
+        path: 'features/example.feature',
+        source: `@pickle:id:specaaaaaaaaaaaa @pickle:state:active
+Feature: Example
+  @pickle:id:scnbbbbbbbbbbbb
+  Scenario: Validate project
+    Then validation succeeds
+  @pickle:id:scncccccccccccc
+  Scenario: Validate another behavior
+    Then another validation succeeds`,
+      },
       extensions: `
 export default {
   adapters: {
@@ -1002,6 +1012,60 @@ export default {
     ).toEqual([
       ['Validate project', 'web', 'passed'],
       ['Validate project', 'android', 'passed'],
+      ['Validate another behavior', 'web', 'passed'],
+      ['Validate another behavior', 'android', 'passed'],
+    ])
+
+    const [sourceManifest] = [
+      ...new Bun.Glob('*/manifest.json').scanSync({
+        cwd: join(project, '.pickle', 'runs'),
+      }),
+    ]
+    const sourceId = dirname(sourceManifest!)
+    const rerun = Bun.spawnSync({
+      cmd: [pickleCommand, 'run', '--rerun', sourceId, '--reporter', 'ndjson'],
+      cwd: project,
+      env: { ...Bun.env },
+    })
+    const rerunRecords = rerun.stdout
+      .toString()
+      .trim()
+      .split('\n')
+      .filter(Boolean)
+      .map((line) => JSON.parse(line))
+    const rerunResults = rerunRecords.filter(
+      (record) => record.kind === 'test-result',
+    )
+    const rerunFinishedEvents = rerunRecords.filter(
+      (record) =>
+        record.kind === 'run-event' &&
+        record.event.type === 'scenario-finished',
+    )
+
+    expect(rerun.stderr.toString()).toBe('')
+    expect(rerun.exitCode).toBe(0)
+    expect(
+      rerunResults.map((record) => [
+        record.result.scenario.name,
+        record.result.executionTargetProfile.id,
+      ]),
+    ).toEqual([
+      ['Validate project', 'web'],
+      ['Validate another behavior', 'web'],
+      ['Validate project', 'android'],
+      ['Validate another behavior', 'android'],
+    ])
+    expect(
+      rerunFinishedEvents.map((record) => [
+        record.event.result.scenario.name,
+        record.event.result.executionTargetProfile.id,
+        record.event.scheduleIndex,
+      ]),
+    ).toEqual([
+      ['Validate project', 'web', 0],
+      ['Validate another behavior', 'web', 1],
+      ['Validate project', 'android', 0],
+      ['Validate another behavior', 'android', 1],
     ])
   })
 

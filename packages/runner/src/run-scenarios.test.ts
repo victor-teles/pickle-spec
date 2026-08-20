@@ -1,6 +1,10 @@
 import { expect, mock, test } from 'bun:test'
 import type { ScenarioSelection } from '@pickle-spec/spec'
-import { type ExecutionTargetAdapter, runScenarios } from '../index'
+import {
+  type ExecutionTargetAdapter,
+  runScenarios,
+  scheduleScenarios,
+} from '../index'
 
 const selections: ScenarioSelection[] = ['First', 'Ignored', 'Third'].map(
   (name, index) => {
@@ -61,6 +65,65 @@ test('runs selected Scenarios concurrently while preserving stable test-result o
   ])
   expect(maximumActive).toBe(2)
   expect(openSession).toHaveBeenCalledTimes(2)
+})
+
+test('plans Scenario results in declaration and configured profile order', () => {
+  const schedule = scheduleScenarios({
+    selections: [selections[0]!, selections[2]!],
+    executionTargetProfiles: [{ id: 'web' }, { id: 'android' }],
+    includeTarget: (selection, executionTargetProfile) =>
+      !(
+        selection.scenario.name === 'Third' &&
+        executionTargetProfile.id === 'android'
+      ),
+  })
+
+  expect(
+    schedule.map(({ scenario, executionTargetProfile }) => [
+      scenario.name,
+      executionTargetProfile.id,
+    ]),
+  ).toEqual([
+    ['First', 'web'],
+    ['First', 'android'],
+    ['Third', 'web'],
+  ])
+})
+
+test('reports one final completion after retry attempt events', async () => {
+  let attempt = 0
+  const attemptStates: string[] = []
+  const completedResults: Array<{ state: string; attempts?: number }> = []
+  const adapter: ExecutionTargetAdapter = {
+    async openSession() {
+      attempt++
+      return {
+        async executeStep() {
+          if (attempt === 1) throw new Error('Execution target stopped')
+          return { state: 'passed', resolvedActions: [] }
+        },
+        async close() {},
+      }
+    },
+  }
+
+  await runScenarios({
+    selections: [selections[0]!],
+    executionTargetProfile: { id: 'web' },
+    adapter,
+    retry: { infrastructureErrors: 1 },
+    onEvent(event) {
+      if (event.type === 'scenario-finished') {
+        attemptStates.push(event.result.state)
+      }
+    },
+    onResult({ result }) {
+      completedResults.push({ state: result.state, attempts: result.attempts })
+    },
+  })
+
+  expect(attemptStates).toEqual(['infrastructure-error', 'passed'])
+  expect(completedResults).toEqual([{ state: 'passed', attempts: 2 }])
 })
 
 test('rejects a target that lacks a Scenario capability requirement before opening a session', async () => {

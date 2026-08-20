@@ -7,11 +7,37 @@ import {
   type RunEvent,
   runScenario,
   type ScenarioRun,
+  type TestResult,
 } from './run-scenario'
 
 export interface RunTarget {
   executionTargetProfile: ExecutionTargetProfile
   adapter: ExecutionTargetAdapter
+}
+
+export interface ScenarioCompletion {
+  result: TestResult
+  scheduleIndex: number
+}
+
+export type ScheduledTestResult = {
+  specification: TestResult['specification']
+  scenario: TestResult['scenario']
+  executionTargetProfile: TestResult['executionTargetProfile']
+}
+
+export interface RunScheduleInput {
+  selections: readonly ScenarioSelection[]
+  executionTargetProfiles: readonly ExecutionTargetProfile[]
+  includeTarget?: (
+    selection: ScenarioSelection,
+    executionTargetProfile: ExecutionTargetProfile,
+  ) => boolean
+}
+
+type ScheduledScenarioTarget = {
+  selection: ScenarioSelection
+  target: RunTarget
 }
 
 export interface RunScenariosInput extends ExecutionPolicy {
@@ -28,6 +54,40 @@ export interface RunScenariosInput extends ExecutionPolicy {
     event: RunEvent,
     selection: ScenarioSelection,
   ) => void | Promise<void>
+  onResult?: (completion: ScenarioCompletion) => void | Promise<void>
+}
+
+function scenarioTargets(
+  selections: readonly ScenarioSelection[],
+  targets: readonly RunTarget[],
+): ScheduledScenarioTarget[] {
+  return selections.flatMap((selection) =>
+    targets.map((target) => ({ selection, target })),
+  )
+}
+
+export function scheduleScenarios(
+  input: RunScheduleInput,
+): ScheduledTestResult[] {
+  return input.selections.flatMap((selection) =>
+    input.executionTargetProfiles.flatMap((executionTargetProfile) =>
+      input.includeTarget?.(selection, executionTargetProfile) === false
+        ? []
+        : [
+            {
+              specification: {
+                uri: selection.specification.source.uri,
+                name: selection.specification.name,
+              },
+              scenario: {
+                id: selection.scenario.id,
+                name: selection.scenario.name,
+              },
+              executionTargetProfile,
+            },
+          ],
+    ),
+  )
 }
 
 function availableCapabilities(target: RunTarget): Set<string> {
@@ -88,18 +148,16 @@ export async function runScenarios(
   const targets = resolveTargets(input)
   validateTargetSelection(input.selections, targets)
 
-  const scenarioTargets = input.selections.flatMap((selection) =>
-    targets.map((target) => ({ selection, target })),
-  )
-  const runs = new Array<ScenarioRun>(scenarioTargets.length)
+  const scheduledTargets = scenarioTargets(input.selections, targets)
+  const runs = new Array<ScenarioRun>(scheduledTargets.length)
   let nextIndex = 0
-  const workerCount = Math.min(concurrency, scenarioTargets.length)
+  const workerCount = Math.min(concurrency, scheduledTargets.length)
 
   async function work(): Promise<void> {
-    while (nextIndex < scenarioTargets.length) {
+    while (nextIndex < scheduledTargets.length) {
       const index = nextIndex++
-      const { selection, target } = scenarioTargets[index]!
-      runs[index] = await runScenario({
+      const { selection, target } = scheduledTargets[index]!
+      const run = await runScenario({
         specification: selection.specification,
         scenario: selection.scenario,
         executionTargetProfile: target.executionTargetProfile,
@@ -119,6 +177,11 @@ export async function runScenarios(
                 selection,
               )
           : undefined,
+      })
+      runs[index] = run
+      await input.onResult?.({
+        result: run.result,
+        scheduleIndex: index,
       })
     }
   }

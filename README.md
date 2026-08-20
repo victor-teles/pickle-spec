@@ -140,6 +140,11 @@ state colors in addition to symbols; redirected output is plain text, and
 `NO_COLOR` disables color explicitly. Long paths and Scenario names wrap without
 being truncated.
 
+In CI and other redirected output, each complete Specification block is written
+as soon as every earlier Specification is also complete. Output remains
+append-only while preserving the same deterministic order and content as the
+finished report.
+
 Use `--reporter ndjson` when an integration needs the versioned run-event and
 test-result records as newline-delimited JSON. The human reporter format is not
 a machine-readable contract.

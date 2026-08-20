@@ -81,8 +81,18 @@ export type {
   TestResultState,
 } from './src/run-scenario'
 export { isEvidenceState, runScenario } from './src/run-scenario'
-export type { RunScenariosInput, RunTarget } from './src/run-scenarios'
-export { runScenarios, validateTargetSelection } from './src/run-scenarios'
+export type {
+  RunScenariosInput,
+  RunScheduleInput,
+  RunTarget,
+  ScenarioCompletion,
+  ScheduledTestResult,
+} from './src/run-scenarios'
+export {
+  runScenarios,
+  scheduleScenarios,
+  validateTargetSelection,
+} from './src/run-scenarios'
 export type {
   ArtifactCapturePolicy,
   CreateTestRunOptions,
