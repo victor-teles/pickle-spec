@@ -115,9 +115,32 @@ pickle run "features/**/*.feature" --concurrency 5 --retries 1
 pickle run "features/**/*.feature" --screenshot on-step
 ```
 
-The default reporter prints each Scenario as it finishes and ends with a compact
-summary. Use `--reporter ndjson` when an integration needs the versioned
-run-event and test-result records as newline-delimited JSON.
+The default reporter is for people. It groups every Test result by Specification
+URI, Specification, and Scenario, then reports the selected counts and timing:
+
+```text
+ RUN  pickle 1.0.2 /workspace/project
+
+ features/search.feature
+   Search
+     ✓ Visit main page [150ms]
+
+ Specifications  1
+ Scenarios       1
+ Test results    1 passed (1)
+ Start at        14:32:07
+ Duration        182ms
+```
+
+The execution target profile is omitted when only one profile is selected and
+shown on each Test result when multiple profiles run. Interactive terminals use
+state colors in addition to symbols; redirected output is plain text, and
+`NO_COLOR` disables color explicitly. Long paths and Scenario names wrap without
+being truncated.
+
+Use `--reporter ndjson` when an integration needs the versioned run-event and
+test-result records as newline-delimited JSON. The human reporter format is not
+a machine-readable contract.
 
 ## Run Adaptive and Replay modes
 
