@@ -24,6 +24,11 @@ const application = {
   binaryPath: '/tmp/checkout.apk',
 }
 
+const iosApplication = {
+  id: 'com.example.checkout',
+  binaryPath: '/tmp/Checkout.app',
+}
+
 function workerClient(
   overrides: Partial<MobileWorkerClient> = {},
 ): MobileWorkerClient {
@@ -38,7 +43,7 @@ function workerClient(
 
 test('discovers Android Emulator targets without exposing worker or vendor types', async () => {
   const request = mock(async () => ({
-    version: 1 as const,
+    version: 2 as const,
     type: 'targets-discovered' as const,
     targets: [
       {
@@ -60,6 +65,9 @@ test('discovers Android Emulator targets without exposing worker or vendor types
     'android',
     'android-emulator',
     'screenshots',
+    'device-logs',
+    'recordings',
+    'traces',
   ])
   expect(await adapter.discoverTargets()).toEqual([
     {
@@ -70,8 +78,85 @@ test('discovers Android Emulator targets without exposing worker or vendor types
     },
   ])
   expect(request).toHaveBeenCalledWith({
-    version: 1,
+    version: 2,
     type: 'discover-targets',
+    platform: 'android',
+  })
+})
+
+test('discovers iOS Simulator targets with target-specific capabilities and plans', async () => {
+  const requests: MobileWorkerRequest[] = []
+  const request: MobileWorkerClient['request'] = mock(async (message) => {
+    requests.push(message)
+    if (message.type === 'discover-targets') {
+      return {
+        version: 2 as const,
+        type: 'targets-discovered' as const,
+        targets: [
+          {
+            id: 'F2D95476-0A9E-4A8C-9F48-8C77B2F5B8D0',
+            name: 'iPhone 16 Pro',
+            state: 'booted' as const,
+            capabilities: ['ios', 'ios-simulator', 'screenshots'],
+          },
+        ],
+      }
+    }
+    if (message.type === 'open-session') {
+      return {
+        version: 2 as const,
+        type: 'session-opened' as const,
+        sessionId: message.sessionId,
+        targetId: 'F2D95476-0A9E-4A8C-9F48-8C77B2F5B8D0',
+      }
+    }
+    throw new Error(`Unexpected request ${message.type}`)
+  })
+  const adapter = createMobileAdapter(
+    {
+      executionTarget: 'ios-simulator',
+      application: iosApplication,
+      artifacts: ['device-log'],
+      redactions: [{ match: 'secret-value', replacement: '[REDACTED]' }],
+    },
+    () => workerClient({ request }),
+  )
+
+  expect(adapter.capabilities).toEqual([
+    'ios',
+    'ios-simulator',
+    'screenshots',
+    'device-logs',
+    'recordings',
+    'traces',
+  ])
+  expect(adapter.planFormatVersion).toBe('mobile.ios.1')
+  await expect(adapter.discoverTargets()).resolves.toEqual([
+    {
+      id: 'F2D95476-0A9E-4A8C-9F48-8C77B2F5B8D0',
+      name: 'iPhone 16 Pro',
+      state: 'booted',
+      capabilities: ['ios', 'ios-simulator', 'screenshots'],
+    },
+  ])
+  await adapter.openSession({
+    executionTargetProfile: { id: 'ios' },
+    specification,
+    scenario,
+  })
+
+  expect(requests[0]).toEqual({
+    version: 2,
+    type: 'discover-targets',
+    platform: 'ios',
+  })
+  expect(requests[1]).toMatchObject({
+    version: 2,
+    type: 'open-session',
+    platform: 'ios',
+    application: iosApplication,
+    artifacts: ['device-log'],
+    redactions: [{ match: 'secret-value', replacement: '[REDACTED]' }],
   })
 })
 
@@ -81,7 +166,7 @@ test('opens and closes one isolated Android logical session through the worker',
     requests.push(message)
     if (message.type === 'open-session') {
       return {
-        version: 1 as const,
+        version: 2 as const,
         type: 'session-opened' as const,
         sessionId: message.sessionId,
         targetId: 'emulator-5554',
@@ -89,7 +174,7 @@ test('opens and closes one isolated Android logical session through the worker',
     }
     if (message.type === 'close-session') {
       return {
-        version: 1 as const,
+        version: 2 as const,
         type: 'session-closed' as const,
         sessionId: message.sessionId,
       }
@@ -115,14 +200,14 @@ test('opens and closes one isolated Android logical session through the worker',
 
   expect(requests).toHaveLength(2)
   expect(requests[0]).toMatchObject({
-    version: 1,
+    version: 2,
     type: 'open-session',
     targetId: 'emulator-5554',
     application,
     mode: 'adaptive',
   })
   expect(requests[1]).toMatchObject({
-    version: 1,
+    version: 2,
     type: 'close-session',
   })
 })
@@ -133,7 +218,7 @@ test('executes mobile steps and returns common runner actions and artifacts', as
     requests.push(message)
     if (message.type === 'open-session') {
       return {
-        version: 1 as const,
+        version: 2 as const,
         type: 'session-opened' as const,
         sessionId: message.sessionId,
         targetId: 'emulator-5554',
@@ -141,7 +226,7 @@ test('executes mobile steps and returns common runner actions and artifacts', as
     }
     if (message.type === 'execute-step') {
       return {
-        version: 1 as const,
+        version: 2 as const,
         type: 'step-executed' as const,
         sessionId: message.sessionId,
         execution: {
@@ -158,13 +243,27 @@ test('executes mobile steps and returns common runner actions and artifacts', as
               path: '/tmp/artifacts/step-01.png',
               mediaType: 'image/png',
             },
+            {
+              kind: 'device-log' as const,
+              path: '/tmp/artifacts/session.log',
+              mediaType: 'text/plain',
+            },
+            {
+              kind: 'recording' as const,
+              path: '/tmp/artifacts/session.mp4',
+              mediaType: 'video/mp4',
+            },
+            {
+              kind: 'trace' as const,
+              path: '/tmp/artifacts/session.trace',
+            },
           ],
         },
       }
     }
     if (message.type === 'close-session') {
       return {
-        version: 1 as const,
+        version: 2 as const,
         type: 'session-closed' as const,
         sessionId: message.sessionId,
       }
@@ -198,10 +297,24 @@ test('executes mobile steps and returns common runner actions and artifacts', as
         path: '/tmp/artifacts/step-01.png',
         mediaType: 'image/png',
       },
+      {
+        kind: 'device-log',
+        path: '/tmp/artifacts/session.log',
+        mediaType: 'text/plain',
+      },
+      {
+        kind: 'recording',
+        path: '/tmp/artifacts/session.mp4',
+        mediaType: 'video/mp4',
+      },
+      {
+        kind: 'trace',
+        path: '/tmp/artifacts/session.trace',
+      },
     ],
   })
   expect(requests[1]).toMatchObject({
-    version: 1,
+    version: 2,
     type: 'execute-step',
     stepIndex: 0,
     step: { type: 'action', text: 'I pay' },
@@ -215,7 +328,7 @@ test('cancels the worker session on abort and disposes the worker before reuse',
     requests.push(message)
     if (message.type === 'open-session') {
       return {
-        version: 1 as const,
+        version: 2 as const,
         type: 'session-opened' as const,
         sessionId: message.sessionId,
         targetId: 'emulator-5554',
@@ -223,7 +336,7 @@ test('cancels the worker session on abort and disposes the worker before reuse',
     }
     if (message.type === 'cancel-session') {
       return {
-        version: 1 as const,
+        version: 2 as const,
         type: 'session-cancelled' as const,
         sessionId: message.sessionId,
       }
@@ -277,7 +390,7 @@ test('cancels installation when abort occurs while the logical session opens', a
       }
       if (message.type === 'cancel-session') {
         return {
-          version: 1,
+          version: 2,
           type: 'session-cancelled',
           sessionId: message.sessionId,
         }

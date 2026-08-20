@@ -2,7 +2,7 @@ process.once('SIGTERM', () => process.exit(0))
 setTimeout(() => {
   process.stdout.write(
     `${JSON.stringify({
-      version: 1,
+      version: 2,
       type: 'worker-ready',
       nodeVersion: process.versions.node,
     })}\n`,

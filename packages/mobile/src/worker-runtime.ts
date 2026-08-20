@@ -1,7 +1,10 @@
 import type {
-  AndroidApplication,
-  AndroidTarget,
+  MobileApplication,
+  MobileArtifactKind,
+  MobilePlatform,
   MobileStep,
+  MobileTarget,
+  MobileTextRedaction,
   MobileWorkerRequest,
   MobileWorkerResponse,
   WorkerResolvedAction,
@@ -11,9 +14,13 @@ import { mobileWorkerProtocolVersion } from './worker-protocol.ts'
 
 export interface OpenMobileGatewaySessionInput {
   sessionId: string
+  platform: MobilePlatform
   targetId?: string
-  application: AndroidApplication
+  application: MobileApplication
   artifactDirectory?: string
+  artifacts?: readonly MobileArtifactKind[]
+  redactions?: readonly MobileTextRedaction[]
+  requiredCapabilities?: readonly string[]
 }
 
 export interface ExecuteMobileGatewayStepInput {
@@ -24,7 +31,7 @@ export interface ExecuteMobileGatewayStepInput {
 }
 
 export interface MobileDeviceGateway {
-  discoverTargets(): Promise<AndroidTarget[]>
+  discoverTargets(platform: MobilePlatform): Promise<MobileTarget[]>
   openSession(
     input: OpenMobileGatewaySessionInput,
   ): Promise<{ targetId: string }>
@@ -59,7 +66,9 @@ export class MobileWorkerRuntime {
         return {
           version: mobileWorkerProtocolVersion,
           type: 'targets-discovered',
-          targets: await this.gateway.discoverTargets(),
+          targets: await this.gateway.discoverTargets(
+            request.platform ?? 'android',
+          ),
         }
       case 'open-session': {
         if (
@@ -72,9 +81,13 @@ export class MobileWorkerRuntime {
         }
         const opened = await this.gateway.openSession({
           sessionId: request.sessionId,
+          platform: request.platform ?? 'android',
           targetId: request.targetId,
           application: request.application,
           artifactDirectory: request.artifactDirectory,
+          artifacts: request.artifacts,
+          redactions: request.redactions,
+          requiredCapabilities: request.requiredCapabilities,
         })
         this.sessions.set(request.sessionId, {
           mode: request.mode,
