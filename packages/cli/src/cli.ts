@@ -20,6 +20,7 @@ import {
   screenshotModes,
   type WebAdapterOptions,
 } from '@pickle-spec/web'
+import cliPackage from '../package.json' with { type: 'json' }
 import { defaultSpecificationGlob, loadConfig } from './config'
 import {
   loadExtensions,
@@ -28,7 +29,11 @@ import {
   startProjectRun,
 } from './execute-run'
 import { checkProject, initializeProject, migrateProject } from './project'
-import { createRunReporter, type RunReporterName } from './run-reporter'
+import {
+  createRunReporter,
+  type RunReporterName,
+  terminalReporterCapabilities,
+} from './run-reporter'
 import { createStudioHistoryGateway } from './studio-history'
 import { createStudioPlanGateway } from './studio-plans'
 import {
@@ -218,7 +223,15 @@ async function run(argv: string[]): Promise<number> {
   const config = await loadConfig(args.configPath)
   const controller = new AbortController()
   const onSigint = () => controller.abort()
-  const reporter = createRunReporter(args.reporter ?? 'default')
+  const reporter = createRunReporter(args.reporter ?? 'default', {
+    projectRoot: process.cwd(),
+    version: cliPackage.version,
+    ...terminalReporterCapabilities(
+      process.stdout.isTTY,
+      process.stdout.columns,
+      process.env.NO_COLOR,
+    ),
+  })
   const startedAt = performance.now()
   process.on('SIGINT', onSigint)
   try {

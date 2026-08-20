@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
-import { mkdir, mkdtemp, rm, symlink } from 'node:fs/promises'
+import { mkdir, mkdtemp, realpath, rm, symlink } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 
@@ -156,12 +156,17 @@ export default {
 
     expect(stderr).toBe('')
     expect(exitCode).toBe(0)
-    expect(stdout).toContain('RUN  pickle run')
+    expect(stdout).toContain(`RUN  pickle 1.0.2 ${await realpath(workspace)}`)
     expect(stdout).toContain(
-      'purchase.feature > Purchase > Complete a purchase [deterministic]',
+      ' purchase.feature\n   Purchase\n     ✓ Complete a purchase [',
     )
-    expect(stdout).toContain('Scenarios  1 passed (1)')
+    expect(stdout).not.toContain('[deterministic]')
+    expect(stdout).toContain('Specifications  1')
+    expect(stdout).toContain('Scenarios       1')
+    expect(stdout).toContain('Test results    1 passed (1)')
+    expect(stdout).toContain('Start at')
     expect(stdout).toContain('Duration')
+    expect(stdout).not.toContain('\u001b[')
     expect(stdout).not.toContain('"kind":"run-event"')
     expect(stdout).not.toContain('"kind":"test-result"')
     expect(stdout).not.toContain('gherkinDocument')
