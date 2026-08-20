@@ -42,6 +42,8 @@ const buttonVariants = cva(
 type ButtonProps = ComponentProps<typeof ButtonPrimitive> &
   VariantProps<typeof buttonVariants>
 
+type ButtonLinkProps = ComponentProps<'a'> & VariantProps<typeof buttonVariants>
+
 function Button({
   className,
   variant = 'default',
@@ -57,4 +59,19 @@ function Button({
   )
 }
 
-export { Button, buttonVariants }
+function ButtonLink({
+  className,
+  variant = 'default',
+  size = 'default',
+  ...props
+}: ButtonLinkProps) {
+  return (
+    <a
+      data-slot="button"
+      className={cn(buttonVariants({ variant, size, className }))}
+      {...props}
+    />
+  )
+}
+
+export { Button, ButtonLink, buttonVariants }

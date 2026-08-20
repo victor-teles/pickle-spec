@@ -33,6 +33,7 @@ interface HistoryPanelProps {
   api: StudioApi
   runPhase: 'idle' | 'running' | 'finished'
   onRerun: (request: StudioRunRequest) => Promise<void>
+  specification: { name: string; uri: string }
 }
 
 function durationLabel(durationMs: number | undefined): string {
@@ -80,7 +81,13 @@ export function HistoryPanel(props: HistoryPanelProps) {
   const [reviewed, setReviewed] = useState<TestRunManifest>()
   const reviewedSectionRef = useRef<HTMLElement>(null)
   const [includeAllArtifacts, setIncludeAllArtifacts] = useState(false)
-  const runs = useMemo(() => sortedRuns(history), [history])
+  const runs = useMemo(
+    () =>
+      sortedRuns(history).filter((run) =>
+        run.specificationUris.includes(props.specification.uri),
+      ),
+    [history, props.specification.uri],
+  )
   const runWindow = useVirtualWindow<HTMLDivElement>({
     count: runs.length,
     itemSize: historyRowHeight,
@@ -100,8 +107,11 @@ export function HistoryPanel(props: HistoryPanelProps) {
     setHistory(await props.api<StudioHistory>('/api/history'))
   }, [props.api])
 
+  const shouldLoadHistory =
+    props.runPhase !== 'running' || history === undefined
+
   useEffect(() => {
-    if (props.runPhase === 'running') return
+    if (!shouldLoadHistory) return
     let cancelled = false
     loadHistory().catch((reason: unknown) => {
       if (!cancelled) setError(reasonMessage(reason))
@@ -109,7 +119,7 @@ export function HistoryPanel(props: HistoryPanelProps) {
     return () => {
       cancelled = true
     }
-  }, [loadHistory, props.runPhase])
+  }, [loadHistory, shouldLoadHistory])
 
   useEffect(() => {
     if (reviewed) reviewedSectionRef.current?.focus()
@@ -189,12 +199,17 @@ export function HistoryPanel(props: HistoryPanelProps) {
     : undefined
 
   return (
-    <main className="min-h-0 flex-1 space-y-5 overflow-auto px-6 py-4">
+    <section
+      aria-labelledby="run-history-title"
+      className="min-h-0 flex-1 space-y-5 overflow-auto px-6 py-4"
+    >
       <header className="flex flex-wrap items-start justify-between gap-3">
         <div className="space-y-1">
-          <h2 className="text-lg font-medium">Test run history</h2>
+          <h3 id="run-history-title" className="text-sm font-medium">
+            Test run history
+          </h3>
           <p className="text-sm text-muted-foreground">
-            Review immutable local test runs and their portable results.
+            Runs containing {props.specification.name}.
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -227,115 +242,118 @@ export function HistoryPanel(props: HistoryPanelProps) {
           {notice}
         </p>
       ) : null}
-      <section
-        ref={runWindow.containerRef}
-        aria-label="Scrollable test run history"
-        // biome-ignore lint/a11y/noNoninteractiveTabindex: keyboard users must be able to scroll a virtualized region
-        tabIndex={0}
-        className="max-h-[32rem] overflow-auto rounded-lg border border-border bg-card"
-      >
-        <Table aria-label="Test run history">
-          <TableHeader>
-            <TableRow>
-              <TableHead>Compare</TableHead>
-              <TableHead>Started</TableHead>
-              <TableHead>Suite</TableHead>
-              <TableHead>Targets</TableHead>
-              <TableHead>Application revision</TableHead>
-              <TableHead>Duration</TableHead>
-              <TableHead>State</TableHead>
-              <TableHead>Results</TableHead>
-              <TableHead>Actions</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            <VirtualTableSpacer height={runWindow.before} colSpan={9} />
-            {visibleRuns.map((run) => (
-              <TableRow key={run.id} style={{ height: historyRowHeight }}>
-                <TableCell>
-                  <Checkbox
-                    aria-label={`Select ${run.id} for comparison`}
-                    checked={selectedRunIds.includes(run.id)}
-                    disabled={
-                      !selectedRunIds.includes(run.id) &&
-                      selectedRunIds.length === 2
-                    }
-                    onCheckedChange={(checked) =>
-                      setSelectedRunIds((current) =>
-                        checked
-                          ? [...current, run.id]
-                          : current.filter((id) => id !== run.id),
-                      )
-                    }
-                  />
-                </TableCell>
-                <TableCell>
-                  <span className="block">
-                    {new Date(run.startedAt).toLocaleString()}
-                  </span>
-                  <span className="font-mono text-muted-foreground">
-                    {run.id}
-                  </span>
-                </TableCell>
-                <TableCell>{run.suite ?? 'Ad hoc selection'}</TableCell>
-                <TableCell>
-                  {run.executionTargetProfileIds.join(', ') || 'None'}
-                </TableCell>
-                <TableCell>{run.applicationRevision ?? 'Not set'}</TableCell>
-                <TableCell>{durationLabel(run.durationMs)}</TableCell>
-                <TableCell>
-                  <Badge variant={stateVariant(run.state)}>
-                    <ResultMark state={run.state} />
-                    {run.state}
-                  </Badge>
-                </TableCell>
-                <TableCell>{resultCountLabel(run.resultCount)}</TableCell>
-                <TableCell>
-                  <div className="flex items-center gap-2">
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={() => void reviewRun(run.id)}
-                    >
-                      Review run
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      disabled={
-                        props.runPhase === 'running' ||
-                        (run.state !== 'failed' &&
-                          run.state !== 'infrastructure-error')
-                      }
-                      onClick={() =>
-                        void props.onRerun({
-                          rerunId: run.id,
-                          failures: true,
-                        })
-                      }
-                    >
-                      Rerun failures
-                    </Button>
-                  </div>
-                  {run.sourceRunId ? (
-                    <span className="mt-1 block text-muted-foreground">
-                      Rerun of {run.sourceRunId}
-                    </span>
-                  ) : null}
-                </TableCell>
-              </TableRow>
-            ))}
-            <VirtualTableSpacer height={runWindow.after} colSpan={9} />
-          </TableBody>
-        </Table>
-        {runs.length === 0 ? (
-          <p className="p-4 text-sm text-muted-foreground">
-            No local test runs yet.
+      {runs.length === 0 ? (
+        <div className="rounded-lg border border-dashed border-border px-4 py-8 text-center">
+          <p className="text-sm text-muted-foreground">
+            No test runs for this Specification yet.
           </p>
-        ) : null}
-      </section>
+        </div>
+      ) : (
+        <section
+          ref={runWindow.containerRef}
+          aria-label="Scrollable test run history"
+          // biome-ignore lint/a11y/noNoninteractiveTabindex: keyboard users must be able to scroll a virtualized region
+          tabIndex={0}
+          className="max-h-[32rem] overflow-auto rounded-lg border border-border bg-card"
+        >
+          <Table aria-label="Test run history">
+            <TableHeader>
+              <TableRow>
+                <TableHead>Compare</TableHead>
+                <TableHead>Started</TableHead>
+                <TableHead>Suite</TableHead>
+                <TableHead>Targets</TableHead>
+                <TableHead>Application revision</TableHead>
+                <TableHead>Duration</TableHead>
+                <TableHead>State</TableHead>
+                <TableHead>Results</TableHead>
+                <TableHead>Actions</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              <VirtualTableSpacer height={runWindow.before} colSpan={9} />
+              {visibleRuns.map((run) => (
+                <TableRow key={run.id} style={{ height: historyRowHeight }}>
+                  <TableCell>
+                    <Checkbox
+                      aria-label={`Select ${run.id} for comparison`}
+                      checked={selectedRunIds.includes(run.id)}
+                      disabled={
+                        !selectedRunIds.includes(run.id) &&
+                        selectedRunIds.length === 2
+                      }
+                      onCheckedChange={(checked) =>
+                        setSelectedRunIds((current) =>
+                          checked
+                            ? [...current, run.id]
+                            : current.filter((id) => id !== run.id),
+                        )
+                      }
+                    />
+                  </TableCell>
+                  <TableCell>
+                    <span className="block">
+                      {new Date(run.startedAt).toLocaleString()}
+                    </span>
+                    <span className="font-mono text-muted-foreground">
+                      {run.id}
+                    </span>
+                  </TableCell>
+                  <TableCell>{run.suite ?? 'Ad hoc selection'}</TableCell>
+                  <TableCell>
+                    {run.executionTargetProfileIds.join(', ') || 'None'}
+                  </TableCell>
+                  <TableCell>{run.applicationRevision ?? 'Not set'}</TableCell>
+                  <TableCell>{durationLabel(run.durationMs)}</TableCell>
+                  <TableCell>
+                    <Badge variant={stateVariant(run.state)}>
+                      <ResultMark state={run.state} />
+                      {run.state}
+                    </Badge>
+                  </TableCell>
+                  <TableCell>{resultCountLabel(run.resultCount)}</TableCell>
+                  <TableCell>
+                    <div className="flex items-center gap-2">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => void reviewRun(run.id)}
+                      >
+                        Review run
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        disabled={
+                          props.runPhase === 'running' ||
+                          (run.state !== 'failed' &&
+                            run.state !== 'infrastructure-error')
+                        }
+                        onClick={() =>
+                          void props.onRerun({
+                            rerunId: run.id,
+                            failures: true,
+                          })
+                        }
+                      >
+                        Rerun failures
+                      </Button>
+                    </div>
+                    {run.sourceRunId ? (
+                      <span className="mt-1 block text-muted-foreground">
+                        Rerun of {run.sourceRunId}
+                      </span>
+                    ) : null}
+                  </TableCell>
+                </TableRow>
+              ))}
+              <VirtualTableSpacer height={runWindow.after} colSpan={9} />
+            </TableBody>
+          </Table>
+        </section>
+      )}
 
       {comparison ? <RunComparison comparison={comparison} /> : null}
 
@@ -507,7 +525,7 @@ export function HistoryPanel(props: HistoryPanelProps) {
           </Button>
         </section>
       ) : null}
-    </main>
+    </section>
   )
 }
 

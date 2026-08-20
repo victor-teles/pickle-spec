@@ -130,7 +130,6 @@ export function registerStudioHardeningTests(
 
       for (const [areaIndex, area] of [
         'Specifications',
-        'Runs',
         'Plans',
         'Settings',
       ].entries()) {
@@ -156,6 +155,12 @@ export function registerStudioHardeningTests(
           .analyze()
         expect(results.violations).toEqual([])
       }
+      await page.goto(url)
+      await page.getByRole('button', { name: 'History' }).click()
+      const historyResults = await new AxeBuilder({ page })
+        .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa'])
+        .analyze()
+      expect(historyResults.violations).toEqual([])
       expect(consoleErrors).toEqual([])
     } finally {
       await context.close()
@@ -263,7 +268,7 @@ Feature: Checkout
           parentClientWidth: element.parentElement?.clientWidth,
           parentScrollWidth: element.parentElement?.scrollWidth,
         }))
-      expect(scenarioLayout.scrollWidth).toBeGreaterThan(
+      expect(scenarioLayout.scrollWidth).toBeLessThanOrEqual(
         scenarioLayout.clientWidth,
       )
       expect(scenarioLayout.parentScrollWidth).toBe(
@@ -333,7 +338,7 @@ Feature: Fixture ${suffix}
       const response = await page.goto(url)
       expect(response?.status()).toBe(200)
       await page.getByRole('heading', { name: 'large-run-history' }).waitFor()
-      await page.getByRole('link', { name: 'Runs' }).click()
+      await page.getByRole('button', { name: 'History' }).click()
       const history = page.getByRole('table', { name: 'Test run history' })
       const largeRun = history.getByRole('row').filter({
         hasText: 'run-large-results',
@@ -371,8 +376,8 @@ Feature: Fixture ${suffix}
       })
       await tabTo(page, deleteEligible)
       await page.keyboard.press('Enter')
-      await page.getByText('No local test runs yet.').waitFor()
-      expect(await history.getByRole('row').count()).toBe(1)
+      await page.getByText('No test runs for this Specification yet.').waitFor()
+      expect(await history.count()).toBe(0)
     } finally {
       await page.close()
       child.kill()
@@ -432,8 +437,8 @@ function largeResult(index: number) {
   return {
     schemaVersion: 1 as const,
     specification: {
-      name: 'Large project history',
-      uri: 'features/large-history.feature',
+      name: 'Checkout',
+      uri: 'features/checkout.feature',
     },
     scenario: { id: `scenario-${suffix}`, name: `Scenario ${suffix}` },
     executionTargetProfile: { id: 'chrome', adapter: 'custom' },

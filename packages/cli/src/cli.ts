@@ -28,6 +28,7 @@ import {
   startProjectRun,
 } from './execute-run'
 import { checkProject, initializeProject, migrateProject } from './project'
+import { createRunReporter, type RunReporterName } from './run-reporter'
 import { createStudioHistoryGateway } from './studio-history'
 import { createStudioPlanGateway } from './studio-plans'
 import {
@@ -62,6 +63,7 @@ interface RunArguments {
   failures?: boolean
   adaptations?: boolean
   fast?: boolean
+  reporter?: RunReporterName
 }
 
 interface StudioArguments {
@@ -195,6 +197,14 @@ function parseRunArguments(argv: string[]): RunArguments {
       case '--fast':
         args.fast = true
         break
+      case '--reporter': {
+        const reporter = valueAfter(argv, index++)
+        if (reporter !== 'default' && reporter !== 'ndjson') {
+          throw new Error('--reporter requires default or ndjson')
+        }
+        args.reporter = reporter
+        break
+      }
       default:
         throw new Error(`Unknown option: ${flag}`)
     }
@@ -208,6 +218,8 @@ async function run(argv: string[]): Promise<number> {
   const config = await loadConfig(args.configPath)
   const controller = new AbortController()
   const onSigint = () => controller.abort()
+  const reporter = createRunReporter(args.reporter ?? 'default')
+  const startedAt = performance.now()
   process.on('SIGINT', onSigint)
   try {
     const started = await startProjectRun({
@@ -215,11 +227,9 @@ async function run(argv: string[]): Promise<number> {
       config,
       options: args,
       signal: controller.signal,
-      onEvent: (event) => {
-        if (event.type === 'run-started') return
-        console.log(JSON.stringify({ kind: 'run-event', event }))
-      },
+      onEvent: reporter.event,
     })
+    reporter.start()
     const { runs, manifest } = await started.done
     const store = openTestRunStore({ root: process.cwd() })
     if (args.junitPath) await Bun.write(args.junitPath, formatJunit(manifest))
@@ -235,11 +245,7 @@ async function run(argv: string[]): Promise<number> {
       maxBytes: config.retention?.maxBytes,
     })
 
-    for (const scenarioRun of runs) {
-      console.log(
-        JSON.stringify({ kind: 'test-result', result: scenarioRun.result }),
-      )
-    }
+    reporter.finish(runs, performance.now() - startedAt)
     const states = runs.map(({ result }) => result.state)
     if (states.includes('cancelled')) return 130
     if (

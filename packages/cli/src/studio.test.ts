@@ -9,6 +9,15 @@ type TestRunManifestFile = {
   finishedAt?: string
 }
 
+type HistoryIndexPayload = {
+  runs: Array<{ specificationUris: string[] }>
+}
+
+type BrowserViewportHost = {
+  document: { documentElement: { scrollWidth: number } }
+  innerWidth: number
+}
+
 type MonacoEditorHost = {
   monaco?: {
     editor: {
@@ -64,20 +73,26 @@ Feature: Search
           .textContent(),
       ).toBe('opened-project')
       expect(
-        await page.getByRole('link', { name: 'Specifications' }).count(),
+        await page
+          .getByRole('button', { name: 'Specifications', exact: true })
+          .count(),
       ).toBe(1)
-      expect(await page.getByRole('link', { name: 'Runs' }).count()).toBe(1)
-      expect(
-        await page.getByRole('link', { name: 'Runs', disabled: true }).count(),
-      ).toBe(0)
-      expect(await page.getByRole('link', { name: 'Plans' }).count()).toBe(1)
-      expect(
-        await page.getByRole('link', { name: 'Plans', disabled: true }).count(),
-      ).toBe(0)
-      expect(await page.getByRole('link', { name: 'Settings' }).count()).toBe(1)
+      expect(await page.getByRole('button', { name: 'Runs' }).count()).toBe(0)
+      expect(await page.getByRole('button', { name: 'History' }).count()).toBe(
+        1,
+      )
+      expect(await page.getByRole('button', { name: 'Plans' }).count()).toBe(1)
       expect(
         await page
-          .getByRole('link', { name: 'Settings', disabled: true })
+          .getByRole('button', { name: 'Plans', disabled: true })
+          .count(),
+      ).toBe(0)
+      expect(await page.getByRole('button', { name: 'Settings' }).count()).toBe(
+        1,
+      )
+      expect(
+        await page
+          .getByRole('button', { name: 'Settings', disabled: true })
           .count(),
       ).toBe(0)
       expect(
@@ -218,6 +233,14 @@ Feature: Search
 
   test('Studio manages immutable history and portable runs', async () => {
     const project = await createStudioProject('run-history')
+    await Bun.write(
+      join(project, 'features', 'search.feature'),
+      `@pickle:id:specsearchaaaaaaa @pickle:state:active
+Feature: Search
+  @pickle:id:scnquerybbbbbbbb
+  Scenario: Query the catalog
+    Then results are shown`,
+    )
     const configPath = join(project, 'pickle.config.jsonc')
     const config = await Bun.file(configPath).json()
     await Bun.write(
@@ -237,7 +260,17 @@ Feature: Search
         .getByRole('status')
         .filter({ hasText: 'failed' })
         .waitFor({ timeout: 20_000 })
-      await page.getByRole('link', { name: 'Runs' }).click()
+      await page.getByRole('button', { name: 'Run Specification' }).waitFor({
+        timeout: 20_000,
+      })
+      const indexedHistory = await page.evaluate(async () => {
+        const response = await fetch('/api/history')
+        return response.json() as Promise<HistoryIndexPayload>
+      })
+      expect(indexedHistory.runs[0]?.specificationUris).toEqual([
+        'features/checkout.feature',
+      ])
+      await page.getByRole('button', { name: 'History' }).click()
 
       const history = page.getByRole('table', { name: 'Test run history' })
       expect(await history.getByRole('row').count()).toBe(2)
@@ -247,6 +280,16 @@ Feature: Search
       expect(await run.textContent()).toContain('app-42')
       expect(await run.textContent()).toContain('failed')
       expect(await run.textContent()).toContain('6 results')
+
+      await page.getByRole('button', { name: 'Search' }).click()
+      await page.getByRole('button', { name: 'History' }).click()
+      await page.getByText('No test runs for this Specification yet.').waitFor()
+      expect(
+        await page.getByRole('table', { name: 'Test run history' }).count(),
+      ).toBe(0)
+      await page.getByRole('button', { name: 'Checkout' }).click()
+      await page.getByRole('button', { name: 'History' }).click()
+      await history.waitFor()
 
       await run.getByRole('button', { name: 'Rerun failures' }).click()
       await history.getByRole('row').nth(2).waitFor({ timeout: 20_000 })
@@ -389,7 +432,7 @@ Feature: Checkout
         .getByRole('status')
         .filter({ hasText: 'passed' })
         .waitFor({ timeout: 20_000 })
-      await page.getByRole('link', { name: 'Runs' }).click()
+      await page.getByRole('button', { name: 'History' }).click()
       const history = page.getByRole('table', { name: 'Test run history' })
       await history
         .getByRole('row')
@@ -515,7 +558,7 @@ Feature: Checkout
         timeout: 20_000,
       })
 
-      await page.getByRole('link', { name: 'Plans' }).click()
+      await page.getByRole('button', { name: 'Plans' }).click()
       await page.getByRole('heading', { name: 'Plans', exact: true }).waitFor()
       expect(await page.getByText('CI adapted results: reject').count()).toBe(1)
       await page
@@ -542,12 +585,12 @@ Feature: Checkout
       await evidence.getByRole('button', { name: 'Close' }).click()
 
       await rm(gate)
-      await page.getByRole('link', { name: 'Specifications' }).click()
+      await page.getByRole('button', { name: 'Specifications' }).click()
       await page
         .getByRole('button', { name: 'Run Scenario Pay for the order' })
         .click()
       await page.getByRole('status').filter({ hasText: 'running' }).waitFor()
-      await page.getByRole('link', { name: 'Plans' }).click()
+      await page.getByRole('button', { name: 'Plans' }).click()
       expect(
         await page
           .getByRole('button', { name: 'Promote candidate' })
@@ -556,7 +599,7 @@ Feature: Checkout
       const otherPage = await browser.newPage()
       try {
         await otherPage.goto(url)
-        await otherPage.getByRole('link', { name: 'Plans' }).click()
+        await otherPage.getByRole('button', { name: 'Plans' }).click()
         await otherPage
           .getByRole('button', { name: 'Adapt the purchase · chrome' })
           .click()
@@ -599,7 +642,7 @@ Feature: Checkout
       await page.getByText('No candidate plan').waitFor()
       expect(await Bun.file(candidatePath).exists()).toBe(false)
 
-      await page.getByRole('link', { name: 'Settings' }).click()
+      await page.getByRole('button', { name: 'Settings' }).click()
       const changed = page
         .getByRole('listitem')
         .filter({ hasText: '.pickle/plans/chrome/scnadaptcccccccc.json' })
@@ -648,20 +691,72 @@ Feature: Checkout
     }
   }, 60_000)
 
-  test('Studio shows a Specification outline until Edit opens Gherkin with autocomplete', async () => {
+  test('Studio keeps view mode focused on Scenarios until Edit opens Gherkin with autocomplete', async () => {
     const project = await createStudioProject('author-specification')
     const { child, url } = await startStudio(project)
     const page = await browser.newPage()
     try {
       await page.goto(url)
-      const outline = page.getByRole('region', {
-        name: 'Specification outline',
-      })
-      await outline.waitFor()
-      expect(await outline.textContent()).toContain('Checkout')
-      expect(await outline.textContent()).toContain('Pay for the order')
+      await page.getByRole('table', { name: 'Scenarios' }).waitFor()
+      expect(
+        await page
+          .getByRole('region', { name: 'Specification outline' })
+          .count(),
+      ).toBe(0)
+      expect(await page.getByLabel('Active model').count()).toBe(0)
+      expect(
+        await page.getByRole('button', { name: 'Show structure' }).count(),
+      ).toBe(0)
+      expect(
+        await page
+          .getByRole('region', { name: 'Specification metadata' })
+          .count(),
+      ).toBe(0)
       expect(await page.locator('.monaco-editor').count()).toBe(0)
+      const runBox = await page
+        .getByRole('button', { name: 'Run Specification' })
+        .boundingBox()
+      const editBox = await page
+        .getByRole('button', { name: 'Edit Specification' })
+        .boundingBox()
+      expect(runBox).not.toBeNull()
+      expect(editBox).not.toBeNull()
+      expect(Math.abs((runBox?.y ?? 0) - (editBox?.y ?? 1))).toBeLessThan(1)
+      const desktopViewport = page.viewportSize() ?? {
+        width: 1280,
+        height: 720,
+      }
+      await page.setViewportSize({ width: 390, height: 844 })
+      const mobileRunBox = await page
+        .getByRole('button', { name: 'Run Specification' })
+        .boundingBox()
+      const mobileEditBox = await page
+        .getByRole('button', { name: 'Edit Specification' })
+        .boundingBox()
+      expect(mobileRunBox).not.toBeNull()
+      expect(mobileEditBox).not.toBeNull()
+      expect(
+        Math.abs((mobileRunBox?.y ?? 0) - (mobileEditBox?.y ?? 1)),
+      ).toBeLessThan(1)
+      expect(
+        await page.evaluate(() => {
+          const browser = globalThis as unknown as BrowserViewportHost
+          return (
+            browser.document.documentElement.scrollWidth <= browser.innerWidth
+          )
+        }),
+      ).toBe(true)
+      await page.setViewportSize(desktopViewport)
       await page.getByRole('button', { name: 'Edit Specification' }).click()
+      expect(
+        await page.getByRole('navigation', { name: 'Specifications' }).count(),
+      ).toBe(0)
+      expect(await page.getByRole('button', { name: 'History' }).count()).toBe(
+        0,
+      )
+      await page
+        .getByRole('region', { name: 'Specification metadata' })
+        .waitFor()
       await page.locator('.monaco-editor').waitFor()
       const current = await gherkinValue(page)
       expect(current).toContain('# keep this comment')
@@ -708,8 +803,13 @@ Feature: Checkout
       expect(written).toContain('Feature: Basket')
       expect(written).toContain('And a receipt is shown')
       await page.getByRole('button', { name: 'View Specification' }).click()
-      await outline.waitFor()
-      expect(await outline.textContent()).toContain('Basket')
+      await page.getByRole('navigation', { name: 'Specifications' }).waitFor()
+      await page.getByRole('heading', { name: 'Basket', exact: true }).waitFor()
+      expect(
+        await page
+          .getByRole('region', { name: 'Specification outline' })
+          .count(),
+      ).toBe(0)
     } finally {
       await page.close()
       child.kill()
@@ -723,10 +823,7 @@ Feature: Checkout
     const page = await browser.newPage()
     try {
       await page.goto(url)
-      const outline = page.getByRole('region', {
-        name: 'Specification outline',
-      })
-      await outline.waitFor()
+      await page.getByRole('button', { name: 'Edit Specification' }).waitFor()
       await Bun.write(
         join(project, 'features', 'checkout.feature'),
         `# keep this comment
@@ -737,11 +834,14 @@ Feature: Reloaded
     Then payment is captured
 `,
       )
-      await outline.getByText('Reloaded', { exact: true }).waitFor({
-        timeout: 10_000,
-      })
       await page.getByRole('button', { name: 'Edit Specification' }).click()
       await page.locator('.monaco-editor').waitFor()
+      const reloadedDeadline = Date.now() + 10_000
+      while (Date.now() < reloadedDeadline) {
+        if ((await gherkinValue(page)).includes('Feature: Reloaded')) break
+        await Bun.sleep(50)
+      }
+      expect(await gherkinValue(page)).toContain('Feature: Reloaded')
       await setGherkinValue(
         page,
         (await gherkinValue(page)).replace(
@@ -788,9 +888,7 @@ Feature: Disk edit
     const page = await browser.newPage()
     try {
       await page.goto(url)
-      expect(await page.getByLabel('Active model').textContent()).toContain(
-        'anthropic / claude-sonnet-4-6',
-      )
+      expect(await page.getByLabel('Active model').count()).toBe(0)
       await page.getByRole('button', { name: 'Edit Specification' }).click()
       await page
         .getByRole('textbox', { name: 'AI prompt' })
@@ -824,12 +922,12 @@ Feature: Disk edit
       expect(written).toContain('@pickle:state:draft')
       expect(written).not.toContain('@pickle:state:active')
       await page.getByRole('button', { name: 'Search' }).click()
-      const outline = page.getByRole('region', {
-        name: 'Specification outline',
-      })
-      await outline.waitFor()
-      expect(await outline.textContent()).toContain('Search')
-      expect(await outline.textContent()).toContain('@pickle:state:draft')
+      await page.getByRole('heading', { name: 'Search', exact: true }).waitFor()
+      expect(
+        await page
+          .getByRole('region', { name: 'Specification outline' })
+          .count(),
+      ).toBe(0)
     } finally {
       await page.close()
       child.kill()
@@ -843,24 +941,41 @@ Feature: Disk edit
     const page = await browser.newPage()
     try {
       await page.goto(url)
+      expect(
+        await page
+          .getByRole('region', { name: 'Specification metadata' })
+          .count(),
+      ).toBe(0)
+      expect(
+        await page.getByRole('button', { name: 'Edit metadata' }).count(),
+      ).toBe(0)
+      await page.getByRole('button', { name: 'Edit Specification' }).click()
       await page
         .getByRole('region', { name: 'Specification metadata' })
         .waitFor()
+      await setGherkinValue(
+        page,
+        (await gherkinValue(page)).replace(
+          'Feature: Checkout',
+          'Feature: Basket',
+        ),
+      )
       await page.getByRole('button', { name: 'Edit metadata' }).click()
       await page.getByRole('button', { name: 'draft', exact: true }).click()
       await page.getByLabel('Specification tags').fill('@checkout @regression')
       await page.getByLabel('Link namespace').fill('jira')
       await page.getByLabel('Link id').fill('PROJ-12')
       await page.getByRole('button', { name: 'Add link' }).click()
-      await page.getByRole('button', { name: 'Save metadata' }).click()
-      const dialog = page.getByRole('dialog', {
-        name: 'Review Specification metadata',
-      })
-      await dialog.waitFor()
+      await page.getByRole('button', { name: 'Apply metadata' }).click()
       expect(
-        await page.getByRole('region', { name: 'Source diff' }).textContent(),
-      ).toContain('@pickle:state:draft')
-      await dialog.getByRole('button', { name: 'Save metadata' }).click()
+        await page
+          .getByRole('dialog', { name: 'Review Specification metadata' })
+          .count(),
+      ).toBe(0)
+      expect(
+        await Bun.file(join(project, 'features', 'checkout.feature')).text(),
+      ).toContain('@pickle:state:active')
+      await page.getByRole('button', { name: 'Save Specification' }).click()
       const deadline = Date.now() + 10_000
       let written = ''
       while (Date.now() < deadline) {
@@ -876,6 +991,7 @@ Feature: Disk edit
       expect(written).toContain('@checkout')
       expect(written).toContain('@regression')
       expect(written).toContain('@jira:PROJ-12')
+      expect(written).toContain('Feature: Basket')
     } finally {
       await page.close()
       child.kill()
@@ -889,7 +1005,7 @@ Feature: Disk edit
     const page = await browser.newPage()
     try {
       await page.goto(url)
-      await page.getByRole('link', { name: 'Settings' }).click()
+      await page.getByRole('button', { name: 'Settings' }).click()
       await page.getByRole('heading', { name: 'Test suites' }).waitFor()
       await page.getByLabel('Suite name').fill('smoke')
       await page.getByLabel('Suite paths').fill('features/**/*.feature')
@@ -956,7 +1072,7 @@ Feature: Checkout
           .filter({ hasText: 'geolocation' })
           .count(),
       ).toBeGreaterThan(0)
-      await page.getByRole('link', { name: 'Settings' }).click()
+      await page.getByRole('button', { name: 'Settings' }).click()
       await page.getByRole('button', { name: 'chrome' }).click()
       await page.getByLabel('Profile capabilities').fill('geolocation')
       await page
@@ -967,7 +1083,7 @@ Feature: Checkout
       await page
         .getByRole('button', { name: 'Save execution target profile' })
         .click()
-      await page.getByRole('link', { name: 'Specifications' }).click()
+      await page.getByRole('button', { name: 'Specifications' }).click()
       await page.getByRole('button', { name: 'Run Specification' }).waitFor({
         timeout: 10_000,
       })
@@ -987,7 +1103,7 @@ Feature: Checkout
     const page = await browser.newPage()
     try {
       await page.goto(url)
-      await page.getByRole('link', { name: 'Settings' }).click()
+      await page.getByRole('button', { name: 'Settings' }).click()
       await page.getByLabel('Credential name').fill('ANTHROPIC_API_KEY')
       await page.getByLabel('Credential secret').fill('sk-test-secret')
       await page.getByRole('button', { name: 'Save credential' }).click()
@@ -1094,7 +1210,7 @@ exit 0
     const page = await browser.newPage()
     try {
       await page.goto(url)
-      await page.getByRole('link', { name: 'Settings' }).click()
+      await page.getByRole('button', { name: 'Settings' }).click()
       await page.getByRole('heading', { name: 'Repository' }).waitFor()
       const changed = page
         .getByRole('listitem')

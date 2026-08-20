@@ -172,6 +172,7 @@ test('import preserves the original archive and migrates older schemas in memory
       {
         id: 'run-legacy',
         executionTargetProfileIds: ['deterministic'],
+        specificationUris: ['features/checkout.feature'],
         startedAt: '2026-08-01T00:00:00.000Z',
         finishedAt: '2026-08-01T00:00:01.000Z',
         durationMs: 1_000,
