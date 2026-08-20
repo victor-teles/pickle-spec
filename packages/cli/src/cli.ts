@@ -241,6 +241,8 @@ async function run(argv: string[]): Promise<number> {
       options: args,
       signal: controller.signal,
       onEvent: reporter.event,
+      onSchedule: reporter.prepare,
+      onResult: reporter.complete,
     })
     reporter.start()
     const { runs, manifest } = await started.done

@@ -5,7 +5,9 @@ import type {
   ExecutionTargetProfile,
   RunEvent,
   RunExtensions,
+  ScenarioCompletion,
   ScenarioRun,
+  ScheduledTestResult,
   TestResult,
   TestRunManifest,
 } from '@pickle-spec/runner'
@@ -15,12 +17,14 @@ import {
   openTestRunStore,
   resolveRunConfiguration,
   runScenarios,
+  scheduleScenarios,
   selectRerunResults,
   validateTargetSelection,
 } from '@pickle-spec/runner'
 import {
   parseSpecification,
   resolveScenarioId,
+  type ScenarioSelection,
   type SelectionOptions,
   selectScenarios,
   validateSpecificationMetadata,
@@ -63,6 +67,18 @@ export interface StartedProjectRun {
     runs: ScenarioRun[]
     manifest: TestRunManifest
   }>
+}
+
+type StartProjectRunInput = {
+  root: string
+  config: PickleConfig
+  options?: ProjectRunOptions
+  signal?: AbortSignal
+  onEvent?: (event: RunEvent) => void | Promise<void>
+  onSchedule?: (
+    schedule: readonly ScheduledTestResult[],
+  ) => void | Promise<void>
+  onResult?: (result: TestResult) => void | Promise<void>
 }
 
 export async function loadExtensions(
@@ -281,13 +297,9 @@ export async function loadPersistedRun(root: string, runId: string) {
   return { manifest, events }
 }
 
-export async function startProjectRun(input: {
-  root: string
-  config: PickleConfig
-  options?: ProjectRunOptions
-  signal?: AbortSignal
-  onEvent?: (event: RunEvent) => void | Promise<void>
-}): Promise<StartedProjectRun> {
+export async function startProjectRun(
+  input: StartProjectRunInput,
+): Promise<StartedProjectRun> {
   const args = input.options ?? {}
   const root = input.root
   const store = openTestRunStore({
@@ -426,6 +438,27 @@ export async function startProjectRun(input: {
         ),
       )
       validateTargetSelection(selections, resolvedConfiguration.targets)
+      const includeTarget = selectedResults
+        ? (
+            selection: ScenarioSelection,
+            executionTargetProfile: ExecutionTargetProfile,
+          ) =>
+            selectedResults.some(
+              (result) =>
+                result.executionTargetProfile.id ===
+                  executionTargetProfile.id &&
+                selectionMatchesResult(selection, result),
+            )
+        : undefined
+      await input.onSchedule?.(
+        scheduleScenarios({
+          selections,
+          executionTargetProfiles: resolvedConfiguration.targets.map(
+            ({ executionTargetProfile }) => executionTargetProfile,
+          ),
+          includeTarget,
+        }),
+      )
       server = await startServer({
         ...input.config.server,
         ...(args.reuseServer ? { reuseExisting: true } : {}),
@@ -448,6 +481,10 @@ export async function startProjectRun(input: {
         ci: Boolean(process.env.CI),
         signal: input.signal,
         onEvent,
+        onResult: input.onResult
+          ? (completion: ScenarioCompletion) =>
+              input.onResult?.(completion.result)
+          : undefined,
       }
       const runs = selectedResults
         ? await runSelectedResultPairs({
