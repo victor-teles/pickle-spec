@@ -47,7 +47,7 @@ test('serializes mutable operations within one Android logical session', async (
     }),
   )
   await runtime.handle({
-    version: 1,
+    version: 2,
     type: 'open-session',
     sessionId: 'session-1',
     application,
@@ -55,14 +55,14 @@ test('serializes mutable operations within one Android logical session', async (
   })
 
   const first = runtime.handle({
-    version: 1,
+    version: 2,
     type: 'execute-step',
     sessionId: 'session-1',
     stepIndex: 0,
     step: { type: 'action', text: 'First action' },
   })
   const second = runtime.handle({
-    version: 1,
+    version: 2,
     type: 'execute-step',
     sessionId: 'session-1',
     stepIndex: 1,
@@ -93,7 +93,7 @@ test('supplies Replay plan actions to the matching step', async () => {
     }),
   )
   await runtime.handle({
-    version: 1,
+    version: 2,
     type: 'open-session',
     sessionId: 'session-1',
     application,
@@ -113,7 +113,7 @@ test('supplies Replay plan actions to the matching step', async () => {
   })
 
   await runtime.handle({
-    version: 1,
+    version: 2,
     type: 'execute-step',
     sessionId: 'session-1',
     stepIndex: 0,
@@ -127,6 +127,57 @@ test('supplies Replay plan actions to the matching step', async () => {
         replay: { kind: 'find', query: 'Saved', action: 'click' },
       },
     ],
+  ])
+})
+
+test('routes iOS discovery and logical sessions through the mobile gateway', async () => {
+  const discoveries: string[] = []
+  const openings: unknown[] = []
+  const runtime = new MobileWorkerRuntime(
+    gateway({
+      async discoverTargets(platform) {
+        discoveries.push(platform)
+        return []
+      },
+      async openSession(input) {
+        openings.push(input)
+        return { targetId: 'ios-simulator-1' }
+      },
+    }),
+  )
+
+  await runtime.handle({
+    version: 2,
+    type: 'discover-targets',
+    platform: 'ios',
+  })
+  await runtime.handle({
+    version: 2,
+    type: 'open-session',
+    sessionId: 'session-1',
+    platform: 'ios',
+    application: {
+      id: 'com.example.checkout',
+      binaryPath: '/tmp/Checkout.app',
+    },
+    mode: 'adaptive',
+  })
+
+  expect(discoveries).toEqual(['ios'])
+  expect(openings).toEqual([
+    {
+      sessionId: 'session-1',
+      platform: 'ios',
+      application: {
+        id: 'com.example.checkout',
+        binaryPath: '/tmp/Checkout.app',
+      },
+      targetId: undefined,
+      artifactDirectory: undefined,
+      artifacts: undefined,
+      redactions: undefined,
+      requiredCapabilities: undefined,
+    },
   ])
 })
 
@@ -148,7 +199,7 @@ test('cancellation stops the active device operation before the session can be r
     }),
   )
   const openRequest = {
-    version: 1 as const,
+    version: 2 as const,
     type: 'open-session' as const,
     sessionId: 'session-1',
     application,
@@ -156,7 +207,7 @@ test('cancellation stops the active device operation before the session can be r
   }
   await runtime.handle(openRequest)
   const execution = runtime.handle({
-    version: 1,
+    version: 2,
     type: 'execute-step',
     sessionId: 'session-1',
     stepIndex: 0,
@@ -166,7 +217,7 @@ test('cancellation stops the active device operation before the session can be r
 
   await expect(
     runtime.handle({
-      version: 1,
+      version: 2,
       type: 'cancel-session',
       sessionId: 'session-1',
     }),

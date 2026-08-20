@@ -1,23 +1,49 @@
 import { z } from 'zod'
 
-export const mobileWorkerProtocolVersion = 1 as const
+export const mobileWorkerProtocolVersion = 2 as const
 
 export const androidCapabilities = [
   'android',
   'android-emulator',
   'screenshots',
+  'device-logs',
+  'recordings',
+  'traces',
 ] as const
 
-const androidTargetSchema = z.strictObject({
+export const iosCapabilities = [
+  'ios',
+  'ios-simulator',
+  'screenshots',
+  'device-logs',
+  'recordings',
+  'traces',
+] as const
+
+const mobilePlatformSchema = z.enum(['android', 'ios'])
+
+const mobileTargetSchema = z.strictObject({
   id: z.string().min(1),
   name: z.string().min(1),
   state: z.enum(['booted', 'offline']),
   capabilities: z.array(z.string()),
 })
 
-const androidApplicationSchema = z.strictObject({
+const mobileApplicationSchema = z.strictObject({
   id: z.string().min(1),
   binaryPath: z.string().min(1),
+})
+
+const mobileArtifactKindSchema = z.enum([
+  'screenshot',
+  'trace',
+  'recording',
+  'device-log',
+])
+
+const mobileTextRedactionSchema = z.strictObject({
+  match: z.string().min(1),
+  replacement: z.string().optional(),
 })
 
 const workerResolvedActionSchema = z.strictObject({
@@ -43,7 +69,7 @@ const workerStepExecutionSchema = z.strictObject({
   artifacts: z
     .array(
       z.strictObject({
-        kind: z.enum(['screenshot', 'device-log']),
+        kind: mobileArtifactKindSchema,
         path: z.string(),
         mediaType: z.string().optional(),
       }),
@@ -63,15 +89,20 @@ export const mobileWorkerRequestSchema = z.discriminatedUnion('type', [
   z.strictObject({
     version: z.literal(mobileWorkerProtocolVersion),
     type: z.literal('discover-targets'),
+    platform: mobilePlatformSchema.optional(),
   }),
   z.strictObject({
     version: z.literal(mobileWorkerProtocolVersion),
     type: z.literal('open-session'),
     sessionId: z.string().min(1),
+    platform: mobilePlatformSchema.optional(),
     targetId: z.string().min(1).optional(),
-    application: androidApplicationSchema,
+    application: mobileApplicationSchema,
     mode: z.enum(['adaptive', 'replay']),
     artifactDirectory: z.string().min(1).optional(),
+    artifacts: z.array(mobileArtifactKindSchema).optional(),
+    redactions: z.array(mobileTextRedactionSchema).optional(),
+    requiredCapabilities: z.array(z.string().min(1)).optional(),
     plan: executionPlanSchema.optional(),
   }),
   z.strictObject({
@@ -97,7 +128,7 @@ export const mobileWorkerResponseSchema = z.discriminatedUnion('type', [
   z.strictObject({
     version: z.literal(mobileWorkerProtocolVersion),
     type: z.literal('targets-discovered'),
-    targets: z.array(androidTargetSchema),
+    targets: z.array(mobileTargetSchema),
   }),
   z.strictObject({
     version: z.literal(mobileWorkerProtocolVersion),
@@ -153,8 +184,15 @@ export const workerRequestMessageSchema = z.strictObject({
   payload: mobileWorkerRequestSchema,
 })
 
-export type AndroidTarget = z.infer<typeof androidTargetSchema>
-export type AndroidApplication = z.infer<typeof androidApplicationSchema>
+export type MobilePlatform = z.infer<typeof mobilePlatformSchema>
+export type MobileApplication = z.infer<typeof mobileApplicationSchema>
+export type MobileTarget = z.infer<typeof mobileTargetSchema>
+export type MobileArtifactKind = z.infer<typeof mobileArtifactKindSchema>
+export type MobileTextRedaction = z.infer<typeof mobileTextRedactionSchema>
+export type AndroidTarget = MobileTarget
+export type AndroidApplication = MobileApplication
+export type IosTarget = MobileTarget
+export type IosApplication = MobileApplication
 export type MobileStep = z.infer<typeof mobileStepSchema>
 export type WorkerResolvedAction = z.infer<typeof workerResolvedActionSchema>
 export type WorkerStepExecution = z.infer<typeof workerStepExecutionSchema>

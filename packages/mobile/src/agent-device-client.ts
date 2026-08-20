@@ -1,10 +1,11 @@
 import { createAgentDeviceClient, isAgentDeviceError } from 'agent-device'
 import { z } from 'zod'
+import type { MobilePlatform } from './worker-protocol'
 
 export interface AgentDeviceClientConfig {
   session: string
   lockPolicy: 'reject'
-  lockPlatform: 'android'
+  lockPlatform: MobilePlatform
 }
 
 export interface AndroidSelection {
@@ -12,35 +13,51 @@ export interface AndroidSelection {
   serial: string
 }
 
-interface AppDeployOptions extends AndroidSelection {
+export interface IosSelection {
+  platform: 'ios'
+  udid: string
+}
+
+export type MobileSelection = AndroidSelection | IosSelection
+
+type AppDeployOptions = MobileSelection & {
   app: string
   appPath: string
 }
 
-interface AppOpenOptions extends AndroidSelection {
+type AppOpenOptions = MobileSelection & {
   app: string
 }
 
-interface WaitOptions extends AndroidSelection {
+type WaitOptions = MobileSelection & {
   text: string
 }
 
-interface FindOptions extends AndroidSelection {
+type FindOptions = MobileSelection & {
   query: string
   action: 'click'
 }
 
+interface LogsOptions {
+  action: 'start' | 'stop' | 'path'
+}
+
+interface RecordingOptions {
+  action: 'start' | 'stop'
+  path?: string
+}
+
 export interface AgentDeviceClientPort {
   devices: {
-    list(options: { platform: 'android' }): Promise<unknown>
-    capabilities(options: AndroidSelection): Promise<unknown>
+    list(options: { platform: MobilePlatform }): Promise<unknown>
+    capabilities(options: MobileSelection): Promise<unknown>
   }
   apps: {
     reinstall(options: AppDeployOptions): Promise<unknown>
     open(options: AppOpenOptions): Promise<unknown>
   }
   command: {
-    appState(options: AndroidSelection): Promise<unknown>
+    appState(options: MobileSelection): Promise<unknown>
     wait(options: WaitOptions): Promise<unknown>
   }
   interactions: {
@@ -48,6 +65,13 @@ export interface AgentDeviceClientPort {
   }
   capture: {
     screenshot(options: { path?: string }): Promise<unknown>
+  }
+  observability: {
+    logs(options: LogsOptions): Promise<unknown>
+  }
+  recording: {
+    record(options: RecordingOptions): Promise<unknown>
+    trace(options: RecordingOptions): Promise<unknown>
   }
   sessions: {
     close(): Promise<unknown>
@@ -69,22 +93,57 @@ const androidDeviceSchema = z.strictObject({
   android: z.strictObject({ serial: z.string().min(1) }),
 })
 
-export const androidDevicesSchema = z.array(androidDeviceSchema)
+const iosDeviceSchema = z.strictObject({
+  platform: z.literal('ios'),
+  target: z.literal('mobile'),
+  kind: z.enum(['simulator', 'device']),
+  id: z.string().min(1),
+  name: z.string().min(1),
+  booted: z.boolean().optional(),
+  appleOs: z.enum(['ios', 'ipados']).optional(),
+  identifiers: z.record(z.string(), z.unknown()),
+  ios: z.strictObject({ udid: z.string().min(1) }),
+})
+
+const mobileDeviceSchema = z.discriminatedUnion('platform', [
+  androidDeviceSchema,
+  iosDeviceSchema,
+])
+
+export const mobileDevicesSchema = z.array(mobileDeviceSchema)
+
+export type AgentDeviceDevice = z.infer<typeof mobileDeviceSchema>
 
 export const agentDeviceCapabilitiesSchema = z.strictObject({
-  device: androidDeviceSchema,
+  device: mobileDeviceSchema,
   availableCommands: z.array(z.string()),
 })
 
-export const androidAppStateSchema = z.strictObject({
+const androidAppStateSchema = z.strictObject({
   platform: z.literal('android'),
   package: z.string(),
   activity: z.string(),
 })
 
+export const mobileAppStateSchema = z.discriminatedUnion('platform', [
+  androidAppStateSchema,
+  z.object({
+    platform: z.literal('ios'),
+    appName: z.string(),
+    appBundleId: z.string().optional(),
+    source: z.literal('session'),
+    surface: z.string(),
+  }),
+])
+
+export const agentDeviceLogPathSchema = z.object({
+  path: z.string().min(1),
+})
+
 const functionalFailureCodes = new Set([
   'AMBIGUOUS_MATCH',
-  'COMMAND_FAILED',
+  'ELEMENT_NOT_FOUND',
+  'ELEMENT_OFFSCREEN',
   'REPLAY_DIVERGENCE',
 ])
 

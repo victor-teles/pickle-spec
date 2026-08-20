@@ -24,6 +24,11 @@ const application = {
   binaryPath: '/tmp/checkout.apk',
 }
 
+const iosApplication = {
+  id: 'com.example.checkout',
+  binaryPath: '/tmp/Checkout.app',
+}
+
 function conformanceWorker(): MobileWorkerClient {
   const sessions = new Map<
     string,
@@ -33,14 +38,15 @@ function conformanceWorker(): MobileWorkerClient {
     async request(request) {
       switch (request.type) {
         case 'discover-targets':
-          return { version: 1, type: 'targets-discovered', targets: [] }
+          return { version: 2, type: 'targets-discovered', targets: [] }
         case 'open-session':
           sessions.set(request.sessionId, request)
           return {
-            version: 1,
+            version: 2,
             type: 'session-opened',
             sessionId: request.sessionId,
-            targetId: 'emulator-5554',
+            targetId:
+              request.platform === 'ios' ? 'ios-simulator-1' : 'emulator-5554',
           }
         case 'execute-step': {
           const session = sessions.get(request.sessionId)
@@ -48,7 +54,7 @@ function conformanceWorker(): MobileWorkerClient {
           const planned =
             session.plan?.steps[request.stepIndex]?.resolvedActions
           return {
-            version: 1,
+            version: 2,
             type: 'step-executed',
             sessionId: request.sessionId,
             execution: {
@@ -69,14 +75,14 @@ function conformanceWorker(): MobileWorkerClient {
         case 'close-session':
           sessions.delete(request.sessionId)
           return {
-            version: 1,
+            version: 2,
             type: 'session-closed',
             sessionId: request.sessionId,
           }
         case 'cancel-session':
           sessions.delete(request.sessionId)
           return {
-            version: 1,
+            version: 2,
             type: 'session-cancelled',
             sessionId: request.sessionId,
           }
@@ -100,7 +106,47 @@ defineAdapterConformanceSuite({
   executionTargetProfile: { id: 'android' },
   specification,
   scenario,
-  expectedCapabilities: ['android', 'android-emulator', 'screenshots'],
+  expectedCapabilities: [
+    'android',
+    'android-emulator',
+    'screenshots',
+    'device-logs',
+    'recordings',
+    'traces',
+  ],
+  replayActions: scenario.steps.map((step) => [
+    {
+      description: `Replay: ${step.text}`,
+      replay: {
+        kind: 'find',
+        query: step.text,
+        action: step.type === 'outcome' ? 'wait' : 'click',
+      },
+    },
+  ]),
+})
+
+defineAdapterConformanceSuite({
+  name: 'iOS mobile',
+  createAdapter: () =>
+    createMobileAdapter(
+      {
+        executionTarget: 'ios-simulator',
+        application: iosApplication,
+      },
+      conformanceWorker,
+    ),
+  executionTargetProfile: { id: 'ios' },
+  specification,
+  scenario,
+  expectedCapabilities: [
+    'ios',
+    'ios-simulator',
+    'screenshots',
+    'device-logs',
+    'recordings',
+    'traces',
+  ],
   replayActions: scenario.steps.map((step) => [
     {
       description: `Replay: ${step.text}`,

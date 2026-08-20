@@ -1,10 +1,15 @@
-import { mkdir } from 'node:fs/promises'
+import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { z } from 'zod'
-import type { AgentDeviceClientPort } from './agent-device-client'
+import type {
+  AgentDeviceClientPort,
+  MobileSelection,
+} from './agent-device-client'
 import { isFunctionalAgentDeviceFailure } from './agent-device-client'
 import type {
+  MobileArtifactKind,
   MobileStep,
+  MobileTextRedaction,
   WorkerResolvedAction,
   WorkerStepExecution,
 } from './worker-protocol'
@@ -18,8 +23,11 @@ export interface ExecuteAgentDeviceStepInput {
 
 export interface AgentDeviceStepSession {
   artifactDirectory?: string
+  artifacts: ReadonlySet<MobileArtifactKind>
   client: AgentDeviceClientPort
-  serial: string
+  deviceLogPath?: string
+  redactions: readonly MobileTextRedaction[]
+  selection: MobileSelection
 }
 
 const replayActionSchema = z.strictObject({
@@ -33,8 +41,29 @@ const screenshotResultSchema = z.object({ path: z.string().min(1) })
 type ReplayAction = z.infer<typeof replayActionSchema>
 type ScreenshotArtifact = NonNullable<WorkerStepExecution['artifacts']>[number]
 
+interface TimedEvidence {
+  recordingPath?: string
+  tracePath?: string
+}
+
+interface CapturedEvidence {
+  artifacts: ScreenshotArtifact[]
+  errors: string[]
+}
+
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
+}
+
+function redactText(
+  value: string,
+  redactions: readonly MobileTextRedaction[],
+): string {
+  return redactions.reduce(
+    (redacted, rule) =>
+      redacted.split(rule.match).join(rule.replacement ?? '[REDACTED]'),
+    value,
+  )
 }
 
 function adaptiveAction(step: MobileStep): ReplayAction {
@@ -53,19 +82,15 @@ async function executeAction(
   session: AgentDeviceStepSession,
   action: ReplayAction,
 ): Promise<void> {
-  const selection = {
-    platform: 'android' as const,
-    serial: session.serial,
-  }
   if (action.action === 'wait') {
     await session.client.command.wait({
-      ...selection,
+      ...session.selection,
       text: action.query,
     })
     return
   }
   await session.client.interactions.find({
-    ...selection,
+    ...session.selection,
     query: action.query,
     action: 'click',
   })
@@ -123,7 +148,9 @@ async function captureScreenshot(
   input: ExecuteAgentDeviceStepInput,
   session: AgentDeviceStepSession,
 ): Promise<ScreenshotArtifact | undefined> {
-  if (!session.artifactDirectory) return
+  if (!session.artifactDirectory || !session.artifacts.has('screenshot')) {
+    return
+  }
   const directory = join(session.artifactDirectory, input.sessionId)
   await mkdir(directory, { recursive: true })
   const path = join(
@@ -140,10 +167,142 @@ async function captureScreenshot(
   }
 }
 
+function stepArtifactPath(
+  input: ExecuteAgentDeviceStepInput,
+  session: AgentDeviceStepSession,
+  extension: string,
+): string | undefined {
+  if (!session.artifactDirectory) return
+  return join(
+    session.artifactDirectory,
+    input.sessionId,
+    `step-${String(input.stepIndex + 1).padStart(2, '0')}.${extension}`,
+  )
+}
+
+async function startTimedEvidence(
+  input: ExecuteAgentDeviceStepInput,
+  session: AgentDeviceStepSession,
+): Promise<TimedEvidence> {
+  if (!session.artifactDirectory) return {}
+  await mkdir(join(session.artifactDirectory, input.sessionId), {
+    recursive: true,
+  })
+  const evidence: TimedEvidence = {}
+  try {
+    if (session.artifacts.has('recording')) {
+      evidence.recordingPath = stepArtifactPath(input, session, 'mp4')
+      await session.client.recording.record({
+        action: 'start',
+        path: evidence.recordingPath,
+      })
+    }
+    if (session.artifacts.has('trace')) {
+      evidence.tracePath = stepArtifactPath(input, session, 'trace')
+      await session.client.recording.trace({
+        action: 'start',
+        path: evidence.tracePath,
+      })
+    }
+    return evidence
+  } catch (error) {
+    await Promise.allSettled([
+      ...(evidence.recordingPath
+        ? [
+            session.client.recording.record({
+              action: 'stop',
+              path: evidence.recordingPath,
+            }),
+          ]
+        : []),
+      ...(evidence.tracePath
+        ? [
+            session.client.recording.trace({
+              action: 'stop',
+              path: evidence.tracePath,
+            }),
+          ]
+        : []),
+    ])
+    throw error
+  }
+}
+
+async function captureRequestedEvidence(
+  input: ExecuteAgentDeviceStepInput,
+  session: AgentDeviceStepSession,
+  timedEvidence: TimedEvidence,
+): Promise<CapturedEvidence> {
+  const artifacts: ScreenshotArtifact[] = []
+  const errors: string[] = []
+
+  if (session.artifacts.has('device-log') && session.artifactDirectory) {
+    const path = stepArtifactPath(input, session, 'log')
+    try {
+      if (!path || !session.deviceLogPath) {
+        throw new Error('Agent Device did not provide an app log path')
+      }
+      const log = await readFile(session.deviceLogPath, 'utf8')
+      await writeFile(path, redactText(log, session.redactions), 'utf8')
+      artifacts.push({ kind: 'device-log', path, mediaType: 'text/plain' })
+    } catch (error) {
+      errors.push(`Device log capture failed: ${errorMessage(error)}`)
+    }
+  }
+
+  if (timedEvidence.recordingPath) {
+    try {
+      await session.client.recording.record({
+        action: 'stop',
+        path: timedEvidence.recordingPath,
+      })
+      artifacts.push({
+        kind: 'recording',
+        path: timedEvidence.recordingPath,
+        mediaType: 'video/mp4',
+      })
+    } catch (error) {
+      errors.push(`Recording capture failed: ${errorMessage(error)}`)
+    }
+  }
+
+  if (timedEvidence.tracePath) {
+    try {
+      await session.client.recording.trace({
+        action: 'stop',
+        path: timedEvidence.tracePath,
+      })
+      artifacts.push({ kind: 'trace', path: timedEvidence.tracePath })
+    } catch (error) {
+      errors.push(`Trace capture failed: ${errorMessage(error)}`)
+    }
+  }
+
+  try {
+    const screenshot = await captureScreenshot(input, session)
+    if (screenshot) artifacts.push(screenshot)
+  } catch (error) {
+    errors.push(`Screenshot capture failed: ${errorMessage(error)}`)
+  }
+
+  return { artifacts, errors }
+}
+
 export async function executeAgentDeviceStep(
   input: ExecuteAgentDeviceStepInput,
   session: AgentDeviceStepSession,
 ): Promise<WorkerStepExecution> {
+  let timedEvidence: TimedEvidence
+  try {
+    timedEvidence = await startTimedEvidence(input, session)
+  } catch (error) {
+    return {
+      state: 'infrastructure-error',
+      resolvedActions: [],
+      message: `Test artifact capture failed: ${errorMessage(error)}`,
+    }
+  }
+
   let execution: WorkerStepExecution
   try {
     execution = await executeStepActions(input, session)
@@ -157,14 +316,16 @@ export async function executeAgentDeviceStep(
     }
   }
 
-  try {
-    const artifact = await captureScreenshot(input, session)
-    return artifact ? { ...execution, artifacts: [artifact] } : execution
-  } catch (error) {
+  const evidence = await captureRequestedEvidence(input, session, timedEvidence)
+  if (evidence.errors.length > 0) {
     return {
       ...execution,
       state: 'infrastructure-error',
-      message: `Screenshot capture failed: ${errorMessage(error)}`,
+      message: evidence.errors.join('; '),
+      artifacts: evidence.artifacts.length > 0 ? evidence.artifacts : undefined,
     }
   }
+  return evidence.artifacts.length > 0
+    ? { ...execution, artifacts: evidence.artifacts }
+    : execution
 }

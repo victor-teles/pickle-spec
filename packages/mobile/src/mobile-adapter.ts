@@ -8,28 +8,77 @@ import {
   type AndroidApplication,
   type AndroidTarget,
   androidCapabilities,
+  type IosApplication,
+  type IosTarget,
+  iosCapabilities,
+  type MobileArtifactKind,
+  type MobilePlatform,
+  type MobileTextRedaction,
   type MobileWorkerResponse,
   mobileWorkerProtocolVersion,
 } from './worker-protocol'
 
-export type { AndroidApplication, AndroidTarget }
-export { androidCapabilities }
+export type {
+  AndroidApplication,
+  AndroidTarget,
+  IosApplication,
+  IosTarget,
+  MobileArtifactKind,
+  MobileTextRedaction,
+}
+export { androidCapabilities, iosCapabilities }
 
-export interface MobileAdapterOptions {
-  application: AndroidApplication
+interface MobileAdapterBaseOptions {
   targetId?: string
   artifactDirectory?: string
+  artifacts?: readonly MobileArtifactKind[]
+  redactions?: readonly MobileTextRedaction[]
   nodePath?: string
 }
 
-export interface MobileExecutionTargetAdapter extends ExecutionTargetAdapter {
-  discoverTargets(): Promise<AndroidTarget[]>
+export interface AndroidMobileAdapterOptions extends MobileAdapterBaseOptions {
+  executionTarget?: 'android-emulator'
+  application: AndroidApplication
 }
+
+export interface IosMobileAdapterOptions extends MobileAdapterBaseOptions {
+  executionTarget: 'ios-simulator'
+  application: IosApplication
+}
+
+export type MobileAdapterOptions =
+  | AndroidMobileAdapterOptions
+  | IosMobileAdapterOptions
+
+export interface MobileExecutionTargetAdapter extends ExecutionTargetAdapter {
+  discoverTargets(): Promise<Array<AndroidTarget | IosTarget>>
+}
+
+interface ExecutionTargetPolicy {
+  capabilities: readonly string[]
+  planFormatVersion: string
+  platform: MobilePlatform
+}
+
+const executionTargetPolicies = {
+  'android-emulator': {
+    capabilities: androidCapabilities,
+    planFormatVersion: 'mobile.android.1',
+    platform: 'android',
+  },
+  'ios-simulator': {
+    capabilities: iosCapabilities,
+    planFormatVersion: 'mobile.ios.1',
+    platform: 'ios',
+  },
+} as const satisfies Record<string, ExecutionTargetPolicy>
 
 export function createMobileAdapter(
   options: MobileAdapterOptions,
   workerFactory?: MobileWorkerFactory,
 ): MobileExecutionTargetAdapter {
+  const policy =
+    executionTargetPolicies[options.executionTarget ?? 'android-emulator']
   let worker: MobileWorkerClient | undefined
   const ensureWorker = () => {
     worker ??=
@@ -41,12 +90,13 @@ export function createMobileAdapter(
   }
 
   return {
-    capabilities: androidCapabilities,
-    planFormatVersion: 'mobile.android.1',
+    capabilities: policy.capabilities,
+    planFormatVersion: policy.planFormatVersion,
     async discoverTargets() {
       const response = await ensureWorker().request({
         version: mobileWorkerProtocolVersion,
         type: 'discover-targets',
+        platform: policy.platform,
       })
       if (response.type !== 'targets-discovered') {
         throw new Error(`Unexpected mobile worker response: ${response.type}`)
@@ -88,10 +138,18 @@ export function createMobileAdapter(
             version: mobileWorkerProtocolVersion,
             type: 'open-session',
             sessionId,
+            platform: policy.platform,
             targetId: options.targetId,
             application: options.application,
             mode: input.mode ?? 'adaptive',
             artifactDirectory: options.artifactDirectory,
+            artifacts: options.artifacts ? [...options.artifacts] : undefined,
+            redactions: options.redactions
+              ? options.redactions.map((redaction) => ({ ...redaction }))
+              : undefined,
+            requiredCapabilities: input.scenario.capabilityRequirements
+              ? [...input.scenario.capabilityRequirements]
+              : undefined,
             plan: input.plan
               ? {
                   steps: input.plan.steps.map((step) => ({
