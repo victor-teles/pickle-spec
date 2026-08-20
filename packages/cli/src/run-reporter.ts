@@ -4,6 +4,11 @@ import type {
   ScheduledTestResult,
   TestResult,
 } from '@pickle-spec/runner'
+import {
+  createProcessTerminalSurface,
+  type InteractiveTerminalSurface,
+  renderedTerminalRows,
+} from './terminal-surface'
 
 export type RunReporterName = 'default' | 'ndjson'
 
@@ -12,6 +17,8 @@ export interface RunReporter {
   prepare?(schedule: readonly ScheduledTestResult[]): void
   event(event: RunEvent): void
   complete?(result: TestResult): void
+  fail?(error: unknown, durationMs: number): void
+  refresh?(): void
   finish(runs: readonly ScenarioRun[], durationMs: number): void
 }
 
@@ -23,8 +30,11 @@ type RunReporterOptions = {
   version?: string
   color?: boolean
   columns?: number
+  interactive?: boolean
   progressive?: boolean
+  terminal?: InteractiveTerminalSurface
   now?: () => Date
+  scheduleRefresh?: (refresh: () => void) => () => void
 }
 
 type ScenarioGroup = {
@@ -41,6 +51,19 @@ type SpecificationGroup = {
 type PendingSpecificationBlock = {
   uri: string
   scheduleIndexes: number[]
+}
+
+type ScheduleIndexQueue = {
+  indexes: number[]
+  next: number
+}
+
+const progressMarks = ['◐', '◓', '◑', '◒'] as const
+
+function schedulePagedRefresh(refresh: () => void): () => void {
+  const timer = setInterval(refresh, 200)
+  timer.unref()
+  return () => clearInterval(timer)
 }
 
 type ResultPresentation = {
@@ -154,6 +177,10 @@ function wrappedLines(
     return [`${prefix}${content}`]
   }
 
+  if (visiblePrefixLength >= columns) {
+    return [prefix, ...wrappedLines('', content, '', columns, 0)]
+  }
+
   const lines: string[] = []
   let remaining = textUnits(content)
   let linePrefix = prefix
@@ -179,8 +206,9 @@ function wrappedLines(
         .join('')
         .trimStart(),
     )
-    linePrefix = continuationPrefix
-    prefixLength = continuationPrefix.length
+    linePrefix =
+      Bun.stringWidth(continuationPrefix) < columns ? continuationPrefix : ''
+    prefixLength = Bun.stringWidth(linePrefix)
   }
   return lines
 }
@@ -274,18 +302,22 @@ function orderedScheduleFromResults(
   )
 }
 
-function scheduledResultMatches(
+function scheduledResultKey(result: ScheduledTestResult | TestResult): string {
+  const scenarioIdentity = result.scenario.id ?? result.scenario.name
+  return `${result.specification.uri}\0${scenarioIdentity}\0${result.executionTargetProfile.id}`
+}
+
+function scheduledEventMatches(
   scheduled: ScheduledTestResult,
-  result: TestResult,
+  event: Extract<RunEvent, { type: 'scenario-started' }>,
 ): boolean {
-  const scenarioMatches = scheduled.scenario.id
-    ? scheduled.scenario.id === result.scenario.id
-    : scheduled.scenario.name === result.scenario.name
-  return (
-    scheduled.specification.uri === result.specification.uri &&
-    scenarioMatches &&
-    scheduled.executionTargetProfile.id === result.executionTargetProfile.id
-  )
+  const scenarioMatches = event.scenario.id
+    ? event.scenario.id === scheduled.scenario.id
+    : event.scenario.name === scheduled.scenario.name
+  const profileMatches = event.executionTargetProfile
+    ? event.executionTargetProfile.id === scheduled.executionTargetProfile.id
+    : true
+  return scenarioMatches && profileMatches
 }
 
 type SpecificationWriterOptions = {
@@ -307,32 +339,59 @@ function writeSpecification(
     '     ',
     options.columns,
   )
+  writeSpecificationResults(specification, options)
+}
+
+function writeSpecificationResults(
+  specification: SpecificationGroup,
+  options: SpecificationWriterOptions,
+): void {
   for (const scenario of specification.scenarios.values()) {
     for (const result of scenario.results) {
-      const profile = options.multipleProfiles
-        ? `[${result.executionTargetProfile.id}] `
-        : ''
-      const plainPrefix = `     ${resultPresentations[result.state].mark} ${profile}`
-      const styledPrefix = `     ${stateMark(result.state, options.color)} ${profile}`
-      writeWrapped(
-        options.write,
-        styledPrefix,
-        `${scenario.name} [${durationLabel(result.durationMs ?? 0)}]${resultSuffix(result)}`,
-        ' '.repeat(plainPrefix.length),
-        options.columns,
-        plainPrefix.length,
-      )
-      for (const messageLine of result.message?.split('\n') ?? []) {
-        writeWrapped(
-          options.write,
-          '       ',
-          messageLine,
-          '       ',
-          options.columns,
-        )
-      }
+      writeTestResult(result, scenario.name, options)
     }
   }
+}
+
+function writeTestResult(
+  result: TestResult,
+  scenarioName: string,
+  options: SpecificationWriterOptions,
+): void {
+  const profile = options.multipleProfiles
+    ? `[${result.executionTargetProfile.id}] `
+    : ''
+  const plainPrefix = `     ${resultPresentations[result.state].mark} ${profile}`
+  const styledPrefix = `     ${stateMark(result.state, options.color)} ${profile}`
+  writeWrapped(
+    options.write,
+    styledPrefix,
+    `${scenarioName} [${durationLabel(result.durationMs ?? 0)}]${resultSuffix(result)}`,
+    ' '.repeat(plainPrefix.length),
+    options.columns,
+    plainPrefix.length,
+  )
+  for (const messageLine of result.message?.split('\n') ?? []) {
+    writeWrapped(
+      options.write,
+      '       ',
+      messageLine,
+      '       ',
+      options.columns,
+    )
+  }
+}
+
+function renderSpecification(
+  specification: SpecificationGroup,
+  options: Omit<SpecificationWriterOptions, 'write'>,
+): string[] {
+  const lines: string[] = []
+  writeSpecification(specification, {
+    ...options,
+    write: (line) => lines.push(line),
+  })
+  return lines
 }
 
 function testResultSummary(results: readonly TestResult[]): string {
@@ -347,13 +406,33 @@ function testResultSummary(results: readonly TestResult[]): string {
   return `${labels.join(' | ')} (${results.length})`
 }
 
+function summaryLines(
+  specifications: readonly SpecificationGroup[],
+  results: readonly TestResult[],
+  startTime: string,
+  durationMs: number,
+): string[] {
+  return [
+    '',
+    ` Specifications  ${specifications.length}`,
+    ` Scenarios       ${specifications.reduce((total, specification) => total + specification.scenarios.size, 0)}`,
+    ` Test results    ${testResultSummary(results)}`,
+    ` Start at        ${startTime}`,
+    ` Duration        ${durationLabel(durationMs)}`,
+  ]
+}
+
 function createDefaultReporter(options: RunReporterOptions): RunReporter {
   const write = options.write ?? console.log
   const now = options.now ?? (() => new Date())
   const projectRoot = options.projectRoot ?? process.cwd()
   const version = options.version ?? 'unknown'
   const color = options.color ?? false
-  const columns = options.columns
+  const terminal =
+    options.terminal ??
+    (options.interactive
+      ? createProcessTerminalSurface(process.stdout, [process.stderr])
+      : undefined)
   const progressive = options.progressive ?? false
   let startTime = ''
   let schedule: readonly ScheduledTestResult[] = []
@@ -362,6 +441,34 @@ function createDefaultReporter(options: RunReporterOptions): RunReporter {
   let nextBlockIndex = 0
   let wroteSpecification = false
   let multipleProfiles = false
+  let progressFrame = 0
+  let finished = false
+  let cancelPagedRefresh: (() => void) | undefined
+  const activeSpecificationUris = new Set<string>()
+  const committedSpecificationUris = new Set<string>()
+  const progressResultsBySpecification = new Map<string, TestResult[]>()
+  const scheduleIndexQueues = new Map<string, ScheduleIndexQueue>()
+
+  function columns(): number | undefined {
+    return terminal?.columns() ?? options.columns
+  }
+
+  function setPagedRefresh(active: boolean): void {
+    if (active && !cancelPagedRefresh) {
+      cancelPagedRefresh = (options.scheduleRefresh ?? schedulePagedRefresh)(
+        updateDynamicRegion,
+      )
+      return
+    }
+    if (!active && cancelPagedRefresh) {
+      cancelPagedRefresh()
+      cancelPagedRefresh = undefined
+    }
+  }
+
+  function renderedRowCount(lines: readonly string[]): number {
+    return renderedTerminalRows(lines, columns())
+  }
 
   function prepare(nextSchedule: readonly ScheduledTestResult[]): void {
     schedule = nextSchedule
@@ -369,6 +476,17 @@ function createDefaultReporter(options: RunReporterOptions): RunReporter {
     pendingBlocks = groupSchedule(nextSchedule)
     nextBlockIndex = 0
     wroteSpecification = false
+    progressFrame = 0
+    activeSpecificationUris.clear()
+    committedSpecificationUris.clear()
+    progressResultsBySpecification.clear()
+    scheduleIndexQueues.clear()
+    nextSchedule.forEach((result, index) => {
+      const key = scheduledResultKey(result)
+      const queue = scheduleIndexQueues.get(key) ?? { indexes: [], next: 0 }
+      queue.indexes.push(index)
+      scheduleIndexQueues.set(key, queue)
+    })
     multipleProfiles =
       new Set(nextSchedule.map((result) => result.executionTargetProfile.id))
         .size > 1
@@ -377,17 +495,13 @@ function createDefaultReporter(options: RunReporterOptions): RunReporter {
   function flushReadyBlocks(): void {
     while (nextBlockIndex < pendingBlocks.length) {
       const block = pendingBlocks[nextBlockIndex]!
-      const results = block.scheduleIndexes.map(
-        (scheduleIndex) => completedResults[scheduleIndex],
-      )
-      if (results.some((result) => !result)) return
-      const [specification] = groupResults(results as TestResult[])
+      const specification = completedSpecification(block)
       if (!specification) return
       if (wroteSpecification) write('')
       writeSpecification(specification, {
         write,
         color,
-        columns,
+        columns: columns(),
         multipleProfiles,
       })
       wroteSpecification = true
@@ -395,59 +509,306 @@ function createDefaultReporter(options: RunReporterOptions): RunReporter {
     }
   }
 
-  function complete(result: TestResult): void {
-    const scheduleIndex = schedule.findIndex(
-      (scheduled, index) =>
-        !completedResults[index] && scheduledResultMatches(scheduled, result),
+  function completedBlockResults(
+    block: PendingSpecificationBlock,
+  ): TestResult[] {
+    return block.scheduleIndexes.flatMap((scheduleIndex) => {
+      const result = completedResults[scheduleIndex]
+      return result ? [result] : []
+    })
+  }
+
+  function availableSpecification(
+    block: PendingSpecificationBlock,
+  ): SpecificationGroup | undefined {
+    return groupResults(completedBlockResults(block))[0]
+  }
+
+  function completedSpecification(
+    block: PendingSpecificationBlock,
+  ): SpecificationGroup | undefined {
+    const results = completedBlockResults(block)
+    if (results.length !== block.scheduleIndexes.length) return undefined
+    return groupResults(results)[0]
+  }
+
+  function renderActiveHeader(
+    block: PendingSpecificationBlock,
+    mark: string,
+  ): string[] {
+    const firstScheduled = schedule[block.scheduleIndexes[0]!]
+    if (!firstScheduled) return []
+    const completedCount =
+      progressResultsBySpecification.get(block.uri)?.length ?? 0
+    const resultLabel =
+      block.scheduleIndexes.length === 1 ? 'result' : 'results'
+    const lines: string[] = []
+    writeWrapped(
+      (line) => lines.push(line),
+      ` ${mark} `,
+      `${completedCount}/${block.scheduleIndexes.length} Test ${resultLabel} ${firstScheduled.specification.uri}`,
+      '   ',
+      columns(),
     )
-    if (scheduleIndex < 0) {
-      if (
-        schedule.some((scheduled) => scheduledResultMatches(scheduled, result))
-      ) {
-        return
+    return lines
+  }
+
+  function renderRecentResults(
+    results: readonly TestResult[],
+    rowBudget: number,
+  ): string[] {
+    if (rowBudget <= 0 || results.length === 0) return []
+    let selectedCount = Math.min(results.length, rowBudget)
+    while (selectedCount >= 0) {
+      const hiddenCount = results.length - selectedCount
+      const lines = hiddenCount
+        ? wrappedLines(
+            '     … ',
+            `${hiddenCount} earlier Test results hidden`,
+            '       ',
+            columns(),
+          )
+        : []
+      const selectedResults =
+        selectedCount === 0 ? [] : results.slice(-selectedCount)
+      for (const result of selectedResults) {
+        writeTestResult(result, result.scenario.name, {
+          write: (line) => lines.push(line),
+          color,
+          columns: columns(),
+          multipleProfiles,
+        })
       }
+      if (renderedRowCount(lines) <= rowBudget) return lines
+      selectedCount--
+    }
+    return []
+  }
+
+  function updateDynamicRegion(): void {
+    if (!terminal) return
+    const frameIndex = progressFrame++
+    const mark = progressMarks[frameIndex % progressMarks.length]!
+    const activeBlocks = pendingBlocks.filter(
+      (block) =>
+        activeSpecificationUris.has(block.uri) &&
+        !committedSpecificationUris.has(block.uri),
+    )
+    const terminalRows = terminal.rows?.()
+    const maxRows = terminalRows
+      ? Math.max(1, terminalRows - 2)
+      : Number.POSITIVE_INFINITY
+    const allHeaders = activeBlocks.map((block) =>
+      renderActiveHeader(block, mark),
+    )
+    const totalHeaderRows = renderedRowCount(allHeaders.flat())
+    let visibleBlocks = activeBlocks
+    let headers = allHeaders
+    let overflowLines: string[] = []
+    const isPaged = totalHeaderRows > maxRows && activeBlocks.length > 1
+    if (isPaged) {
+      const firstIndex = frameIndex % activeBlocks.length
+      visibleBlocks = []
+      headers = []
+      let usedRows = 0
+      for (let offset = 0; offset < activeBlocks.length; offset++) {
+        const index = (firstIndex + offset) % activeBlocks.length
+        const header = allHeaders[index]!
+        const headerRows = renderedRowCount(header)
+        if (headers.length > 0 && usedRows + headerRows >= maxRows) break
+        visibleBlocks.push(activeBlocks[index]!)
+        headers.push(header)
+        usedRows += headerRows
+        if (usedRows >= maxRows) break
+      }
+      const hiddenCount = activeBlocks.length - visibleBlocks.length
+      if (hiddenCount > 0) {
+        overflowLines = wrappedLines(
+          ' … ',
+          `${hiddenCount} more active Specifications`,
+          '   ',
+          columns(),
+        )
+        while (
+          headers.length > 1 &&
+          usedRows + renderedRowCount(overflowLines) > maxRows
+        ) {
+          usedRows -= renderedRowCount(headers.pop()!)
+          visibleBlocks.pop()
+        }
+      }
+    }
+    const resultRowBudget = Math.max(
+      0,
+      maxRows - renderedRowCount([...headers.flat(), ...overflowLines]),
+    )
+    let remainingResultRows = resultRowBudget
+    const lines = visibleBlocks.flatMap((block, index) => {
+      const remainingBlocks = visibleBlocks.length - index
+      const blockRowBudget = Number.isFinite(remainingResultRows)
+        ? Math.floor(remainingResultRows / remainingBlocks)
+        : Number.POSITIVE_INFINITY
+      const resultLines = renderRecentResults(
+        progressResultsBySpecification.get(block.uri) ?? [],
+        blockRowBudget,
+      )
+      remainingResultRows -= renderedRowCount(resultLines)
+      return [...headers[index]!, ...resultLines]
+    })
+    terminal.update([...lines, ...overflowLines])
+    setPagedRefresh(isPaged)
+  }
+
+  function commitSpecification(
+    uri: string,
+    specification: SpecificationGroup,
+  ): void {
+    if (!terminal) return
+    terminal.commit(
+      renderSpecification(specification, {
+        color,
+        columns: columns(),
+        multipleProfiles,
+      }),
+    )
+    committedSpecificationUris.add(uri)
+    activeSpecificationUris.delete(uri)
+  }
+
+  function commitCompletedSpecification(uri: string): void {
+    if (!terminal || committedSpecificationUris.has(uri)) return
+    const block = pendingBlocks.find((candidate) => candidate.uri === uri)
+    if (!block) return
+    if (
+      progressResultsBySpecification.get(uri)?.length !==
+      block.scheduleIndexes.length
+    ) {
+      return
+    }
+    const specification = completedSpecification(block)
+    if (!specification) return
+    commitSpecification(uri, specification)
+  }
+
+  function commitAvailableSpecifications(): void {
+    if (!terminal) return
+    for (const block of pendingBlocks) {
+      if (committedSpecificationUris.has(block.uri)) continue
+      const specification = availableSpecification(block)
+      if (!specification) continue
+      commitSpecification(block.uri, specification)
+    }
+  }
+
+  function finishInteractive(
+    results: readonly TestResult[],
+    durationMs: number,
+    error?: unknown,
+  ): void {
+    if (!terminal || finished) return
+    setPagedRefresh(false)
+    commitAvailableSpecifications()
+    const specifications = groupResults(results)
+    const summary = summaryLines(specifications, results, startTime, durationMs)
+    if (error !== undefined) {
+      const message = error instanceof Error ? error.message : String(error)
+      summary.splice(
+        1,
+        0,
+        ...wrappedLines(
+          ' Run failed      ',
+          message,
+          '                 ',
+          columns(),
+        ),
+      )
+    }
+    terminal.finish(summary)
+    finished = true
+  }
+
+  function complete(result: TestResult): void {
+    const queue = scheduleIndexQueues.get(scheduledResultKey(result))
+    if (!queue) {
       throw new Error(
         `Completed unscheduled Scenario "${result.scenario.name}" for execution target profile "${result.executionTargetProfile.id}"`,
       )
     }
+    if (queue.next >= queue.indexes.length) return
+    const scheduleIndex = queue.indexes[queue.next++]!
     completedResults[scheduleIndex] = result
-    if (progressive) flushReadyBlocks()
+    const progressResults =
+      progressResultsBySpecification.get(result.specification.uri) ?? []
+    progressResults.push(result)
+    progressResultsBySpecification.set(
+      result.specification.uri,
+      progressResults,
+    )
+    if (terminal) {
+      activeSpecificationUris.add(result.specification.uri)
+      commitCompletedSpecification(result.specification.uri)
+      updateDynamicRegion()
+    } else if (progressive) flushReadyBlocks()
   }
 
   return {
     start() {
       startTime = clockLabel(now())
-      write('')
       const bannerPrefix = ` RUN  pickle ${version} `
+      const lines: string[] = ['']
       writeWrapped(
-        write,
+        (line) => lines.push(line),
         bannerPrefix,
         projectRoot,
         ' '.repeat(bannerPrefix.length),
-        columns,
+        columns(),
       )
-      write('')
+      lines.push('')
+      if (terminal) {
+        terminal.activate?.()
+        terminal.commit(lines)
+      } else for (const line of lines) write(line)
     },
     prepare,
-    event() {},
+    event(event) {
+      if (!terminal || event.type !== 'scenario-started') return
+      const scheduleIndex = schedule.findIndex(
+        (scheduled, index) =>
+          !completedResults[index] && scheduledEventMatches(scheduled, event),
+      )
+      if (scheduleIndex < 0) return
+      const scheduled = schedule[scheduleIndex]
+      if (!scheduled) return
+      activeSpecificationUris.add(scheduled.specification.uri)
+      updateDynamicRegion()
+    },
     complete,
+    fail(error, durationMs) {
+      if (!terminal) return
+      const results = completedResults.flatMap((result) =>
+        result ? [result] : [],
+      )
+      finishInteractive(results, durationMs, error)
+    },
+    refresh: updateDynamicRegion,
     finish(runs, durationMs) {
       const results = runs.map((run) => run.result)
       if (schedule.length === 0) prepare(orderedScheduleFromResults(results))
       if (completedResults.some((result) => !result)) {
         for (const result of results) complete(result)
       }
-      flushReadyBlocks()
-      const specifications = groupResults(results)
-
-      write('')
-      write(` Specifications  ${specifications.length}`)
-      write(
-        ` Scenarios       ${specifications.reduce((total, specification) => total + specification.scenarios.size, 0)}`,
-      )
-      write(` Test results    ${testResultSummary(results)}`)
-      write(` Start at        ${startTime}`)
-      write(` Duration        ${durationLabel(durationMs)}`)
+      if (terminal) finishInteractive(results, durationMs)
+      else {
+        const specifications = groupResults(results)
+        const summary = summaryLines(
+          specifications,
+          results,
+          startTime,
+          durationMs,
+        )
+        flushReadyBlocks()
+        for (const line of summary) write(line)
+      }
     },
   }
 }
@@ -471,11 +832,17 @@ export function terminalReporterCapabilities(
   isTerminal: boolean | undefined,
   columns: number | undefined,
   noColor: string | undefined,
-): Pick<RunReporterOptions, 'color' | 'columns' | 'progressive'> {
+  term?: string,
+): Pick<
+  RunReporterOptions,
+  'color' | 'columns' | 'interactive' | 'progressive'
+> {
+  const interactive = Boolean(isTerminal) && term !== 'dumb'
   return {
-    color: Boolean(isTerminal) && noColor === undefined,
+    color: interactive && noColor === undefined,
     columns,
-    progressive: !isTerminal,
+    interactive,
+    progressive: !interactive,
   }
 }
 
