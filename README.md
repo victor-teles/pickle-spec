@@ -1,3 +1,5 @@
+![Pickle Spec](assets/brand/pickle-spec-github-banner.png)
+
 # Pickle Spec
 
 Pickle Spec runs Gherkin Specifications against execution targets. The web
