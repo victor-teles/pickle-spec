@@ -12,10 +12,8 @@ type TimelineResult = {
   }>
 }
 
-const token = new URLSearchParams(location.search).get('token') ?? ''
-
 function artifactUrl(path: string): string {
-  return `/api/artifact?path=${encodeURIComponent(path)}&token=${encodeURIComponent(token)}`
+  return `/api/artifact?path=${encodeURIComponent(path)}`
 }
 
 export function ResolvedActionList(props: {

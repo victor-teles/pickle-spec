@@ -1,4 +1,4 @@
-import type { ComponentProps } from 'react'
+import type { ComponentProps, CSSProperties } from 'react'
 import { cn } from '../../lib/utils'
 
 const chevron = Array.from({ length: 9 }, (_, index) => {
@@ -21,11 +21,13 @@ function Spinner({ className, ...props }: ComponentProps<'span'>) {
         return (
           <span
             key={`${row}:${column}`}
-            className="size-1 rounded-px bg-current motion-reduce:animate-none"
-            style={{
-              opacity: 0.15,
-              animation: `pixel-on 650ms ease-in-out ${delay}ms infinite`,
-            }}
+            className="pixel-spinner-cell size-1 rounded-px bg-current"
+            style={
+              {
+                opacity: 0.15,
+                '--pixel-delay': `${delay}ms`,
+              } as CSSProperties
+            }
           />
         )
       })}

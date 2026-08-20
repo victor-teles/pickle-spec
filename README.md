@@ -1,6 +1,8 @@
 # Pickle Spec
 
-Pickle Spec runs Gherkin Specifications against execution targets. The current web adapter uses Stagehand for browser automation.
+Pickle Spec runs Gherkin Specifications against execution targets. The web
+adapter uses Stagehand for browser automation, and the mobile adapter uses
+`agent-device` for Android Emulator automation.
 
 ## Package ownership
 
@@ -11,6 +13,7 @@ Each scoped package owns one public boundary.
 | `@pickle-spec/spec` | Parse Specifications and select Scenarios. |
 | `@pickle-spec/runner` | Schedule Scenarios and produce run events and test results. |
 | `@pickle-spec/web` | Adapt Stagehand operations to the runner contract. |
+| `@pickle-spec/mobile` | Adapt Android Emulator operations through an isolated Node worker. |
 | `@pickle-spec/cli` | Compose configuration and public package interfaces. |
 
 The `apps/example` workspace contains sample Specifications.
@@ -79,6 +82,23 @@ Create `pickle.config.jsonc` in the project root:
 ```
 
 Set the API key for the configured model provider. Bun loads environment variables from `.env`. For local Chrome, Stagehand needs that key on `model.apiKey`: set `web.browser.modelApiKey` or the provider env var (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GOOGLE_API_KEY`, `GEMINI_API_KEY`, or `GOOGLE_GENERATIVE_AI_API_KEY`). `web.browser.modelName` must be a Stagehand-supported `provider/model` value; Pickle Spec rejects unknown names before it starts browsers.
+
+## Open Studio
+
+Studio binds to loopback and opens the configured project by default:
+
+```bash
+pickle studio
+```
+
+Remote access requires an explicit host and prints a security warning:
+
+```bash
+pickle studio --remote 192.168.1.20
+```
+
+The session token grants access to local project data. Use remote access only on
+a trusted network.
 
 ## Run Specifications
 

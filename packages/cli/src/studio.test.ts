@@ -1,12 +1,9 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
-import { mkdir, mkdtemp, rm, symlink } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
-import { join, resolve } from 'node:path'
-import { type Browser, chromium, type Page } from 'playwright'
-
-type CliPackageManifest = {
-  bin: { pickle: string }
-}
+import { mkdir, rm } from 'node:fs/promises'
+import { join } from 'node:path'
+import type { Browser, Page } from 'playwright'
+import { StudioBrowserFixture } from '../test/studio-browser-fixture'
+import { registerStudioHardeningTests } from '../test/studio-hardening-suite'
 
 type TestRunManifestFile = {
   finishedAt?: string
@@ -40,165 +37,21 @@ type MonacoEditorHost = {
 }
 
 describe('Studio browser seam', () => {
-  let workspace: string
-  let pickleCommand: string
+  const fixture = new StudioBrowserFixture()
+  const createStudioProject = fixture.createProject.bind(fixture)
+  const startStudio = fixture.start.bind(fixture)
   let browser: Browser
 
-  async function createStudioProject(name: string): Promise<string> {
-    const project = join(workspace, name)
-    const screenshot = join(project, 'failure.png')
-    await mkdir(join(project, 'features'), { recursive: true })
-    await Bun.write(screenshot, Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]))
-    await Bun.write(
-      join(project, 'pickle.config.jsonc'),
-      JSON.stringify({
-        schemaVersion: 1,
-        specifications: 'features/**/*.feature',
-        links: {
-          jira: 'https://example.test/browse/{id}',
-        },
-        executionTargetProfiles: {
-          chrome: { adapter: 'custom' },
-          firefox: { adapter: 'custom' },
-        },
-      }),
-    )
-    await Bun.write(
-      join(project, 'features', 'checkout.feature'),
-      `# keep this comment
-@pickle:id:speccheckaaaaaaaa @pickle:state:active
-Feature: Checkout
-  @pickle:id:scnpaybbbbbbbbbb
-  Scenario: Pay for the order
-    Then payment is captured
-  @pickle:id:scnadaptcccccccc
-  Scenario: Adapt the purchase
-    Then the basket adapts
-  @pickle:id:scnpassdddddddd
-  Scenario: Complete a purchase
-    Then the purchase succeeds
-`,
-    )
-    await Bun.write(
-      join(project, 'pickle.extensions.ts'),
-      `
-export default {
-  adapter: {
-    async openSession(input) {
-      return {
-        async executeStep(step, signal) {
-          const marker = process.env.PICKLE_STUDIO_STEP_MARKER
-          const gate = process.env.PICKLE_STUDIO_CONTINUE
-          if (marker && !(await Bun.file(marker).exists())) {
-            await Bun.write(marker, 'started')
-          }
-          if (gate) {
-            while (!(await Bun.file(gate).exists())) {
-              if (signal?.aborted) {
-                throw new DOMException('Scenario cancelled', 'AbortError')
-              }
-              await Bun.sleep(10)
-            }
-          }
-          const profile = input.executionTargetProfile.id
-          const scenario = input.scenario.name
-          if (scenario === 'Pay for the order' && profile === 'chrome') {
-            return {
-              state: 'failed',
-              message: 'Payment was declined',
-              resolvedActions: [{ description: \`Click pay on \${profile}\` }],
-              artifacts: [{
-                kind: 'screenshot',
-                path: ${JSON.stringify(screenshot)},
-                mediaType: 'image/png',
-              }],
-            }
-          }
-          if (scenario === 'Adapt the purchase' && profile === 'chrome') {
-            return {
-              state: 'passed-with-adaptation',
-              resolvedActions: [{
-                description: \`Adapt basket on \${profile}\`,
-                replay: { operation: 'adapt', target: 'current-basket' },
-              }],
-              artifacts: [{
-                kind: 'screenshot',
-                path: ${JSON.stringify(screenshot)},
-                mediaType: 'image/png',
-              }],
-            }
-          }
-          return {
-            state: 'passed',
-            resolvedActions: [{ description: \`Complete \${scenario} on \${profile}\` }],
-          }
-        },
-        async close() {},
-      }
-    },
-  },
-  async authorSpecification({ prompt }) {
-    if (!String(prompt).includes('Search')) {
-      throw new Error('AI assistance is unavailable')
-    }
-    return {
-      source: \`@pickle:id:specsearchaaaaaaa @pickle:state:active
-Feature: Search
-  @pickle:id:scnquerybbbbbbbb
-  Scenario: Query the catalog
-    Then results are shown
-\`,
-    }
-  },
-}
-`,
-    )
-    return project
-  }
-
-  async function startStudio(
-    project: string,
-    env: Record<string, string> = {},
-  ) {
-    const child = Bun.spawn({
-      cmd: [pickleCommand, 'studio', '--no-open'],
-      cwd: project,
-      env: { ...Bun.env, ...env },
-      stdout: 'pipe',
-      stderr: 'pipe',
-    })
-    const stdout = collectStream(child.stdout)
-    const stderr = collectStream(child.stderr)
-    const url = await stdout.waitFor(
-      /Studio (http:\/\/127\.0\.0\.1:\d+\S*)/,
-      45_000,
-    )
-    return { child, url, stdout, stderr }
-  }
-
   beforeAll(async () => {
-    workspace = await mkdtemp(join(tmpdir(), 'pickle-spec-studio-'))
-    const packageDirectory = resolve(import.meta.dir, '..')
-    const packageManifest = (await Bun.file(
-      join(packageDirectory, 'package.json'),
-    ).json()) as CliPackageManifest
-    pickleCommand = join(workspace, 'node_modules', '.bin', 'pickle')
-    await mkdir(join(workspace, 'node_modules', '.bin'), { recursive: true })
-    await symlink(
-      resolve(packageDirectory, packageManifest.bin.pickle),
-      pickleCommand,
-    )
-    browser = await chromium.launch({
-      headless: true,
-      channel: 'chrome',
-      timeout: 60_000,
-    })
+    await fixture.setup()
+    browser = fixture.browser
   }, 60_000)
 
   afterAll(async () => {
-    await browser?.close()
-    await rm(workspace, { recursive: true, force: true })
+    await fixture.teardown()
   }, 15_000)
+
+  registerStudioHardeningTests(fixture)
 
   test('pickle studio starts a local application and opens the configured project', async () => {
     const project = await createStudioProject('opened-project')
@@ -1273,7 +1126,7 @@ Feature: Checkout
 
   test('Studio shows Git diffs, commits after confirmation, and never pushes', async () => {
     const project = await createStudioProject('manage-git')
-    const remote = join(workspace, 'manage-git-remote.git')
+    const remote = join(fixture.workspace, 'manage-git-remote.git')
     await Bun.spawnSync({ cmd: ['git', 'init', '--bare', remote] })
     await Bun.spawnSync({
       cmd: ['git', 'init'],
@@ -1442,35 +1295,6 @@ async function setGherkinValue(page: Page, source: string) {
     return editor?.getValue() === expected
   }, source)
   await Bun.sleep(32)
-}
-
-function collectStream(stream: ReadableStream<Uint8Array>) {
-  const chunks: string[] = []
-  const reader = stream.getReader()
-  const decoder = new TextDecoder()
-  void (async () => {
-    while (true) {
-      const { done, value } = await reader.read()
-      if (done) break
-      chunks.push(decoder.decode(value, { stream: true }))
-    }
-  })()
-  return {
-    text() {
-      return chunks.join('')
-    },
-    async waitFor(pattern: RegExp, timeoutMs: number) {
-      const deadline = Date.now() + timeoutMs
-      while (Date.now() < deadline) {
-        const match = chunks.join('').match(pattern)
-        if (match?.[1]) return match[1]
-        await Bun.sleep(25)
-      }
-      throw new Error(
-        `Studio did not print a loopback URL.\n${chunks.join('')}`,
-      )
-    },
-  }
 }
 
 async function finishedManifestCount(project: string): Promise<number> {

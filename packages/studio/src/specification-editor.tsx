@@ -184,9 +184,8 @@ export function SpecificationEditor(props: {
 
   useEffect(() => {
     const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:'
-    const token = new URLSearchParams(location.search).get('token') ?? ''
     const socket = new WebSocket(
-      `${protocol}//${location.host}/api/workspace/events?token=${encodeURIComponent(token)}`,
+      `${protocol}//${location.host}/api/workspace/events`,
     )
     socket.onmessage = (message) => {
       const event = JSON.parse(String(message.data)) as DiskChangedEvent
