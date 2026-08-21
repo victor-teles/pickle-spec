@@ -267,7 +267,7 @@ test('keeps interactive human output buffered until the run finishes', () => {
   expect(lines.join('\n')).toContain('features/a.feature')
 })
 
-test('uses color only as supplemental terminal state information', () => {
+test('uses a visible failure symbol with color only as supplemental information', () => {
   const run = passedRun({
     specificationUri: 'src/google.feature',
     specificationName: 'Search',
@@ -276,6 +276,7 @@ test('uses color only as supplemental terminal state information', () => {
     profileId: 'web',
     durationMs: 150,
   })
+  run.result.state = 'failed'
   const colorLines: string[] = []
   const plainLines: string[] = []
   const sharedOptions = {
@@ -300,9 +301,9 @@ test('uses color only as supplemental terminal state information', () => {
   plainReporter.start()
   plainReporter.finish([run], 150)
 
-  expect(colorLines.join('\n')).toContain('\u001b[32m✓\u001b[39m')
+  expect(colorLines.join('\n')).toContain('\u001b[31m×\u001b[39m')
   expect(plainLines.join('\n')).not.toContain('\u001b[')
-  expect(plainLines.join('\n')).toContain('✓ Visit main page [150ms]')
+  expect(plainLines.join('\n')).toContain('× Visit main page [150ms] (failed)')
 })
 
 test('wraps long paths and Scenario names without truncating them', () => {
@@ -451,7 +452,7 @@ test('enables color only for a TTY when NO_COLOR is absent', () => {
   })
 })
 
-test('preserves Test result messages in the human report', () => {
+test('preserves result-level failure messages when no executed step owns them', () => {
   const lines: string[] = []
   const reporter = createRunReporter('default', {
     write: (line) => lines.push(line),
@@ -477,8 +478,188 @@ test('preserves Test result messages in the human report', () => {
   reporter.finish([run], 150)
 
   expect(lines.join('\n')).toContain(
-    '       Expected results, but the page remained\n' +
-      '       empty\n' +
-      '       Screenshot captured',
+    '   Message\n' +
+      '     Expected results, but the page remained\n' +
+      '     empty\n' +
+      '     Screenshot captured',
+  )
+})
+
+test('renders functional failure diagnostics from executed Gherkin steps without resolved actions', () => {
+  const lines: string[] = []
+  const reporter = createRunReporter('default', {
+    write: (line) => lines.push(line),
+    projectRoot: '/workspace/project',
+    version: '1.0.2',
+    color: false,
+    columns: 120,
+    now: () => new Date(2026, 7, 20, 14, 32, 7),
+  })
+  const run = passedRun({
+    specificationUri: 'features/checkout.feature',
+    specificationName: 'Checkout',
+    scenarioId: 'scenario-purchase',
+    scenarioName: 'Complete a purchase',
+    profileId: 'web',
+    durationMs: 150,
+  })
+  run.result.state = 'failed'
+  run.result.message = 'Expected confirmation\nbut the page remained empty'
+  run.result.steps = [
+    {
+      step: {
+        keyword: 'Given',
+        text: 'a product is in the basket',
+        type: 'context',
+      },
+      state: 'passed',
+      resolvedActions: [{ description: 'Open the basket internals' }],
+    },
+    {
+      step: {
+        keyword: 'Then',
+        text: 'the purchase succeeds',
+        type: 'outcome',
+      },
+      state: 'failed',
+      resolvedActions: [{ description: 'Inspect the confirmation internals' }],
+      message: 'Expected confirmation\nbut the page remained empty',
+    },
+  ]
+
+  reporter.start()
+  reporter.finish([run], 150)
+
+  const output = lines.join('\n')
+  expect(output).toContain(` Failures
+
+ × Failure
+   Specification  Checkout (features/checkout.feature)
+   Scenario       Complete a purchase
+   Steps
+     ✓ Given a product is in the basket
+     × Then the purchase succeeds
+       Expected confirmation
+       but the page remained empty`)
+  expect(output).not.toContain('Open the basket internals')
+  expect(output).not.toContain('Inspect the confirmation internals')
+  expect(output.indexOf('features/checkout.feature')).toBeLessThan(
+    output.indexOf(' Failures'),
+  )
+  expect(output.indexOf(' Failures')).toBeLessThan(
+    output.indexOf(' Test results'),
+  )
+})
+
+test('separates infrastructure diagnostics and renders profiles, messages, and artifact paths', () => {
+  const lines: string[] = []
+  const reporter = createRunReporter('default', {
+    write: (line) => lines.push(line),
+    projectRoot: '/workspace/project',
+    version: '1.0.2',
+    color: false,
+    columns: 120,
+    now: () => new Date(2026, 7, 20, 14, 32, 7),
+  })
+  const failedRun = passedRun({
+    specificationUri: 'features/checkout.feature',
+    specificationName: 'Checkout',
+    scenarioId: 'scenario-purchase',
+    scenarioName: 'Complete a purchase',
+    profileId: 'web',
+    durationMs: 150,
+  })
+  failedRun.result.state = 'failed'
+  failedRun.result.steps = [
+    {
+      step: {
+        keyword: 'Then',
+        text: 'the purchase succeeds',
+        type: 'outcome',
+      },
+      state: 'failed',
+      resolvedActions: [],
+      message: 'Confirmation was not visible',
+      artifacts: [
+        {
+          kind: 'screenshot',
+          path: '/workspace/project/.pickle/runs/run-1/artifacts/failure.png',
+        },
+      ],
+    },
+  ]
+  const infrastructureRun = passedRun({
+    specificationUri: 'features/search.feature',
+    specificationName: 'Search',
+    scenarioId: 'scenario-search',
+    scenarioName: 'Find pickles',
+    profileId: 'android',
+    durationMs: 240,
+  })
+  infrastructureRun.result.state = 'infrastructure-error'
+  infrastructureRun.result.message =
+    'Emulator disconnected\nwhile the outcome step was running'
+  infrastructureRun.result.steps = [
+    {
+      step: {
+        keyword: 'Given',
+        text: 'the catalog is open',
+        type: 'context',
+      },
+      state: 'passed',
+      resolvedActions: [],
+    },
+    {
+      step: {
+        keyword: 'Then',
+        text: 'pickle results are visible',
+        type: 'outcome',
+      },
+      state: 'infrastructure-error',
+      resolvedActions: [],
+      message: 'Emulator disconnected\nwhile the outcome step was running',
+      artifacts: [
+        {
+          kind: 'device-log',
+          path: '/workspace/project/.pickle/runs/run-1/artifacts/device.log',
+        },
+        { kind: 'trace', path: '/var/tmp/pickle-external/trace.zip' },
+      ],
+    },
+  ]
+
+  reporter.start()
+  reporter.finish([infrastructureRun, failedRun], 390)
+
+  const output = lines.join('\n')
+  expect(output).toContain(` Failures
+
+ × Failure
+   Specification  Checkout (features/checkout.feature)
+   Scenario       Complete a purchase
+   Profile        web`)
+  expect(output).toContain(
+    '       Artifacts\n' +
+      '         screenshot: .pickle/runs/run-1/artifacts/failure.png',
+  )
+  expect(output).toContain(` Infrastructure errors
+
+ ! Infrastructure error
+   Specification  Search (features/search.feature)
+   Scenario       Find pickles
+   Profile        android
+   Steps
+     ✓ Given the catalog is open
+     ! Then pickle results are visible
+       Emulator disconnected
+       while the outcome step was running
+       Artifacts
+         device-log: .pickle/runs/run-1/artifacts/device.log
+         trace: /var/tmp/pickle-external/trace.zip`)
+  expect(output).toContain(
+    ' Test results    1 failed | 1 infrastructure error (2)',
+  )
+  expect(output.indexOf(' features/checkout.feature')).toBeLessThan(
+    output.indexOf(' features/search.feature'),
   )
 })

@@ -1,3 +1,5 @@
+import { realpathSync } from 'node:fs'
+import { isAbsolute, relative, resolve, sep } from 'node:path'
 import type {
   RunEvent,
   ScenarioRun,
@@ -61,7 +63,7 @@ const resultPresentations: Record<TestResult['state'], ResultPresentation> = {
   },
   'infrastructure-error': {
     mark: '!',
-    color: 31,
+    color: 35,
     detail: 'infrastructure error',
     singular: 'infrastructure error',
     plural: 'infrastructure errors',
@@ -243,6 +245,14 @@ function groupResults(results: readonly TestResult[]): SpecificationGroup[] {
   )
 }
 
+function orderedResults(results: readonly TestResult[]): TestResult[] {
+  return groupResults(results).flatMap((specification) =>
+    [...specification.scenarios.values()].flatMap(
+      (scenario) => scenario.results,
+    ),
+  )
+}
+
 function groupSchedule(
   schedule: readonly ScheduledTestResult[],
 ): PendingSpecificationBlock[] {
@@ -263,15 +273,11 @@ function groupSchedule(
 function orderedScheduleFromResults(
   results: readonly TestResult[],
 ): ScheduledTestResult[] {
-  return groupResults(results).flatMap((specification) =>
-    [...specification.scenarios.values()].flatMap((scenario) =>
-      scenario.results.map((result) => ({
-        specification: result.specification,
-        scenario: result.scenario,
-        executionTargetProfile: result.executionTargetProfile,
-      })),
-    ),
-  )
+  return orderedResults(results).map((result) => ({
+    specification: result.specification,
+    scenario: result.scenario,
+    executionTargetProfile: result.executionTargetProfile,
+  }))
 }
 
 function scheduledResultMatches(
@@ -288,7 +294,7 @@ function scheduledResultMatches(
   )
 }
 
-type SpecificationWriterOptions = {
+type ResultWriterOptions = {
   write: WriteLine
   color: boolean
   columns?: number
@@ -297,7 +303,7 @@ type SpecificationWriterOptions = {
 
 function writeSpecification(
   specification: SpecificationGroup,
-  options: SpecificationWriterOptions,
+  options: ResultWriterOptions,
 ): void {
   writeWrapped(options.write, ' ', specification.uri, '   ', options.columns)
   writeWrapped(
@@ -322,16 +328,148 @@ function writeSpecification(
         options.columns,
         plainPrefix.length,
       )
-      for (const messageLine of result.message?.split('\n') ?? []) {
-        writeWrapped(
-          options.write,
-          '       ',
-          messageLine,
-          '       ',
-          options.columns,
-        )
-      }
     }
+  }
+}
+
+type DiagnosticWriterOptions = ResultWriterOptions & {
+  projectRoot: string
+}
+
+type DiagnosticState = Extract<
+  TestResult['state'],
+  'failed' | 'infrastructure-error'
+>
+
+const diagnosticHeadings: Record<
+  DiagnosticState,
+  { section: string; label: string }
+> = {
+  failed: { section: 'Failures', label: 'Failure' },
+  'infrastructure-error': {
+    section: 'Infrastructure errors',
+    label: 'Infrastructure error',
+  },
+}
+
+function writeMessage(
+  message: string,
+  options: DiagnosticWriterOptions,
+  prefix = '       ',
+): void {
+  for (const line of message.split(/\r?\n/)) {
+    writeWrapped(options.write, prefix, line, prefix, options.columns)
+  }
+}
+
+function canonicalPath(path: string): string {
+  try {
+    return realpathSync(path)
+  } catch {
+    return resolve(path)
+  }
+}
+
+function displayArtifactPath(path: string, projectRoot: string): string {
+  const canonicalProjectRoot = canonicalPath(projectRoot)
+  const absolutePath = canonicalPath(resolve(projectRoot, path))
+  const projectRelativePath = relative(canonicalProjectRoot, absolutePath)
+  const isContained =
+    projectRelativePath.length > 0 &&
+    projectRelativePath !== '..' &&
+    !projectRelativePath.startsWith(`..${sep}`) &&
+    !isAbsolute(projectRelativePath)
+  return isContained ? projectRelativePath : absolutePath
+}
+
+function writeArtifacts(
+  stepResult: TestResult['steps'][number],
+  options: DiagnosticWriterOptions,
+): void {
+  if (!stepResult.artifacts?.length) return
+  options.write('       Artifacts')
+  for (const artifact of stepResult.artifacts) {
+    writeWrapped(
+      options.write,
+      `         ${artifact.kind}: `,
+      displayArtifactPath(artifact.path, options.projectRoot),
+      '           ',
+      options.columns,
+    )
+  }
+}
+
+function writeDiagnostic(
+  result: TestResult,
+  options: DiagnosticWriterOptions,
+): void {
+  if (result.state !== 'failed' && result.state !== 'infrastructure-error') {
+    return
+  }
+  const heading = diagnosticHeadings[result.state]
+  options.write('')
+  options.write(` ${stateMark(result.state, options.color)} ${heading.label}`)
+  writeWrapped(
+    options.write,
+    '   Specification  ',
+    `${result.specification.name} (${result.specification.uri})`,
+    '                  ',
+    options.columns,
+  )
+  writeWrapped(
+    options.write,
+    '   Scenario       ',
+    result.scenario.name,
+    '                  ',
+    options.columns,
+  )
+  if (options.multipleProfiles) {
+    writeWrapped(
+      options.write,
+      '   Profile        ',
+      result.executionTargetProfile.id,
+      '                  ',
+      options.columns,
+    )
+  }
+  if (result.steps.length > 0) {
+    options.write('   Steps')
+    for (const step of result.steps) {
+      const plainPrefix = `     ${resultPresentations[step.state].mark} `
+      const styledPrefix = `     ${stateMark(step.state, options.color)} `
+      writeWrapped(
+        options.write,
+        styledPrefix,
+        `${step.step.keyword} ${step.step.text}`,
+        '       ',
+        options.columns,
+        plainPrefix.length,
+      )
+      if (step.message) writeMessage(step.message, options)
+      writeArtifacts(step, options)
+    }
+  }
+  const messageBelongsToStep = result.steps.some(
+    (step) => step.state === result.state && step.message === result.message,
+  )
+  if (result.message && !messageBelongsToStep) {
+    options.write('   Message')
+    writeMessage(result.message, options, '     ')
+  }
+}
+
+function writeDiagnostics(
+  results: readonly TestResult[],
+  options: DiagnosticWriterOptions,
+): void {
+  const ordered = orderedResults(results)
+  const states: DiagnosticState[] = ['failed', 'infrastructure-error']
+  for (const state of states) {
+    const diagnostics = ordered.filter((result) => result.state === state)
+    if (diagnostics.length === 0) continue
+    options.write('')
+    options.write(` ${diagnosticHeadings[state].section}`)
+    for (const result of diagnostics) writeDiagnostic(result, options)
   }
 }
 
@@ -439,6 +577,14 @@ function createDefaultReporter(options: RunReporterOptions): RunReporter {
       }
       flushReadyBlocks()
       const specifications = groupResults(results)
+
+      writeDiagnostics(results, {
+        write,
+        projectRoot,
+        color,
+        columns,
+        multipleProfiles,
+      })
 
       write('')
       write(` Specifications  ${specifications.length}`)
