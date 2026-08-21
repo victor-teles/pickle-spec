@@ -230,10 +230,13 @@ async function run(argv: string[]): Promise<number> {
       process.stdout.isTTY,
       process.stdout.columns,
       process.env.NO_COLOR,
+      process.env.TERM,
     ),
   })
+  const onResize = () => reporter.refresh?.()
   const startedAt = performance.now()
   process.on('SIGINT', onSigint)
+  if (process.stdout.isTTY) process.on('SIGWINCH', onResize)
   try {
     const started = await startProjectRun({
       root: process.cwd(),
@@ -272,8 +275,12 @@ async function run(argv: string[]): Promise<number> {
       return 1
     }
     return 0
+  } catch (error) {
+    reporter.fail?.(error, performance.now() - startedAt)
+    throw error
   } finally {
     process.off('SIGINT', onSigint)
+    process.off('SIGWINCH', onResize)
   }
 }
 
