@@ -9,6 +9,7 @@ import {
   diagnosticLines,
   groupResults,
   renderTestResult,
+  renderTestStepResult,
   summaryLines,
   wrappedLines,
   writeWrapped,
@@ -47,6 +48,14 @@ interface LiveRunReporter {
   finish(runs: readonly ScenarioRun[], durationMs: number): void
 }
 
+type StepStartedEvent = Extract<RunEvent, { type: 'step-started' }>
+type StepFinishedEvent = Extract<RunEvent, { type: 'step-finished' }>
+
+type LiveScenarioProgress = {
+  completedSteps: StepFinishedEvent['result'][]
+  runningStep?: StepStartedEvent['step']
+}
+
 const progressMarks = ['◐', '◓', '◑', '◒'] as const
 const progressRefreshIntervalMs = 200
 
@@ -69,6 +78,7 @@ export function createLiveRunReporter(
   let finished = false
   let cancelPagedRefresh: (() => void) | undefined
   const activeScheduleIndexes = new Set<number>()
+  const progressByScheduleIndex = new Map<number, LiveScenarioProgress>()
   let scheduleIndexQueues = new Map<string, ScheduleIndexQueue>()
 
   function columns(): number | undefined {
@@ -98,6 +108,7 @@ export function createLiveRunReporter(
     pendingBlocks = groupSchedule(nextSchedule)
     progressFrame = 0
     activeScheduleIndexes.clear()
+    progressByScheduleIndex.clear()
     scheduleIndexQueues = createScheduleIndexQueues(nextSchedule)
     multipleProfiles =
       new Set(nextSchedule.map((result) => result.executionTargetProfile.id))
@@ -147,11 +158,29 @@ export function createLiveRunReporter(
         : ''
       writeWrapped(
         (line) => lines.push(line),
-        '   → ',
+        `   ${mark} `,
         `${profile}${scheduled.scenario.name}`,
         '     ',
         columns(),
       )
+      const progress = progressByScheduleIndex.get(scheduleIndex)
+      for (const result of progress?.completedSteps ?? []) {
+        lines.push(
+          ...renderTestStepResult(result, {
+            color: options.color,
+            columns: columns(),
+          }),
+        )
+      }
+      if (progress?.runningStep) {
+        writeWrapped(
+          (line) => lines.push(line),
+          `     ${mark} `,
+          `${progress.runningStep.keyword} ${progress.runningStep.text}`,
+          '       ',
+          columns(),
+        )
+      }
     }
     return lines
   }
@@ -261,8 +290,20 @@ export function createLiveRunReporter(
     if (scheduleIndex === undefined) return
     completedResults[scheduleIndex] = result
     activeScheduleIndexes.delete(scheduleIndex)
+    progressByScheduleIndex.delete(scheduleIndex)
     commitResult(result)
     updateDynamicRegion()
+  }
+
+  function activeScheduleIndex(
+    event: Extract<RunEvent, { type: 'step-started' | 'step-finished' }>,
+  ): number | undefined {
+    const scheduleIndex = schedule.findIndex(
+      (scheduled, index) =>
+        activeScheduleIndexes.has(index) &&
+        scheduledEventMatches(scheduled, event),
+    )
+    return scheduleIndex < 0 ? undefined : scheduleIndex
   }
 
   return {
@@ -283,15 +324,32 @@ export function createLiveRunReporter(
     },
     prepare,
     event(event) {
-      if (event.type !== 'scenario-started') return
-      const scheduleIndex = schedule.findIndex(
-        (scheduled, index) =>
-          !completedResults[index] && scheduledEventMatches(scheduled, event),
-      )
-      if (scheduleIndex < 0) return
-      const scheduled = schedule[scheduleIndex]
-      if (!scheduled) return
-      activeScheduleIndexes.add(scheduleIndex)
+      if (event.type === 'scenario-started') {
+        const scheduleIndex = schedule.findIndex(
+          (scheduled, index) =>
+            !completedResults[index] && scheduledEventMatches(scheduled, event),
+        )
+        if (scheduleIndex < 0) return
+        activeScheduleIndexes.add(scheduleIndex)
+        progressByScheduleIndex.set(scheduleIndex, { completedSteps: [] })
+        updateDynamicRegion()
+        return
+      }
+      if (event.type !== 'step-started' && event.type !== 'step-finished') {
+        return
+      }
+      const scheduleIndex = activeScheduleIndex(event)
+      if (scheduleIndex === undefined) return
+      const progress = progressByScheduleIndex.get(scheduleIndex) ?? {
+        completedSteps: [],
+      }
+      if (event.type === 'step-started') {
+        progress.runningStep = event.step
+      } else {
+        progress.completedSteps.push(event.result)
+        progress.runningStep = undefined
+      }
+      progressByScheduleIndex.set(scheduleIndex, progress)
       updateDynamicRegion()
     },
     complete,

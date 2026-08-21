@@ -295,6 +295,24 @@ export function renderTestResult(
   return lines
 }
 
+export function renderTestStepResult(
+  result: TestResult['steps'][number],
+  options: Pick<SpecificationWriterOptions, 'color' | 'columns'>,
+): string[] {
+  const lines: string[] = []
+  const plainPrefix = `     ${resultPresentations[result.state].mark} `
+  const styledPrefix = `     ${stateMark(result.state, options.color)} `
+  writeWrapped(
+    (line) => lines.push(line),
+    styledPrefix,
+    `${result.step.keyword} ${result.step.text}`,
+    '       ',
+    options.columns,
+    plainPrefix.length,
+  )
+  return lines
+}
+
 export function renderSpecification(
   specification: SpecificationGroup,
   options: Omit<SpecificationWriterOptions, 'write'>,
@@ -418,16 +436,9 @@ function writeDiagnostic(
   if (result.steps.length > 0) {
     options.write('   Steps')
     for (const step of result.steps) {
-      const plainPrefix = `     ${resultPresentations[step.state].mark} `
-      const styledPrefix = `     ${stateMark(step.state, options.color)} `
-      writeWrapped(
-        options.write,
-        styledPrefix,
-        `${step.step.keyword} ${step.step.text}`,
-        '       ',
-        options.columns,
-        plainPrefix.length,
-      )
+      for (const line of renderTestStepResult(step, options)) {
+        options.write(line)
+      }
       if (step.message) writeMessage(step.message, options)
       writeArtifacts(step, options)
     }

@@ -2,6 +2,86 @@ import { expect, test } from 'bun:test'
 import { createRunReporter } from './run-reporter'
 import { passedRun, recordingTerminal } from './run-reporter.test-support'
 
+test('shows completed and running Gherkin steps beneath an active Scenario', () => {
+  const run = passedRun({
+    specificationUri: 'features/search.feature',
+    specificationName: 'Search',
+    scenarioId: 'scenario-search',
+    scenarioName: 'Search for images',
+    profileId: 'web',
+    durationMs: 10,
+  })
+  const terminal = recordingTerminal(() => 120)
+  const reporter = createRunReporter('default', {
+    terminal: terminal.surface,
+    projectRoot: '/workspace/project',
+    version: '1.0.2',
+    color: true,
+  })
+  const contextStep = {
+    keyword: 'Given',
+    text: 'the search page is open',
+    type: 'context' as const,
+  }
+  const actionStep = {
+    keyword: 'When',
+    text: 'I search for images',
+    type: 'action' as const,
+  }
+
+  reporter.start()
+  reporter.prepare?.([
+    {
+      specification: run.result.specification,
+      scenario: run.result.scenario,
+      executionTargetProfile: run.result.executionTargetProfile,
+    },
+  ])
+  reporter.event({
+    schemaVersion: 1,
+    sequence: 1,
+    type: 'scenario-started',
+    scenario: run.result.scenario,
+    executionTargetProfile: run.result.executionTargetProfile,
+  })
+  reporter.event({
+    schemaVersion: 1,
+    sequence: 2,
+    type: 'step-started',
+    step: contextStep,
+    scenario: run.result.scenario,
+    executionTargetProfile: run.result.executionTargetProfile,
+  })
+  reporter.event({
+    schemaVersion: 1,
+    sequence: 3,
+    type: 'step-finished',
+    result: {
+      step: contextStep,
+      state: 'passed',
+      resolvedActions: [],
+    },
+    scenario: run.result.scenario,
+    executionTargetProfile: run.result.executionTargetProfile,
+  })
+  reporter.event({
+    schemaVersion: 1,
+    sequence: 4,
+    type: 'step-started',
+    step: actionStep,
+    scenario: run.result.scenario,
+    executionTargetProfile: run.result.executionTargetProfile,
+  })
+
+  const frame = terminal.operations.at(-1)
+  expect(frame?.type).toBe('update')
+  expect(frame?.lines.join('\n')).toContain('Search for images')
+  expect(frame?.lines.join('\n')).toContain(
+    '\u001b[32m✓\u001b[39m Given the search page is open',
+  )
+  expect(frame?.lines.join('\n')).toContain('When I search for images')
+})
+
 test('commits each completed Test result while its Specification is still running', () => {
   const runs = [
     passedRun({
