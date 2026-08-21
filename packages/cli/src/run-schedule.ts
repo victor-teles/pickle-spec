@@ -79,8 +79,12 @@ export function claimScheduleIndex(
 
 export function scheduledEventMatches(
   scheduled: ScheduledTestResult,
-  event: Extract<RunEvent, { type: 'scenario-started' }>,
+  event: Extract<
+    RunEvent,
+    { type: 'scenario-started' | 'step-started' | 'step-finished' }
+  >,
 ): boolean {
+  if (!event.scenario) return false
   const scenarioMatches = event.scenario.id
     ? event.scenario.id === scheduled.scenario.id
     : event.scenario.name === scheduled.scenario.name

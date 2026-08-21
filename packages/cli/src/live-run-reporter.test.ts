@@ -2,7 +2,135 @@ import { expect, test } from 'bun:test'
 import { createRunReporter } from './run-reporter'
 import { passedRun, recordingTerminal } from './run-reporter.test-support'
 
-test('updates active Specifications and commits each completed block once', () => {
+test('shows completed and running Gherkin steps beneath an active Scenario', () => {
+  const run = passedRun({
+    specificationUri: 'features/search.feature',
+    specificationName: 'Search',
+    scenarioId: 'scenario-search',
+    scenarioName: 'Search for images',
+    profileId: 'web',
+    durationMs: 10,
+  })
+  const terminal = recordingTerminal(() => 120)
+  const reporter = createRunReporter('default', {
+    terminal: terminal.surface,
+    projectRoot: '/workspace/project',
+    version: '1.0.2',
+    color: true,
+  })
+  const contextStep = {
+    keyword: 'Given',
+    text: 'the search page is open',
+    type: 'context' as const,
+  }
+  const actionStep = {
+    keyword: 'When',
+    text: 'I search for images',
+    type: 'action' as const,
+  }
+
+  reporter.start()
+  reporter.prepare?.([
+    {
+      specification: run.result.specification,
+      scenario: run.result.scenario,
+      executionTargetProfile: run.result.executionTargetProfile,
+    },
+  ])
+  reporter.event({
+    schemaVersion: 1,
+    sequence: 1,
+    type: 'scenario-started',
+    scenario: run.result.scenario,
+    executionTargetProfile: run.result.executionTargetProfile,
+  })
+  reporter.event({
+    schemaVersion: 1,
+    sequence: 2,
+    type: 'step-started',
+    step: contextStep,
+    scenario: run.result.scenario,
+    executionTargetProfile: run.result.executionTargetProfile,
+  })
+  reporter.event({
+    schemaVersion: 1,
+    sequence: 3,
+    type: 'step-finished',
+    result: {
+      step: contextStep,
+      state: 'passed',
+      resolvedActions: [],
+    },
+    scenario: run.result.scenario,
+    executionTargetProfile: run.result.executionTargetProfile,
+  })
+  reporter.event({
+    schemaVersion: 1,
+    sequence: 4,
+    type: 'step-started',
+    step: actionStep,
+    scenario: run.result.scenario,
+    executionTargetProfile: run.result.executionTargetProfile,
+  })
+
+  const frame = terminal.operations.at(-1)
+  expect(frame?.type).toBe('update')
+  expect(frame?.lines.join('\n')).toContain('Search for images')
+  expect(frame?.lines.join('\n')).toContain(
+    '\u001b[32m✓\u001b[39m Given the search page is open',
+  )
+  expect(frame?.lines.join('\n')).toContain('When I search for images')
+})
+
+test('commits each completed Test result while its Specification is still running', () => {
+  const runs = [
+    passedRun({
+      specificationUri: 'features/checkout.feature',
+      specificationName: 'Checkout',
+      scenarioId: 'scenario-first',
+      scenarioName: 'First Scenario',
+      profileId: 'web',
+      durationMs: 10,
+    }),
+    passedRun({
+      specificationUri: 'features/checkout.feature',
+      specificationName: 'Checkout',
+      scenarioId: 'scenario-second',
+      scenarioName: 'Second Scenario',
+      profileId: 'web',
+      durationMs: 20,
+    }),
+  ]
+  const terminal = recordingTerminal(() => 120)
+  const reporter = createRunReporter('default', {
+    terminal: terminal.surface,
+    projectRoot: '/workspace/project',
+    version: '1.0.2',
+    color: false,
+    now: () => new Date(2026, 7, 20, 14, 32, 7),
+  })
+
+  reporter.start()
+  reporter.prepare?.(
+    runs.map(({ result }) => ({
+      specification: result.specification,
+      scenario: result.scenario,
+      executionTargetProfile: result.executionTargetProfile,
+    })),
+  )
+  reporter.complete?.(runs[0]!.result)
+
+  const committedOutput = terminal.operations
+    .filter((operation) => operation.type === 'commit')
+    .flatMap((operation) => operation.lines)
+    .join('\n')
+  expect(committedOutput).toContain(
+    'features/checkout.feature > First Scenario [10ms]',
+  )
+  expect(committedOutput).not.toContain('Second Scenario')
+})
+
+test('updates active Specifications and commits each completed result once', () => {
   const runs = [
     passedRun({
       specificationUri: 'features/a.feature',
@@ -73,6 +201,7 @@ test('updates active Specifications and commits each completed block once', () =
   expect(initialFrame?.type).toBe('update')
   expect(initialFrame?.lines.join('\n')).toContain('features/a.feature')
   expect(initialFrame?.lines.join('\n')).toContain('0/4 Test results')
+  expect(initialFrame?.lines.join('\n')).toContain('First Scenario')
   expect(initialFrame?.lines.join('\n')).not.toContain('Second Scenario')
 
   reporter.complete?.(runs[0]!.result)
@@ -86,24 +215,28 @@ test('updates active Specifications and commits each completed block once', () =
 
   const concurrentFrame = terminal.operations.at(-1)
   expect(concurrentFrame?.type).toBe('update')
-  expect(concurrentFrame?.lines.join('\n')).toContain('1/4 Test results')
-  expect(concurrentFrame?.lines.join('\n')).toContain('First Scenario [10ms]')
+  expect(concurrentFrame?.lines.join('\n')).not.toContain('features/a.feature')
+  expect(concurrentFrame?.lines.join('\n')).not.toContain('First Scenario')
   expect(concurrentFrame?.lines.join('\n')).toContain('features/b.feature')
   expect(concurrentFrame?.lines.join('\n')).toContain('0/1 Test result')
+  expect(concurrentFrame?.lines.join('\n')).toContain('Other active Scenario')
+  expect(
+    terminal.operations
+      .filter((operation) => operation.type === 'commit')
+      .flatMap((operation) => operation.lines)
+      .join('\n'),
+  ).toContain('features/a.feature > First Scenario [10ms]')
 
   for (const run of runs.slice(1, 4)) reporter.complete?.(run.result)
 
   const commits = terminal.operations.filter(
     (operation) => operation.type === 'commit',
   )
-  expect(commits).toHaveLength(2)
+  expect(commits).toHaveLength(5)
   expect(commits[0]?.lines.join('\n')).toContain('RUN  pickle 1.0.2')
   expect(commits[1]?.lines.join('\n')).toContain('features/a.feature')
-  expect(commits[1]?.lines.join('\n')).toContain(
-    '✓ [web] First Scenario [10ms]\n' +
-      '     ✓ [android] First Scenario [20ms]\n' +
-      '     ✓ [web] Second Scenario [30ms]\n' +
-      '     ✓ [android] Second Scenario [40ms]',
+  expect(commits[4]?.lines.join('\n')).toContain(
+    'features/a.feature > Second Scenario [40ms]',
   )
   expect(terminal.operations.at(-1)?.lines.join('\n')).toContain(
     'features/b.feature',
@@ -128,7 +261,67 @@ test('updates active Specifications and commits each completed block once', () =
   expect(permanentResults).toHaveLength(5)
 })
 
-test('rewraps the dynamic region when an interactive terminal resizes', () => {
+test('finishes live progress with actionable diagnostics and a compact result tree', () => {
+  const run = passedRun({
+    specificationUri: 'features/checkout.feature',
+    specificationName: 'Checkout',
+    scenarioId: 'scenario-purchase',
+    scenarioName: 'Complete a purchase',
+    profileId: 'web',
+    durationMs: 10,
+  })
+  run.result.state = 'failed'
+  run.result.message = 'Expected confirmation\nbut the page remained empty'
+  run.result.steps = [
+    {
+      step: {
+        keyword: 'Then',
+        text: 'the purchase succeeds',
+        type: 'outcome',
+      },
+      state: 'failed',
+      resolvedActions: [{ description: 'Inspect internal selectors' }],
+      message: 'Expected confirmation\nbut the page remained empty',
+    },
+  ]
+  const terminal = recordingTerminal(() => 120)
+  const reporter = createRunReporter('default', {
+    terminal: terminal.surface,
+    projectRoot: '/workspace/project',
+    version: '1.0.2',
+    color: false,
+    now: () => new Date(2026, 7, 20, 14, 32, 7),
+  })
+
+  reporter.start()
+  reporter.finish([run], 10)
+
+  const committedOutput = terminal.operations
+    .filter((operation) => operation.type === 'commit')
+    .flatMap((operation) => operation.lines)
+    .join('\n')
+  const finalOutput = terminal.operations
+    .filter((operation) => operation.type === 'finish')
+    .flatMap((operation) => operation.lines)
+    .join('\n')
+  expect(committedOutput).toContain(
+    '× features/checkout.feature > Complete a purchase [10ms] (failed)',
+  )
+  expect(committedOutput).not.toContain('Expected confirmation')
+  expect(finalOutput).toContain(` Failures
+
+ × Failure
+   Specification  Checkout (features/checkout.feature)
+   Scenario       Complete a purchase
+   Steps
+     × Then the purchase succeeds
+       Expected confirmation
+       but the page remained empty`)
+  expect(finalOutput).not.toContain('Inspect internal selectors')
+  expect(finalOutput).not.toMatch(/[◐◓◑◒]/u)
+})
+
+test('rewraps active progress and preserves a committed result on resize', () => {
   const specificationUri =
     'features/a-very-long-directory/live-progress.feature'
   const run = passedRun({
@@ -169,6 +362,13 @@ test('rewraps the dynamic region when an interactive terminal resizes', () => {
     executionTargetProfile: run.result.executionTargetProfile,
   })
   reporter.complete?.(run.result)
+  reporter.event({
+    schemaVersion: 1,
+    sequence: 2,
+    type: 'scenario-started',
+    scenario: { id: 'scenario-pending', name: 'Still pending' },
+    executionTargetProfile: run.result.executionTargetProfile,
+  })
 
   columns = 28
   reporter.refresh?.()
@@ -184,14 +384,12 @@ test('rewraps the dynamic region when an interactive terminal resizes', () => {
       .map((line) => line.trim())
       .join(''),
   ).toContain(specificationUri)
-  const scenarioStart = resizedFrame?.lines.findIndex((line) =>
-    line.includes('✓'),
-  )
   expect(
-    resizedFrame?.lines
-      .slice(scenarioStart)
-      .map((line) => line.trim())
-      .join(' '),
+    terminal.operations
+      .filter((operation) => operation.type === 'commit')
+      .flatMap((operation) => operation.lines)
+      .join(' ')
+      .replace(/\s+/gu, ' '),
   ).toContain('A completed Scenario with context [10ms]')
 })
 
@@ -255,7 +453,7 @@ test('clears live progress and preserves completed results when a run fails', ()
   expect(finishes[0]?.lines.join('\n')).not.toMatch(/[◐◓◑◒]/u)
 })
 
-test('bounds result rendering while keeping every active Specification visible', () => {
+test('keeps every active Specification visible within the terminal bounds', () => {
   const runs = ['a', 'b', 'c'].flatMap((specificationId) =>
     Array.from({ length: 6 }, (_, index) =>
       passedRun({
@@ -303,11 +501,19 @@ test('bounds result rendering while keeping every active Specification visible',
     for (const run of specificationRuns.slice(0, 5)) {
       reporter.complete?.(run.result)
     }
+    reporter.event({
+      schemaVersion: 1,
+      sequence: 2,
+      type: 'scenario-started',
+      scenario: specificationRuns[5]!.result.scenario,
+      executionTargetProfile:
+        specificationRuns[5]!.result.executionTargetProfile,
+    })
   }
 
   const frame = terminal.operations.at(-1)
   expect(frame?.type).toBe('update')
-  expect(frame?.lines).toHaveLength(10)
+  expect(frame?.lines.length).toBeLessThanOrEqual(10)
   for (const specificationId of ['a', 'b', 'c']) {
     expect(frame?.lines.join('\n')).toContain(
       `5/6 Test results features/${specificationId}.feature`,

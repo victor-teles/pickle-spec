@@ -7,19 +7,17 @@ import type {
 import { createLiveRunReporter } from './live-run-reporter'
 import {
   clockLabel,
+  diagnosticLines,
   groupResults,
-  type SpecificationGroup,
+  renderTestResult,
   summaryLines,
   type WriteLine,
-  writeSpecification,
   writeWrapped,
 } from './run-report'
 import {
   claimScheduleIndex,
   createScheduleIndexQueues,
-  groupSchedule,
   orderedScheduleFromResults,
-  type PendingSpecificationBlock,
   type ScheduleIndexQueue,
 } from './run-schedule'
 import {
@@ -46,7 +44,6 @@ type RunReporterOptions = {
   color?: boolean
   columns?: number
   interactive?: boolean
-  progressive?: boolean
   terminal?: InteractiveTerminalSurface
   now?: () => Date
   scheduleRefresh?: (refresh: () => void) => () => void
@@ -58,52 +55,30 @@ function createBufferedRunReporter(options: RunReporterOptions): RunReporter {
   const projectRoot = options.projectRoot ?? process.cwd()
   const version = options.version ?? 'unknown'
   const color = options.color ?? false
-  const progressive = options.progressive ?? false
   let startTime = ''
   let completedResults: Array<TestResult | undefined> = []
-  let pendingBlocks: PendingSpecificationBlock[] = []
   let scheduleIndexQueues = new Map<string, ScheduleIndexQueue>()
-  let nextBlockIndex = 0
-  let wroteSpecification = false
   let multipleProfiles = false
 
   function prepare(schedule: readonly ScheduledTestResult[]): void {
     completedResults = Array.from({ length: schedule.length })
-    pendingBlocks = groupSchedule(schedule)
     scheduleIndexQueues = createScheduleIndexQueues(schedule)
-    nextBlockIndex = 0
-    wroteSpecification = false
     multipleProfiles =
       new Set(schedule.map((result) => result.executionTargetProfile.id)).size >
       1
   }
 
-  function completedSpecification(
-    block: PendingSpecificationBlock,
-  ): SpecificationGroup | undefined {
-    const results = block.scheduleIndexes.flatMap((scheduleIndex) => {
-      const result = completedResults[scheduleIndex]
-      return result ? [result] : []
-    })
-    if (results.length !== block.scheduleIndexes.length) return undefined
-    return groupResults(results)[0]
-  }
-
-  function flushReadyBlocks(): void {
-    while (nextBlockIndex < pendingBlocks.length) {
-      const specification = completedSpecification(
-        pendingBlocks[nextBlockIndex]!,
-      )
-      if (!specification) return
-      if (wroteSpecification) write('')
-      writeSpecification(specification, {
-        write,
+  function writeCompletedResult(result: TestResult): void {
+    for (const line of renderTestResult(
+      result,
+      `${result.specification.uri} > ${result.scenario.name}`,
+      {
         color,
         columns: options.columns,
         multipleProfiles,
-      })
-      wroteSpecification = true
-      nextBlockIndex++
+      },
+    )) {
+      write(line)
     }
   }
 
@@ -111,7 +86,7 @@ function createBufferedRunReporter(options: RunReporterOptions): RunReporter {
     const scheduleIndex = claimScheduleIndex(scheduleIndexQueues, result)
     if (scheduleIndex === undefined) return
     completedResults[scheduleIndex] = result
-    if (progressive) flushReadyBlocks()
+    writeCompletedResult(result)
   }
 
   return {
@@ -139,8 +114,15 @@ function createBufferedRunReporter(options: RunReporterOptions): RunReporter {
       if (completedResults.some((result) => !result)) {
         for (const result of results) complete(result)
       }
-      flushReadyBlocks()
       const specifications = groupResults(results)
+      for (const line of diagnosticLines(results, {
+        projectRoot,
+        color,
+        columns: options.columns,
+        multipleProfiles,
+      })) {
+        write(line)
+      }
       for (const line of summaryLines(
         specifications,
         results,
@@ -191,16 +173,12 @@ export function terminalReporterCapabilities(
   columns: number | undefined,
   noColor: string | undefined,
   term?: string,
-): Pick<
-  RunReporterOptions,
-  'color' | 'columns' | 'interactive' | 'progressive'
-> {
+): Pick<RunReporterOptions, 'color' | 'columns' | 'interactive'> {
   const interactive = Boolean(isTerminal) && term !== 'dumb'
   return {
     color: interactive && noColor === undefined,
     columns,
     interactive,
-    progressive: !interactive,
   }
 }
 

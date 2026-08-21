@@ -1,3 +1,5 @@
+import { realpathSync } from 'node:fs'
+import { isAbsolute, relative, resolve, sep } from 'node:path'
 import type { TestResult } from '@pickle-spec/runner'
 
 export type WriteLine = (line: string) => void
@@ -31,7 +33,7 @@ const resultPresentations: Record<TestResult['state'], ResultPresentation> = {
   },
   'infrastructure-error': {
     mark: '!',
-    color: 31,
+    color: 35,
     detail: 'infrastructure error',
     singular: 'infrastructure error',
     plural: 'infrastructure errors',
@@ -246,16 +248,17 @@ export function writeSpecification(
   }
 }
 
-export function writeTestResult(
+function writeResult(
   result: TestResult,
   scenarioName: string,
   options: SpecificationWriterOptions,
+  indent: string,
 ): void {
   const profile = options.multipleProfiles
     ? `[${result.executionTargetProfile.id}] `
     : ''
-  const plainPrefix = `     ${resultPresentations[result.state].mark} ${profile}`
-  const styledPrefix = `     ${stateMark(result.state, options.color)} ${profile}`
+  const plainPrefix = `${indent}${resultPresentations[result.state].mark} ${profile}`
+  const styledPrefix = `${indent}${stateMark(result.state, options.color)} ${profile}`
   writeWrapped(
     options.write,
     styledPrefix,
@@ -264,15 +267,50 @@ export function writeTestResult(
     options.columns,
     plainPrefix.length,
   )
-  for (const messageLine of result.message?.split('\n') ?? []) {
-    writeWrapped(
-      options.write,
-      '       ',
-      messageLine,
-      '       ',
-      options.columns,
-    )
-  }
+}
+
+export function writeTestResult(
+  result: TestResult,
+  scenarioName: string,
+  options: SpecificationWriterOptions,
+): void {
+  writeResult(result, scenarioName, options, '     ')
+}
+
+export function renderTestResult(
+  result: TestResult,
+  scenarioName: string,
+  options: Omit<SpecificationWriterOptions, 'write'>,
+): string[] {
+  const lines: string[] = []
+  writeResult(
+    result,
+    scenarioName,
+    {
+      ...options,
+      write: (line) => lines.push(line),
+    },
+    ' ',
+  )
+  return lines
+}
+
+export function renderTestStepResult(
+  result: TestResult['steps'][number],
+  options: Pick<SpecificationWriterOptions, 'color' | 'columns'>,
+): string[] {
+  const lines: string[] = []
+  const plainPrefix = `     ${resultPresentations[result.state].mark} `
+  const styledPrefix = `     ${stateMark(result.state, options.color)} `
+  writeWrapped(
+    (line) => lines.push(line),
+    styledPrefix,
+    `${result.step.keyword} ${result.step.text}`,
+    '       ',
+    options.columns,
+    plainPrefix.length,
+  )
+  return lines
 }
 
 export function renderSpecification(
@@ -284,6 +322,153 @@ export function renderSpecification(
     ...options,
     write: (line) => lines.push(line),
   })
+  return lines
+}
+
+type DiagnosticWriterOptions = SpecificationWriterOptions & {
+  projectRoot: string
+}
+
+type DiagnosticState = Extract<
+  TestResult['state'],
+  'failed' | 'infrastructure-error'
+>
+
+const diagnosticHeadings: Record<
+  DiagnosticState,
+  { section: string; label: string }
+> = {
+  failed: { section: 'Failures', label: 'Failure' },
+  'infrastructure-error': {
+    section: 'Infrastructure errors',
+    label: 'Infrastructure error',
+  },
+}
+
+function orderedResults(results: readonly TestResult[]): TestResult[] {
+  return groupResults(results).flatMap((specification) =>
+    [...specification.scenarios.values()].flatMap(
+      (scenario) => scenario.results,
+    ),
+  )
+}
+
+function writeMessage(
+  message: string,
+  options: DiagnosticWriterOptions,
+  prefix = '       ',
+): void {
+  for (const line of message.split(/\r?\n/)) {
+    writeWrapped(options.write, prefix, line, prefix, options.columns)
+  }
+}
+
+function canonicalPath(path: string): string {
+  try {
+    return realpathSync(path)
+  } catch {
+    return resolve(path)
+  }
+}
+
+function displayArtifactPath(path: string, projectRoot: string): string {
+  const canonicalProjectRoot = canonicalPath(projectRoot)
+  const absolutePath = canonicalPath(resolve(projectRoot, path))
+  const projectRelativePath = relative(canonicalProjectRoot, absolutePath)
+  const isContained =
+    projectRelativePath.length > 0 &&
+    projectRelativePath !== '..' &&
+    !projectRelativePath.startsWith(`..${sep}`) &&
+    !isAbsolute(projectRelativePath)
+  return isContained ? projectRelativePath : absolutePath
+}
+
+function writeArtifacts(
+  stepResult: TestResult['steps'][number],
+  options: DiagnosticWriterOptions,
+): void {
+  if (!stepResult.artifacts?.length) return
+  options.write('       Artifacts')
+  for (const artifact of stepResult.artifacts) {
+    writeWrapped(
+      options.write,
+      `         ${artifact.kind}: `,
+      displayArtifactPath(artifact.path, options.projectRoot),
+      '           ',
+      options.columns,
+    )
+  }
+}
+
+function writeDiagnostic(
+  result: TestResult,
+  options: DiagnosticWriterOptions,
+): void {
+  if (result.state !== 'failed' && result.state !== 'infrastructure-error') {
+    return
+  }
+  const heading = diagnosticHeadings[result.state]
+  options.write('')
+  options.write(` ${stateMark(result.state, options.color)} ${heading.label}`)
+  writeWrapped(
+    options.write,
+    '   Specification  ',
+    `${result.specification.name} (${result.specification.uri})`,
+    '                  ',
+    options.columns,
+  )
+  writeWrapped(
+    options.write,
+    '   Scenario       ',
+    result.scenario.name,
+    '                  ',
+    options.columns,
+  )
+  if (options.multipleProfiles) {
+    writeWrapped(
+      options.write,
+      '   Profile        ',
+      result.executionTargetProfile.id,
+      '                  ',
+      options.columns,
+    )
+  }
+  if (result.steps.length > 0) {
+    options.write('   Steps')
+    for (const step of result.steps) {
+      for (const line of renderTestStepResult(step, options)) {
+        options.write(line)
+      }
+      if (step.message) writeMessage(step.message, options)
+      writeArtifacts(step, options)
+    }
+  }
+  const messageBelongsToStep = result.steps.some(
+    (step) => step.state === result.state && step.message === result.message,
+  )
+  if (result.message && !messageBelongsToStep) {
+    options.write('   Message')
+    writeMessage(result.message, options, '     ')
+  }
+}
+
+export function diagnosticLines(
+  results: readonly TestResult[],
+  options: Omit<DiagnosticWriterOptions, 'write'>,
+): string[] {
+  const lines: string[] = []
+  const ordered = orderedResults(results)
+  const states: DiagnosticState[] = ['failed', 'infrastructure-error']
+  const writerOptions = {
+    ...options,
+    write: (line: string) => lines.push(line),
+  }
+  for (const state of states) {
+    const diagnostics = ordered.filter((result) => result.state === state)
+    if (diagnostics.length === 0) continue
+    lines.push('', ` ${diagnosticHeadings[state].section}`)
+    for (const result of diagnostics) writeDiagnostic(result, writerOptions)
+  }
   return lines
 }
 

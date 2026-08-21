@@ -109,9 +109,16 @@ export default {
               signal?.addEventListener('abort', onAbort, { once: true })
             })
           }
+          const message = process.env.PICKLE_TEST_MESSAGE
+          const artifactPath = process.env.PICKLE_TEST_ARTIFACT
+          const artifacts = artifactPath
+            ? [{ kind: 'trace', path: artifactPath, mediaType: 'text/plain' }]
+            : undefined
           return {
             state,
             resolvedActions: [{ description: \`Deterministic action: \${step.text}\` }],
+            message,
+            artifacts,
           }
         },
         async close() {
@@ -157,9 +164,7 @@ export default {
     expect(stderr).toBe('')
     expect(exitCode).toBe(0)
     expect(stdout).toContain(`RUN  pickle 1.0.2 ${await realpath(workspace)}`)
-    expect(stdout).toContain(
-      ' purchase.feature\n   Purchase\n     ✓ Complete a purchase [',
-    )
+    expect(stdout).toContain('✓ purchase.feature > Complete a purchase [')
     expect(stdout).not.toContain('[deterministic]')
     expect(stdout).toContain('Specifications  1')
     expect(stdout).toContain('Scenarios       1')
@@ -676,6 +681,60 @@ Feature: Checkout
           state: expected.outcome,
         },
       })
+    }
+  })
+
+  test('default run output keeps actionable result diagnostics on stdout', async () => {
+    const artifactPath = join(workspace, 'diagnostic-artifact.txt')
+    await Bun.write(artifactPath, 'diagnostic evidence')
+    const cases = [
+      {
+        outcome: 'failed',
+        section: 'Failures',
+        label: '× Failure',
+        step: '× Given a product is in the basket',
+      },
+      {
+        outcome: 'infrastructure-error',
+        section: 'Infrastructure errors',
+        label: '! Infrastructure error',
+        step: '! Given a product is in the basket',
+      },
+    ] as const
+
+    for (const expected of cases) {
+      const run = Bun.spawnSync({
+        cmd: [
+          pickleCommand,
+          'run',
+          'purchase.feature',
+          '--config',
+          'deterministic.config.jsonc',
+          '--extensions',
+          'pickle.extensions.ts',
+        ],
+        cwd: workspace,
+        env: {
+          ...Bun.env,
+          PICKLE_TEST_OUTCOME: expected.outcome,
+          PICKLE_TEST_MESSAGE:
+            'Expected checkout confirmation\nbut the target became unavailable',
+          PICKLE_TEST_ARTIFACT: artifactPath,
+        },
+      })
+      const stdout = run.stdout.toString()
+
+      expect(run.exitCode).toBe(1)
+      expect(run.stderr.toString()).toBe('')
+      expect(stdout).toContain(` ${expected.section}`)
+      expect(stdout).toContain(` ${expected.label}`)
+      expect(stdout).toContain(expected.step)
+      expect(stdout).toContain(
+        '       Expected checkout confirmation\n' +
+          '       but the target became unavailable',
+      )
+      expect(stdout).toContain('         trace: diagnostic-artifact.txt')
+      expect(stdout).not.toContain('Deterministic action:')
     }
   })
 

@@ -6,12 +6,12 @@ import type {
 } from '@pickle-spec/runner'
 import {
   clockLabel,
+  diagnosticLines,
   groupResults,
-  renderSpecification,
-  type SpecificationGroup,
+  renderTestResult,
+  renderTestStepResult,
   summaryLines,
   wrappedLines,
-  writeTestResult,
   writeWrapped,
 } from './run-report'
 import {
@@ -48,6 +48,14 @@ interface LiveRunReporter {
   finish(runs: readonly ScenarioRun[], durationMs: number): void
 }
 
+type StepStartedEvent = Extract<RunEvent, { type: 'step-started' }>
+type StepFinishedEvent = Extract<RunEvent, { type: 'step-finished' }>
+
+type LiveScenarioProgress = {
+  completedSteps: StepFinishedEvent['result'][]
+  runningStep?: StepStartedEvent['step']
+}
+
 const progressMarks = ['◐', '◓', '◑', '◒'] as const
 const progressRefreshIntervalMs = 200
 
@@ -69,9 +77,8 @@ export function createLiveRunReporter(
   let progressFrame = 0
   let finished = false
   let cancelPagedRefresh: (() => void) | undefined
-  const activeSpecificationUris = new Set<string>()
-  const committedSpecificationUris = new Set<string>()
-  const progressResultsBySpecification = new Map<string, TestResult[]>()
+  const activeScheduleIndexes = new Set<number>()
+  const progressByScheduleIndex = new Map<number, LiveScenarioProgress>()
   let scheduleIndexQueues = new Map<string, ScheduleIndexQueue>()
 
   function columns(): number | undefined {
@@ -100,9 +107,8 @@ export function createLiveRunReporter(
     completedResults = Array.from({ length: nextSchedule.length })
     pendingBlocks = groupSchedule(nextSchedule)
     progressFrame = 0
-    activeSpecificationUris.clear()
-    committedSpecificationUris.clear()
-    progressResultsBySpecification.clear()
+    activeScheduleIndexes.clear()
+    progressByScheduleIndex.clear()
     scheduleIndexQueues = createScheduleIndexQueues(nextSchedule)
     multipleProfiles =
       new Set(nextSchedule.map((result) => result.executionTargetProfile.id))
@@ -118,28 +124,13 @@ export function createLiveRunReporter(
     })
   }
 
-  function availableSpecification(
-    block: PendingSpecificationBlock,
-  ): SpecificationGroup | undefined {
-    return groupResults(completedBlockResults(block))[0]
-  }
-
-  function completedSpecification(
-    block: PendingSpecificationBlock,
-  ): SpecificationGroup | undefined {
-    const results = completedBlockResults(block)
-    if (results.length !== block.scheduleIndexes.length) return undefined
-    return groupResults(results)[0]
-  }
-
   function renderActiveHeader(
     block: PendingSpecificationBlock,
     mark: string,
   ): string[] {
     const firstScheduled = schedule[block.scheduleIndexes[0]!]
     if (!firstScheduled) return []
-    const completedCount =
-      progressResultsBySpecification.get(block.uri)?.length ?? 0
+    const completedCount = completedBlockResults(block).length
     const resultLabel =
       block.scheduleIndexes.length === 1 ? 'result' : 'results'
     const lines: string[] = []
@@ -153,68 +144,77 @@ export function createLiveRunReporter(
     return lines
   }
 
-  function renderRecentResults(
-    results: readonly TestResult[],
-    rowBudget: number,
+  function renderActiveBlock(
+    block: PendingSpecificationBlock,
+    mark: string,
   ): string[] {
-    if (rowBudget <= 0 || results.length === 0) return []
-    let selectedCount = Math.min(results.length, rowBudget)
-    while (selectedCount >= 0) {
-      const hiddenCount = results.length - selectedCount
-      const lines = hiddenCount
-        ? wrappedLines(
-            '     … ',
-            `${hiddenCount} earlier Test results hidden`,
-            '       ',
-            columns(),
-          )
-        : []
-      const selectedResults =
-        selectedCount === 0 ? [] : results.slice(-selectedCount)
-      for (const result of selectedResults) {
-        writeTestResult(result, result.scenario.name, {
-          write: (line) => lines.push(line),
-          color: options.color,
-          columns: columns(),
-          multipleProfiles,
-        })
+    const lines = renderActiveHeader(block, mark)
+    for (const scheduleIndex of block.scheduleIndexes) {
+      if (!activeScheduleIndexes.has(scheduleIndex)) continue
+      const scheduled = schedule[scheduleIndex]
+      if (!scheduled) continue
+      const profile = multipleProfiles
+        ? `[${scheduled.executionTargetProfile.id}] `
+        : ''
+      writeWrapped(
+        (line) => lines.push(line),
+        `   ${mark} `,
+        `${profile}${scheduled.scenario.name}`,
+        '     ',
+        columns(),
+      )
+      const progress = progressByScheduleIndex.get(scheduleIndex)
+      for (const result of progress?.completedSteps ?? []) {
+        lines.push(
+          ...renderTestStepResult(result, {
+            color: options.color,
+            columns: columns(),
+          }),
+        )
       }
-      if (renderedRowCount(lines) <= rowBudget) return lines
-      selectedCount--
+      if (progress?.runningStep) {
+        writeWrapped(
+          (line) => lines.push(line),
+          `     ${mark} `,
+          `${progress.runningStep.keyword} ${progress.runningStep.text}`,
+          '       ',
+          columns(),
+        )
+      }
     }
-    return []
+    return lines
   }
 
   function updateDynamicRegion(): void {
     const frameIndex = progressFrame++
     const mark = progressMarks[frameIndex % progressMarks.length]!
-    const activeBlocks = pendingBlocks.filter(
-      (block) =>
-        activeSpecificationUris.has(block.uri) &&
-        !committedSpecificationUris.has(block.uri),
+    const activeBlocks = pendingBlocks.filter((block) =>
+      block.scheduleIndexes.some((scheduleIndex) =>
+        activeScheduleIndexes.has(scheduleIndex),
+      ),
     )
     const maxRows = availableTerminalRows(terminal.rows?.())
-    const allHeaders = activeBlocks.map((block) =>
-      renderActiveHeader(block, mark),
+    const allBlockLines = activeBlocks.map((block) =>
+      renderActiveBlock(block, mark),
     )
-    const totalHeaderRows = renderedRowCount(allHeaders.flat())
+    const totalBlockRows = renderedRowCount(allBlockLines.flat())
     let visibleBlocks = activeBlocks
-    let headers = allHeaders
+    let blockLines = allBlockLines
     let overflowLines: string[] = []
-    const isPaged = totalHeaderRows > maxRows && activeBlocks.length > 1
+    const isPaged = totalBlockRows > maxRows && activeBlocks.length > 1
     if (isPaged) {
       const firstIndex = frameIndex % activeBlocks.length
       visibleBlocks = []
-      headers = []
+      blockLines = []
       let usedRows = 0
       for (let offset = 0; offset < activeBlocks.length; offset++) {
         const index = (firstIndex + offset) % activeBlocks.length
-        const header = allHeaders[index]!
-        const headerRows = renderedRowCount(header)
-        if (headers.length > 0 && usedRows + headerRows >= maxRows) break
+        const lines = allBlockLines[index]!
+        const lineRows = renderedRowCount(lines)
+        if (blockLines.length > 0 && usedRows + lineRows >= maxRows) break
         visibleBlocks.push(activeBlocks[index]!)
-        headers.push(header)
-        usedRows += headerRows
+        blockLines.push(lines)
+        usedRows += lineRows
         if (usedRows >= maxRows) break
       }
       const hiddenCount = activeBlocks.length - visibleBlocks.length
@@ -226,72 +226,31 @@ export function createLiveRunReporter(
           columns(),
         )
         while (
-          headers.length > 1 &&
+          blockLines.length > 1 &&
           usedRows + renderedRowCount(overflowLines) > maxRows
         ) {
-          usedRows -= renderedRowCount(headers.pop()!)
+          usedRows -= renderedRowCount(blockLines.pop()!)
           visibleBlocks.pop()
         }
       }
     }
-    const resultRowBudget = Math.max(
-      0,
-      maxRows - renderedRowCount([...headers.flat(), ...overflowLines]),
-    )
-    let remainingResultRows = resultRowBudget
-    const lines = visibleBlocks.flatMap((block, index) => {
-      const remainingBlocks = visibleBlocks.length - index
-      const blockRowBudget = Number.isFinite(remainingResultRows)
-        ? Math.floor(remainingResultRows / remainingBlocks)
-        : Number.POSITIVE_INFINITY
-      const resultLines = renderRecentResults(
-        progressResultsBySpecification.get(block.uri) ?? [],
-        blockRowBudget,
-      )
-      remainingResultRows -= renderedRowCount(resultLines)
-      return [...headers[index]!, ...resultLines]
-    })
+    const lines = blockLines.flat()
     terminal.update([...lines, ...overflowLines])
     setPagedRefresh(isPaged)
   }
 
-  function commitSpecification(
-    uri: string,
-    specification: SpecificationGroup,
-  ): void {
+  function commitResult(result: TestResult): void {
     terminal.commit(
-      renderSpecification(specification, {
-        color: options.color,
-        columns: columns(),
-        multipleProfiles,
-      }),
+      renderTestResult(
+        result,
+        `${result.specification.uri} > ${result.scenario.name}`,
+        {
+          color: options.color,
+          columns: columns(),
+          multipleProfiles,
+        },
+      ),
     )
-    committedSpecificationUris.add(uri)
-    activeSpecificationUris.delete(uri)
-  }
-
-  function commitCompletedSpecification(uri: string): void {
-    if (committedSpecificationUris.has(uri)) return
-    const block = pendingBlocks.find((candidate) => candidate.uri === uri)
-    if (!block) return
-    if (
-      progressResultsBySpecification.get(uri)?.length !==
-      block.scheduleIndexes.length
-    ) {
-      return
-    }
-    const specification = completedSpecification(block)
-    if (!specification) return
-    commitSpecification(uri, specification)
-  }
-
-  function commitAvailableSpecifications(): void {
-    for (const block of pendingBlocks) {
-      if (committedSpecificationUris.has(block.uri)) continue
-      const specification = availableSpecification(block)
-      if (!specification) continue
-      commitSpecification(block.uri, specification)
-    }
   }
 
   function finish(
@@ -301,8 +260,13 @@ export function createLiveRunReporter(
   ): void {
     if (finished) return
     setPagedRefresh(false)
-    commitAvailableSpecifications()
     const specifications = groupResults(results)
+    const diagnostics = diagnosticLines(results, {
+      projectRoot: options.projectRoot,
+      color: options.color,
+      columns: columns(),
+      multipleProfiles,
+    })
     const summary = summaryLines(specifications, results, startTime, durationMs)
     if (error !== undefined) {
       const message = error instanceof Error ? error.message : String(error)
@@ -317,7 +281,7 @@ export function createLiveRunReporter(
         ),
       )
     }
-    terminal.finish(summary)
+    terminal.finish([...diagnostics, ...summary])
     finished = true
   }
 
@@ -325,16 +289,21 @@ export function createLiveRunReporter(
     const scheduleIndex = claimScheduleIndex(scheduleIndexQueues, result)
     if (scheduleIndex === undefined) return
     completedResults[scheduleIndex] = result
-    const progressResults =
-      progressResultsBySpecification.get(result.specification.uri) ?? []
-    progressResults.push(result)
-    progressResultsBySpecification.set(
-      result.specification.uri,
-      progressResults,
-    )
-    activeSpecificationUris.add(result.specification.uri)
-    commitCompletedSpecification(result.specification.uri)
+    activeScheduleIndexes.delete(scheduleIndex)
+    progressByScheduleIndex.delete(scheduleIndex)
+    commitResult(result)
     updateDynamicRegion()
+  }
+
+  function activeScheduleIndex(
+    event: Extract<RunEvent, { type: 'step-started' | 'step-finished' }>,
+  ): number | undefined {
+    const scheduleIndex = schedule.findIndex(
+      (scheduled, index) =>
+        activeScheduleIndexes.has(index) &&
+        scheduledEventMatches(scheduled, event),
+    )
+    return scheduleIndex < 0 ? undefined : scheduleIndex
   }
 
   return {
@@ -355,15 +324,32 @@ export function createLiveRunReporter(
     },
     prepare,
     event(event) {
-      if (event.type !== 'scenario-started') return
-      const scheduleIndex = schedule.findIndex(
-        (scheduled, index) =>
-          !completedResults[index] && scheduledEventMatches(scheduled, event),
-      )
-      if (scheduleIndex < 0) return
-      const scheduled = schedule[scheduleIndex]
-      if (!scheduled) return
-      activeSpecificationUris.add(scheduled.specification.uri)
+      if (event.type === 'scenario-started') {
+        const scheduleIndex = schedule.findIndex(
+          (scheduled, index) =>
+            !completedResults[index] && scheduledEventMatches(scheduled, event),
+        )
+        if (scheduleIndex < 0) return
+        activeScheduleIndexes.add(scheduleIndex)
+        progressByScheduleIndex.set(scheduleIndex, { completedSteps: [] })
+        updateDynamicRegion()
+        return
+      }
+      if (event.type !== 'step-started' && event.type !== 'step-finished') {
+        return
+      }
+      const scheduleIndex = activeScheduleIndex(event)
+      if (scheduleIndex === undefined) return
+      const progress = progressByScheduleIndex.get(scheduleIndex) ?? {
+        completedSteps: [],
+      }
+      if (event.type === 'step-started') {
+        progress.runningStep = event.step
+      } else {
+        progress.completedSteps.push(event.result)
+        progress.runningStep = undefined
+      }
+      progressByScheduleIndex.set(scheduleIndex, progress)
       updateDynamicRegion()
     },
     complete,

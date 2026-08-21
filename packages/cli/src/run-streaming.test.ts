@@ -50,7 +50,7 @@ afterAll(async () => {
   await rm(workspace, { recursive: true, force: true })
 })
 
-test('streams complete Specification blocks in stable order through public CLI output', async () => {
+test('streams Test results in completion order through public CLI output', async () => {
   const project = join(workspace, 'ordered-blocks')
   const gates = join(project, 'gates')
   await mkdir(join(project, 'features'), { recursive: true })
@@ -158,30 +158,43 @@ Feature: Third Specification
     }),
   ])
 
-  await Bun.write(join(gates, 'b-only.release'), '')
-  await Bun.write(join(gates, 'a-first.release'), '')
-  await Promise.all([
-    waitForFile(join(gates, 'b-only.finished')),
-    waitForFile(join(gates, 'a-first.finished')),
-  ])
   const safetyRelease = setTimeout(() => {
+    void Bun.write(join(gates, 'a-first.release'), '')
     void Bun.write(join(gates, 'a-second.release'), '')
+    void Bun.write(join(gates, 'b-only.release'), '')
     void Bun.write(join(gates, 'c-only.release'), '')
   }, 2_000)
-  await Bun.sleep(50)
-  expect(output.join('')).not.toContain(' features/a.feature')
-  expect(output.join('')).not.toContain(' features/b.feature')
+
+  await Bun.write(join(gates, 'b-only.release'), '')
+  const firstOutput = await waitForOutput(
+    output,
+    'features/b.feature > Ready early',
+  )
+  expect(firstOutput).not.toContain('features/a.feature')
+  expect(firstOutput).not.toContain('features/c.feature')
+
+  await Bun.write(join(gates, 'a-first.release'), '')
+  const secondOutput = await waitForOutput(
+    output,
+    'features/a.feature > First declared Scenario',
+  )
+  expect(secondOutput).not.toContain('Second declared Scenario [')
+  expect(secondOutput).not.toContain('features/c.feature')
 
   await Bun.write(join(gates, 'a-second.release'), '')
-  const progressiveOutput = await waitForOutput(output, ' features/b.feature')
-  const firstUri = progressiveOutput.indexOf(' features/a.feature')
-  const secondUri = progressiveOutput.indexOf(' features/b.feature')
-  expect(firstUri).toBeGreaterThan(-1)
-  expect(secondUri).toBeGreaterThan(firstUri)
-  expect(progressiveOutput.indexOf('First declared Scenario')).toBeLessThan(
-    progressiveOutput.indexOf('Second declared Scenario'),
+  const progressiveOutput = await waitForOutput(
+    output,
+    'features/a.feature > Second declared Scenario',
   )
-  expect(progressiveOutput).not.toContain(' features/c.feature')
+  expect(progressiveOutput.indexOf('features/b.feature')).toBeLessThan(
+    progressiveOutput.indexOf('features/a.feature > First declared Scenario'),
+  )
+  expect(
+    progressiveOutput.indexOf('features/a.feature > First declared Scenario'),
+  ).toBeLessThan(
+    progressiveOutput.indexOf('features/a.feature > Second declared Scenario'),
+  )
+  expect(progressiveOutput).not.toContain('features/c.feature')
 
   await Bun.write(join(gates, 'c-only.release'), '')
   const [exitCode, stderr] = await Promise.all([
@@ -194,16 +207,12 @@ Feature: Third Specification
   expect(exitCode).toBe(0)
   clearTimeout(safetyRelease)
   expect(stderr).toBe('')
-  expect(finalOutput.indexOf(' features/c.feature')).toBeGreaterThan(secondUri)
-  for (const uri of [
-    'features/a.feature',
-    'features/b.feature',
-    'features/c.feature',
-  ]) {
-    expect(
-      finalOutput.match(new RegExp(uri.replace('.', '\\.'), 'g')),
-    ).toHaveLength(1)
-  }
+  expect(finalOutput.indexOf('features/c.feature')).toBeGreaterThan(
+    progressiveOutput.indexOf('features/a.feature > Second declared Scenario'),
+  )
+  expect(finalOutput.match(/features\/a\.feature/g)).toHaveLength(2)
+  expect(finalOutput.match(/features\/b\.feature/g)).toHaveLength(1)
+  expect(finalOutput.match(/features\/c\.feature/g)).toHaveLength(1)
   expect(finalOutput).toContain('Specifications  3')
   expect(finalOutput).toContain('Scenarios       4')
   expect(finalOutput).toContain('Test results    4 passed (4)')
