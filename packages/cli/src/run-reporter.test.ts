@@ -1,33 +1,6 @@
 import { expect, test } from 'bun:test'
-import type { ScenarioRun } from '@pickle-spec/runner'
 import { createRunReporter, terminalReporterCapabilities } from './run-reporter'
-
-type PassedRunInput = {
-  specificationUri: string
-  specificationName: string
-  scenarioId: string
-  scenarioName: string
-  profileId: string
-  durationMs: number
-}
-
-function passedRun(input: PassedRunInput): ScenarioRun {
-  return {
-    events: [],
-    result: {
-      schemaVersion: 1,
-      specification: {
-        uri: input.specificationUri,
-        name: input.specificationName,
-      },
-      scenario: { id: input.scenarioId, name: input.scenarioName },
-      executionTargetProfile: { id: input.profileId },
-      state: 'passed',
-      steps: [],
-      durationMs: input.durationMs,
-    },
-  }
-}
+import { passedRun } from './run-reporter.test-support'
 
 test('renders a successful test run as a stable Specification-first tree', () => {
   const lines: string[] = []
@@ -438,16 +411,25 @@ test('enables color only for a TTY when NO_COLOR is absent', () => {
   expect(terminalReporterCapabilities(true, 100, undefined)).toEqual({
     color: true,
     columns: 100,
+    interactive: true,
     progressive: false,
   })
   expect(terminalReporterCapabilities(true, 100, '')).toEqual({
     color: false,
     columns: 100,
+    interactive: true,
     progressive: false,
   })
   expect(terminalReporterCapabilities(false, undefined, undefined)).toEqual({
     color: false,
     columns: undefined,
+    interactive: false,
+    progressive: true,
+  })
+  expect(terminalReporterCapabilities(true, 100, undefined, 'dumb')).toEqual({
+    color: false,
+    columns: 100,
+    interactive: false,
     progressive: true,
   })
 })
