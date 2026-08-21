@@ -89,17 +89,12 @@ export default {
 `,
   )
   await Bun.write(
-    join(project, 'features', 'a.feature'),
+    join(project, 'features', 'progress.feature'),
     `@pickle:id:specaaaaaaaaaaaa @pickle:state:active
-Feature: First Specification
+Feature: Streaming Specification
   @pickle:id:scnaaaaaaaaaaaa
   Scenario: First result appears last
-    Then first`,
-  )
-  await Bun.write(
-    join(project, 'features', 'b.feature'),
-    `@pickle:id:specbbbbbbbbbbbb @pickle:state:active
-Feature: Second Specification
+    Then first
   @pickle:id:scnbbbbbbbbbbbb
   Scenario: Second result appears first
     Then second`,
@@ -136,9 +131,8 @@ Feature: Second Specification
       )
     }),
   ])
-  const activeOutput = await waitForOutput(output, 'features/b.feature')
-  expect(activeOutput).toContain('features/a.feature')
-  expect(activeOutput).toContain('0/1 Test result')
+  const activeOutput = await waitForOutput(output, 'features/progress.feature')
+  expect(activeOutput).toContain('0/2 Test results')
   expect(activeOutput).not.toContain('Second result appears first [')
 
   await Bun.write(join(gates, 'second.release'), '')
@@ -156,7 +150,7 @@ Feature: Second Specification
 
   expect(exitCode).toBe(0)
   expect(finalOutput).toContain('First result appears last [')
-  expect(finalOutput.split(' Specifications  2')).toHaveLength(2)
+  expect(finalOutput.split(' Specifications  1')).toHaveLength(2)
   expect(finalOutput.split(' Test results    2 passed (2)')).toHaveLength(2)
   expect(finalOutput).not.toContain('\u001b[32m')
 }, 15_000)

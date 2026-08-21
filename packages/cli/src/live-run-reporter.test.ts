@@ -2,7 +2,55 @@ import { expect, test } from 'bun:test'
 import { createRunReporter } from './run-reporter'
 import { passedRun, recordingTerminal } from './run-reporter.test-support'
 
-test('updates active Specifications and commits each completed block once', () => {
+test('commits each completed Test result while its Specification is still running', () => {
+  const runs = [
+    passedRun({
+      specificationUri: 'features/checkout.feature',
+      specificationName: 'Checkout',
+      scenarioId: 'scenario-first',
+      scenarioName: 'First Scenario',
+      profileId: 'web',
+      durationMs: 10,
+    }),
+    passedRun({
+      specificationUri: 'features/checkout.feature',
+      specificationName: 'Checkout',
+      scenarioId: 'scenario-second',
+      scenarioName: 'Second Scenario',
+      profileId: 'web',
+      durationMs: 20,
+    }),
+  ]
+  const terminal = recordingTerminal(() => 120)
+  const reporter = createRunReporter('default', {
+    terminal: terminal.surface,
+    projectRoot: '/workspace/project',
+    version: '1.0.2',
+    color: false,
+    now: () => new Date(2026, 7, 20, 14, 32, 7),
+  })
+
+  reporter.start()
+  reporter.prepare?.(
+    runs.map(({ result }) => ({
+      specification: result.specification,
+      scenario: result.scenario,
+      executionTargetProfile: result.executionTargetProfile,
+    })),
+  )
+  reporter.complete?.(runs[0]!.result)
+
+  const committedOutput = terminal.operations
+    .filter((operation) => operation.type === 'commit')
+    .flatMap((operation) => operation.lines)
+    .join('\n')
+  expect(committedOutput).toContain(
+    'features/checkout.feature > First Scenario [10ms]',
+  )
+  expect(committedOutput).not.toContain('Second Scenario')
+})
+
+test('updates active Specifications and commits each completed result once', () => {
   const runs = [
     passedRun({
       specificationUri: 'features/a.feature',
@@ -87,23 +135,25 @@ test('updates active Specifications and commits each completed block once', () =
   const concurrentFrame = terminal.operations.at(-1)
   expect(concurrentFrame?.type).toBe('update')
   expect(concurrentFrame?.lines.join('\n')).toContain('1/4 Test results')
-  expect(concurrentFrame?.lines.join('\n')).toContain('First Scenario [10ms]')
   expect(concurrentFrame?.lines.join('\n')).toContain('features/b.feature')
   expect(concurrentFrame?.lines.join('\n')).toContain('0/1 Test result')
+  expect(
+    terminal.operations
+      .filter((operation) => operation.type === 'commit')
+      .flatMap((operation) => operation.lines)
+      .join('\n'),
+  ).toContain('features/a.feature > First Scenario [10ms]')
 
   for (const run of runs.slice(1, 4)) reporter.complete?.(run.result)
 
   const commits = terminal.operations.filter(
     (operation) => operation.type === 'commit',
   )
-  expect(commits).toHaveLength(2)
+  expect(commits).toHaveLength(5)
   expect(commits[0]?.lines.join('\n')).toContain('RUN  pickle 1.0.2')
   expect(commits[1]?.lines.join('\n')).toContain('features/a.feature')
-  expect(commits[1]?.lines.join('\n')).toContain(
-    '✓ [web] First Scenario [10ms]\n' +
-      '     ✓ [android] First Scenario [20ms]\n' +
-      '     ✓ [web] Second Scenario [30ms]\n' +
-      '     ✓ [android] Second Scenario [40ms]',
+  expect(commits[4]?.lines.join('\n')).toContain(
+    'features/a.feature > Second Scenario [40ms]',
   )
   expect(terminal.operations.at(-1)?.lines.join('\n')).toContain(
     'features/b.feature',
@@ -171,7 +221,9 @@ test('finishes live progress with actionable diagnostics and a compact result tr
     .filter((operation) => operation.type === 'finish')
     .flatMap((operation) => operation.lines)
     .join('\n')
-  expect(committedOutput).toContain('× Complete a purchase [10ms] (failed)')
+  expect(committedOutput).toContain(
+    '× features/checkout.feature > Complete a purchase [10ms] (failed)',
+  )
   expect(committedOutput).not.toContain('Expected confirmation')
   expect(finalOutput).toContain(` Failures
 
@@ -186,7 +238,7 @@ test('finishes live progress with actionable diagnostics and a compact result tr
   expect(finalOutput).not.toMatch(/[◐◓◑◒]/u)
 })
 
-test('rewraps the dynamic region when an interactive terminal resizes', () => {
+test('rewraps active progress and preserves a committed result on resize', () => {
   const specificationUri =
     'features/a-very-long-directory/live-progress.feature'
   const run = passedRun({
@@ -242,14 +294,12 @@ test('rewraps the dynamic region when an interactive terminal resizes', () => {
       .map((line) => line.trim())
       .join(''),
   ).toContain(specificationUri)
-  const scenarioStart = resizedFrame?.lines.findIndex((line) =>
-    line.includes('✓'),
-  )
   expect(
-    resizedFrame?.lines
-      .slice(scenarioStart)
-      .map((line) => line.trim())
-      .join(' '),
+    terminal.operations
+      .filter((operation) => operation.type === 'commit')
+      .flatMap((operation) => operation.lines)
+      .join(' ')
+      .replace(/\s+/gu, ' '),
   ).toContain('A completed Scenario with context [10ms]')
 })
 
@@ -313,7 +363,7 @@ test('clears live progress and preserves completed results when a run fails', ()
   expect(finishes[0]?.lines.join('\n')).not.toMatch(/[◐◓◑◒]/u)
 })
 
-test('bounds result rendering while keeping every active Specification visible', () => {
+test('keeps every active Specification visible within the terminal bounds', () => {
   const runs = ['a', 'b', 'c'].flatMap((specificationId) =>
     Array.from({ length: 6 }, (_, index) =>
       passedRun({
@@ -365,7 +415,7 @@ test('bounds result rendering while keeping every active Specification visible',
 
   const frame = terminal.operations.at(-1)
   expect(frame?.type).toBe('update')
-  expect(frame?.lines).toHaveLength(10)
+  expect(frame?.lines.length).toBeLessThanOrEqual(10)
   for (const specificationId of ['a', 'b', 'c']) {
     expect(frame?.lines.join('\n')).toContain(
       `5/6 Test results features/${specificationId}.feature`,

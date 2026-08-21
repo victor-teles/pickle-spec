@@ -2,7 +2,7 @@ import { expect, test } from 'bun:test'
 import { createRunReporter, terminalReporterCapabilities } from './run-reporter'
 import { passedRun } from './run-reporter.test-support'
 
-test('renders a successful test run as a stable Specification-first tree', () => {
+test('renders completed Test results as Vitest-style lines', () => {
   const lines: string[] = []
   const reporter = createRunReporter('default', {
     write: (line) => lines.push(line),
@@ -55,15 +55,10 @@ test('renders a successful test run as a stable Specification-first tree', () =>
   expect(lines.join('\n')).toBe(`
  RUN  pickle 1.0.2 /workspace/project
 
- features/checkout.feature
-   Checkout
-     ✓ [web] Complete a purchase [5ms]
-
- src/google.feature
-   Search
-     ✓ [web] Visit main page [150ms]
-     ✓ [android] Visit main page [1.24s]
-     ✓ [web] Find pickles [820ms]
+ ✓ [web] src/google.feature > Visit main page [150ms]
+ ✓ [android] src/google.feature > Visit main page [1.24s]
+ ✓ [web] src/google.feature > Find pickles [820ms]
+ ✓ [web] features/checkout.feature > Complete a purchase [5ms]
 
  Specifications  2
  Scenarios       3
@@ -72,7 +67,7 @@ test('renders a successful test run as a stable Specification-first tree', () =>
  Duration        1.46s`)
 })
 
-test('streams contiguous ready Specification blocks in final report order', () => {
+test('streams Test results in completion order without repeating them at finish', () => {
   const runs = [
     passedRun({
       specificationUri: 'features/a.feature',
@@ -133,7 +128,6 @@ test('streams contiguous ready Specification blocks in final report order', () =
     version: '1.0.2',
     color: false,
     columns: 120,
-    progressive: true,
     now: () => new Date(2026, 7, 20, 14, 32, 7),
   }
   const progressiveLines: string[] = []
@@ -147,29 +141,26 @@ test('streams contiguous ready Specification blocks in final report order', () =
   for (const index of [4, 5, 3, 1, 0]) {
     progressiveReporter.complete?.(runs[index]!.result)
   }
-  expect(progressiveLines.join('\n')).not.toContain('features/a.feature')
-  expect(progressiveLines.join('\n')).not.toContain('features/b.feature')
+  expect(progressiveLines.join('\n')).toContain(
+    '✓ [web] features/b.feature > Ready early [50ms]',
+  )
+  expect(progressiveLines.join('\n')).toContain(
+    '✓ [web] features/a.feature > First Scenario [10ms]',
+  )
 
   progressiveReporter.complete?.(runs[2]!.result)
-  progressiveReporter.complete?.(runs[4]!.result)
-  expect(progressiveLines.join('\n')).toContain('features/b.feature')
   progressiveReporter.finish(runs, 100)
 
-  const finishOnlyLines: string[] = []
-  const finishOnlyReporter = createRunReporter('default', {
-    ...options,
-    write: (line) => finishOnlyLines.push(line),
-  })
-  finishOnlyReporter.start()
-  finishOnlyReporter.finish(runs, 100)
-
-  expect(progressiveLines).toEqual(finishOnlyLines)
-  expect(progressiveLines.join('\n')).toContain(
-    '✓ [web] First Scenario [10ms]\n' +
-      '     ✓ [android] First Scenario [20ms]\n' +
-      '     ✓ [web] Second Scenario [30ms]\n' +
-      '     ✓ [android] Second Scenario [40ms]',
-  )
+  const resultLines = progressiveLines.filter((line) => /[✓×!↓○]/u.test(line))
+  expect(resultLines).toEqual([
+    ' ✓ [web] features/b.feature > Ready early [50ms]',
+    ' ✓ [android] features/b.feature > Ready early [60ms]',
+    ' ✓ [android] features/a.feature > Second Scenario [40ms]',
+    ' ✓ [android] features/a.feature > First Scenario [20ms]',
+    ' ✓ [web] features/a.feature > First Scenario [10ms]',
+    ' ✓ [web] features/a.feature > Second Scenario [30ms]',
+  ])
+  expect(progressiveLines).toContain(' Test results    6 passed (6)')
 })
 
 test('keeps schedule and completion callbacks out of NDJSON output', () => {
@@ -205,7 +196,7 @@ test('keeps schedule and completion callbacks out of NDJSON output', () => {
   })
 })
 
-test('keeps interactive human output buffered until the run finishes', () => {
+test('streams human output as each Test result completes', () => {
   const run = passedRun({
     specificationUri: 'features/a.feature',
     specificationName: 'First',
@@ -221,7 +212,6 @@ test('keeps interactive human output buffered until the run finishes', () => {
     version: '1.0.2',
     color: true,
     columns: 120,
-    progressive: false,
     now: () => new Date(2026, 7, 20, 14, 32, 7),
   })
 
@@ -234,10 +224,12 @@ test('keeps interactive human output buffered until the run finishes', () => {
     },
   ])
   reporter.complete?.(run.result)
-  expect(lines.join('\n')).not.toContain('features/a.feature')
+  expect(lines.join('\n')).toContain('features/a.feature > Scenario A [10ms]')
 
   reporter.finish([run], 10)
-  expect(lines.join('\n')).toContain('features/a.feature')
+  expect(
+    lines.filter((line) => line.includes('features/a.feature')),
+  ).toHaveLength(1)
 })
 
 test('uses a visible failure symbol with color only as supplemental information', () => {
@@ -276,7 +268,9 @@ test('uses a visible failure symbol with color only as supplemental information'
 
   expect(colorLines.join('\n')).toContain('\u001b[31m×\u001b[39m')
   expect(plainLines.join('\n')).not.toContain('\u001b[')
-  expect(plainLines.join('\n')).toContain('× Visit main page [150ms] (failed)')
+  expect(plainLines.join('\n')).toContain(
+    '× src/google.feature > Visit main page [150ms] (failed)',
+  )
 })
 
 test('wraps long paths and Scenario names without truncating them', () => {
@@ -309,15 +303,17 @@ test('wraps long paths and Scenario names without truncating them', () => {
   )
 
   expect(lines.every((line) => line.length <= 32)).toBe(true)
-  const uriStart = lines.findIndex((line) => line.includes('features/'))
-  expect(`${lines[uriStart]?.trim()}${lines[uriStart + 1]?.trim()}`).toBe(
-    specificationUri,
+  const resultStart = lines.findIndex((line) => line.includes('✓'))
+  const summaryStart = lines.findIndex((line) =>
+    line.includes('Specifications'),
   )
-  const scenarioStart = lines.findIndex((line) => line.includes('✓'))
-  const renderedScenario = `${lines[scenarioStart]?.trim().slice(2)} ${lines[
-    scenarioStart + 1
-  ]?.trim()}`
-  expect(renderedScenario).toBe(`${scenarioName} [150ms]`)
+  const renderedResult = lines
+    .slice(resultStart, summaryStart)
+    .join('')
+    .replace(/\s/gu, '')
+  expect(renderedResult).toContain(
+    `${specificationUri}>${scenarioName}[150ms]`.replace(/\s/gu, ''),
+  )
 })
 
 test('wraps non-BMP Unicode names without corrupting their characters', () => {
@@ -399,12 +395,18 @@ test('counts Test result states as mutually exclusive summary outcomes', () => {
   expect(lines).toContain(
     ' Test results    1 failed | 1 infrastructure error | 1 adapted | 1 passed | 1 skipped | 1 cancelled (6)',
   )
-  expect(lines.join('\n')).toContain('× Scenario 2 [150ms] (failed)')
   expect(lines.join('\n')).toContain(
-    '! Scenario 3 [150ms] (infrastructure error)',
+    '× src/google.feature > Scenario 2 [150ms] (failed)',
   )
-  expect(lines.join('\n')).toContain('↓ Scenario 4 [150ms] (skipped)')
-  expect(lines.join('\n')).toContain('○ Scenario 5 [150ms] (cancelled)')
+  expect(lines.join('\n')).toContain(
+    '! src/google.feature > Scenario 3 [150ms] (infrastructure error)',
+  )
+  expect(lines.join('\n')).toContain(
+    '↓ src/google.feature > Scenario 4 [150ms] (skipped)',
+  )
+  expect(lines.join('\n')).toContain(
+    '○ src/google.feature > Scenario 5 [150ms] (cancelled)',
+  )
 })
 
 test('enables color only for a TTY when NO_COLOR is absent', () => {
@@ -412,25 +414,21 @@ test('enables color only for a TTY when NO_COLOR is absent', () => {
     color: true,
     columns: 100,
     interactive: true,
-    progressive: false,
   })
   expect(terminalReporterCapabilities(true, 100, '')).toEqual({
     color: false,
     columns: 100,
     interactive: true,
-    progressive: false,
   })
   expect(terminalReporterCapabilities(false, undefined, undefined)).toEqual({
     color: false,
     columns: undefined,
     interactive: false,
-    progressive: true,
   })
   expect(terminalReporterCapabilities(true, 100, undefined, 'dumb')).toEqual({
     color: false,
     columns: 100,
     interactive: false,
-    progressive: true,
   })
 })
 
@@ -641,7 +639,7 @@ test('separates infrastructure diagnostics and renders profiles, messages, and a
   expect(output).toContain(
     ' Test results    1 failed | 1 infrastructure error (2)',
   )
-  expect(output.indexOf(' features/checkout.feature')).toBeLessThan(
-    output.indexOf(' features/search.feature'),
+  expect(output.indexOf('Specification  Checkout')).toBeLessThan(
+    output.indexOf('Specification  Search'),
   )
 })

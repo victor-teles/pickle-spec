@@ -164,9 +164,7 @@ export default {
     expect(stderr).toBe('')
     expect(exitCode).toBe(0)
     expect(stdout).toContain(`RUN  pickle 1.0.2 ${await realpath(workspace)}`)
-    expect(stdout).toContain(
-      ' purchase.feature\n   Purchase\n     ✓ Complete a purchase [',
-    )
+    expect(stdout).toContain('✓ purchase.feature > Complete a purchase [')
     expect(stdout).not.toContain('[deterministic]')
     expect(stdout).toContain('Specifications  1')
     expect(stdout).toContain('Scenarios       1')

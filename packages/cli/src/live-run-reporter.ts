@@ -8,11 +8,9 @@ import {
   clockLabel,
   diagnosticLines,
   groupResults,
-  renderSpecification,
-  type SpecificationGroup,
+  renderTestResult,
   summaryLines,
   wrappedLines,
-  writeTestResult,
   writeWrapped,
 } from './run-report'
 import {
@@ -71,8 +69,6 @@ export function createLiveRunReporter(
   let finished = false
   let cancelPagedRefresh: (() => void) | undefined
   const activeSpecificationUris = new Set<string>()
-  const committedSpecificationUris = new Set<string>()
-  const progressResultsBySpecification = new Map<string, TestResult[]>()
   let scheduleIndexQueues = new Map<string, ScheduleIndexQueue>()
 
   function columns(): number | undefined {
@@ -102,8 +98,6 @@ export function createLiveRunReporter(
     pendingBlocks = groupSchedule(nextSchedule)
     progressFrame = 0
     activeSpecificationUris.clear()
-    committedSpecificationUris.clear()
-    progressResultsBySpecification.clear()
     scheduleIndexQueues = createScheduleIndexQueues(nextSchedule)
     multipleProfiles =
       new Set(nextSchedule.map((result) => result.executionTargetProfile.id))
@@ -119,28 +113,13 @@ export function createLiveRunReporter(
     })
   }
 
-  function availableSpecification(
-    block: PendingSpecificationBlock,
-  ): SpecificationGroup | undefined {
-    return groupResults(completedBlockResults(block))[0]
-  }
-
-  function completedSpecification(
-    block: PendingSpecificationBlock,
-  ): SpecificationGroup | undefined {
-    const results = completedBlockResults(block)
-    if (results.length !== block.scheduleIndexes.length) return undefined
-    return groupResults(results)[0]
-  }
-
   function renderActiveHeader(
     block: PendingSpecificationBlock,
     mark: string,
   ): string[] {
     const firstScheduled = schedule[block.scheduleIndexes[0]!]
     if (!firstScheduled) return []
-    const completedCount =
-      progressResultsBySpecification.get(block.uri)?.length ?? 0
+    const completedCount = completedBlockResults(block).length
     const resultLabel =
       block.scheduleIndexes.length === 1 ? 'result' : 'results'
     const lines: string[] = []
@@ -154,45 +133,11 @@ export function createLiveRunReporter(
     return lines
   }
 
-  function renderRecentResults(
-    results: readonly TestResult[],
-    rowBudget: number,
-  ): string[] {
-    if (rowBudget <= 0 || results.length === 0) return []
-    let selectedCount = Math.min(results.length, rowBudget)
-    while (selectedCount >= 0) {
-      const hiddenCount = results.length - selectedCount
-      const lines = hiddenCount
-        ? wrappedLines(
-            '     … ',
-            `${hiddenCount} earlier Test results hidden`,
-            '       ',
-            columns(),
-          )
-        : []
-      const selectedResults =
-        selectedCount === 0 ? [] : results.slice(-selectedCount)
-      for (const result of selectedResults) {
-        writeTestResult(result, result.scenario.name, {
-          write: (line) => lines.push(line),
-          color: options.color,
-          columns: columns(),
-          multipleProfiles,
-        })
-      }
-      if (renderedRowCount(lines) <= rowBudget) return lines
-      selectedCount--
-    }
-    return []
-  }
-
   function updateDynamicRegion(): void {
     const frameIndex = progressFrame++
     const mark = progressMarks[frameIndex % progressMarks.length]!
-    const activeBlocks = pendingBlocks.filter(
-      (block) =>
-        activeSpecificationUris.has(block.uri) &&
-        !committedSpecificationUris.has(block.uri),
+    const activeBlocks = pendingBlocks.filter((block) =>
+      activeSpecificationUris.has(block.uri),
     )
     const maxRows = availableTerminalRows(terminal.rows?.())
     const allHeaders = activeBlocks.map((block) =>
@@ -235,64 +180,23 @@ export function createLiveRunReporter(
         }
       }
     }
-    const resultRowBudget = Math.max(
-      0,
-      maxRows - renderedRowCount([...headers.flat(), ...overflowLines]),
-    )
-    let remainingResultRows = resultRowBudget
-    const lines = visibleBlocks.flatMap((block, index) => {
-      const remainingBlocks = visibleBlocks.length - index
-      const blockRowBudget = Number.isFinite(remainingResultRows)
-        ? Math.floor(remainingResultRows / remainingBlocks)
-        : Number.POSITIVE_INFINITY
-      const resultLines = renderRecentResults(
-        progressResultsBySpecification.get(block.uri) ?? [],
-        blockRowBudget,
-      )
-      remainingResultRows -= renderedRowCount(resultLines)
-      return [...headers[index]!, ...resultLines]
-    })
+    const lines = headers.flat()
     terminal.update([...lines, ...overflowLines])
     setPagedRefresh(isPaged)
   }
 
-  function commitSpecification(
-    uri: string,
-    specification: SpecificationGroup,
-  ): void {
+  function commitResult(result: TestResult): void {
     terminal.commit(
-      renderSpecification(specification, {
-        color: options.color,
-        columns: columns(),
-        multipleProfiles,
-      }),
+      renderTestResult(
+        result,
+        `${result.specification.uri} > ${result.scenario.name}`,
+        {
+          color: options.color,
+          columns: columns(),
+          multipleProfiles,
+        },
+      ),
     )
-    committedSpecificationUris.add(uri)
-    activeSpecificationUris.delete(uri)
-  }
-
-  function commitCompletedSpecification(uri: string): void {
-    if (committedSpecificationUris.has(uri)) return
-    const block = pendingBlocks.find((candidate) => candidate.uri === uri)
-    if (!block) return
-    if (
-      progressResultsBySpecification.get(uri)?.length !==
-      block.scheduleIndexes.length
-    ) {
-      return
-    }
-    const specification = completedSpecification(block)
-    if (!specification) return
-    commitSpecification(uri, specification)
-  }
-
-  function commitAvailableSpecifications(): void {
-    for (const block of pendingBlocks) {
-      if (committedSpecificationUris.has(block.uri)) continue
-      const specification = availableSpecification(block)
-      if (!specification) continue
-      commitSpecification(block.uri, specification)
-    }
   }
 
   function finish(
@@ -302,7 +206,6 @@ export function createLiveRunReporter(
   ): void {
     if (finished) return
     setPagedRefresh(false)
-    commitAvailableSpecifications()
     const specifications = groupResults(results)
     const diagnostics = diagnosticLines(results, {
       projectRoot: options.projectRoot,
@@ -332,15 +235,17 @@ export function createLiveRunReporter(
     const scheduleIndex = claimScheduleIndex(scheduleIndexQueues, result)
     if (scheduleIndex === undefined) return
     completedResults[scheduleIndex] = result
-    const progressResults =
-      progressResultsBySpecification.get(result.specification.uri) ?? []
-    progressResults.push(result)
-    progressResultsBySpecification.set(
-      result.specification.uri,
-      progressResults,
-    )
     activeSpecificationUris.add(result.specification.uri)
-    commitCompletedSpecification(result.specification.uri)
+    commitResult(result)
+    const block = pendingBlocks.find(
+      (candidate) => candidate.uri === result.specification.uri,
+    )
+    if (
+      block &&
+      completedBlockResults(block).length === block.scheduleIndexes.length
+    ) {
+      activeSpecificationUris.delete(result.specification.uri)
+    }
     updateDynamicRegion()
   }
 

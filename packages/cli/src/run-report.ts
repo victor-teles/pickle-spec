@@ -248,16 +248,17 @@ export function writeSpecification(
   }
 }
 
-export function writeTestResult(
+function writeResult(
   result: TestResult,
   scenarioName: string,
   options: SpecificationWriterOptions,
+  indent: string,
 ): void {
   const profile = options.multipleProfiles
     ? `[${result.executionTargetProfile.id}] `
     : ''
-  const plainPrefix = `     ${resultPresentations[result.state].mark} ${profile}`
-  const styledPrefix = `     ${stateMark(result.state, options.color)} ${profile}`
+  const plainPrefix = `${indent}${resultPresentations[result.state].mark} ${profile}`
+  const styledPrefix = `${indent}${stateMark(result.state, options.color)} ${profile}`
   writeWrapped(
     options.write,
     styledPrefix,
@@ -266,6 +267,32 @@ export function writeTestResult(
     options.columns,
     plainPrefix.length,
   )
+}
+
+export function writeTestResult(
+  result: TestResult,
+  scenarioName: string,
+  options: SpecificationWriterOptions,
+): void {
+  writeResult(result, scenarioName, options, '     ')
+}
+
+export function renderTestResult(
+  result: TestResult,
+  scenarioName: string,
+  options: Omit<SpecificationWriterOptions, 'write'>,
+): string[] {
+  const lines: string[] = []
+  writeResult(
+    result,
+    scenarioName,
+    {
+      ...options,
+      write: (line) => lines.push(line),
+    },
+    ' ',
+  )
+  return lines
 }
 
 export function renderSpecification(
