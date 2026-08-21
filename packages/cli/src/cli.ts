@@ -44,6 +44,7 @@ import {
   studioRunReadiness,
   studioRunSelection,
 } from './studio-project'
+import { evaluateTestRunExitStatus } from './test-run-exit-status'
 
 interface RunArguments {
   pattern?: string
@@ -263,18 +264,12 @@ async function run(argv: string[]): Promise<number> {
       maxBytes: config.retention?.maxBytes,
     })
 
-    reporter.finish(runs, performance.now() - startedAt)
-    const states = runs.map(({ result }) => result.state)
-    if (states.includes('cancelled')) return 130
-    if (
-      states.includes('failed') ||
-      states.includes('infrastructure-error') ||
-      (config.policy?.adaptedResults === 'reject' &&
-        states.includes('passed-with-adaptation'))
-    ) {
-      return 1
-    }
-    return 0
+    const exitStatus = evaluateTestRunExitStatus(
+      runs.map(({ result }) => result),
+      config.policy?.adaptedResults,
+    )
+    reporter.finish(runs, performance.now() - startedAt, exitStatus)
+    return exitStatus.exitCode
   } catch (error) {
     reporter.fail?.(error, performance.now() - startedAt)
     throw error

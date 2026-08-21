@@ -90,45 +90,54 @@ Feature: Purchase
     await Bun.write(
       join(workspace, 'pickle.extensions.ts'),
       `
-const state = process.env.PICKLE_TEST_OUTCOME ?? 'passed'
+const states = (
+  process.env.PICKLE_TEST_OUTCOMES ??
+  process.env.PICKLE_TEST_OUTCOME ??
+  'passed'
+).split(',')
+let attempt = 0
+
+const adapter = {
+  async openSession() {
+    const state = states[attempt++] ?? states.at(-1) ?? 'passed'
+    return {
+      async executeStep(step, signal) {
+        if (process.env.PICKLE_TEST_STEP_MARKER) {
+          await Bun.write(process.env.PICKLE_TEST_STEP_MARKER, 'started')
+        }
+        if (process.env.PICKLE_TEST_WAIT_FOR_ABORT === 'true') {
+          await new Promise((resolve, reject) => {
+            const onAbort = () => {
+              signal?.removeEventListener('abort', onAbort)
+              reject(new DOMException('Scenario cancelled', 'AbortError'))
+            }
+            signal?.addEventListener('abort', onAbort, { once: true })
+          })
+        }
+        const message = process.env.PICKLE_TEST_MESSAGE
+        const artifactPath = process.env.PICKLE_TEST_ARTIFACT
+        const artifacts = artifactPath
+          ? [{ kind: 'trace', path: artifactPath, mediaType: 'text/plain' }]
+          : undefined
+        return {
+          state,
+          resolvedActions: [{ description: \`Deterministic action: \${step.text}\` }],
+          message,
+          artifacts,
+        }
+      },
+      async close() {
+        if (process.env.PICKLE_TEST_CLOSE_MARKER) {
+          await Bun.write(process.env.PICKLE_TEST_CLOSE_MARKER, 'closed')
+        }
+      },
+    }
+  },
+}
 
 export default {
-  adapter: {
-    async openSession() {
-      return {
-        async executeStep(step, signal) {
-          if (process.env.PICKLE_TEST_STEP_MARKER) {
-            await Bun.write(process.env.PICKLE_TEST_STEP_MARKER, 'started')
-          }
-          if (process.env.PICKLE_TEST_WAIT_FOR_ABORT === 'true') {
-            await new Promise((resolve, reject) => {
-              const onAbort = () => {
-                signal?.removeEventListener('abort', onAbort)
-                reject(new DOMException('Scenario cancelled', 'AbortError'))
-              }
-              signal?.addEventListener('abort', onAbort, { once: true })
-            })
-          }
-          const message = process.env.PICKLE_TEST_MESSAGE
-          const artifactPath = process.env.PICKLE_TEST_ARTIFACT
-          const artifacts = artifactPath
-            ? [{ kind: 'trace', path: artifactPath, mediaType: 'text/plain' }]
-            : undefined
-          return {
-            state,
-            resolvedActions: [{ description: \`Deterministic action: \${step.text}\` }],
-            message,
-            artifacts,
-          }
-        },
-        async close() {
-          if (process.env.PICKLE_TEST_CLOSE_MARKER) {
-            await Bun.write(process.env.PICKLE_TEST_CLOSE_MARKER, 'closed')
-          }
-        },
-      }
-    },
-  },
+  adapter,
+  adapters: { custom: adapter },
 }
 `,
     )
@@ -682,6 +691,192 @@ Feature: Checkout
         },
       })
     }
+  })
+
+  test('default run output preserves accepted adaptations and explains policy rejection', async () => {
+    const extensions = await Bun.file(
+      join(workspace, 'pickle.extensions.ts'),
+    ).text()
+    const project = await createCheckProject('adaptation-policy-output', {
+      config: {
+        schemaVersion: 1,
+        specifications: 'features/**/*.feature',
+        executionTargetProfile: { id: 'deterministic' },
+        policy: { adaptedResults: 'accept' },
+      },
+      specification: validSpecification,
+      extensions,
+    })
+    const runAdapted = () =>
+      Bun.spawnSync({
+        cmd: [pickleCommand, 'run'],
+        cwd: project,
+        env: { ...Bun.env, PICKLE_TEST_OUTCOME: 'passed-with-adaptation' },
+      })
+
+    const accepted = runAdapted()
+
+    expect(accepted.stderr.toString()).toBe('')
+    expect(accepted.exitCode).toBe(0)
+    expect(accepted.stdout.toString()).toContain(
+      '~ features/example.feature > Validate project',
+    )
+    expect(accepted.stdout.toString()).toContain('(adapted)')
+    expect(accepted.stdout.toString()).not.toContain(
+      'Adaptation policy rejected the Test run',
+    )
+
+    await Bun.write(
+      join(project, 'pickle.config.jsonc'),
+      JSON.stringify({
+        schemaVersion: 1,
+        specifications: 'features/**/*.feature',
+        executionTargetProfile: { id: 'deterministic' },
+        policy: { adaptedResults: 'reject' },
+      }),
+    )
+    const rejected = runAdapted()
+    const rejectedOutput = rejected.stdout.toString()
+
+    expect(rejected.exitCode).toBe(1)
+    expect(rejected.stderr.toString()).toBe('')
+    expect(rejectedOutput).toContain(
+      '~ features/example.feature > Validate project',
+    )
+    expect(rejectedOutput).toContain('(adapted)')
+    expect(rejectedOutput).toContain(
+      '! Adaptation policy rejected the Test run',
+    )
+    expect(rejectedOutput).toContain(
+      '1 adapted Test result passed, but policy.adaptedResults is set to reject.',
+    )
+    expect(rejectedOutput).toContain(
+      'The Test result remains adapted and pickle run exits with code 1.',
+    )
+
+    await Bun.write(
+      join(project, 'pickle.config.jsonc'),
+      JSON.stringify({
+        schemaVersion: 1,
+        specifications: 'features/**/*.feature',
+        executionTargetProfiles: {
+          web: { adapter: 'custom' },
+          android: { adapter: 'custom' },
+        },
+        policy: { adaptedResults: 'reject' },
+      }),
+    )
+    const rejectedWithCancellation = Bun.spawnSync({
+      cmd: [pickleCommand, 'run'],
+      cwd: project,
+      env: {
+        ...Bun.env,
+        PICKLE_TEST_OUTCOMES: 'passed-with-adaptation,cancelled',
+      },
+    })
+    const mixedOutput = rejectedWithCancellation.stdout.toString()
+
+    expect(rejectedWithCancellation.exitCode).toBe(1)
+    expect(rejectedWithCancellation.stderr.toString()).toBe('')
+    expect(mixedOutput).toContain('~ [web] features/example.feature')
+    expect(mixedOutput).toContain('○ [android] features/example.feature')
+    expect(mixedOutput).toContain(
+      'The Test result remains adapted and pickle run exits with code 1.',
+    )
+  })
+
+  test('default run output reports flaky, skipped, and cancelled results truthfully', async () => {
+    const extensions = await Bun.file(
+      join(workspace, 'pickle.extensions.ts'),
+    ).text()
+    const flakyProject = await createCheckProject('flaky-result-output', {
+      config: {
+        schemaVersion: 1,
+        specifications: 'features/**/*.feature',
+        executionTargetProfile: { id: 'deterministic' },
+        execution: { functionalRetries: 1 },
+      },
+      specification: validSpecification,
+      extensions,
+    })
+
+    const flaky = Bun.spawnSync({
+      cmd: [pickleCommand, 'run'],
+      cwd: flakyProject,
+      env: { ...Bun.env, PICKLE_TEST_OUTCOMES: 'failed,passed' },
+    })
+    const flakyOutput = flaky.stdout.toString()
+
+    expect(flaky.exitCode).toBe(0)
+    expect(flaky.stderr.toString()).toBe('')
+    expect(flakyOutput).toContain(
+      '✓↻ features/example.feature > Validate project',
+    )
+    expect(flakyOutput).toContain('(passed; flaky, 2 attempts)')
+    expect(flakyOutput).toContain(' Test results    1 passed (1)')
+    expect(flakyOutput).toContain(' Flaky results   1')
+
+    const skippedProject = await createCheckProject('skipped-result-output', {
+      config: {
+        schemaVersion: 1,
+        specifications: 'features/**/*.feature',
+        executionTargetProfile: { id: 'deterministic' },
+      },
+      specification: {
+        path: 'features/ignored.feature',
+        source: `@pickle:id:specignoredaaaaaa @pickle:state:active
+Feature: Ignored
+  @pickle:id:scnignoredbbbbbb @ignore
+  Scenario: Ignore this Scenario
+    Then validation succeeds`,
+      },
+      extensions,
+    })
+
+    const skipped = Bun.spawnSync({
+      cmd: [pickleCommand, 'run'],
+      cwd: skippedProject,
+      env: { ...Bun.env },
+    })
+    const skippedOutput = skipped.stdout.toString()
+
+    expect(skipped.exitCode).toBe(0)
+    expect(skipped.stderr.toString()).toBe('')
+    expect(skippedOutput).toContain(
+      '↓ features/ignored.feature > Ignore this Scenario',
+    )
+    expect(skippedOutput).toContain('(skipped: Scenario is tagged @ignore)')
+    expect(skippedOutput).not.toContain(' Failures')
+    expect(skippedOutput).not.toContain(' Infrastructure errors')
+
+    const cancelledProject = await createCheckProject(
+      'cancelled-result-output',
+      {
+        config: {
+          schemaVersion: 1,
+          specifications: 'features/**/*.feature',
+          executionTargetProfile: { id: 'deterministic' },
+        },
+        specification: validSpecification,
+        extensions,
+      },
+    )
+
+    const cancelled = Bun.spawnSync({
+      cmd: [pickleCommand, 'run'],
+      cwd: cancelledProject,
+      env: { ...Bun.env, PICKLE_TEST_OUTCOME: 'cancelled' },
+    })
+    const cancelledOutput = cancelled.stdout.toString()
+
+    expect(cancelled.exitCode).toBe(130)
+    expect(cancelled.stderr.toString()).toBe('')
+    expect(cancelledOutput).toContain(
+      '○ features/example.feature > Validate project',
+    )
+    expect(cancelledOutput).toContain('(cancelled)')
+    expect(cancelledOutput).not.toContain(' Failures')
+    expect(cancelledOutput).not.toContain(' Infrastructure errors')
   })
 
   test('default run output keeps actionable result diagnostics on stdout', async () => {

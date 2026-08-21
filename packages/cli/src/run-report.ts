@@ -1,6 +1,7 @@
 import { realpathSync } from 'node:fs'
 import { isAbsolute, relative, resolve, sep } from 'node:path'
 import type { TestResult } from '@pickle-spec/runner'
+import type { TestRunExitStatus } from './test-run-exit-status'
 
 export type WriteLine = (line: string) => void
 
@@ -23,6 +24,8 @@ type ResultPresentation = {
   plural: string
 }
 
+type PropertyPresentation = Pick<ResultPresentation, 'mark' | 'color'>
+
 const resultPresentations: Record<TestResult['state'], ResultPresentation> = {
   failed: {
     mark: '×',
@@ -39,13 +42,19 @@ const resultPresentations: Record<TestResult['state'], ResultPresentation> = {
     plural: 'infrastructure errors',
   },
   'passed-with-adaptation': {
-    mark: '✓',
+    mark: '~',
     color: 33,
     detail: 'adapted',
     singular: 'adapted',
     plural: 'adapted',
   },
-  passed: { mark: '✓', color: 32, singular: 'passed', plural: 'passed' },
+  passed: {
+    mark: '✓',
+    color: 32,
+    detail: 'passed',
+    singular: 'passed',
+    plural: 'passed',
+  },
   skipped: {
     mark: '↓',
     color: 90,
@@ -61,6 +70,8 @@ const resultPresentations: Record<TestResult['state'], ResultPresentation> = {
     plural: 'cancelled',
   },
 }
+
+const flakyPresentation: PropertyPresentation = { mark: '↻', color: 36 }
 
 type TextUnit = {
   value: string
@@ -91,9 +102,17 @@ export function clockLabel(date: Date): string {
     .join(':')
 }
 
+function presentationMark(
+  presentation: PropertyPresentation,
+  color: boolean,
+): string {
+  return color
+    ? `\u001b[${presentation.color}m${presentation.mark}\u001b[39m`
+    : presentation.mark
+}
+
 function stateMark(state: TestResult['state'], color: boolean): string {
-  const { mark, color: colorCode } = resultPresentations[state]
-  return color ? `\u001b[${colorCode}m${mark}\u001b[39m` : mark
+  return presentationMark(resultPresentations[state], color)
 }
 
 function textUnits(value: string): TextUnit[] {
@@ -190,9 +209,17 @@ export function writeWrapped(
 
 function resultSuffix(result: TestResult): string {
   const details = []
-  const stateDetail = resultPresentations[result.state].detail
+  const skipReason =
+    result.state === 'skipped'
+      ? result.message?.split(/\r?\n/, 1)[0]?.trim()
+      : undefined
+  const stateDetail = skipReason
+    ? `skipped: ${skipReason}`
+    : resultPresentations[result.state].detail
   if (stateDetail) details.push(stateDetail)
-  if (result.flaky) details.push(`flaky, ${result.attempts ?? 2} attempts`)
+  if (result.flaky) {
+    details.push(`flaky, ${result.attempts ?? 2} attempts`)
+  }
   return details.length > 0 ? ` (${details.join('; ')})` : ''
 }
 
@@ -257,8 +284,12 @@ function writeResult(
   const profile = options.multipleProfiles
     ? `[${result.executionTargetProfile.id}] `
     : ''
-  const plainPrefix = `${indent}${resultPresentations[result.state].mark} ${profile}`
-  const styledPrefix = `${indent}${stateMark(result.state, options.color)} ${profile}`
+  const plainFlakyMark = result.flaky ? flakyPresentation.mark : ''
+  const styledFlakyMark = result.flaky
+    ? presentationMark(flakyPresentation, options.color)
+    : ''
+  const plainPrefix = `${indent}${resultPresentations[result.state].mark}${plainFlakyMark} ${profile}`
+  const styledPrefix = `${indent}${stateMark(result.state, options.color)}${styledFlakyMark} ${profile}`
   writeWrapped(
     options.write,
     styledPrefix,
@@ -472,6 +503,37 @@ export function diagnosticLines(
   return lines
 }
 
+export function policyLines(
+  exitStatus: TestRunExitStatus,
+  columns?: number,
+): string[] {
+  const count = exitStatus.rejectedAdaptedResults
+  if (count === 0) return []
+  const resultLabel = count === 1 ? 'Test result' : 'Test results'
+  const reference = count === 1 ? 'The Test result' : 'These Test results'
+  return [
+    '',
+    ...wrappedLines(
+      ' ! ',
+      'Adaptation policy rejected the Test run',
+      '   ',
+      columns,
+    ),
+    ...wrappedLines(
+      '   ',
+      `${count} adapted ${resultLabel} passed, but policy.adaptedResults is set to reject.`,
+      '   ',
+      columns,
+    ),
+    ...wrappedLines(
+      '   ',
+      `${reference} remains adapted and pickle run exits with code ${exitStatus.exitCode}.`,
+      '   ',
+      columns,
+    ),
+  ]
+}
+
 function testResultSummary(results: readonly TestResult[]): string {
   const entries = Object.entries(
     resultPresentations,
@@ -490,11 +552,13 @@ export function summaryLines(
   startTime: string,
   durationMs: number,
 ): string[] {
+  const flakyResults = results.filter((result) => result.flaky).length
   return [
     '',
     ` Specifications  ${specifications.length}`,
     ` Scenarios       ${specifications.reduce((total, specification) => total + specification.scenarios.size, 0)}`,
     ` Test results    ${testResultSummary(results)}`,
+    ...(flakyResults > 0 ? [` Flaky results   ${flakyResults}`] : []),
     ` Start at        ${startTime}`,
     ` Duration        ${durationLabel(durationMs)}`,
   ]

@@ -1,6 +1,10 @@
 import { expect, test } from 'bun:test'
 import { createRunReporter } from './run-reporter'
-import { passedRun, recordingTerminal } from './run-reporter.test-support'
+import {
+  finishReporter,
+  passedRun,
+  recordingTerminal,
+} from './run-reporter.test-support'
 
 test('shows completed and running Gherkin steps beneath an active Scenario', () => {
   const run = passedRun({
@@ -243,7 +247,7 @@ test('updates active Specifications and commits each completed result once', () 
   )
 
   reporter.complete?.(runs[4]!.result)
-  reporter.finish(runs, 50)
+  finishReporter(reporter, runs, 50)
 
   const finishes = terminal.operations.filter(
     (operation) => operation.type === 'finish',
@@ -294,7 +298,7 @@ test('finishes live progress with actionable diagnostics and a compact result tr
   })
 
   reporter.start()
-  reporter.finish([run], 10)
+  finishReporter(reporter, [run], 10)
 
   const committedOutput = terminal.operations
     .filter((operation) => operation.type === 'commit')
@@ -319,6 +323,41 @@ test('finishes live progress with actionable diagnostics and a compact result tr
        but the page remained empty`)
   expect(finalOutput).not.toContain('Inspect internal selectors')
   expect(finalOutput).not.toMatch(/[◐◓◑◒]/u)
+})
+
+test('finishes live progress with a prominent adaptation-policy rejection', () => {
+  const run = passedRun({
+    specificationUri: 'features/checkout.feature',
+    specificationName: 'Checkout',
+    scenarioId: 'scenario-purchase',
+    scenarioName: 'Complete a purchase',
+    profileId: 'web',
+    durationMs: 10,
+  })
+  run.result.state = 'passed-with-adaptation'
+  const terminal = recordingTerminal(() => 120)
+  const reporter = createRunReporter('default', {
+    terminal: terminal.surface,
+    projectRoot: '/workspace/project',
+    version: '1.0.2',
+    color: false,
+    now: () => new Date(2026, 7, 20, 14, 32, 7),
+  })
+
+  reporter.start()
+  reporter.finish([run], 10, {
+    exitCode: 1,
+    rejectedAdaptedResults: 1,
+  })
+
+  const finalOutput = terminal.operations
+    .filter((operation) => operation.type === 'finish')
+    .flatMap((operation) => operation.lines)
+    .join('\n')
+  expect(finalOutput).toContain('! Adaptation policy rejected the Test run')
+  expect(finalOutput).toContain(
+    'The Test result remains adapted and pickle run exits with code 1.',
+  )
 })
 
 test('rewraps active progress and preserves a committed result on resize', () => {
