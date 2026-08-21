@@ -31,6 +31,13 @@ type CapturedTerminalStream = {
 
 const clearLine = '\r\u001b[2K'
 const moveUp = '\u001b[1A'
+const reservedTerminalRows = 2
+
+export function availableTerminalRows(rows: number | undefined): number {
+  return rows
+    ? Math.max(1, rows - reservedTerminalRows)
+    : Number.POSITIVE_INFINITY
+}
 
 export function renderedTerminalRows(
   lines: readonly string[],
@@ -47,16 +54,14 @@ export function renderedTerminalRows(
 export function createInteractiveTerminalSurface(
   options: InteractiveTerminalSurfaceOptions,
 ): InteractiveTerminalSurface {
-  let renderedLineCount = 0
+  let renderedRowCount = 0
 
   function renderedRows(lines: readonly string[]): number {
     return renderedTerminalRows(lines, options.columns())
   }
 
   function visibleDynamicLines(lines: readonly string[]): readonly string[] {
-    const rows = options.rows?.()
-    if (!rows) return lines
-    const maxRows = Math.max(1, rows - 2)
+    const maxRows = availableTerminalRows(options.rows?.())
     if (renderedRows(lines) <= maxRows) return lines
     if (maxRows === 1) return ['…']
     const firstLine = lines[0]!
@@ -81,13 +86,13 @@ export function createInteractiveTerminalSurface(
   }
 
   function clearDynamicRegion(): void {
-    if (renderedLineCount === 0) return
+    if (renderedRowCount === 0) return
     let output = clearLine
-    for (let index = 1; index < renderedLineCount; index++) {
+    for (let index = 1; index < renderedRowCount; index++) {
       output += `${moveUp}${clearLine}`
     }
     options.write(output)
-    renderedLineCount = 0
+    renderedRowCount = 0
   }
 
   function writePermanent(lines: readonly string[]): void {
@@ -104,7 +109,7 @@ export function createInteractiveTerminalSurface(
       if (lines.length === 0) return
       const visibleLines = visibleDynamicLines(lines)
       options.write(visibleLines.join('\n'))
-      renderedLineCount = renderedRows(visibleLines)
+      renderedRowCount = renderedRows(visibleLines)
     },
   }
 }
