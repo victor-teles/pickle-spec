@@ -133,6 +133,8 @@ Feature: Streaming Specification
   ])
   const activeOutput = await waitForOutput(output, 'features/progress.feature')
   expect(activeOutput).toContain('0/2 Test results')
+  expect(activeOutput).toContain('→ First result appears last')
+  expect(activeOutput).toContain('→ Second result appears first')
   expect(activeOutput).not.toContain('Second result appears first [')
 
   await Bun.write(join(gates, 'second.release'), '')

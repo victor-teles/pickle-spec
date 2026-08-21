@@ -68,7 +68,7 @@ export function createLiveRunReporter(
   let progressFrame = 0
   let finished = false
   let cancelPagedRefresh: (() => void) | undefined
-  const activeSpecificationUris = new Set<string>()
+  const activeScheduleIndexes = new Set<number>()
   let scheduleIndexQueues = new Map<string, ScheduleIndexQueue>()
 
   function columns(): number | undefined {
@@ -97,7 +97,7 @@ export function createLiveRunReporter(
     completedResults = Array.from({ length: nextSchedule.length })
     pendingBlocks = groupSchedule(nextSchedule)
     progressFrame = 0
-    activeSpecificationUris.clear()
+    activeScheduleIndexes.clear()
     scheduleIndexQueues = createScheduleIndexQueues(nextSchedule)
     multipleProfiles =
       new Set(nextSchedule.map((result) => result.executionTargetProfile.id))
@@ -133,34 +133,59 @@ export function createLiveRunReporter(
     return lines
   }
 
+  function renderActiveBlock(
+    block: PendingSpecificationBlock,
+    mark: string,
+  ): string[] {
+    const lines = renderActiveHeader(block, mark)
+    for (const scheduleIndex of block.scheduleIndexes) {
+      if (!activeScheduleIndexes.has(scheduleIndex)) continue
+      const scheduled = schedule[scheduleIndex]
+      if (!scheduled) continue
+      const profile = multipleProfiles
+        ? `[${scheduled.executionTargetProfile.id}] `
+        : ''
+      writeWrapped(
+        (line) => lines.push(line),
+        '   → ',
+        `${profile}${scheduled.scenario.name}`,
+        '     ',
+        columns(),
+      )
+    }
+    return lines
+  }
+
   function updateDynamicRegion(): void {
     const frameIndex = progressFrame++
     const mark = progressMarks[frameIndex % progressMarks.length]!
     const activeBlocks = pendingBlocks.filter((block) =>
-      activeSpecificationUris.has(block.uri),
+      block.scheduleIndexes.some((scheduleIndex) =>
+        activeScheduleIndexes.has(scheduleIndex),
+      ),
     )
     const maxRows = availableTerminalRows(terminal.rows?.())
-    const allHeaders = activeBlocks.map((block) =>
-      renderActiveHeader(block, mark),
+    const allBlockLines = activeBlocks.map((block) =>
+      renderActiveBlock(block, mark),
     )
-    const totalHeaderRows = renderedRowCount(allHeaders.flat())
+    const totalBlockRows = renderedRowCount(allBlockLines.flat())
     let visibleBlocks = activeBlocks
-    let headers = allHeaders
+    let blockLines = allBlockLines
     let overflowLines: string[] = []
-    const isPaged = totalHeaderRows > maxRows && activeBlocks.length > 1
+    const isPaged = totalBlockRows > maxRows && activeBlocks.length > 1
     if (isPaged) {
       const firstIndex = frameIndex % activeBlocks.length
       visibleBlocks = []
-      headers = []
+      blockLines = []
       let usedRows = 0
       for (let offset = 0; offset < activeBlocks.length; offset++) {
         const index = (firstIndex + offset) % activeBlocks.length
-        const header = allHeaders[index]!
-        const headerRows = renderedRowCount(header)
-        if (headers.length > 0 && usedRows + headerRows >= maxRows) break
+        const lines = allBlockLines[index]!
+        const lineRows = renderedRowCount(lines)
+        if (blockLines.length > 0 && usedRows + lineRows >= maxRows) break
         visibleBlocks.push(activeBlocks[index]!)
-        headers.push(header)
-        usedRows += headerRows
+        blockLines.push(lines)
+        usedRows += lineRows
         if (usedRows >= maxRows) break
       }
       const hiddenCount = activeBlocks.length - visibleBlocks.length
@@ -172,15 +197,15 @@ export function createLiveRunReporter(
           columns(),
         )
         while (
-          headers.length > 1 &&
+          blockLines.length > 1 &&
           usedRows + renderedRowCount(overflowLines) > maxRows
         ) {
-          usedRows -= renderedRowCount(headers.pop()!)
+          usedRows -= renderedRowCount(blockLines.pop()!)
           visibleBlocks.pop()
         }
       }
     }
-    const lines = headers.flat()
+    const lines = blockLines.flat()
     terminal.update([...lines, ...overflowLines])
     setPagedRefresh(isPaged)
   }
@@ -235,17 +260,8 @@ export function createLiveRunReporter(
     const scheduleIndex = claimScheduleIndex(scheduleIndexQueues, result)
     if (scheduleIndex === undefined) return
     completedResults[scheduleIndex] = result
-    activeSpecificationUris.add(result.specification.uri)
+    activeScheduleIndexes.delete(scheduleIndex)
     commitResult(result)
-    const block = pendingBlocks.find(
-      (candidate) => candidate.uri === result.specification.uri,
-    )
-    if (
-      block &&
-      completedBlockResults(block).length === block.scheduleIndexes.length
-    ) {
-      activeSpecificationUris.delete(result.specification.uri)
-    }
     updateDynamicRegion()
   }
 
@@ -275,7 +291,7 @@ export function createLiveRunReporter(
       if (scheduleIndex < 0) return
       const scheduled = schedule[scheduleIndex]
       if (!scheduled) return
-      activeSpecificationUris.add(scheduled.specification.uri)
+      activeScheduleIndexes.add(scheduleIndex)
       updateDynamicRegion()
     },
     complete,

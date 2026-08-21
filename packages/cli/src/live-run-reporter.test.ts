@@ -121,6 +121,7 @@ test('updates active Specifications and commits each completed result once', () 
   expect(initialFrame?.type).toBe('update')
   expect(initialFrame?.lines.join('\n')).toContain('features/a.feature')
   expect(initialFrame?.lines.join('\n')).toContain('0/4 Test results')
+  expect(initialFrame?.lines.join('\n')).toContain('First Scenario')
   expect(initialFrame?.lines.join('\n')).not.toContain('Second Scenario')
 
   reporter.complete?.(runs[0]!.result)
@@ -134,9 +135,11 @@ test('updates active Specifications and commits each completed result once', () 
 
   const concurrentFrame = terminal.operations.at(-1)
   expect(concurrentFrame?.type).toBe('update')
-  expect(concurrentFrame?.lines.join('\n')).toContain('1/4 Test results')
+  expect(concurrentFrame?.lines.join('\n')).not.toContain('features/a.feature')
+  expect(concurrentFrame?.lines.join('\n')).not.toContain('First Scenario')
   expect(concurrentFrame?.lines.join('\n')).toContain('features/b.feature')
   expect(concurrentFrame?.lines.join('\n')).toContain('0/1 Test result')
+  expect(concurrentFrame?.lines.join('\n')).toContain('Other active Scenario')
   expect(
     terminal.operations
       .filter((operation) => operation.type === 'commit')
@@ -279,6 +282,13 @@ test('rewraps active progress and preserves a committed result on resize', () =>
     executionTargetProfile: run.result.executionTargetProfile,
   })
   reporter.complete?.(run.result)
+  reporter.event({
+    schemaVersion: 1,
+    sequence: 2,
+    type: 'scenario-started',
+    scenario: { id: 'scenario-pending', name: 'Still pending' },
+    executionTargetProfile: run.result.executionTargetProfile,
+  })
 
   columns = 28
   reporter.refresh?.()
@@ -411,6 +421,14 @@ test('keeps every active Specification visible within the terminal bounds', () =
     for (const run of specificationRuns.slice(0, 5)) {
       reporter.complete?.(run.result)
     }
+    reporter.event({
+      schemaVersion: 1,
+      sequence: 2,
+      type: 'scenario-started',
+      scenario: specificationRuns[5]!.result.scenario,
+      executionTargetProfile:
+        specificationRuns[5]!.result.executionTargetProfile,
+    })
   }
 
   const frame = terminal.operations.at(-1)
