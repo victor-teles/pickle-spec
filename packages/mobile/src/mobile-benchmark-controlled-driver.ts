@@ -6,6 +6,10 @@ import { openLocalExecutionCache, runScenario } from '@pickle-spec/runner'
 import { compileMobileScenario } from './mobile-ad-script'
 import { createMobileAdapter } from './mobile-adapter'
 import type { MobileBenchmarkMode } from './mobile-benchmark'
+import {
+  assertNoMobileBenchmarkProviderCredentials,
+  type MobileBenchmarkEnvironment,
+} from './mobile-benchmark-credentials'
 import type { MobileWorkerClient } from './worker-client'
 import type { MobileWorkerRequest } from './worker-protocol'
 
@@ -61,7 +65,10 @@ const scenario = {
   runtimeBindings,
 }
 
-export async function createControlledMobileBenchmarkDriver(): Promise<ControlledMobileBenchmarkDriver> {
+export async function createControlledMobileBenchmarkDriver(
+  environment: MobileBenchmarkEnvironment = process.env,
+): Promise<ControlledMobileBenchmarkDriver> {
+  assertNoMobileBenchmarkProviderCredentials(environment)
   const projectRoot = await mkdtemp(join(tmpdir(), 'pickle-mobile-benchmark-'))
   const cacheRoot = await mkdtemp(
     join(tmpdir(), 'pickle-mobile-benchmark-cache-'),

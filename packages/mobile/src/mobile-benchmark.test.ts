@@ -112,7 +112,7 @@ describe('evaluateMobilePerformanceGates', () => {
 })
 
 test('controlled driver measures refresh and cache-only through the public SQLite lifecycle', async () => {
-  const driver = await createControlledMobileBenchmarkDriver()
+  const driver = await createControlledMobileBenchmarkDriver({})
   try {
     expect(await driver.measure('adaptive')).toBeGreaterThan(0)
     expect(await driver.measure('replay')).toBeGreaterThan(0)

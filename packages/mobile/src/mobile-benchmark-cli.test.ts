@@ -5,13 +5,6 @@ import { join } from 'node:path'
 
 const temporaryDirectories: string[] = []
 const cliPath = join(import.meta.dir, 'mobile-benchmark-cli.ts')
-const providerCredentialNames = [
-  'OPENAI_API_KEY',
-  'ANTHROPIC_API_KEY',
-  'GOOGLE_API_KEY',
-  'GEMINI_API_KEY',
-  'GOOGLE_GENERATIVE_AI_API_KEY',
-] as const
 
 afterEach(async () => {
   await Promise.all(
@@ -21,11 +14,12 @@ afterEach(async () => {
   )
 })
 
-async function runCli(...args: string[]) {
-  const env = { ...Bun.env }
-  for (const name of providerCredentialNames) delete env[name]
+async function executeCli(
+  args: readonly string[],
+  environment: Record<string, string | undefined> = Bun.env,
+) {
   const process = Bun.spawn([Bun.which('bun')!, cliPath, ...args], {
-    env,
+    env: environment,
     stdout: 'pipe',
     stderr: 'pipe',
   })
@@ -37,7 +31,56 @@ async function runCli(...args: string[]) {
   return { exitCode, stdout, stderr }
 }
 
+function runCli(...args: string[]) {
+  return executeCli(args)
+}
+
 describe('mobile benchmark executable', () => {
+  test('controlled driver rejects AWS, Azure, and OpenRouter credentials', async () => {
+    const controlledBenchmarkUrl = new URL(
+      './mobile-benchmark-controlled-driver.ts',
+      import.meta.url,
+    ).href
+    const credentialNames = [
+      'AWS_SECRET_ACCESS_KEY',
+      'AZURE_OPENAI_API_KEY',
+      'OPENROUTER_API_KEY',
+    ] as const
+
+    for (const credentialName of credentialNames) {
+      const process = Bun.spawn(
+        [
+          Bun.which('bun')!,
+          '-e',
+          `import { createControlledMobileBenchmarkDriver } from ${JSON.stringify(controlledBenchmarkUrl)}; await createControlledMobileBenchmarkDriver()`,
+        ],
+        {
+          env: { [credentialName]: 'must-not-reach-controlled-mobile' },
+          stdout: 'pipe',
+          stderr: 'pipe',
+        },
+      )
+      const [exitCode, stderr] = await Promise.all([
+        process.exited,
+        new Response(process.stderr).text(),
+      ])
+
+      expect(exitCode).not.toBe(0)
+      expect(stderr).toContain(credentialName)
+    }
+  })
+
+  test('removes AWS, Azure, and OpenRouter credentials before starting the controlled driver', async () => {
+    const execution = await executeCli([], {
+      AWS_SECRET_ACCESS_KEY: 'must-not-reach-controlled-mobile',
+      AZURE_OPENAI_API_KEY: 'must-not-reach-controlled-mobile',
+      OPENROUTER_API_KEY: 'must-not-reach-controlled-mobile',
+    })
+
+    expect(execution.exitCode).toBe(0)
+    expect(execution.stderr).toBe('')
+  })
+
   test('runs the controlled driver by default and prints passing JSON', async () => {
     const execution = await runCli()
     const report = JSON.parse(execution.stdout)

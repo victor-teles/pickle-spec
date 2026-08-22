@@ -4,9 +4,19 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { openLocalExecutionCache, runScenario } from '@pickle-spec/runner'
 import { createMobileAdapter } from '../index'
+import {
+  type AgentDeviceClientPort,
+  observeAgentDeviceInferenceRoutes,
+} from './agent-device-client'
+import { AgentDeviceGateway } from './agent-device-gateway'
 import { mobileReplayVariableName } from './mobile-execution-cache'
 import type { MobileWorkerClient } from './worker-client'
-import type { MobileWorkerRequest } from './worker-protocol'
+import {
+  type MobileWorkerRequest,
+  mobileWorkerRequestSchema,
+  mobileWorkerResponseSchema,
+} from './worker-protocol'
+import { MobileWorkerRuntime } from './worker-runtime'
 
 const productPlaceholder = [
   '$',
@@ -26,80 +36,128 @@ const payload = {
   ],
 }
 
-test('public cache-only replays SQLite .ad with zero inference and rejects inference', async () => {
+const androidEmulator = {
+  platform: 'android' as const,
+  target: 'mobile' as const,
+  kind: 'emulator' as const,
+  id: 'emulator-5554',
+  name: 'Controlled Android Emulator',
+  booted: true,
+  identifiers: {},
+  android: { serial: 'emulator-5554' },
+}
+
+type ReplayBehavior = 'healed' | 'pass' | 'semantic-inference'
+
+interface ControlledAgentDeviceInput {
+  behavior(): ReplayBehavior
+  recordReplay(): void
+}
+
+function controlledAgentDeviceClient(
+  input: ControlledAgentDeviceInput,
+): AgentDeviceClientPort {
+  let observedClient: AgentDeviceClientPort
+  observedClient = observeAgentDeviceInferenceRoutes({
+    devices: {
+      async list() {
+        return [androidEmulator]
+      },
+      async capabilities() {
+        return { device: androidEmulator, availableCommands: [] }
+      },
+    },
+    apps: {
+      async reinstall() {},
+      async open() {},
+    },
+    command: {
+      async appState() {
+        return {
+          platform: 'android',
+          package: 'com.example.checkout',
+          activity: '.MainActivity',
+        }
+      },
+      async wait() {},
+    },
+    interactions: {
+      async find() {},
+    },
+    replay: {
+      async run() {
+        input.recordReplay()
+        const behavior = input.behavior()
+        if (behavior === 'semantic-inference') {
+          await observedClient.command.wait({
+            platform: 'android',
+            serial: androidEmulator.android.serial,
+            text: 'model-selected target',
+          })
+        }
+        return {
+          replayed: 3,
+          healed: behavior === 'healed' ? 1 : 0,
+          session: 'controlled-session',
+          sessionActive: true,
+          artifactPaths: [],
+          message: 'Controlled Replay completed',
+        }
+      },
+    },
+    capture: {
+      async screenshot() {},
+    },
+    observability: {
+      async logs() {},
+    },
+    recording: {
+      async record() {},
+      async trace() {},
+    },
+    sessions: {
+      async close() {},
+    },
+  })
+  return observedClient
+}
+
+function controlledRuntimeWorker(
+  runtime: MobileWorkerRuntime,
+  opened: Array<Extract<MobileWorkerRequest, { type: 'open-session' }>>,
+): MobileWorkerClient {
+  return {
+    async request(request) {
+      const validatedRequest = mobileWorkerRequestSchema.parse(request)
+      if (validatedRequest.type === 'open-session')
+        opened.push(validatedRequest)
+      return mobileWorkerResponseSchema.parse(
+        await runtime.handle(validatedRequest),
+      )
+    },
+    async dispose() {
+      await runtime.dispose()
+    },
+  }
+}
+
+test('public cache-only replays SQLite .ad and rejects semantic inference or healing', async () => {
   const projectRoot = await mkdtemp(join(tmpdir(), 'pickle-mobile-project-'))
   const cacheRoot = await mkdtemp(join(tmpdir(), 'pickle-mobile-cache-'))
   const opened: Array<Extract<MobileWorkerRequest, { type: 'open-session' }>> =
     []
-  let replayInferenceCount = 0
-  const worker: MobileWorkerClient = {
-    async request(request) {
-      switch (request.type) {
-        case 'discover-targets':
-          return { version: 3, type: 'targets-discovered', targets: [] }
-        case 'open-session':
-          opened.push(request)
-          return {
-            version: 3,
-            type: 'session-opened',
-            sessionId: request.sessionId,
-            targetId: 'emulator-5554',
-          }
-        case 'execute-scenario': {
-          const session = opened.find(
-            (candidate) => candidate.sessionId === request.sessionId,
-          )
-          if (!session) throw new Error('Session is not open')
-          return {
-            version: 3,
-            type: 'scenario-executed',
-            sessionId: request.sessionId,
-            execution: {
-              stepExecutions: session.scenario.templateSteps.map((step) => ({
-                state: 'passed',
-                resolvedActions: [{ description: step.text }],
-              })),
-            },
-          }
-        }
-        case 'complete-session': {
-          const session = opened.find(
-            (candidate) => candidate.sessionId === request.sessionId,
-          )
-          if (!session) throw new Error('Session is not open')
-          return {
-            version: 3,
-            type: 'session-completed',
-            sessionId: request.sessionId,
-            completion:
-              session.mode === 'adaptive'
-                ? {
-                    inferenceCount: 0,
-                    replayRepresentation: {
-                      cacheable: true,
-                      adapterPayload: payload,
-                      requiredVariables: ['product'],
-                    },
-                  }
-                : { inferenceCount: replayInferenceCount },
-          }
-        }
-        case 'close-session':
-          return {
-            version: 3,
-            type: 'session-closed',
-            sessionId: request.sessionId,
-          }
-        case 'cancel-session':
-          return {
-            version: 3,
-            type: 'session-cancelled',
-            sessionId: request.sessionId,
-          }
-      }
-    },
-    async dispose() {},
-  }
+  let replayBehavior: ReplayBehavior = 'pass'
+  let replayRuns = 0
+  const gateway = new AgentDeviceGateway(() =>
+    controlledAgentDeviceClient({
+      behavior: () => replayBehavior,
+      recordReplay: () => replayRuns++,
+    }),
+  )
+  const worker = controlledRuntimeWorker(
+    new MobileWorkerRuntime(gateway),
+    opened,
+  )
   const adapter = createMobileAdapter(
     {
       application: {
@@ -156,11 +214,17 @@ test('public cache-only replays SQLite .ad with zero inference and rejects infer
       cachePolicy: 'cache-only',
       executionCache: { ...commonInput.executionCache, sourceRunId: 'run-2' },
     })
-    replayInferenceCount = 1
-    const inferredReplay = await runScenario({
+    replayBehavior = 'semantic-inference'
+    const semanticInferenceReplay = await runScenario({
       ...commonInput,
       cachePolicy: 'cache-only',
       executionCache: { ...commonInput.executionCache, sourceRunId: 'run-3' },
+    })
+    replayBehavior = 'healed'
+    const healedReplay = await runScenario({
+      ...commonInput,
+      cachePolicy: 'cache-only',
+      executionCache: { ...commonInput.executionCache, sourceRunId: 'run-4' },
     })
 
     expect(adaptive.result).toMatchObject({
@@ -174,15 +238,23 @@ test('public cache-only replays SQLite .ad with zero inference and rejects infer
       cacheOutcome: 'hit',
       inferenceCount: 0,
     })
-    expect(inferredReplay.result).toMatchObject({
-      state: 'failed',
+    expect(semanticInferenceReplay.result).toMatchObject({
+      state: 'infrastructure-error',
       executionMode: 'replay',
       cacheOutcome: 'hit',
-      inferenceCount: 1,
     })
-    expect(inferredReplay.result.message).toContain('zero evaluation inference')
+    expect(semanticInferenceReplay.result.message).toContain(
+      'semantic inference route',
+    )
+    expect(healedReplay.result).toMatchObject({
+      state: 'infrastructure-error',
+      executionMode: 'replay',
+      cacheOutcome: 'hit',
+    })
+    expect(healedReplay.result.message).toContain('unexpectedly healed')
     expect(opened.map((request) => request.mode)).toEqual([
       'adaptive',
+      'replay',
       'replay',
       'replay',
     ])
@@ -190,8 +262,9 @@ test('public cache-only replays SQLite .ad with zero inference and rejects infer
       adapterPayload: payload,
       requiredVariables: ['product'],
     })
+    expect(replayRuns).toBe(4)
     const [entry] = await cache.inspect()
-    expect(entry?.hitCount).toBe(2)
+    expect(entry?.hitCount).toBe(3)
     expect(JSON.stringify(entry)).not.toContain('Pickles')
     const database = await Bun.file(
       join(cacheRoot, cache.projectKey, 'execution-cache.sqlite'),

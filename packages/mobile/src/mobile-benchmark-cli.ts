@@ -5,6 +5,7 @@ import {
   runMobilePerformanceBenchmark,
 } from './mobile-benchmark'
 import { createControlledMobileBenchmarkDriver } from './mobile-benchmark-controlled-driver'
+import { removeMobileBenchmarkProviderCredentials } from './mobile-benchmark-credentials'
 
 interface MobileBenchmarkDriverModule {
   measureMobileBenchmark?: (
@@ -62,6 +63,7 @@ export async function runMobileBenchmarkCli(
 ): Promise<number> {
   let dispose: (() => Promise<void>) | undefined
   try {
+    removeMobileBenchmarkProviderCredentials(process.env)
     const options = parseArguments(args)
     let measure: NonNullable<
       MobileBenchmarkDriverModule['measureMobileBenchmark']
