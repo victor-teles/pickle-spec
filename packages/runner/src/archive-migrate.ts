@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import type { RunArchive, RunArchiveArtifact } from './archive'
+import { publicRunEvent, recordableTestResult } from './public-results'
 import type {
   FidelityPolicy,
   RunEvent,
@@ -18,9 +19,14 @@ function object<Shape extends z.ZodRawShape>(field: string, shape: Shape) {
   return z.object(shape, { error: `${field} must be an object` })
 }
 
+const archiveStateInput = z.enum(
+  ['passed', 'failed', 'skipped', 'cancelled', 'infrastructure-error'],
+  { error: 'archive state must be a current result state' },
+)
+
 const archiveStepInput = object('archive step', {
   step: z.unknown().optional(),
-  state: z.unknown().optional(),
+  state: archiveStateInput,
   resolvedActions: z.unknown().optional(),
   message: z.unknown().optional(),
   artifacts: z.unknown().optional(),
@@ -31,13 +37,49 @@ const archiveScenarioInput = object('archive result.scenario', {
   id: z.unknown().optional(),
 })
 
+const executionModeInput = z
+  .enum(['adaptive', 'replay'])
+  .optional()
+  .catch(undefined)
+
+const cacheOutcomeInput = z
+  .enum(['hit', 'miss', 'refresh', 'fallback', 'uncacheable'])
+  .optional()
+  .catch(undefined)
+
+const inferenceCountInput = z
+  .number()
+  .int()
+  .nonnegative()
+  .safe()
+  .optional()
+  .catch(undefined)
+
+const cacheUncacheableReasonInput = z
+  .enum([
+    'application-revision-missing',
+    'bound-parameter-value',
+    'non-deterministic-action',
+    'non-deterministic-assertion',
+    'payload-validation-failed',
+    'entry-too-large',
+  ])
+  .optional()
+  .catch(undefined)
+
+const failureKindInput = z.literal('cache-miss').optional().catch(undefined)
+
 const archiveResultInput = object('archive result', {
   specification: z.unknown().optional(),
   scenario: z.unknown().optional(),
   executionTargetProfile: z.unknown().optional(),
-  state: z.unknown().optional(),
+  state: archiveStateInput,
   steps: z.unknown().optional(),
-  executionMode: z.unknown().optional(),
+  executionMode: executionModeInput,
+  cacheOutcome: cacheOutcomeInput,
+  inferenceCount: inferenceCountInput,
+  cacheUncacheableReason: cacheUncacheableReasonInput,
+  failureKind: failureKindInput,
   message: z.unknown().optional(),
   attempts: z.unknown().optional(),
   flaky: z.unknown().optional(),
@@ -52,7 +94,7 @@ const archiveManifestInput = object('archive manifest', {
   sourceRunId: z.unknown().optional(),
   suite: z.unknown().optional(),
   applicationRevision: z.unknown().optional(),
-  state: z.unknown().optional(),
+  state: archiveStateInput,
   results: z.unknown().optional(),
 })
 
@@ -80,9 +122,9 @@ function migrateStep(step: unknown): TestStepResult {
   const value = parsed(archiveStepInput, step)
   return {
     step: value.step as TestStepResult['step'],
-    state: value.state as TestStepResult['state'],
+    state: value.state,
     resolvedActions: Array.isArray(value.resolvedActions)
-      ? (value.resolvedActions as TestStepResult['resolvedActions'])
+      ? value.resolvedActions.map(migrateResolvedAction)
       : [],
     message: typeof value.message === 'string' ? value.message : undefined,
     artifacts: Array.isArray(value.artifacts)
@@ -91,10 +133,20 @@ function migrateStep(step: unknown): TestStepResult {
   }
 }
 
+function migrateResolvedAction(
+  action: unknown,
+): TestStepResult['resolvedActions'][number] {
+  if (action === null || typeof action !== 'object') {
+    return { description: String(action ?? '') }
+  }
+  const description = 'description' in action ? action.description : ''
+  return { description: String(description ?? '') }
+}
+
 function migrateResult(result: unknown): TestResult {
   const value = parsed(archiveResultInput, result)
   const scenario = parsed(archiveScenarioInput, value.scenario)
-  return {
+  return recordableTestResult({
     schemaVersion: 1,
     specification: value.specification as TestResult['specification'],
     scenario: {
@@ -103,19 +155,20 @@ function migrateResult(result: unknown): TestResult {
     },
     executionTargetProfile:
       value.executionTargetProfile as TestResult['executionTargetProfile'],
-    state: value.state as TestResult['state'],
+    state: value.state,
     steps: Array.isArray(value.steps) ? value.steps.map(migrateStep) : [],
-    executionMode:
-      typeof value.executionMode === 'string'
-        ? (value.executionMode as TestResult['executionMode'])
-        : undefined,
+    executionMode: value.executionMode,
+    cacheOutcome: value.cacheOutcome,
+    inferenceCount: value.inferenceCount,
+    cacheUncacheableReason: value.cacheUncacheableReason,
+    failureKind: value.failureKind,
     message: typeof value.message === 'string' ? value.message : undefined,
     attempts: typeof value.attempts === 'number' ? value.attempts : undefined,
     flaky: typeof value.flaky === 'boolean' ? value.flaky : undefined,
     durationMs:
       typeof value.durationMs === 'number' ? value.durationMs : undefined,
     fidelityPolicy: migrateFidelityPolicy(value.fidelityPolicy),
-  }
+  })
 }
 
 function migrateEvent(event: unknown, index: number): RunEvent {
@@ -125,20 +178,24 @@ function migrateEvent(event: unknown, index: number): RunEvent {
     sequence: typeof value.sequence === 'number' ? value.sequence : index + 1,
   }
   if (value.type === 'scenario-finished') {
-    return {
+    return publicRunEvent({
       ...base,
       type: 'scenario-finished',
       result: migrateResult(value.result),
-    }
+      scheduleIndex:
+        typeof value.scheduleIndex === 'number'
+          ? value.scheduleIndex
+          : undefined,
+    })
   }
   if (value.type === 'step-finished') {
-    return {
+    return publicRunEvent({
       ...base,
       type: 'step-finished',
       result: migrateStep(value.result),
-    }
+    })
   }
-  return { ...base, ...value } as RunEvent
+  return publicRunEvent({ ...value, ...base } as RunEvent)
 }
 
 function migrateManifest(manifest: unknown): TestRunManifest {
@@ -156,7 +213,7 @@ function migrateManifest(manifest: unknown): TestRunManifest {
       typeof value.applicationRevision === 'string'
         ? value.applicationRevision
         : undefined,
-    state: value.state as TestRunManifest['state'],
+    state: value.state,
     results: Array.isArray(value.results)
       ? value.results.map(migrateResult)
       : [],

@@ -12,8 +12,8 @@ import type {
   TestRunManifest,
 } from '@pickle-spec/runner'
 import {
-  createFilePlanStore,
   latestHistoricalDurations,
+  openLocalExecutionCache,
   openTestRunStore,
   resolveRunConfiguration,
   runScenarios,
@@ -57,8 +57,9 @@ export interface ProjectRunOptions {
   rerunId?: string
   scenarioIds?: string[]
   failures?: boolean
-  adaptations?: boolean
   fast?: boolean
+  refreshCache?: boolean
+  cacheOnly?: boolean
 }
 
 export interface StartedProjectRun {
@@ -301,6 +302,9 @@ export async function startProjectRun(
   input: StartProjectRunInput,
 ): Promise<StartedProjectRun> {
   const args = input.options ?? {}
+  if (args.refreshCache && args.cacheOnly) {
+    throw new Error('--refresh-cache cannot be combined with --cache-only')
+  }
   const root = input.root
   const store = openTestRunStore({
     root,
@@ -368,7 +372,6 @@ export async function startProjectRun(
         )
         selectedResults = selectRerunResults(sourceManifest, {
           failures: args.failures,
-          adaptations: args.adaptations,
           ...(args.scenarioIds?.length
             ? { scenarioIds: args.scenarioIds }
             : args.selection?.scenarioName
@@ -476,12 +479,29 @@ export async function startProjectRun(
       for (const event of await testRun.events()) {
         await input.onEvent?.(event)
       }
-      const planStore = createFilePlanStore(root, {
-        candidateEvidence: { testRunId: testRun.id },
-      })
+      const cacheCapable = resolvedConfiguration.targets.some(
+        (target) => target.adapter.executionCache !== undefined,
+      )
+      const executionCache = cacheCapable
+        ? await openLocalExecutionCache({
+            projectRoot: root,
+            cacheRoot: process.env.PICKLE_CACHE_ROOT,
+            maxBytes: input.config.cache?.maxBytes,
+          })
+        : undefined
       const shared = {
-        plans: planStore,
-        ci: Boolean(process.env.CI),
+        executionCache: executionCache
+          ? {
+              store: executionCache,
+              projectKey: executionCache.projectKey,
+              sourceRunId: testRun.id,
+            }
+          : undefined,
+        cachePolicy: args.cacheOnly
+          ? ('cache-only' as const)
+          : args.refreshCache
+            ? ('refresh' as const)
+            : ('prefer-cache' as const),
         signal: input.signal,
         onEvent,
         onResult: input.onResult

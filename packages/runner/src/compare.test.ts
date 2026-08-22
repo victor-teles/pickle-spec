@@ -53,7 +53,7 @@ test('compareTestRuns matches results by Scenario and execution target profile i
     id: 'run-candidate',
     results: [
       result('Complete a purchase', 'passed', { durationMs: 150, flaky: true }),
-      result('Pay for the order', 'passed-with-adaptation', {
+      result('Pay for the order', 'passed', {
         durationMs: 200,
         executionMode: 'adaptive',
         steps: [
@@ -63,7 +63,7 @@ test('compareTestRuns matches results by Scenario and execution target profile i
               text: 'the purchase succeeds',
               type: 'outcome',
             },
-            state: 'passed-with-adaptation',
+            state: 'passed',
             resolvedActions: [{ description: 'Click buy now' }],
             artifacts: [
               {
@@ -98,7 +98,7 @@ test('compareTestRuns matches results by Scenario and execution target profile i
         executionTargetProfileId: 'web',
         baseline: baseline.results[1]!,
         candidate: candidate.results[1]!,
-        changes: ['state', 'adaptation', 'plan', 'artifacts'],
+        changes: ['state', 'execution-mode', 'resolved-actions', 'artifacts'],
       },
     ],
     removed: [
@@ -174,5 +174,38 @@ test('compareTestRuns does not pair different durable Scenario identifiers by na
       { scenarioId: 'scn-skip-the-purchase' },
     ],
     added: [{ scenarioId: 'scn-different-scenario' }],
+  })
+})
+
+test('compareTestRuns reports execution mode, Cache outcome, and inference changes independently', () => {
+  const cacheBaseline: TestRunManifest = {
+    ...baseline,
+    id: 'run-cache-baseline',
+    results: [
+      result('Complete a purchase', 'passed', {
+        executionMode: 'replay',
+        cacheOutcome: 'hit',
+        inferenceCount: 0,
+      }),
+    ],
+  }
+  const cacheCandidate: TestRunManifest = {
+    ...cacheBaseline,
+    id: 'run-cache-candidate',
+    results: [
+      result('Complete a purchase', 'passed', {
+        executionMode: 'adaptive',
+        cacheOutcome: 'fallback',
+        inferenceCount: 4,
+      }),
+    ],
+  }
+
+  expect(compareTestRuns(cacheBaseline, cacheCandidate)).toMatchObject({
+    pairs: [
+      {
+        changes: ['execution-mode', 'cache-outcome', 'inference-count'],
+      },
+    ],
   })
 })

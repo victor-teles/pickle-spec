@@ -325,42 +325,6 @@ test('finishes live progress with actionable diagnostics and a compact result tr
   expect(finalOutput).not.toMatch(/[◐◓◑◒]/u)
 })
 
-test('finishes live progress with a prominent adaptation-policy rejection', () => {
-  const run = passedRun({
-    specificationUri: 'features/checkout.feature',
-    specificationName: 'Checkout',
-    scenarioId: 'scenario-purchase',
-    scenarioName: 'Complete a purchase',
-    profileId: 'web',
-    durationMs: 10,
-  })
-  run.result.state = 'passed-with-adaptation'
-  const terminal = recordingTerminal(() => 120)
-  const reporter = createRunReporter('default', {
-    terminal: terminal.surface,
-    projectRoot: '/workspace/project',
-    version: '1.0.2',
-    color: false,
-    now: () => new Date(2026, 7, 20, 14, 32, 7),
-  })
-
-  reporter.start()
-  reporter.finish([run], 10, {
-    exitCode: 1,
-    interrupted: false,
-    rejectedAdaptedResults: 1,
-  })
-
-  const finalOutput = terminal.operations
-    .filter((operation) => operation.type === 'finish')
-    .flatMap((operation) => operation.lines)
-    .join('\n')
-  expect(finalOutput).toContain('! Adaptation policy rejected the Test run')
-  expect(finalOutput).toContain(
-    'The Test result remains adapted and pickle run exits with code 1.',
-  )
-})
-
 test('rewraps active progress and preserves a committed result on resize', () => {
   const specificationUri =
     'features/a-very-long-directory/live-progress.feature'

@@ -1,8 +1,10 @@
-import type {
-  RunEvent,
-  ScenarioRun,
-  ScheduledTestResult,
-  TestResult,
+import {
+  publicRunEvent,
+  publicTestResult,
+  type RunEvent,
+  type ScenarioRun,
+  type ScheduledTestResult,
+  type TestResult,
 } from '@pickle-spec/runner'
 import { createLiveRunReporter } from './live-run-reporter'
 import {
@@ -10,7 +12,6 @@ import {
   diagnosticLines,
   groupResults,
   interruptionLines,
-  policyLines,
   renderTestResult,
   summaryLines,
   type WriteLine,
@@ -130,7 +131,6 @@ function createBufferedRunReporter(options: RunReporterOptions): RunReporter {
       })) {
         write(line)
       }
-      for (const line of policyLines(exitStatus, options.columns)) write(line)
       for (const line of interruptionLines(exitStatus, options.columns)) {
         write(line)
       }
@@ -169,11 +169,16 @@ function createNdjsonReporter(write: WriteLine): RunReporter {
     start() {},
     event(event) {
       if (event.type === 'run-started') return
-      write(JSON.stringify({ kind: 'run-event', event }))
+      write(JSON.stringify({ kind: 'run-event', event: publicRunEvent(event) }))
     },
     finish(runs) {
       for (const run of runs) {
-        write(JSON.stringify({ kind: 'test-result', result: run.result }))
+        write(
+          JSON.stringify({
+            kind: 'test-result',
+            result: publicTestResult(run.result),
+          }),
+        )
       }
     },
   }

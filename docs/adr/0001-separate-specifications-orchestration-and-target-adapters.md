@@ -11,7 +11,7 @@ Pickle Spec separates specification management, test-run orchestration, executio
 - `@pickle-spec/studio` owns the local application, storage, and user interface.
 - `@pickle-spec/cli` composes the packages into commands.
 
-The runner owns concurrency, retries, timeouts, cancellation, adaptation, run events, and test results. Each adapter declares capabilities and owns logical sessions, actions, verification, and artifact capture.
+The runner owns concurrency, retries, timeouts, cancellation, execution-cache lifecycle, Adaptive fallback, run events, and test results. Each adapter declares capabilities and owns logical sessions, deterministic actions and assertions, verification, replay payloads, and artifact capture.
 
 The specification, runner, web, and mobile packages expose small public interfaces. The Studio and CLI are executable products, not general-purpose libraries.
 

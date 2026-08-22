@@ -71,6 +71,34 @@ describe('WebProcessPool', () => {
     expect(launch).toHaveBeenCalledTimes(1)
   })
 
+  test('never carries an inference process into Replay', async () => {
+    const { factory, launch } = mockFactory(() =>
+      mockProcess(isolatedAutomation()),
+    )
+    const pool = new WebProcessPool({ factory, idleTimeoutMs: 60_000 })
+
+    const adaptive = await pool.openLogicalSession(
+      { modelApiKey: 'adaptive-only' },
+      undefined,
+      undefined,
+      'adaptive',
+    )
+    await adaptive.automation.close()
+    await adaptive.release()
+
+    const replay = await pool.openLogicalSession(
+      {},
+      undefined,
+      undefined,
+      'replay',
+    )
+    await replay.automation.close()
+    await replay.release()
+    await pool.dispose()
+
+    expect(launch).toHaveBeenCalledTimes(2)
+  })
+
   test('retires a process when release finds a dirty logical session', async () => {
     const launch = mock(async () => {
       let readCount = 0

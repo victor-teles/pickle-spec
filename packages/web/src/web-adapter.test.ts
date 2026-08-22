@@ -411,183 +411,74 @@ describe('createWebAdapter', () => {
     })
   })
 
-  test('replays multiple planned actions without model action resolution', async () => {
-    const observe = mock(async () => [
-      { description: 'Must not resolve', handle: { selector: '#new' } },
-    ])
-    const act = mock(async () => ({ success: true }))
-    const adapter = createWebAdapter(
-      { baseUrl: 'https://example.test' },
-      factoryFor(stubAutomation({ observe, act })),
-    )
-    const session = await adapter.openSession({
-      executionTargetProfile: { id: 'web' },
-      specification,
-      scenario,
-      mode: 'replay',
-      plan: {
-        schemaVersion: 1,
-        scenarioId: 'search',
-        scenarioRevision: 'rev',
-        executionTargetProfileId: 'web',
-        planFormatVersion: 'web.1',
-        steps: [
-          {
-            resolvedActions: [
-              { description: 'Navigate to https://example.test/search' },
-            ],
-          },
-          {
-            resolvedActions: [
-              {
-                description: 'Fill the search field',
-                replay: { selector: '#search' },
-              },
-              {
-                description: 'Submit the search',
-                replay: { selector: '#go' },
-              },
-            ],
-          },
-          {
-            resolvedActions: [
-              { description: 'Verify: pickle results are visible' },
-            ],
-          },
-        ],
+  test('does not pass model credentials into a cache Replay session', async () => {
+    const automation = stubAutomation({
+      async executeInstruction() {
+        return { success: true }
       },
     })
-
-    await session.executeStep(scenario.steps[0]!)
-    const action = await session.executeStep(scenario.steps[1]!)
-    await session.close()
-
-    expect(action).toMatchObject({
-      state: 'passed',
-      resolvedActions: [
-        {
-          description: 'Fill the search field',
-          replay: { selector: '#search' },
-        },
-        { description: 'Submit the search', replay: { selector: '#go' } },
-      ],
-    })
-    expect(observe).not.toHaveBeenCalled()
-    expect(act).toHaveBeenCalledTimes(2)
-    expect(act).toHaveBeenNthCalledWith(
-      1,
-      { description: 'Fill the search field', handle: { selector: '#search' } },
-      undefined,
-    )
-    expect(act).toHaveBeenNthCalledWith(
-      2,
-      { description: 'Submit the search', handle: { selector: '#go' } },
-      undefined,
-    )
-  })
-
-  test('adapts a failed Replay step without changing the approved plan payload', async () => {
-    const observe = mock(async () => [
-      { description: 'Use the new search field', handle: { selector: '#q' } },
-    ])
-    const act = mock(async (action: { description: string }) => ({
-      success: action.description !== 'Fill the search field',
-      message:
-        action.description === 'Fill the search field'
-          ? 'Selector is stale'
-          : undefined,
+    const launch = mock(async () => ({
+      openContext: mock(async () => automation),
+      close: mock(async () => {}),
     }))
-    const adapter = createWebAdapter(
-      { baseUrl: 'https://example.test' },
-      factoryFor(stubAutomation({ observe, act })),
-    )
-    const plan = {
-      schemaVersion: 1 as const,
-      scenarioId: 'search',
-      scenarioRevision: 'rev',
-      executionTargetProfileId: 'web',
-      planFormatVersion: 'web.1',
+    const replayScenario: Scenario = {
+      name: 'Open account',
+      tags: ['@web'],
       steps: [
-        {
-          resolvedActions: [
-            { description: 'Navigate to https://example.test/search' },
-          ],
-        },
-        {
-          resolvedActions: [
+        { keyword: 'Given', text: 'I navigate to /account', type: 'context' },
+      ],
+    }
+    const replaySpecification: Specification = {
+      name: 'Account',
+      source: { uri: 'features/account.feature', language: 'en' },
+      tags: ['@web'],
+      scenarios: [replayScenario],
+    }
+    const adapter = createWebAdapter(
+      {
+        baseUrl: 'https://example.test',
+        browser: { modelApiKey: 'must-not-cross-replay-boundary' },
+      },
+      { launch },
+    )
+
+    const session = await adapter.openSession({
+      executionTargetProfile: { id: 'web' },
+      specification: replaySpecification,
+      scenario: replayScenario,
+      mode: 'replay',
+      executionCache: {
+        requiredVariables: [],
+        adapterPayload: {
+          schemaVersion: 1,
+          steps: [
             {
-              description: 'Fill the search field',
-              replay: { selector: '#search' },
+              instructions: [
+                {
+                  kind: 'navigate',
+                  url: {
+                    segments: [{ literal: 'https://example.test/account' }],
+                  },
+                },
+              ],
             },
           ],
         },
-      ],
-    }
-    const session = await adapter.openSession({
-      executionTargetProfile: { id: 'web' },
-      specification,
-      scenario,
-      mode: 'replay',
-      plan,
-    })
-
-    await session.executeStep(scenario.steps[0]!)
-    const action = await session.executeStep(scenario.steps[1]!)
-    await session.close()
-
-    expect(action).toMatchObject({
-      state: 'passed-with-adaptation',
-      resolvedActions: [
-        {
-          description: 'Use the new search field',
-          replay: { selector: '#q' },
-        },
-      ],
-    })
-    expect(observe).toHaveBeenCalledTimes(1)
-    expect(plan.steps[1]?.resolvedActions).toEqual([
-      { description: 'Fill the search field', replay: { selector: '#search' } },
-    ])
-  })
-
-  test('records an adaptation when Replay has no planned actions for a step', async () => {
-    const observe = mock(async () => [
-      { description: 'Fill the search field', handle: { selector: '#search' } },
-    ])
-    const act = mock(async () => ({ success: true }))
-    const adapter = createWebAdapter(
-      { baseUrl: 'https://example.test' },
-      factoryFor(stubAutomation({ observe, act })),
-    )
-    const session = await adapter.openSession({
-      executionTargetProfile: { id: 'web' },
-      specification,
-      scenario,
-      mode: 'replay',
-      plan: {
-        schemaVersion: 1,
-        scenarioId: 'search',
-        scenarioRevision: 'rev',
-        executionTargetProfileId: 'web',
-        planFormatVersion: 'web.1',
-        steps: [
-          {
-            resolvedActions: [
-              { description: 'Navigate to https://example.test/search' },
-            ],
-          },
-          { resolvedActions: [] },
-        ],
       },
     })
-
-    await session.executeStep(scenario.steps[0]!)
-    const action = await session.executeStep(scenario.steps[1]!)
+    await session.executeStep(replayScenario.steps[0]!, undefined, {
+      stepIndex: 0,
+      templateStep: replayScenario.steps[0]!,
+      runtimeBindings: [],
+    })
     await session.close()
+    await adapter.dispose?.()
 
-    expect(action.state).toBe('passed-with-adaptation')
-    expect(observe).toHaveBeenCalledTimes(1)
-    expect(act).toHaveBeenCalledTimes(1)
+    expect(launch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        browser: expect.objectContaining({ modelApiKey: undefined }),
+      }),
+    )
   })
 
   test('pools browser processes across consecutive logical sessions', async () => {

@@ -7,7 +7,6 @@ export type ResultMarkState =
   | 'idle'
   | 'running'
   | 'passed'
-  | 'passed-with-adaptation'
   | 'failed'
   | 'skipped'
   | 'cancelled'
@@ -20,19 +19,13 @@ function ResultMark(props: { state: ResultMarkState; className?: string }) {
   if (props.state === 'running') {
     return <Spinner className={props.className} />
   }
-  if (props.state === 'passed' || props.state === 'passed-with-adaptation') {
+  if (props.state === 'passed') {
     return (
       <HugeiconsIcon
         icon={Tick02Icon}
         strokeWidth={2}
         aria-hidden
-        className={cn(
-          settleClass,
-          props.state === 'passed-with-adaptation'
-            ? 'text-adaptation'
-            : 'text-passed',
-          props.className,
-        )}
+        className={cn(settleClass, 'text-passed', props.className)}
       />
     )
   }

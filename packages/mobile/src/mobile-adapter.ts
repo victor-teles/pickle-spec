@@ -1,4 +1,8 @@
-import type { ExecutionTargetAdapter } from '@pickle-spec/runner'
+import type {
+  ExecutionTargetAdapter,
+  ScenarioTargetSession,
+} from '@pickle-spec/runner'
+import { createMobileExecutionCache } from './mobile-execution-cache'
 import {
   createNodeWorkerClient,
   type MobileWorkerClient,
@@ -50,25 +54,23 @@ export type MobileAdapterOptions =
   | AndroidMobileAdapterOptions
   | IosMobileAdapterOptions
 
-export interface MobileExecutionTargetAdapter extends ExecutionTargetAdapter {
+export interface MobileExecutionTargetAdapter
+  extends ExecutionTargetAdapter<ScenarioTargetSession> {
   discoverTargets(): Promise<Array<AndroidTarget | IosTarget>>
 }
 
 interface ExecutionTargetPolicy {
   capabilities: readonly string[]
-  planFormatVersion: string
   platform: MobilePlatform
 }
 
 const executionTargetPolicies = {
   'android-emulator': {
     capabilities: androidCapabilities,
-    planFormatVersion: 'mobile.android.1',
     platform: 'android',
   },
   'ios-simulator': {
     capabilities: iosCapabilities,
-    planFormatVersion: 'mobile.ios.1',
     platform: 'ios',
   },
 } as const satisfies Record<string, ExecutionTargetPolicy>
@@ -79,6 +81,13 @@ export function createMobileAdapter(
 ): MobileExecutionTargetAdapter {
   const policy =
     executionTargetPolicies[options.executionTarget ?? 'android-emulator']
+  const executionTarget = options.executionTarget ?? 'android-emulator'
+  const executionCache = createMobileExecutionCache({
+    platform: policy.platform,
+    executionTarget,
+    applicationId: options.application.id,
+    targetId: options.targetId,
+  })
   let worker: MobileWorkerClient | undefined
   const ensureWorker = () => {
     worker ??=
@@ -91,7 +100,7 @@ export function createMobileAdapter(
 
   return {
     capabilities: policy.capabilities,
-    planFormatVersion: policy.planFormatVersion,
+    executionCache,
     async discoverTargets() {
       const response = await ensureWorker().request({
         version: mobileWorkerProtocolVersion,
@@ -108,7 +117,6 @@ export function createMobileAdapter(
       let closePromise: Promise<void> | undefined
       let cancellationPromise: Promise<void> | undefined
       let cancelled = false
-      let stepIndex = 0
       const cancel = () => {
         cancelled = true
         cancellationPromise ??= (async () => {
@@ -133,6 +141,17 @@ export function createMobileAdapter(
 
       let response: MobileWorkerResponse
       try {
+        const templateSteps =
+          input.scenarioTemplate?.steps ?? input.scenario.steps
+        const replayPayload = input.executionCache
+          ? executionCache.parse(
+              input.executionCache.adapterPayload,
+              input.executionCache.requiredVariables,
+            )
+          : undefined
+        if (input.executionCache && !replayPayload) {
+          throw new Error('Mobile Replay cache payload is invalid')
+        }
         response = await ensureWorker().request(
           {
             version: mobileWorkerProtocolVersion,
@@ -150,13 +169,28 @@ export function createMobileAdapter(
             requiredCapabilities: input.scenario.capabilityRequirements
               ? [...input.scenario.capabilityRequirements]
               : undefined,
-            plan: input.plan
+            scenario: {
+              steps: input.scenario.steps.map((step) => ({
+                type: step.type,
+                text: step.text,
+                argument: step.argument,
+              })),
+              templateSteps: templateSteps.map((step) => ({
+                type: step.type,
+                text: step.text,
+                argument: step.argument,
+              })),
+              runtimeBindings: (input.runtimeBindings ?? []).map((binding) => ({
+                name: binding.name,
+                value: binding.value,
+              })),
+            },
+            executionCache: replayPayload
               ? {
-                  steps: input.plan.steps.map((step) => ({
-                    resolvedActions: step.resolvedActions.map((action) => ({
-                      ...action,
-                    })),
-                  })),
+                  adapterPayload: replayPayload,
+                  requiredVariables: [
+                    ...(input.executionCache?.requiredVariables ?? []),
+                  ],
                 }
               : undefined,
           },
@@ -176,7 +210,7 @@ export function createMobileAdapter(
       }
 
       return {
-        async executeStep(step, signal) {
+        async executeScenario(signal) {
           const operationSignal = signal ?? input.signal
           const onOperationAbort = () => {
             void cancel().catch(() => {})
@@ -185,25 +219,36 @@ export function createMobileAdapter(
             once: true,
           })
           try {
-            const stepResponse = await ensureWorker().request(
+            const scenarioResponse = await ensureWorker().request(
               {
                 version: mobileWorkerProtocolVersion,
-                type: 'execute-step',
+                type: 'execute-scenario',
                 sessionId,
-                stepIndex: stepIndex++,
-                step: { type: step.type, text: step.text },
               },
               operationSignal,
             )
-            if (stepResponse.type !== 'step-executed') {
+            if (scenarioResponse.type !== 'scenario-executed') {
               throw new Error(
-                `Unexpected mobile worker response: ${stepResponse.type}`,
+                `Unexpected mobile worker response: ${scenarioResponse.type}`,
               )
             }
-            return stepResponse.execution
+            return scenarioResponse.execution
           } finally {
             operationSignal?.removeEventListener('abort', onOperationAbort)
           }
+        },
+        async complete() {
+          const completionResponse = await ensureWorker().request({
+            version: mobileWorkerProtocolVersion,
+            type: 'complete-session',
+            sessionId,
+          })
+          if (completionResponse.type !== 'session-completed') {
+            throw new Error(
+              `Unexpected mobile worker response: ${completionResponse.type}`,
+            )
+          }
+          return completionResponse.completion
         },
         close() {
           closePromise ??= (async () => {

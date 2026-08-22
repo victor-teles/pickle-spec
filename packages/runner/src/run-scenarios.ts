@@ -1,14 +1,15 @@
 import type { ScenarioSelection } from '@pickle-spec/spec'
-import type { ExecutionPlanStore } from './execution-plan'
-import {
-  type ExecutionPolicy,
-  type ExecutionTargetAdapter,
-  type ExecutionTargetProfile,
-  type RunEvent,
-  runScenario,
-  type ScenarioRun,
-  type TestResult,
+import type {
+  ExecutionCachePolicy,
+  ExecutionPolicy,
+  ExecutionTargetAdapter,
+  ExecutionTargetProfile,
+  RunEvent,
+  ScenarioExecutionCache,
+  ScenarioRun,
+  TestResult,
 } from './run-scenario'
+import { runScenario } from './run-scenario-entry'
 
 export interface RunTarget {
   executionTargetProfile: ExecutionTargetProfile
@@ -45,9 +46,9 @@ export interface RunScenariosInput extends ExecutionPolicy {
   targets?: readonly RunTarget[]
   executionTargetProfile?: ExecutionTargetProfile
   adapter?: ExecutionTargetAdapter
-  plans?: ExecutionPlanStore
+  executionCache?: ScenarioExecutionCache
+  cachePolicy?: ExecutionCachePolicy
   applicationRevision?: string
-  ci?: boolean
   concurrency?: number
   signal?: AbortSignal
   onEvent?: (
@@ -80,8 +81,11 @@ export function scheduleScenarios(
                 name: selection.specification.name,
               },
               scenario: {
+                name:
+                  selection.scenario.template?.name ?? selection.scenario.name,
                 id: selection.scenario.id,
-                name: selection.scenario.name,
+                examplesId: selection.scenario.examplesId,
+                examplesRowId: selection.scenario.examplesRowId,
               },
               executionTargetProfile,
             },
@@ -162,9 +166,9 @@ export async function runScenarios(
         scenario: selection.scenario,
         executionTargetProfile: target.executionTargetProfile,
         adapter: target.adapter,
-        plans: input.plans,
+        executionCache: input.executionCache,
+        cachePolicy: input.cachePolicy,
         applicationRevision: input.applicationRevision,
-        ci: input.ci,
         signal: input.signal,
         retry: input.retry,
         timeout: input.timeout,

@@ -19,6 +19,7 @@ export class IsolationVerificationError extends Error {
 
 interface PooledProcess {
   process: WebBrowserProcess
+  mode: 'adaptive' | 'replay'
   idleTimer?: ReturnType<typeof setTimeout>
 }
 
@@ -51,6 +52,7 @@ export class WebProcessPool {
     browserOptions: BrowserOptions,
     signal?: AbortSignal,
     fidelity?: ResolvedFidelity,
+    mode?: 'adaptive' | 'replay',
   ): Promise<WebLogicalSession> {
     if (this.disposed) {
       throw new Error('Web process pool is disposed')
@@ -59,10 +61,12 @@ export class WebProcessPool {
       throw abortError()
     }
 
-    const pooled = await this.checkout(browserOptions, signal)
+    const executionMode = mode ?? 'adaptive'
+    const pooled = await this.checkout(browserOptions, signal, executionMode)
     try {
       const automation = await pooled.process.openContext({
         browser: browserOptions,
+        mode,
         fidelity,
         signal,
       })
@@ -102,8 +106,13 @@ export class WebProcessPool {
   private async checkout(
     browserOptions: BrowserOptions,
     signal?: AbortSignal,
+    mode: 'adaptive' | 'replay' = 'adaptive',
   ): Promise<PooledProcess> {
-    const pooled = this.available.pop()
+    const pooledIndex = this.available.findLastIndex(
+      (candidate) => candidate.mode === mode,
+    )
+    const pooled =
+      pooledIndex < 0 ? undefined : this.available.splice(pooledIndex, 1)[0]
     if (pooled) {
       this.clearIdleTimer(pooled)
       return pooled
@@ -112,7 +121,7 @@ export class WebProcessPool {
       browser: browserOptions,
       signal,
     })
-    return { process }
+    return { process, mode }
   }
 
   private async release(pooled: PooledProcess): Promise<void> {

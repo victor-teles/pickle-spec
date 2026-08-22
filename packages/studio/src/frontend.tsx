@@ -20,7 +20,6 @@ import {
 } from './components/ui/table'
 import { HistoryPanel } from './history'
 import { cn } from './lib/utils'
-import { PlansPanel } from './plans'
 import {
   attentionCells,
   type ClientEvent,
@@ -56,7 +55,7 @@ if (token) {
     `${address.pathname}${address.search}${address.hash}`,
   )
 }
-const areas = ['Specifications', 'Plans', 'Settings'] as const
+const areas = ['Specifications', 'Settings'] as const
 const specificationRowHeight = 32
 
 async function api<T>(path: string, init?: RequestInit): Promise<T> {
@@ -74,7 +73,6 @@ type StatusBadgeState = TestResultState | 'idle' | 'running'
 
 function badgeVariant(state: StatusBadgeState) {
   if (state === 'failed' || state === 'infrastructure-error') return 'failed'
-  if (state === 'passed-with-adaptation') return 'adaptation'
   if (state === 'passed') return 'passed'
   if (state === 'running') return 'running'
   return 'default'
@@ -100,7 +98,6 @@ function matrixCellVariant(state: MatrixCell['state']) {
   if (state === 'failed' || state === 'infrastructure-error') {
     return 'destructive'
   }
-  if (state === 'passed-with-adaptation') return 'adaptation'
   if (state === 'passed') return 'passed'
   return 'outline'
 }
@@ -279,12 +276,6 @@ function StudioApp() {
             onError={setError}
           />
         </div>
-      ) : currentArea === 'Plans' ? (
-        <PlansPanel
-          adaptedResultsPolicy={project.policy.adaptedResults}
-          running={running}
-          api={api}
-        />
       ) : (
         <div
           className={cn(
@@ -407,15 +398,30 @@ function StudioApp() {
                           Cancel test run
                         </Button>
                       ) : specCanRun ? (
-                        <Button
-                          type="button"
-                          disabled={running}
-                          onClick={() =>
-                            void startRun({ paths: [selected.uri] })
-                          }
-                        >
-                          Run Specification
-                        </Button>
+                        <>
+                          <Button
+                            type="button"
+                            disabled={running}
+                            onClick={() =>
+                              void startRun({ paths: [selected.uri] })
+                            }
+                          >
+                            Run Specification
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            disabled={running}
+                            onClick={() =>
+                              void startRun({
+                                paths: [selected.uri],
+                                refreshCache: true,
+                              })
+                            }
+                          >
+                            Refresh cache
+                          </Button>
+                        </>
                       ) : null}
                       {specificationSection === 'scenarios' ? (
                         <SpecificationEditor

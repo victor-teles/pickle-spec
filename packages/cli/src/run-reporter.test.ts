@@ -409,7 +409,7 @@ test('wraps non-BMP Unicode names without corrupting their characters', () => {
 test('counts Test result states as mutually exclusive summary outcomes', () => {
   const states = [
     'passed',
-    'passed-with-adaptation',
+    'passed',
     'failed',
     'infrastructure-error',
     'skipped',
@@ -441,9 +441,7 @@ test('counts Test result states as mutually exclusive summary outcomes', () => {
         ...(state === 'skipped'
           ? { message: 'Scenario is tagged @ignore' }
           : {}),
-        ...(state === 'passed' || state === 'passed-with-adaptation'
-          ? { flaky: true, attempts: index + 2 }
-          : {}),
+        ...(state === 'passed' ? { flaky: true, attempts: index + 2 } : {}),
       },
     }
   })
@@ -452,11 +450,11 @@ test('counts Test result states as mutually exclusive summary outcomes', () => {
   finishReporter(reporter, runs, 150)
 
   expect(lines).toContain(
-    ' Test results    1 failed | 1 infrastructure error | 1 adapted | 1 passed | 1 skipped | 1 cancelled (6)',
+    ' Test results    1 failed | 1 infrastructure error | 2 passed | 1 skipped | 1 cancelled (6)',
   )
   expect(lines).toContain(' Flaky results   2')
   expect(lines.join('\n')).toContain(
-    '~↻ [android] src/google.feature > Scenario 1 [150ms] (adapted; flaky, 3 attempts)',
+    '✓↻ [android] src/google.feature > Scenario 1 [150ms] (passed; flaky, 3 attempts)',
   )
   expect(lines.join('\n')).toContain(
     '✓↻ [web] src/google.feature > Scenario 0 [150ms] (passed; flaky, 2 attempts)',
@@ -499,7 +497,6 @@ test('labels an interrupted non-interactive report as a partial summary', () => 
   reporter.finish([run], 10, {
     exitCode: 130,
     interrupted: true,
-    rejectedAdaptedResults: 0,
   })
 
   expect(lines).toContain(' ! Run interrupted')
@@ -507,6 +504,67 @@ test('labels an interrupted non-interactive report as a partial summary', () => 
     '   Partial summary: every Test result materialized before interruption is included.',
   )
   expect(lines).toContain(' Test results    1 cancelled (1)')
+})
+
+test('renders execution mode, Cache outcome, and inference count independently from state', () => {
+  const lines: string[] = []
+  const reporter = createRunReporter('default', {
+    write: (line) => lines.push(line),
+    projectRoot: '/workspace/project',
+    version: '1.0.2',
+    color: false,
+    columns: 180,
+    now: () => new Date(2026, 7, 20, 14, 32, 7),
+  })
+  const replay = passedRun({
+    specificationUri: 'features/checkout.feature',
+    specificationName: 'Checkout',
+    scenarioId: 'scenario-replay',
+    scenarioName: 'Replay checkout',
+    profileId: 'web',
+    durationMs: 12,
+  })
+  replay.result.executionMode = 'replay'
+  replay.result.cacheOutcome = 'hit'
+  replay.result.inferenceCount = 0
+  const fallback = passedRun({
+    specificationUri: 'features/checkout.feature',
+    specificationName: 'Checkout',
+    scenarioId: 'scenario-fallback',
+    scenarioName: 'Recover checkout',
+    profileId: 'web',
+    durationMs: 25,
+  })
+  fallback.result.executionMode = 'adaptive'
+  fallback.result.cacheOutcome = 'fallback'
+  fallback.result.inferenceCount = 2
+  const uncacheable = passedRun({
+    specificationUri: 'features/checkout.feature',
+    specificationName: 'Checkout',
+    scenarioId: 'scenario-uncacheable',
+    scenarioName: 'Inspect checkout',
+    profileId: 'web',
+    durationMs: 30,
+  })
+  uncacheable.result.executionMode = 'adaptive'
+  uncacheable.result.cacheOutcome = 'uncacheable'
+  uncacheable.result.cacheUncacheableReason = 'non-deterministic-assertion'
+  uncacheable.result.inferenceCount = 3
+
+  reporter.start()
+  finishReporter(reporter, [replay, fallback, uncacheable], 67)
+
+  const output = lines.join('\n')
+  expect(output).toContain(
+    'Replay checkout [12ms] (passed; mode Replay; cache hit; 0 inferences)',
+  )
+  expect(output).toContain(
+    'Recover checkout [25ms] (passed; mode Adaptive; cache fallback; 2 inferences)',
+  )
+  expect(output).toContain(
+    'Inspect checkout [30ms] (passed; mode Adaptive; cache uncacheable: non-deterministic-assertion; 3 inferences)',
+  )
+  expect(output).toContain(' Test results    3 passed (3)')
 })
 
 test('enables color only for a TTY when NO_COLOR is absent', () => {

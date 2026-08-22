@@ -3,23 +3,36 @@ import {
   type AgentDeviceDevice,
   agentDeviceCapabilitiesSchema,
   agentDeviceLogPathSchema,
+  agentDeviceReplayPlanStep,
   defaultAgentDeviceClientFactory,
+  isAgentDeviceReplayDivergence,
   type MobileSelection,
   mobileAppStateSchema,
   mobileDevicesSchema,
 } from './agent-device-client'
 import {
-  type AgentDeviceStepSession,
-  type ExecuteAgentDeviceStepInput,
-  executeAgentDeviceStep,
-} from './agent-device-step'
+  finishScenarioEvidence,
+  startScenarioEvidence,
+} from './agent-device-evidence'
+import { executePrivateAgentDeviceReplay } from './agent-device-replay'
+import {
+  type CompiledMobileScenario,
+  compileMobileScenario,
+} from './mobile-ad-script'
+import {
+  createMobileExecutionCache,
+  type MobileExecutionCachePayload,
+  mobileReplayVariableName,
+} from './mobile-execution-cache'
 import type {
   MobileApplication,
   MobileArtifactKind,
   MobilePlatform,
   MobileTarget,
   MobileTextRedaction,
-  WorkerStepExecution,
+  MobileWorkerScenario,
+  WorkerScenarioExecution,
+  WorkerSessionCompletion,
 } from './worker-protocol'
 
 export type {
@@ -36,14 +49,23 @@ export interface OpenGatewaySessionInput {
   artifacts?: readonly MobileArtifactKind[]
   redactions?: readonly MobileTextRedaction[]
   requiredCapabilities?: readonly string[]
+  mode: 'adaptive' | 'replay'
+  scenario: MobileWorkerScenario
+  executionCache?: {
+    adapterPayload: MobileExecutionCachePayload
+    requiredVariables: string[]
+  }
 }
 
 interface GatewaySession {
   artifactDirectory?: string
   artifacts: ReadonlySet<MobileArtifactKind>
-  client: AgentDeviceStepSession['client']
+  client: import('./agent-device-client').AgentDeviceClientPort
+  compiled: CompiledMobileScenario
   deviceLogPath?: string
+  execution?: WorkerScenarioExecution
   logsStarted: boolean
+  mode: 'adaptive' | 'replay'
   redactions: readonly MobileTextRedaction[]
   selection?: MobileSelection
 }
@@ -95,6 +117,21 @@ function validateArtifactRedactions(input: OpenGatewaySessionInput): void {
   }
 }
 
+function evidenceRedactions(
+  input: OpenGatewaySessionInput,
+): MobileTextRedaction[] {
+  const redactions = [...(input.redactions ?? [])]
+  const configuredValues = new Set(
+    redactions.map((redaction) => redaction.match),
+  )
+  for (const binding of input.scenario.runtimeBindings) {
+    if (!binding.value || configuredValues.has(binding.value)) continue
+    configuredValues.add(binding.value)
+    redactions.push({ match: binding.value })
+  }
+  return redactions
+}
+
 function normalizedCapabilities(
   platform: MobilePlatform,
   commands: readonly string[],
@@ -114,6 +151,38 @@ function deviceSelection(device: AgentDeviceDevice): MobileSelection {
   return device.platform === 'ios'
     ? { platform: 'ios', udid: device.ios.udid }
     : { platform: 'android', serial: device.android.serial }
+}
+
+function runtimeEnvironment(
+  requiredVariables: readonly string[],
+  scenario: MobileWorkerScenario,
+): string[] {
+  const bindings = new Map(
+    scenario.runtimeBindings.map((binding) => [binding.name, binding.value]),
+  )
+  return requiredVariables.map((name) => {
+    const value = bindings.get(name)
+    if (value === undefined) {
+      throw new Error(`Mobile Replay binding "${name}" was not provided`)
+    }
+    return `${mobileReplayVariableName(name)}=${value}`
+  })
+}
+
+function replayScenarioStepIndex(
+  error: unknown,
+  payload: MobileExecutionCachePayload,
+): number {
+  const planStep = agentDeviceReplayPlanStep(error)
+  if (planStep === undefined) return 0
+  const stepIndex = payload.stepRanges.findIndex(
+    (range) => planStep >= range.from && planStep <= range.to,
+  )
+  if (stepIndex >= 0) return stepIndex
+  if (planStep < (payload.stepRanges[0]?.from ?? Number.POSITIVE_INFINITY)) {
+    return 0
+  }
+  return Math.max(0, payload.stepRanges.length - 1)
 }
 
 export class AgentDeviceGateway {
@@ -173,19 +242,53 @@ export class AgentDeviceGateway {
     }
     const platform = input.platform ?? 'android'
     const policy = mobilePlatformPolicies[platform]
+    const requestedArtifacts =
+      input.artifacts ?? (input.artifactDirectory ? ['screenshot'] : [])
+    const replayPayload = input.executionCache
+      ? createMobileExecutionCache({
+          platform,
+          executionTarget:
+            platform === 'ios' ? 'ios-simulator' : 'android-emulator',
+          applicationId: input.application.id,
+          targetId: input.targetId,
+        }).parse(
+          input.executionCache.adapterPayload,
+          input.executionCache.requiredVariables,
+        )
+      : undefined
+    if (input.executionCache && !replayPayload) {
+      throw new Error('Mobile Replay cache payload is invalid')
+    }
     const client = this.createClient({
       session: input.sessionId,
       lockPolicy: 'reject',
       lockPlatform: platform,
     })
-    const requestedArtifacts =
-      input.artifacts ?? (input.artifactDirectory ? ['screenshot'] : [])
     const session: GatewaySession = {
       artifactDirectory: input.artifactDirectory,
       artifacts: new Set(requestedArtifacts),
       client,
+      compiled:
+        input.executionCache && replayPayload
+          ? {
+              payload: replayPayload,
+              requiredVariables: [...input.executionCache.requiredVariables],
+              runtimeEnv: runtimeEnvironment(
+                input.executionCache.requiredVariables,
+                input.scenario,
+              ),
+              descriptions: input.scenario.templateSteps.map(
+                (step) => `Replay: ${step.text}`,
+              ),
+            }
+          : compileMobileScenario({
+              platform,
+              applicationId: input.application.id,
+              scenario: input.scenario,
+            }),
       logsStarted: false,
-      redactions: input.redactions ?? [],
+      mode: input.mode,
+      redactions: evidenceRedactions(input),
     }
     this.sessions.set(input.sessionId, session)
     const ensureSessionOwned = () => {
@@ -287,26 +390,99 @@ export class AgentDeviceGateway {
     }
   }
 
-  async executeStep(
-    input: ExecuteAgentDeviceStepInput,
-  ): Promise<WorkerStepExecution> {
-    const session = this.sessions.get(input.sessionId)
+  async executeScenario(sessionId: string): Promise<WorkerScenarioExecution> {
+    const session = this.sessions.get(sessionId)
     if (!session) {
-      throw new Error(`Mobile logical session "${input.sessionId}" is not open`)
+      throw new Error(`Mobile logical session "${sessionId}" is not open`)
     }
     if (!session.selection) {
       throw new Error(
-        `Mobile logical session "${input.sessionId}" has no execution target`,
+        `Mobile logical session "${sessionId}" has no execution target`,
       )
     }
-    return executeAgentDeviceStep(input, {
-      artifactDirectory: session.artifactDirectory,
-      artifacts: session.artifacts,
-      client: session.client,
-      deviceLogPath: session.deviceLogPath,
-      redactions: session.redactions,
-      selection: session.selection,
-    })
+    if (session.execution) return session.execution
+    const activeEvidence = await startScenarioEvidence(sessionId, session)
+    try {
+      await executePrivateAgentDeviceReplay({
+        client: session.client,
+        selection: session.selection,
+        script: session.compiled.payload.script,
+        runtimeEnv: session.compiled.runtimeEnv,
+      })
+      session.execution = {
+        stepExecutions: session.compiled.descriptions.map((description) => ({
+          state: 'passed',
+          resolvedActions: [{ description }],
+        })),
+      }
+    } catch (error) {
+      if (!isAgentDeviceReplayDivergence(error)) throw error
+      const failedStep = replayScenarioStepIndex(
+        error,
+        session.compiled.payload,
+      )
+      session.execution = {
+        stepExecutions: session.compiled.descriptions
+          .slice(0, failedStep + 1)
+          .map((description, index) =>
+            index === failedStep
+              ? {
+                  state: 'failed' as const,
+                  resolvedActions: [{ description }],
+                  replayDiverged: true,
+                  message: `Agent Device Replay diverged at Scenario step ${failedStep + 1}`,
+                }
+              : {
+                  state: 'passed' as const,
+                  resolvedActions: [{ description }],
+                },
+          ),
+        replayDiverged: true,
+      }
+    } finally {
+      const artifacts = await finishScenarioEvidence(session, activeEvidence)
+      const finalStep = session.execution?.stepExecutions.at(-1)
+      if (finalStep && artifacts.length > 0) finalStep.artifacts = artifacts
+    }
+    return session.execution
+  }
+
+  async completeSession(sessionId: string): Promise<WorkerSessionCompletion> {
+    const session = this.sessions.get(sessionId)
+    if (!session) {
+      throw new Error(`Mobile logical session "${sessionId}" is not open`)
+    }
+    if (!session.execution) {
+      throw new Error(`Mobile logical session "${sessionId}" did not execute`)
+    }
+    if (session.mode === 'replay') return { inferenceCount: 0 }
+    if (
+      session.execution.replayDiverged ||
+      session.execution.stepExecutions.length !==
+        session.compiled.descriptions.length ||
+      session.execution.stepExecutions.some(
+        (execution) => execution.state !== 'passed',
+      )
+    ) {
+      return { inferenceCount: 0 }
+    }
+    if (session.compiled.uncacheableReason) {
+      return {
+        inferenceCount: 0,
+        replayRepresentation: {
+          cacheable: false,
+          reason: session.compiled.uncacheableReason,
+        },
+      }
+    }
+    return {
+      inferenceCount: 0,
+      replayRepresentation: {
+        cacheable: true,
+        adapterPayload: session.compiled.payload,
+        requiredVariables: session.compiled.requiredVariables,
+      },
+    }
   }
 
   async closeSession(sessionId: string): Promise<void> {

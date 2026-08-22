@@ -48,7 +48,8 @@ export function orderedScheduleFromResults(
 
 function scheduledResultKey(result: ScheduledTestResult | TestResult): string {
   const scenarioIdentity = result.scenario.id ?? result.scenario.name
-  return `${result.specification.uri}\0${scenarioIdentity}\0${result.executionTargetProfile.id}`
+  const rowIdentity = result.scenario.examplesRowId ?? ''
+  return `${result.specification.uri}\0${scenarioIdentity}\0${rowIdentity}\0${result.executionTargetProfile.id}`
 }
 
 export function createScheduleIndexQueues(
@@ -86,7 +87,8 @@ export function scheduledEventMatches(
 ): boolean {
   if (!event.scenario) return false
   const scenarioMatches = event.scenario.id
-    ? event.scenario.id === scheduled.scenario.id
+    ? event.scenario.id === scheduled.scenario.id &&
+      event.scenario.examplesRowId === scheduled.scenario.examplesRowId
     : event.scenario.name === scheduled.scenario.name
   const profileMatches = event.executionTargetProfile
     ? event.executionTargetProfile.id === scheduled.executionTargetProfile.id

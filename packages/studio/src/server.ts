@@ -2,11 +2,9 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { basename, join, resolve } from 'node:path'
 import type {
-  CandidateExecutionPlan,
-  ExecutionPlan,
+  ExecutionCacheEntryMetadata,
   HtmlArtifactMode,
   RunEvent,
-  TestResult,
   TestRunComparison,
   TestRunManifest,
   TestRunSummary,
@@ -107,32 +105,6 @@ export interface StudioProject {
   profileDetails?: readonly StudioProfile[]
   secrets?: readonly StudioCredential[]
   readiness?: StudioRunReadiness
-  policy: { adaptedResults: 'accept' | 'reject' }
-}
-
-export interface StudioPlanEvidence {
-  testRunId: string
-  result?: TestResult
-}
-
-export interface StudioPlanReview {
-  scenario: { id: string; name: string }
-  executionTargetProfileId: string
-  approved?: ExecutionPlan
-  candidate?: CandidateExecutionPlan
-  candidateRevision?: string
-  evidence?: StudioPlanEvidence
-}
-
-export interface StudioPlanPromotionRequest {
-  scenarioId: string
-  executionTargetProfileId: string
-  expectedCandidateRevision: string
-}
-
-export interface StudioPlanGateway {
-  list(): Promise<readonly StudioPlanReview[]>
-  promote(input: StudioPlanPromotionRequest): Promise<ExecutionPlan>
 }
 
 export interface StudioRunRequest {
@@ -143,7 +115,7 @@ export interface StudioRunRequest {
   scenarioId?: string
   rerunId?: string
   failures?: boolean
-  adaptations?: boolean
+  refreshCache?: boolean
 }
 
 export interface StudioRunSnapshot {
@@ -183,6 +155,17 @@ export interface StudioHistory {
   retention: StudioRetentionPolicy
 }
 
+export interface StudioExecutionCacheInspection {
+  projectKey: string
+  maxBytes: number
+  entries: readonly ExecutionCacheEntryMetadata[]
+}
+
+export interface StudioExecutionCacheGateway {
+  inspect(): Promise<StudioExecutionCacheInspection>
+  clear(): Promise<{ clearedEntries: number }>
+}
+
 export interface StudioAuthoringGateway {
   model: StudioAuthoringModel
   propose?: (input: {
@@ -208,7 +191,7 @@ export interface StudioOptions {
   documents?: SpecificationWorkspace
   authoring?: StudioAuthoringGateway
   management?: StudioManagementGateway
-  plans?: StudioPlanGateway
+  executionCache?: StudioExecutionCacheGateway
   git?: GitWorkspace
   specificationGlobs?: string | readonly string[]
   language?: string
@@ -287,10 +270,6 @@ type DocumentProposeRequest = {
   prompt: string
   uri?: string
   currentSource?: string
-}
-
-type PlanPromotionRequest = Partial<StudioPlanPromotionRequest> & {
-  confirmed?: boolean
 }
 
 const sessionCookie = 'pickle_studio_token'
@@ -574,9 +553,7 @@ export async function startStudio(
             })
           }
           const artifacts =
-            url.searchParams.get('artifacts') === 'all'
-              ? 'all'
-              : 'failures-and-adaptations'
+            url.searchParams.get('artifacts') === 'all' ? 'all' : 'failures'
           return new Response(
             await options.history.exportHtml(runId, artifacts),
             {
@@ -590,61 +567,23 @@ export async function startStudio(
         return null
       }
 
-      async function routePlans(): Promise<Response | null> {
-        if (url.pathname === '/api/plans' && request.method === 'GET') {
-          if (!options.plans) {
-            return new Response('Execution plans are unavailable', {
-              status: 501,
-            })
-          }
-          return Response.json(await options.plans.list())
+      async function routeExecutionCache(): Promise<Response | null> {
+        if (url.pathname !== '/api/execution-cache') return null
+        if (!options.executionCache) {
+          return new Response('Execution cache is unavailable', {
+            status: 501,
+          })
         }
-        if (
-          url.pathname === '/api/plans/promote' &&
-          request.method === 'POST'
-        ) {
-          if (!options.plans) {
-            return new Response('Execution plans are unavailable', {
-              status: 501,
-            })
+        try {
+          if (request.method === 'GET') {
+            return Response.json(await options.executionCache.inspect())
           }
-          const body = (await request.json()) as PlanPromotionRequest
-          if (body.confirmed !== true) {
-            return new Response(
-              'Plan promotion requires explicit confirmation',
-              {
-                status: 400,
-              },
-            )
+          if (request.method === 'DELETE') {
+            return Response.json(await options.executionCache.clear())
           }
-          if (activeRuns.size > 0) {
-            return new Response(
-              'A candidate plan cannot be promoted during a test run',
-              { status: 409 },
-            )
-          }
-          if (
-            !body.scenarioId ||
-            !body.executionTargetProfileId ||
-            !body.expectedCandidateRevision
-          ) {
-            return new Response('Plan promotion request is incomplete', {
-              status: 400,
-            })
-          }
-          try {
-            return Response.json(
-              await options.plans.promote({
-                scenarioId: body.scenarioId,
-                executionTargetProfileId: body.executionTargetProfileId,
-                expectedCandidateRevision: body.expectedCandidateRevision,
-              }),
-            )
-          } catch (error) {
-            const message =
-              error instanceof Error ? error.message : String(error)
-            return new Response(message, { status: 409 })
-          }
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error)
+          return new Response(message, { status: 500 })
         }
         return null
       }
@@ -938,8 +877,8 @@ export async function startStudio(
         }
         const historyResponse = await routeHistory()
         if (historyResponse) return historyResponse
-        const planResponse = await routePlans()
-        if (planResponse) return planResponse
+        const executionCacheResponse = await routeExecutionCache()
+        if (executionCacheResponse) return executionCacheResponse
         const managementResponse = await routeManagement()
         if (managementResponse) return managementResponse
         const documentResponse = await routeDocuments()

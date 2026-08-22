@@ -18,6 +18,7 @@ import {
   type WebAdapterOptions,
 } from '@pickle-spec/web'
 import cliPackage from '../package.json' with { type: 'json' }
+import { runCacheCommand } from './cache'
 import { errorMessage, withRecoveryFailure } from './command-error'
 import { defaultSpecificationGlob, loadConfig } from './config'
 import {
@@ -34,8 +35,8 @@ import {
   terminalReporterCapabilities,
 } from './run-reporter'
 import { createRunReportingSession } from './run-reporting-session'
+import { createStudioExecutionCacheGateway } from './studio-cache'
 import { createStudioHistoryGateway } from './studio-history'
-import { createStudioPlanGateway } from './studio-plans'
 import {
   loadStudioProject,
   patchStudioConfig,
@@ -67,8 +68,9 @@ interface RunArguments {
   ndjsonPath?: string
   rerunId?: string
   failures?: boolean
-  adaptations?: boolean
   fast?: boolean
+  refreshCache?: boolean
+  cacheOnly?: boolean
   reporter?: RunReporterName
 }
 
@@ -197,11 +199,14 @@ function parseRunArguments(argv: string[]): RunArguments {
       case '--failures':
         args.failures = true
         break
-      case '--adaptations':
-        args.adaptations = true
-        break
       case '--fast':
         args.fast = true
+        break
+      case '--refresh-cache':
+        args.refreshCache = true
+        break
+      case '--cache-only':
+        args.cacheOnly = true
         break
       case '--reporter': {
         const reporter = valueAfter(argv, index++)
@@ -215,6 +220,9 @@ function parseRunArguments(argv: string[]): RunArguments {
         throw new Error(`Unknown option: ${flag}`)
     }
     index++
+  }
+  if (args.refreshCache && args.cacheOnly) {
+    throw new Error('--refresh-cache cannot be combined with --cache-only')
   }
   return args
 }
@@ -267,7 +275,6 @@ async function run(argv: string[]): Promise<number> {
 
     const exitStatus = evaluateTestRunExitStatus(
       runs.map(({ result }) => result),
-      config.policy?.adaptedResults,
       { interrupted: controller.signal.aborted },
     )
     reporting.finish(runs, performance.now() - startedAt, exitStatus)
@@ -281,11 +288,7 @@ async function run(argv: string[]): Promise<number> {
       error instanceof Error &&
       error.name === 'AbortError'
     ) {
-      const exitStatus = evaluateTestRunExitStatus(
-        [],
-        config.policy?.adaptedResults,
-        { interrupted: true },
-      )
+      const exitStatus = evaluateTestRunExitStatus([], { interrupted: true })
       if (startedRunId && !outputsWritten) {
         try {
           await finalizeMaterializedEvidence(args, root, startedRunId, {
@@ -436,7 +439,7 @@ async function exportRun(argv: string[]): Promise<number> {
 
   const { manifest } = await loadPersistedRun(process.cwd(), runId)
   const html = await formatHtml(manifest, {
-    artifacts: allArtifacts ? 'all' : 'failures-and-adaptations',
+    artifacts: allArtifacts ? 'all' : 'failures',
   })
   const htmlBytes = Buffer.byteLength(html, 'utf8')
   const warningThreshold = 10 * 1024 * 1024
@@ -516,7 +519,10 @@ async function studio(argv: string[]): Promise<number> {
         return studioRunReadiness(context, request, current, specifications)
       },
     },
-    plans: createStudioPlanGateway(root, loadProject),
+    executionCache: createStudioExecutionCacheGateway(root, async () => {
+      const current = await loadConfig(args.configPath, root)
+      return current.cache ?? {}
+    }),
     history: createStudioHistoryGateway(root, async () => {
       const current = await loadConfig(args.configPath, root)
       return {
@@ -545,7 +551,7 @@ async function studio(argv: string[]): Promise<number> {
             rerunId: request?.rerunId,
             scenarioIds: request?.scenarioId ? [request.scenarioId] : undefined,
             failures: request?.failures,
-            adaptations: request?.adaptations,
+            refreshCache: request?.refreshCache,
           },
           signal: runController.signal,
           onEvent,
@@ -599,6 +605,9 @@ async function main(argv: string[]): Promise<number> {
   }
   if (argv[0] === 'studio') {
     return studio(argv)
+  }
+  if (argv[0] === 'cache') {
+    return runCacheCommand(argv)
   }
   if (argv[0] === 'check') {
     await checkProject({ ...projectOptions(argv), report: console.log })

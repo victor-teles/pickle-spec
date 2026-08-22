@@ -1,6 +1,12 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
-import { mkdir, rm } from 'node:fs/promises'
+import { mkdir } from 'node:fs/promises'
 import { join } from 'node:path'
+import {
+  type ExecutionCacheEnvelope,
+  type ExecutionCachePayloadValidator,
+  openLocalExecutionCache,
+  serializeExecutionCacheEnvelope,
+} from '@pickle-spec/runner'
 import type { Browser, Page } from 'playwright'
 import { StudioBrowserFixture } from '../test/studio-browser-fixture'
 import { registerStudioHardeningTests } from '../test/studio-hardening-suite'
@@ -33,6 +39,14 @@ type MonacoEditorHost = {
         trigger: (source: string, handlerId: string, payload: unknown) => void
       }>
     }
+  }
+}
+
+async function waitForFile(path: string): Promise<void> {
+  const deadline = Date.now() + 20_000
+  while (!(await Bun.file(path).exists())) {
+    if (Date.now() >= deadline) throw new Error(`Timed out waiting for ${path}`)
+    await Bun.sleep(25)
   }
 }
 
@@ -91,6 +105,9 @@ Feature: Search
     try {
       await page.goto(url)
       expect(
+        await page.evaluate(async () => (await fetch('/api/plans')).status),
+      ).toBe(404)
+      expect(
         await page
           .getByRole('heading', { name: 'opened-project' })
           .textContent(),
@@ -104,12 +121,6 @@ Feature: Search
       expect(await page.getByRole('button', { name: 'History' }).count()).toBe(
         1,
       )
-      expect(await page.getByRole('button', { name: 'Plans' }).count()).toBe(1)
-      expect(
-        await page
-          .getByRole('button', { name: 'Plans', disabled: true })
-          .count(),
-      ).toBe(0)
       expect(await page.getByRole('button', { name: 'Settings' }).count()).toBe(
         1,
       )
@@ -165,6 +176,295 @@ Feature: Search
     }
   }, 30_000)
 
+  test('Studio submits an explicit contextual cache refresh request', async () => {
+    const project = await createStudioProject('refresh-cache')
+    const { child, url } = await startStudio(project)
+    const page = await browser.newPage()
+    try {
+      await page.goto(url)
+      const refresh = page.getByRole('button', { name: 'Refresh cache' })
+      await refresh.waitFor({ timeout: 20_000 })
+      expect(await refresh.count()).toBe(1)
+      const requestPromise = page.waitForRequest(
+        (request) =>
+          new URL(request.url()).pathname === '/api/runs' &&
+          request.method() === 'POST',
+      )
+      await refresh.click()
+      const request = await requestPromise
+
+      expect(request.postDataJSON()).toEqual({
+        paths: ['features/checkout.feature'],
+        refreshCache: true,
+      })
+    } finally {
+      await page.close()
+      child.kill()
+      await child.exited
+    }
+  }, 30_000)
+
+  test('Studio refreshes adaptively and atomically publishes a replacement cache revision', async () => {
+    const project = await createStudioProject('refresh-cache-lifecycle')
+    const cacheRoot = join(fixture.workspace, 'refresh-cache-root')
+    const blockRefresh = join(project, 'block-refresh')
+    const refreshStarted = join(project, 'refresh-started')
+    const releaseRefresh = join(project, 'release-refresh')
+    const payloadVersion = join(project, 'payload-version')
+    const configPath = join(project, 'pickle.config.jsonc')
+    const config = await Bun.file(configPath).json()
+    await Bun.write(
+      configPath,
+      JSON.stringify({
+        ...config,
+        applicationRevision: 'app-1',
+        executionTargetProfiles: {
+          deterministic: { adapter: 'custom' },
+        },
+      }),
+    )
+    await Bun.write(payloadVersion, 'v1')
+    await Bun.write(
+      join(project, 'pickle.extensions.ts'),
+      `
+export default {
+  adapter: {
+    executionCache: {
+      adapterKind: 'studio-refresh-test',
+      adapterCacheSchemaVersion: '1',
+      targetConfigurationFingerprint: 'target-1',
+      parse(payload) {
+        if (!payload || typeof payload !== 'object') return undefined
+        if (!Array.isArray(payload.operations)) return undefined
+        return payload
+      },
+    },
+    async openSession(input) {
+      return {
+        async executeStep(_step, signal) {
+          if (
+            input.mode === 'adaptive' &&
+            await Bun.file(${JSON.stringify(blockRefresh)}).exists()
+          ) {
+            await Bun.write(${JSON.stringify(refreshStarted)}, 'started')
+            while (!(await Bun.file(${JSON.stringify(releaseRefresh)}).exists())) {
+              if (signal?.aborted) {
+                throw new DOMException('Scenario cancelled', 'AbortError')
+              }
+              await Bun.sleep(10)
+            }
+          }
+          return { state: 'passed', resolvedActions: [] }
+        },
+        async complete() {
+          return {
+            inferenceCount: input.mode === 'adaptive' ? 1 : 0,
+            replayRepresentation: {
+              cacheable: true,
+              adapterPayload: {
+                operations: [await Bun.file(${JSON.stringify(payloadVersion)}).text()],
+              },
+              requiredVariables: [],
+            },
+          }
+        },
+        async close() {},
+      }
+    },
+  },
+}
+`,
+    )
+    const cache = await openLocalExecutionCache({
+      projectRoot: project,
+      cacheRoot,
+    })
+    const { child, url } = await startStudio(project, {
+      PICKLE_CACHE_ROOT: cacheRoot,
+    })
+    const page = await browser.newPage()
+    try {
+      await page.goto(url)
+      await page.getByRole('button', { name: 'Run Specification' }).click()
+      await page.getByRole('button', { name: 'Run Specification' }).waitFor({
+        timeout: 20_000,
+      })
+      const before = (await cache.inspect())[0]
+      expect(before).toBeDefined()
+      if (!before) throw new Error('Initial cache revision was not published')
+      const beforeSource = await cache.read(before.key)
+      expect(beforeSource).toContain('v1')
+
+      await Bun.write(payloadVersion, 'v2')
+      await Bun.write(blockRefresh, 'block')
+      await page.getByRole('button', { name: 'Refresh cache' }).click()
+      await waitForFile(refreshStarted)
+      const during = (await cache.inspect()).find(
+        (entry) => entry.payloadDigest === before.payloadDigest,
+      )
+      expect(during?.sourceRunId).toBe(before.sourceRunId)
+      expect(await cache.read(before.key)).toBe(beforeSource)
+
+      await Bun.write(releaseRefresh, 'release')
+      await page.getByRole('button', { name: 'Run Specification' }).waitFor({
+        timeout: 20_000,
+      })
+      const after = (await cache.inspect()).find(
+        (entry) => entry.key.scenarioId === before.key.scenarioId,
+      )
+      expect(after?.sourceRunId).not.toBe(before.sourceRunId)
+      expect(await cache.read(before.key)).toContain('v2')
+
+      await page.getByRole('button', { name: 'History' }).click()
+      const latestRun = page
+        .getByRole('table', { name: 'Test run history' })
+        .getByRole('row')
+        .nth(1)
+      expect(await latestRun.textContent()).toContain('adaptive')
+      expect(await latestRun.textContent()).toContain('refresh')
+      expect(await latestRun.textContent()).toContain('3 inferences')
+    } finally {
+      await page.close()
+      child.kill()
+      await child.exited
+    }
+  }, 60_000)
+
+  test('Settings inspects metadata and confirms clearing the local Execution cache', async () => {
+    const project = await createStudioProject('execution-cache-settings')
+    const cacheRoot = join(fixture.workspace, 'execution-cache-root')
+    const configPath = join(project, 'pickle.config.jsonc')
+    const config = await Bun.file(configPath).json()
+    await Bun.write(
+      configPath,
+      JSON.stringify({ ...config, cache: { maxBytes: 4_096 } }),
+    )
+    const cache = await openLocalExecutionCache({
+      projectRoot: project,
+      cacheRoot,
+    })
+    type CachePayload = { operation: 'fill'; variable: string }
+    const validator: ExecutionCachePayloadValidator<CachePayload> = {
+      adapterKind: 'test',
+      adapterCacheSchemaVersion: 'test.1',
+      parse(payload) {
+        return payload as CachePayload
+      },
+    }
+    const envelope: ExecutionCacheEnvelope<CachePayload> = {
+      schemaVersion: 1,
+      key: {
+        projectKey: cache.projectKey,
+        scenarioId: 'scenario-checkout',
+        scenarioRevision: 'scenario-v1',
+        executionTargetProfileId: 'chrome',
+        targetConfigurationFingerprint: 'target-v1',
+        applicationRevision: 'application-v1',
+        adapterKind: 'test',
+        adapterCacheSchemaVersion: 'test.1',
+      },
+      requiredVariables: ['runtime_password'],
+      adapterPayload: { operation: 'fill', variable: 'runtime_password' },
+    }
+    await cache.write(serializeExecutionCacheEnvelope(envelope, validator), {
+      sourceRunId: 'run-1',
+      evaluationInferenceCount: 1,
+    })
+
+    const { child, url } = await startStudio(project, {
+      PICKLE_CACHE_ROOT: cacheRoot,
+    })
+    const page = await browser.newPage()
+    try {
+      await page.goto(url)
+      await page.getByRole('button', { name: 'Settings' }).click()
+      const revisions = page.getByRole('table', {
+        name: 'Execution cache revisions',
+      })
+      await revisions.waitFor()
+      const text = await revisions.textContent()
+      expect(text).toContain('scenario-checkout')
+      expect(text).toContain('scenario-v1')
+      expect(text).toContain('application-v1')
+      expect(text).toContain('test.1')
+      expect(text).toContain('chrome')
+      expect(text).toContain('0')
+      expect(await page.textContent('body')).not.toContain('runtime_password')
+      expect(await page.textContent('body')).not.toContain('adapterPayload')
+
+      await page.route('**/api/execution-cache', async (route) => {
+        if (route.request().method() === 'DELETE') {
+          await route.fulfill({ status: 500, body: 'Cache clear failed' })
+          return
+        }
+        await route.continue()
+      })
+      await page.getByRole('button', { name: 'Clear Execution cache' }).click()
+      const confirmation = page.getByRole('dialog', {
+        name: 'Clear Execution cache?',
+      })
+      await confirmation.waitFor()
+      await confirmation.getByRole('button', { name: 'Clear cache' }).click()
+      await confirmation
+        .getByRole('alert')
+        .filter({ hasText: 'Cache clear failed' })
+        .waitFor()
+      expect(await confirmation.isVisible()).toBe(true)
+
+      await page.unroute('**/api/execution-cache')
+      await confirmation.getByRole('button', { name: 'Clear cache' }).click()
+      await page
+        .getByRole('status')
+        .filter({ hasText: 'No cached replay revisions' })
+        .waitFor()
+      expect(await cache.inspect()).toEqual([])
+    } finally {
+      await page.close()
+      child.kill()
+      await child.exited
+    }
+  }, 30_000)
+
+  test('Settings exposes accessible cache loading, error, retry, and empty states', async () => {
+    const project = await createStudioProject('execution-cache-states')
+    const { child, url } = await startStudio(project, {
+      PICKLE_CACHE_ROOT: join(fixture.workspace, 'empty-cache-root'),
+    })
+    const page = await browser.newPage()
+    let releaseRequest = () => {}
+    const requestGate = new Promise<void>((resolve) => {
+      releaseRequest = resolve
+    })
+    try {
+      await page.route('**/api/execution-cache', async (route) => {
+        await requestGate
+        await route.fulfill({ status: 500, body: 'Cache inspection failed' })
+      })
+      await page.goto(url)
+      await page.getByRole('button', { name: 'Settings' }).click()
+      await page
+        .getByRole('status')
+        .filter({ hasText: 'Loading Execution cache' })
+        .waitFor()
+      releaseRequest()
+      await page
+        .getByRole('alert')
+        .filter({ hasText: 'Cache inspection failed' })
+        .waitFor()
+
+      await page.unroute('**/api/execution-cache')
+      await page.getByRole('button', { name: 'Retry' }).click()
+      await page
+        .getByRole('status')
+        .filter({ hasText: 'No cached replay revisions' })
+        .waitFor()
+    } finally {
+      await page.close()
+      child.kill()
+      await child.exited
+    }
+  }, 30_000)
+
   test('Studio starts a web test run and diagnoses live results', async () => {
     const project = await createStudioProject('live-diagnosis')
     const marker = join(project, 'step-started.txt')
@@ -205,14 +505,10 @@ Feature: Search
       ).toBe(1)
       const attention = page.getByRole('list', { name: 'Needs attention' })
       const items = attention.getByRole('listitem')
-      expect(await items.count()).toBe(2)
+      expect(await items.count()).toBe(1)
       expect(await items.nth(0).textContent()).toContain('Pay for the order')
       expect(await items.nth(0).textContent()).toContain('failed')
       expect(await items.nth(0).textContent()).toContain('Open step timeline')
-      expect(await items.nth(1).textContent()).toContain('Adapt the purchase')
-      expect(await items.nth(1).textContent()).toContain(
-        'passed-with-adaptation',
-      )
       const timeline = page.getByRole('list', { name: 'Step timeline' })
       expect(await timeline.textContent()).toContain('Then payment is captured')
       expect(await timeline.textContent()).toContain('Payment was declined')
@@ -230,7 +526,7 @@ Feature: Search
       ).toBe(1)
       expect(
         await scenarios
-          .getByRole('rowheader', { name: 'Adapt the purchase' })
+          .getByRole('rowheader', { name: 'Review the purchase' })
           .count(),
       ).toBe(1)
       expect(
@@ -310,6 +606,9 @@ Feature: Search
       expect(await run.textContent()).toContain('chrome, firefox')
       expect(await run.textContent()).toContain('app-42')
       expect(await run.textContent()).toContain('failed')
+      expect(await run.textContent()).toContain('adaptive')
+      expect(await run.textContent()).toContain('uncacheable')
+      expect(await run.textContent()).toContain('0 inferences')
       expect(await run.textContent()).toContain('6 results')
 
       await page.getByRole('button', { name: 'Search' }).click()
@@ -344,26 +643,25 @@ Feature: Search
         .click()
       const results = page.getByRole('table', { name: 'Test run results' })
       expect(await results.textContent()).toContain('Pay for the order')
+      expect(await results.textContent()).toContain('adaptive')
+      expect(await results.textContent()).toContain('uncacheable')
+      expect(await results.textContent()).toContain('0 inferences')
+      expect(
+        await results
+          .getByRole('columnheader', { name: 'Uncacheable reason' })
+          .count(),
+      ).toBe(1)
       expect(
         await results.getByRole('button', { name: 'Rerun Scenario' }).count(),
       ).toBeGreaterThan(0)
       expect(
         await results.getByRole('button', { name: 'Rerun target' }).count(),
       ).toBeGreaterThan(0)
-      expect(
-        await page.getByRole('button', { name: 'Rerun adaptations' }).count(),
-      ).toBe(1)
-
-      await page.getByRole('button', { name: 'Rerun adaptations' }).click()
-      await history.getByRole('row').nth(3).waitFor({ timeout: 20_000 })
-      expect(await history.getByRole('row').nth(1).textContent()).toContain(
-        '1 result',
-      )
       await results
         .getByRole('button', { name: 'Rerun Scenario' })
         .first()
         .click()
-      await history.getByRole('row').nth(4).waitFor({ timeout: 20_000 })
+      await history.getByRole('row').nth(3).waitFor({ timeout: 20_000 })
       await history.getByText('2 results').first().waitFor({ timeout: 20_000 })
       expect(await history.getByRole('row').nth(1).textContent()).toContain(
         '2 results',
@@ -372,7 +670,7 @@ Feature: Search
         .getByRole('button', { name: 'Rerun target' })
         .first()
         .click()
-      await history.getByRole('row').nth(5).waitFor({ timeout: 20_000 })
+      await history.getByRole('row').nth(4).waitFor({ timeout: 20_000 })
       await history.getByText('3 results').first().waitFor({ timeout: 20_000 })
       expect(await history.getByRole('row').nth(1).textContent()).toContain(
         '3 results',
@@ -517,176 +815,6 @@ Feature: Checkout
     }
   }, 60_000)
 
-  test('Studio reviews evidence and explicitly promotes a candidate plan', async () => {
-    const project = await createStudioProject('review-plans')
-    const configPath = join(project, 'pickle.config.jsonc')
-    const config = JSON.parse(await Bun.file(configPath).text())
-    await Bun.write(
-      configPath,
-      JSON.stringify({
-        ...config,
-        applicationRevision: 'app-1',
-        policy: { adaptedResults: 'reject' },
-        executionTargetProfiles: { chrome: { adapter: 'custom' } },
-      }),
-    )
-    const approvedPath = join(
-      project,
-      '.pickle',
-      'plans',
-      'chrome',
-      'scnadaptcccccccc.json',
-    )
-    const candidatePath = join(
-      project,
-      '.pickle',
-      'candidates',
-      'chrome',
-      'scnadaptcccccccc.json',
-    )
-    const approved = {
-      schemaVersion: 1,
-      scenarioId: 'scnadaptcccccccc',
-      scenarioRevision: 'previous-revision',
-      executionTargetProfileId: 'chrome',
-      planFormatVersion: '1',
-      applicationRevision: 'app-1',
-      steps: [
-        {
-          resolvedActions: [
-            {
-              description: 'Adapt basket on chrome',
-              replay: { operation: 'adapt', target: 'previous-basket' },
-            },
-          ],
-        },
-      ],
-    }
-    await Bun.write(approvedPath, `${JSON.stringify(approved, null, 2)}\n`)
-    for (const cmd of [
-      ['git', 'init'],
-      ['git', 'config', 'user.email', 'studio@example.test'],
-      ['git', 'config', 'user.name', 'Studio Test'],
-      ['git', 'add', '.'],
-      ['git', 'commit', '-m', 'initial'],
-    ]) {
-      const result = Bun.spawnSync({ cmd, cwd: project })
-      expect(result.exitCode).toBe(0)
-    }
-    const gate = join(project, 'continue.txt')
-    await Bun.write(gate, 'continue')
-    const { child, url } = await startStudio(project, {
-      PICKLE_STUDIO_CONTINUE: gate,
-    })
-    const page = await browser.newPage()
-    try {
-      await page.goto(url)
-      await page
-        .getByRole('button', { name: 'Run Scenario Adapt the purchase' })
-        .click()
-      await page.getByRole('button', { name: 'Cancel test run' }).waitFor()
-      await page.getByRole('button', { name: 'Run Specification' }).waitFor({
-        timeout: 20_000,
-      })
-
-      await page.getByRole('button', { name: 'Plans' }).click()
-      await page.getByRole('heading', { name: 'Plans', exact: true }).waitFor()
-      expect(await page.getByText('CI adapted results: reject').count()).toBe(1)
-      await page
-        .getByRole('button', { name: 'Adapt the purchase · chrome' })
-        .click()
-      const comparison = page.getByRole('table', { name: 'Plan comparison' })
-      expect(await comparison.textContent()).toContain('previous-revision')
-      expect(await comparison.textContent()).toContain('Adapt basket on chrome')
-      expect(await comparison.textContent()).toContain('previous-basket')
-      expect(await comparison.textContent()).toContain('current-basket')
-
-      await page
-        .getByRole('button', { name: 'View originating test result' })
-        .click()
-      const evidence = page.getByRole('dialog', {
-        name: 'Originating test result',
-      })
-      expect(await evidence.textContent()).toContain('passed-with-adaptation')
-      expect(await evidence.textContent()).toContain('Then the basket adapts')
-      expect(await evidence.textContent()).toContain('Adapt basket on chrome')
-      expect(
-        await evidence.getByRole('img', { name: /screenshot/ }).count(),
-      ).toBe(1)
-      await evidence.getByRole('button', { name: 'Close' }).click()
-
-      await rm(gate)
-      await page.getByRole('button', { name: 'Specifications' }).click()
-      await page
-        .getByRole('button', { name: 'Run Scenario Pay for the order' })
-        .click()
-      await page.getByRole('status').filter({ hasText: 'running' }).waitFor()
-      await page.getByRole('button', { name: 'Plans' }).click()
-      expect(
-        await page
-          .getByRole('button', { name: 'Promote candidate' })
-          .isDisabled(),
-      ).toBe(true)
-      const otherPage = await browser.newPage()
-      try {
-        await otherPage.goto(url)
-        await otherPage.getByRole('button', { name: 'Plans' }).click()
-        await otherPage
-          .getByRole('button', { name: 'Adapt the purchase · chrome' })
-          .click()
-        await otherPage
-          .getByRole('button', { name: 'Promote candidate' })
-          .click()
-        await otherPage
-          .getByRole('button', { name: 'Confirm promotion' })
-          .click()
-        await otherPage
-          .getByRole('alert')
-          .filter({ hasText: 'cannot be promoted during a test run' })
-          .waitFor()
-      } finally {
-        await otherPage.close()
-      }
-      await Bun.write(gate, 'continue')
-      await page.getByRole('status').filter({ hasText: 'failed' }).waitFor({
-        timeout: 20_000,
-      })
-      const promote = page.getByRole('button', { name: 'Promote candidate' })
-      await promote.waitFor()
-      const enabledDeadline = Date.now() + 10_000
-      while (await promote.isDisabled()) {
-        if (Date.now() >= enabledDeadline) {
-          throw new Error('Promotion remained disabled after the test run')
-        }
-        await Bun.sleep(25)
-      }
-
-      await promote.click()
-      const confirmation = page.getByRole('dialog', {
-        name: 'Promote candidate plan?',
-      })
-      await confirmation.waitFor()
-      expect(JSON.parse(await Bun.file(approvedPath).text())).toEqual(approved)
-      await confirmation
-        .getByRole('button', { name: 'Confirm promotion' })
-        .click()
-      await page.getByText('No candidate plan').waitFor()
-      expect(await Bun.file(candidatePath).exists()).toBe(false)
-
-      await page.getByRole('button', { name: 'Settings' }).click()
-      const changed = page
-        .getByRole('listitem')
-        .filter({ hasText: '.pickle/plans/chrome/scnadaptcccccccc.json' })
-      await changed.waitFor()
-      await changed.getByRole('button', { name: 'Show diff' }).click()
-      expect(await changed.textContent()).toContain('Adapt basket on chrome')
-    } finally {
-      await page.close()
-      child.kill()
-      await child.exited
-    }
-  }, 60_000)
-
   test('Studio runs a single Scenario without the rest of the Specification', async () => {
     const project = await createStudioProject('single-scenario')
     const marker = join(project, 'step-started.txt')
@@ -712,7 +840,7 @@ Feature: Checkout
       const attention = page.getByRole('list', { name: 'Needs attention' })
       expect(await attention.getByRole('listitem').count()).toBe(1)
       expect(await attention.textContent()).toContain('Pay for the order')
-      expect(await attention.textContent()).not.toContain('Adapt the purchase')
+      expect(await attention.textContent()).not.toContain('Review the purchase')
       const scenarios = page.getByRole('table', { name: 'Scenarios' })
       expect(await scenarios.textContent()).toContain('pending')
     } finally {

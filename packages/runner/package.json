@@ -4,9 +4,11 @@
   "type": "module",
   "exports": {
     ".": "./index.ts",
+    "./benchmarking": "./benchmarking.ts",
     "./testing": "./testing.ts"
   },
   "files": [
+    "benchmarking.ts",
     "index.ts",
     "testing.ts",
     "src/*.ts",

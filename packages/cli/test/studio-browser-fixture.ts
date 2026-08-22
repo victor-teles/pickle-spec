@@ -67,9 +67,9 @@ Feature: Checkout
   @pickle:id:scnpaybbbbbbbbbb
   Scenario: Pay for the order
     Then payment is captured
-  @pickle:id:scnadaptcccccccc
-  Scenario: Adapt the purchase
-    Then the basket adapts
+  @pickle:id:scnreviewccccccc
+  Scenario: Review the purchase
+    Then the basket is reviewed
   @pickle:id:scnpassdddddddd
   Scenario: Complete a purchase
     Then the purchase succeeds
@@ -119,12 +119,14 @@ export default {
               }],
             }
           }
-          if (scenario === 'Adapt the purchase' && profile === 'chrome') {
+          if (scenario === 'Review the purchase' && profile === 'chrome') {
+            const initialFailure = process.env.PICKLE_STUDIO_INITIAL_FAILURE
             return {
-              state: 'passed-with-adaptation',
+              state: initialFailure ? 'failed' : 'passed',
+              message: initialFailure ? 'Basket review failed' : undefined,
               resolvedActions: [{
-                description: \`Adapt basket on \${profile}\`,
-                replay: { operation: 'adapt', target: 'current-basket' },
+                description: \`Review basket on \${profile}\`,
+                replay: { operation: 'review', target: 'current-basket' },
               }],
               artifacts: [{
                 kind: 'screenshot',

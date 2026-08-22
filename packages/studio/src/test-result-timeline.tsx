@@ -1,9 +1,19 @@
-import type { ResolvedAction } from '@pickle-spec/runner'
+import type {
+  CacheOutcome,
+  ExecutionCacheUncacheableReason,
+  ExecutionMode,
+  ResolvedAction,
+} from '@pickle-spec/runner'
+import { Badge } from './components/ui/badge'
 import { ButtonLink } from './components/ui/button'
 
 type TimelineResult = {
   scenario: { name: string }
   executionTargetProfile: { id: string }
+  executionMode?: ExecutionMode
+  cacheOutcome?: CacheOutcome
+  cacheUncacheableReason?: ExecutionCacheUncacheableReason
+  inferenceCount?: number
   steps: Array<{
     step: { keyword: string; text: string }
     resolvedActions: ResolvedAction[]
@@ -51,6 +61,26 @@ export function TestResultTimeline(props: {
           {result.scenario.name} · {result.executionTargetProfile.id}
         </h3>
       ) : null}
+      <dl className="grid gap-2 text-xs sm:grid-cols-4">
+        <div className="space-y-1">
+          <dt className="text-muted-foreground">Execution mode</dt>
+          <dd>
+            <Badge>{result.executionMode ?? 'Not recorded'}</Badge>
+          </dd>
+        </div>
+        <div className="space-y-1">
+          <dt className="text-muted-foreground">Cache outcome</dt>
+          <dd>{result.cacheOutcome ?? 'Not recorded'}</dd>
+        </div>
+        <div className="space-y-1">
+          <dt className="text-muted-foreground">Uncacheable reason</dt>
+          <dd>{result.cacheUncacheableReason ?? 'Not recorded'}</dd>
+        </div>
+        <div className="space-y-1">
+          <dt className="text-muted-foreground">Inferences</dt>
+          <dd>{result.inferenceCount ?? 'Not recorded'}</dd>
+        </div>
+      </dl>
       <ol aria-label={props.ariaLabel ?? 'Step timeline'} className="space-y-3">
         {result.steps.map((step) => (
           <li

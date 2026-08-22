@@ -27,3 +27,6 @@ jobs:
 
       - name: Test
         run: bun run test
+
+      - name: Replay performance gate
+        run: bun run benchmark:replay

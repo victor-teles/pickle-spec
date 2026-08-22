@@ -25,6 +25,9 @@ function passedResult(): TestResult {
     executionTargetProfile: { id: 'deterministic' },
     state: 'passed',
     steps: [],
+    executionMode: 'replay',
+    cacheOutcome: 'hit',
+    inferenceCount: 0,
     durationMs: 12,
   }
 }
@@ -78,7 +81,17 @@ test('writeRunArchive preserves events, manifests, and selected test artifacts',
     expect(archive).toMatchObject({
       schemaVersion: 1,
       kind: 'run-archive',
-      manifest: { id: 'run-archive', state: 'failed' },
+      manifest: {
+        id: 'run-archive',
+        state: 'failed',
+        results: [
+          {
+            executionMode: 'replay',
+            cacheOutcome: 'hit',
+            inferenceCount: 0,
+          },
+        ],
+      },
     })
     expect(archive.events[0]).toMatchObject({
       type: 'run-started',
@@ -90,6 +103,62 @@ test('writeRunArchive preserves events, manifests, and selected test artifacts',
       Buffer.from(archive.artifacts[0]!.content, 'base64').toString(),
     ).toBe('png-bytes')
     expect(manifest.id).toBe('run-archive')
+  } finally {
+    await rm(root, { recursive: true, force: true })
+  }
+})
+
+test('archive round-trip omits private replay payloads from resolved actions', async () => {
+  const root = await tempRoot()
+  try {
+    const store = openTestRunStore({
+      root,
+      createId: () => 'run-private-cache-payload',
+      now: () => new Date('2026-08-15T12:00:00.000Z'),
+    })
+    const run = await store.create()
+    await run.append({
+      type: 'scenario-finished',
+      result: {
+        ...passedResult(),
+        steps: [
+          {
+            step: { keyword: 'When', text: 'I submit', type: 'action' },
+            state: 'passed',
+            resolvedActions: [
+              {
+                description: 'Submit the form',
+                replay: { payload: 'raw-cache-payload-must-not-export' },
+              },
+            ],
+          },
+        ],
+      },
+    })
+    await run.materialize()
+    const archivePath = join(root, 'private-cache-payload.json')
+
+    await writeRunArchive({ root, runId: run.id, outputPath: archivePath })
+
+    const source = await Bun.file(archivePath).text()
+    const archive = await readRunArchive(archivePath)
+    expect(source).not.toContain('raw-cache-payload-must-not-export')
+    expect(archive.manifest.results[0]).toMatchObject({
+      executionMode: 'replay',
+      cacheOutcome: 'hit',
+      inferenceCount: 0,
+    })
+    expect(archive.events[1]).toMatchObject({
+      type: 'scenario-finished',
+      result: {
+        executionMode: 'replay',
+        cacheOutcome: 'hit',
+        inferenceCount: 0,
+      },
+    })
+    expect(archive.manifest.results[0]?.steps[0]?.resolvedActions).toEqual([
+      { description: 'Submit the form' },
+    ])
   } finally {
     await rm(root, { recursive: true, force: true })
   }
@@ -166,6 +235,11 @@ test('import preserves the original archive and migrates older schemas in memory
       sequence: 1,
       type: 'run-started',
     })
+    expect(imported.manifest.results[0]).toMatchObject({
+      executionMode: 'adaptive',
+      cacheOutcome: 'uncacheable',
+      inferenceCount: 0,
+    })
 
     const store = openTestRunStore({ root })
     expect(await store.list()).toEqual([
@@ -178,8 +252,113 @@ test('import preserves the original archive and migrates older schemas in memory
         durationMs: 1_000,
         state: 'passed',
         resultCount: 1,
+        executionModes: ['adaptive'],
+        cacheOutcomes: ['uncacheable'],
+        inferenceCount: 0,
       },
     ])
+  } finally {
+    await rm(root, { recursive: true, force: true })
+  }
+})
+
+test('migration normalizes invalid Execution cache metadata from untrusted archives', async () => {
+  const root = await tempRoot()
+  try {
+    const archivePath = join(root, 'invalid-cache-metadata.json')
+    await Bun.write(
+      archivePath,
+      JSON.stringify({
+        manifest: {
+          id: 'run-invalid-cache-metadata',
+          startedAt: '2026-08-01T00:00:00.000Z',
+          state: 'passed',
+          results: [
+            {
+              specification: {
+                name: 'Checkout',
+                uri: 'features/checkout.feature',
+              },
+              scenario: { name: 'Complete a purchase' },
+              executionTargetProfile: { id: 'deterministic' },
+              state: 'passed',
+              steps: [],
+              executionMode: 'automatic',
+              cacheOutcome: 'stale',
+              inferenceCount: -1,
+              cacheUncacheableReason: 'unknown',
+              failureKind: 'model-error',
+            },
+          ],
+        },
+        events: [
+          {
+            sequence: 1,
+            type: 'run-started',
+            prompt: 'private-system-prompt',
+            adapterPayload: { secret: 'private-adapter-payload' },
+            run: {
+              id: 'run-invalid-cache-metadata',
+              startedAt: '2026-08-01T00:00:00.000Z',
+              privateValue: 'private-bound-value',
+            },
+          },
+        ],
+      }),
+    )
+
+    const archive = await readRunArchive(archivePath)
+
+    expect(archive.manifest.results[0]).toMatchObject({
+      executionMode: 'adaptive',
+      cacheOutcome: 'uncacheable',
+      inferenceCount: 0,
+      cacheUncacheableReason: undefined,
+      failureKind: undefined,
+    })
+    expect(archive.events).toEqual([
+      {
+        schemaVersion: 1,
+        sequence: 1,
+        type: 'run-started',
+        run: {
+          id: 'run-invalid-cache-metadata',
+          startedAt: '2026-08-01T00:00:00.000Z',
+          sourceRunId: undefined,
+          suite: undefined,
+          applicationRevision: undefined,
+        },
+      },
+    ])
+    expect(JSON.stringify(archive)).not.toContain('private-system-prompt')
+    expect(JSON.stringify(archive)).not.toContain('private-adapter-payload')
+    expect(JSON.stringify(archive)).not.toContain('private-bound-value')
+  } finally {
+    await rm(root, { recursive: true, force: true })
+  }
+})
+
+test('archive migration rejects result states outside the public contract', async () => {
+  const root = await tempRoot()
+  try {
+    const archivePath = join(root, 'invalid-result-state.json')
+    await Bun.write(
+      archivePath,
+      JSON.stringify({
+        manifest: {
+          id: 'run-invalid-state',
+          startedAt: '2026-08-01T00:00:00.000Z',
+          state: 'unknown-state',
+          results: [],
+        },
+        events: [],
+        artifacts: [],
+      }),
+    )
+
+    await expect(readRunArchive(archivePath)).rejects.toThrow(
+      'archive state must be a current result state',
+    )
   } finally {
     await rm(root, { recursive: true, force: true })
   }

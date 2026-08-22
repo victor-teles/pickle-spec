@@ -8,7 +8,7 @@ Chrome at desktop and 390 px widths.
 
 - Run `bun test packages/cli/src/studio.test.ts` from the repository root.
 - Confirm the Axe scan reports no WCAG 2 A, 2 AA, 2.1 A, 2.1 AA, or 2.2
-  AA violations in Specifications, Runs, Plans, and Settings.
+  AA violations in Specifications, Runs, and Settings.
 - Confirm the keyboard, reduced-motion, responsive-result, live-update, and
   large-fixture browser tests pass.
 
@@ -17,8 +17,8 @@ Chrome at desktop and 390 px widths.
 Verified on 2026-08-18 with Chrome on macOS, at 1440 x 900 and 390 x 844.
 
 - [x] Tab and Shift+Tab reach Studio navigation, Specification selection and
-  run controls, Runs actions, Plans actions, Settings fields, and dialogs in a
-  logical order.
+  run controls, Runs actions, Cache refresh, Settings cache controls, fields,
+  and dialogs in a logical order.
 - [x] Enter and Space activate links, buttons, checkboxes, and dialog actions;
   Escape closes dialogs and returns focus to the trigger.
 - [x] Every keyboard target has a visible focus indicator that is not obscured.

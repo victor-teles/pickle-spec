@@ -1,217 +1,126 @@
 import { describe, expect, test } from 'bun:test'
-import type { ExecutionPlan, ExecutionPlanStore } from '@pickle-spec/runner'
-import type { Scenario, Specification } from '@pickle-spec/spec'
-import { resolveScenarioId, scenarioRevision } from '@pickle-spec/spec'
 import {
-  evaluatePerformanceGates,
+  evaluateWebPerformanceGates,
   runWebPerformanceBenchmark,
 } from './web-benchmark'
 
-const scenario: Scenario = {
-  name: 'Search for pickles',
-  tags: [],
-  steps: [
-    { keyword: 'Given', text: 'I navigate to /search', type: 'context' },
-    { keyword: 'When', text: 'I search for pickles', type: 'action' },
-    { keyword: 'Then', text: 'pickle results are visible', type: 'outcome' },
-  ],
-}
-
-const specification: Specification = {
-  name: 'Search',
-  source: { uri: 'features/search.feature', language: 'en' },
-  tags: [],
-  scenarios: [scenario],
-}
-
-function approvedPlan(scenarioId: string): ExecutionPlan {
-  return {
-    schemaVersion: 1,
-    scenarioId,
-    scenarioRevision: scenarioRevision(scenario),
-    executionTargetProfileId: 'web',
-    planFormatVersion: 'web.1',
-    steps: [
-      {
-        resolvedActions: [
-          { description: 'Navigate to https://example.test/search' },
-        ],
-      },
-      {
-        resolvedActions: [
-          {
-            description: 'Search for pickles',
-            replay: { selector: '#search' },
-          },
-        ],
-      },
-      {
-        resolvedActions: [
-          { description: 'Verify: pickle results are visible' },
-        ],
-      },
-    ],
-  }
-}
-
-function planStore(scenarioId: string): ExecutionPlanStore {
-  const plan = approvedPlan(scenarioId)
-  return {
-    async findApproved(query) {
-      return query.scenarioId === plan.scenarioId ? plan : undefined
-    },
-    async saveCandidate() {},
-  }
-}
-
 describe('runWebPerformanceBenchmark', () => {
-  test('records cold and warm Adaptive and Replay samples with timing breakdown', async () => {
-    const scenarioId = resolveScenarioId(
-      specification.source.uri,
-      specification.name,
-      scenario.name,
-      scenario.tags,
-    )
+  test('measures and discards three warmup pairs before retaining twenty pairs', async () => {
+    const modes: string[] = []
+
     const result = await runWebPerformanceBenchmark({
-      selections: [{ specification, scenario }],
-      options: { baseUrl: 'https://example.test' },
-      plans: planStore(scenarioId),
-      delays: {
-        launchMs: 100,
-        navigationMs: 80,
-        modelCallMs: 50,
-        artifactMs: 10,
+      samplePairs: 20,
+      async run(mode) {
+        modes.push(mode)
       },
     })
 
-    const adaptiveCold = result.candidate.adaptive.cold[0]!
-    const adaptiveWarm = result.candidate.adaptive.warm[0]!
-
-    expect(result.baseline.adaptive.cold).toHaveLength(1)
-    expect(result.baseline.adaptive.warm).toHaveLength(1)
-    expect(result.baseline.replay.cold).toHaveLength(1)
-    expect(result.baseline.replay.warm).toHaveLength(1)
-    expect(adaptiveCold.wallClockMs).toBeGreaterThan(0)
-    expect(adaptiveCold.modelCallMs).toBeGreaterThan(0)
-    expect(adaptiveCold.navigationMs).toBeGreaterThan(0)
-    expect(adaptiveCold.artifactMs).toBe(0)
-    expect(adaptiveWarm.wallClockMs).toBeLessThan(adaptiveCold.wallClockMs)
+    expect(modes).toHaveLength(46)
+    expect(modes.slice(0, 6)).toEqual([
+      'adaptive',
+      'replay',
+      'adaptive',
+      'replay',
+      'adaptive',
+      'replay',
+    ])
+    expect(result.warmupPairsDiscarded).toBe(3)
+    expect(result.samples).toHaveLength(20)
+    expect(result.samples.every((sample) => sample.adaptiveMs >= 0)).toBe(true)
+    expect(result.samples.every((sample) => sample.replayMs >= 0)).toBe(true)
   })
 
-  test('meets the warm Replay and Adaptive performance gates', async () => {
-    const scenarioId = resolveScenarioId(
-      specification.source.uri,
-      specification.name,
-      scenario.name,
-      scenario.tags,
-    )
-    const result = await runWebPerformanceBenchmark({
-      selections: [{ specification, scenario }],
-      options: { baseUrl: 'https://example.test' },
-      plans: planStore(scenarioId),
-      delays: {
-        launchMs: 120,
-        navigationMs: 100,
-        modelCallMs: 60,
-        artifactMs: 10,
-      },
-    })
+  test('rejects fewer than twenty measured pairs before running', async () => {
+    let ran = false
 
-    const gates = evaluatePerformanceGates(result.baseline, result.candidate)
-    expect(gates.warmReplayP50.passed).toBe(true)
-    expect(gates.adaptiveP95.passed).toBe(true)
-    expect(gates.passed).toBe(true)
-    expect(gates.warmReplayP50.candidateMs).toBeLessThanOrEqual(
-      gates.warmReplayP50.baselineMs * 0.5,
-    )
-    expect(gates.adaptiveP95.candidateMs).toBeLessThanOrEqual(
-      gates.adaptiveP95.baselineMs * 1.1,
-    )
+    await expect(
+      runWebPerformanceBenchmark({
+        samplePairs: 19,
+        async run() {
+          ran = true
+        },
+      }),
+    ).rejects.toThrow('at least 20 paired samples')
+    expect(ran).toBe(false)
   })
 })
 
-describe('evaluatePerformanceGates', () => {
-  test('fails when warm Replay p50 does not improve by at least fifty percent', () => {
-    const evaluation = evaluatePerformanceGates(
-      {
-        adaptive: {
-          cold: [
-            {
-              wallClockMs: 100,
-              modelCallMs: 0,
-              navigationMs: 0,
-              artifactMs: 0,
-            },
-          ],
-          warm: [
-            {
-              wallClockMs: 100,
-              modelCallMs: 0,
-              navigationMs: 0,
-              artifactMs: 0,
-            },
-          ],
-        },
-        replay: {
-          cold: [
-            {
-              wallClockMs: 200,
-              modelCallMs: 0,
-              navigationMs: 0,
-              artifactMs: 0,
-            },
-          ],
-          warm: [
-            {
-              wallClockMs: 200,
-              modelCallMs: 0,
-              navigationMs: 0,
-              artifactMs: 0,
-            },
-          ],
-        },
-      },
-      {
-        adaptive: {
-          cold: [
-            {
-              wallClockMs: 100,
-              modelCallMs: 0,
-              navigationMs: 0,
-              artifactMs: 0,
-            },
-          ],
-          warm: [
-            {
-              wallClockMs: 100,
-              modelCallMs: 0,
-              navigationMs: 0,
-              artifactMs: 0,
-            },
-          ],
-        },
-        replay: {
-          cold: [
-            {
-              wallClockMs: 150,
-              modelCallMs: 0,
-              navigationMs: 0,
-              artifactMs: 0,
-            },
-          ],
-          warm: [
-            {
-              wallClockMs: 150,
-              modelCallMs: 0,
-              navigationMs: 0,
-              artifactMs: 0,
-            },
-          ],
-        },
-      },
-    )
+describe('evaluateWebPerformanceGates', () => {
+  test('passes inclusive Replay p50 and p95 budget boundaries', () => {
+    const samples = Array.from({ length: 20 }, (_, index) => ({
+      adaptiveMs: 100,
+      replayMs: index < 18 ? 50 : 65,
+    }))
 
-    expect(evaluation.warmReplayP50.passed).toBe(false)
-    expect(evaluation.passed).toBe(false)
+    expect(evaluateWebPerformanceGates(samples)).toMatchObject({
+      adaptive: { p50Ms: 100, p95Ms: 100 },
+      replay: { p50Ms: 50, p95Ms: 65 },
+      gates: {
+        p50: { ratio: 0.5, limitRatio: 0.5, passed: true },
+        p95: { ratio: 0.65, limitRatio: 0.65, passed: true },
+      },
+      passed: true,
+    })
+  })
+
+  test('fails each Replay percentile above its budget', () => {
+    const p50Failure = Array.from({ length: 20 }, (_, index) => ({
+      adaptiveMs: 100,
+      replayMs: index < 9 ? 50 : 51,
+    }))
+    const p95Failure = Array.from({ length: 20 }, (_, index) => ({
+      adaptiveMs: 100,
+      replayMs: index < 18 ? 50 : 66,
+    }))
+
+    expect(evaluateWebPerformanceGates(p50Failure)).toMatchObject({
+      gates: { p50: { passed: false }, p95: { passed: true } },
+      passed: false,
+    })
+    expect(evaluateWebPerformanceGates(p95Failure)).toMatchObject({
+      gates: { p50: { passed: true }, p95: { passed: false } },
+      passed: false,
+    })
+  })
+
+  test('rejects insufficient or invalid samples', () => {
+    expect(() =>
+      evaluateWebPerformanceGates(
+        Array.from({ length: 19 }, () => ({
+          adaptiveMs: 100,
+          replayMs: 25,
+        })),
+      ),
+    ).toThrow('at least 20 paired samples')
+    expect(() =>
+      evaluateWebPerformanceGates(
+        Array.from({ length: 20 }, (_, index) => ({
+          adaptiveMs: index === 0 ? Number.NaN : 100,
+          replayMs: 25,
+        })),
+      ),
+    ).toThrow('non-negative finite number')
+  })
+
+  test('rejects a zero Adaptive baseline', () => {
+    const samples = Array.from({ length: 20 }, () => ({
+      adaptiveMs: 0,
+      replayMs: 0,
+    }))
+
+    expect(() => evaluateWebPerformanceGates(samples)).toThrow(
+      'Adaptive benchmark percentiles must be greater than zero',
+    )
+  })
+
+  test('rejects a ratio overflow', () => {
+    const samples = Array.from({ length: 20 }, () => ({
+      adaptiveMs: Number.MIN_VALUE,
+      replayMs: 1,
+    }))
+
+    expect(() => evaluateWebPerformanceGates(samples)).toThrow(
+      'Replay benchmark ratios must be finite',
+    )
   })
 })

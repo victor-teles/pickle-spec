@@ -1,5 +1,6 @@
 import { expect, mock, test } from 'bun:test'
 import { createMobileAdapter } from '../index'
+import { mobileReplayVariableName } from './mobile-execution-cache'
 import type { MobileWorkerClient } from './worker-client'
 import type {
   MobileWorkerRequest,
@@ -16,345 +17,214 @@ const specification = {
 const scenario = {
   name: 'Buy a product',
   tags: [],
-  steps: [{ keyword: 'When', text: 'I pay', type: 'action' as const }],
+  steps: [
+    { keyword: 'When', text: 'Buy Pickles', type: 'action' as const },
+    { keyword: 'Then', text: 'Receipt', type: 'outcome' as const },
+  ],
+  template: {
+    name: 'Buy a product',
+    variableNames: ['product'],
+    steps: [
+      { keyword: 'When', text: 'Buy <product>', type: 'action' as const },
+      { keyword: 'Then', text: 'Receipt', type: 'outcome' as const },
+    ],
+  },
+  runtimeBindings: [{ name: 'product', value: 'Pickles' }],
 }
 
 const application = {
   id: 'com.example.checkout',
   binaryPath: '/tmp/checkout.apk',
 }
-
-const iosApplication = {
-  id: 'com.example.checkout',
-  binaryPath: '/tmp/Checkout.app',
-}
+const productPlaceholder = [
+  '$',
+  `{${mobileReplayVariableName('product')}}`,
+].join('')
 
 function workerClient(
-  overrides: Partial<MobileWorkerClient> = {},
+  request: MobileWorkerClient['request'],
+  dispose: MobileWorkerClient['dispose'] = async () => {},
 ): MobileWorkerClient {
-  return {
-    async request() {
-      throw new Error('Unexpected worker request')
-    },
-    async dispose() {},
-    ...overrides,
-  }
+  return { request, dispose }
 }
 
-test('discovers Android Emulator targets without exposing worker or vendor types', async () => {
-  const request = mock(async () => ({
-    version: 2 as const,
-    type: 'targets-discovered' as const,
-    targets: [
-      {
-        id: 'emulator-5554',
-        name: 'Pixel 9 API 35',
-        state: 'booted' as const,
-        capabilities: ['android', 'screenshots', 'device-logs'],
-      },
-    ],
-  }))
-  const adapter = createMobileAdapter(
-    {
-      application,
-    },
-    () => workerClient({ request }),
+function successfulWorker(
+  requestLog: MobileWorkerRequest[],
+): MobileWorkerClient {
+  return workerClient(async (request) => {
+    requestLog.push(request)
+    switch (request.type) {
+      case 'discover-targets':
+        return {
+          version: 3,
+          type: 'targets-discovered',
+          targets: [
+            {
+              id: 'emulator-5554',
+              name: 'Pixel 9',
+              state: 'booted',
+              capabilities: ['android', 'android-emulator'],
+            },
+          ],
+        }
+      case 'open-session':
+        return {
+          version: 3,
+          type: 'session-opened',
+          sessionId: request.sessionId,
+          targetId: 'emulator-5554',
+        }
+      case 'execute-scenario':
+        return {
+          version: 3,
+          type: 'scenario-executed',
+          sessionId: request.sessionId,
+          execution: {
+            stepExecutions: scenario.steps.map((step) => ({
+              state: 'passed',
+              resolvedActions: [{ description: step.text }],
+            })),
+          },
+        }
+      case 'complete-session':
+        return {
+          version: 3,
+          type: 'session-completed',
+          sessionId: request.sessionId,
+          completion: { inferenceCount: 0 },
+        }
+      case 'close-session':
+        return {
+          version: 3,
+          type: 'session-closed',
+          sessionId: request.sessionId,
+        }
+      case 'cancel-session':
+        return {
+          version: 3,
+          type: 'session-cancelled',
+          sessionId: request.sessionId,
+        }
+    }
+  })
+}
+
+test('exposes mobile targets and deterministic cache identity', async () => {
+  const requests: MobileWorkerRequest[] = []
+  const adapter = createMobileAdapter({ application }, () =>
+    successfulWorker(requests),
   )
 
-  expect(adapter.capabilities).toEqual([
-    'android',
-    'android-emulator',
-    'screenshots',
-    'device-logs',
-    'recordings',
-    'traces',
+  await expect(adapter.discoverTargets()).resolves.toMatchObject([
+    { id: 'emulator-5554', state: 'booted' },
   ])
-  expect(await adapter.discoverTargets()).toEqual([
-    {
-      id: 'emulator-5554',
-      name: 'Pixel 9 API 35',
-      state: 'booted',
-      capabilities: ['android', 'screenshots', 'device-logs'],
-    },
-  ])
-  expect(request).toHaveBeenCalledWith({
-    version: 2,
+  expect(adapter.executionCache).toMatchObject({
+    adapterKind: 'mobile.agent-device',
+    adapterCacheSchemaVersion: 'agent-device-ad.1+0.20.10',
+  })
+  expect(requests[0]).toEqual({
+    version: 3,
     type: 'discover-targets',
     platform: 'android',
   })
 })
 
-test('discovers iOS Simulator targets with target-specific capabilities and plans', async () => {
+test('runs one complete Scenario and completes it through the worker', async () => {
   const requests: MobileWorkerRequest[] = []
-  const request: MobileWorkerClient['request'] = mock(async (message) => {
-    requests.push(message)
-    if (message.type === 'discover-targets') {
-      return {
-        version: 2 as const,
-        type: 'targets-discovered' as const,
-        targets: [
-          {
-            id: 'F2D95476-0A9E-4A8C-9F48-8C77B2F5B8D0',
-            name: 'iPhone 16 Pro',
-            state: 'booted' as const,
-            capabilities: ['ios', 'ios-simulator', 'screenshots'],
-          },
-        ],
-      }
-    }
-    if (message.type === 'open-session') {
-      return {
-        version: 2 as const,
-        type: 'session-opened' as const,
-        sessionId: message.sessionId,
-        targetId: 'F2D95476-0A9E-4A8C-9F48-8C77B2F5B8D0',
-      }
-    }
-    throw new Error(`Unexpected request ${message.type}`)
-  })
   const adapter = createMobileAdapter(
-    {
-      executionTarget: 'ios-simulator',
-      application: iosApplication,
-      artifacts: ['device-log'],
-      redactions: [{ match: 'secret-value', replacement: '[REDACTED]' }],
-    },
-    () => workerClient({ request }),
+    { application, targetId: 'emulator-5554' },
+    () => successfulWorker(requests),
   )
-
-  expect(adapter.capabilities).toEqual([
-    'ios',
-    'ios-simulator',
-    'screenshots',
-    'device-logs',
-    'recordings',
-    'traces',
-  ])
-  expect(adapter.planFormatVersion).toBe('mobile.ios.1')
-  await expect(adapter.discoverTargets()).resolves.toEqual([
-    {
-      id: 'F2D95476-0A9E-4A8C-9F48-8C77B2F5B8D0',
-      name: 'iPhone 16 Pro',
-      state: 'booted',
-      capabilities: ['ios', 'ios-simulator', 'screenshots'],
-    },
-  ])
-  await adapter.openSession({
-    executionTargetProfile: { id: 'ios' },
-    specification,
-    scenario,
-  })
-
-  expect(requests[0]).toEqual({
-    version: 2,
-    type: 'discover-targets',
-    platform: 'ios',
-  })
-  expect(requests[1]).toMatchObject({
-    version: 2,
-    type: 'open-session',
-    platform: 'ios',
-    application: iosApplication,
-    artifacts: ['device-log'],
-    redactions: [{ match: 'secret-value', replacement: '[REDACTED]' }],
-  })
-})
-
-test('opens and closes one isolated Android logical session through the worker', async () => {
-  const requests: MobileWorkerRequest[] = []
-  const request: MobileWorkerClient['request'] = mock(async (message) => {
-    requests.push(message)
-    if (message.type === 'open-session') {
-      return {
-        version: 2 as const,
-        type: 'session-opened' as const,
-        sessionId: message.sessionId,
-        targetId: 'emulator-5554',
-      }
-    }
-    if (message.type === 'close-session') {
-      return {
-        version: 2 as const,
-        type: 'session-closed' as const,
-        sessionId: message.sessionId,
-      }
-    }
-    throw new Error(`Unexpected request ${message.type}`)
-  })
-  const adapter = createMobileAdapter(
-    {
-      application,
-      targetId: 'emulator-5554',
-    },
-    () => workerClient({ request }),
-  )
-
   const session = await adapter.openSession({
     executionTargetProfile: { id: 'android' },
     specification,
     scenario,
+    scenarioTemplate: scenario.template,
+    runtimeBindings: scenario.runtimeBindings,
     mode: 'adaptive',
   })
+
+  await expect(session.executeScenario()).resolves.toMatchObject({
+    stepExecutions: [{ state: 'passed' }, { state: 'passed' }],
+  })
+  await expect(session.complete?.()).resolves.toEqual({ inferenceCount: 0 })
   await session.close()
   await session.close()
 
-  expect(requests).toHaveLength(2)
+  expect(requests.map((request) => request.type)).toEqual([
+    'open-session',
+    'execute-scenario',
+    'complete-session',
+    'close-session',
+  ])
   expect(requests[0]).toMatchObject({
-    version: 2,
+    version: 3,
     type: 'open-session',
-    targetId: 'emulator-5554',
-    application,
     mode: 'adaptive',
-  })
-  expect(requests[1]).toMatchObject({
-    version: 2,
-    type: 'close-session',
+    scenario: {
+      steps: [
+        { type: 'action', text: 'Buy Pickles' },
+        { type: 'outcome', text: 'Receipt' },
+      ],
+      templateSteps: [
+        { type: 'action', text: 'Buy <product>' },
+        { type: 'outcome', text: 'Receipt' },
+      ],
+      runtimeBindings: [{ name: 'product', value: 'Pickles' }],
+    },
   })
 })
 
-test('executes mobile steps and returns common runner actions and artifacts', async () => {
+test('passes only a validated complete .ad payload into Replay', async () => {
   const requests: MobileWorkerRequest[] = []
-  const request: MobileWorkerClient['request'] = mock(async (message) => {
-    requests.push(message)
-    if (message.type === 'open-session') {
-      return {
-        version: 2 as const,
-        type: 'session-opened' as const,
-        sessionId: message.sessionId,
-        targetId: 'emulator-5554',
-      }
-    }
-    if (message.type === 'execute-step') {
-      return {
-        version: 2 as const,
-        type: 'step-executed' as const,
-        sessionId: message.sessionId,
-        execution: {
-          state: 'passed' as const,
-          resolvedActions: [
-            {
-              description: 'Tap: I pay',
-              replay: { kind: 'find', query: 'I pay', action: 'click' },
-            },
-          ],
-          artifacts: [
-            {
-              kind: 'screenshot' as const,
-              path: '/tmp/artifacts/step-01.png',
-              mediaType: 'image/png',
-            },
-            {
-              kind: 'device-log' as const,
-              path: '/tmp/artifacts/session.log',
-              mediaType: 'text/plain',
-            },
-            {
-              kind: 'recording' as const,
-              path: '/tmp/artifacts/session.mp4',
-              mediaType: 'video/mp4',
-            },
-            {
-              kind: 'trace' as const,
-              path: '/tmp/artifacts/session.trace',
-            },
-          ],
-        },
-      }
-    }
-    if (message.type === 'close-session') {
-      return {
-        version: 2 as const,
-        type: 'session-closed' as const,
-        sessionId: message.sessionId,
-      }
-    }
-    throw new Error(`Unexpected request ${message.type}`)
-  })
-  const adapter = createMobileAdapter(
-    {
-      application,
-      artifactDirectory: '/tmp/artifacts',
-    },
-    () => workerClient({ request }),
+  const adapter = createMobileAdapter({ application }, () =>
+    successfulWorker(requests),
   )
+  const payload = {
+    format: 'agent-device-ad' as const,
+    script:
+      'context platform=android\n' +
+      'open "com.example.checkout" --relaunch\n' +
+      `find "Buy ${productPlaceholder}" click\n` +
+      'is visible "text=\\"Receipt\\""\n',
+    stepRanges: [
+      { from: 2, to: 2 },
+      { from: 3, to: 3 },
+    ],
+  }
+
   const session = await adapter.openSession({
     executionTargetProfile: { id: 'android' },
     specification,
     scenario,
+    mode: 'replay',
+    scenarioTemplate: scenario.template,
+    runtimeBindings: scenario.runtimeBindings,
+    executionCache: {
+      adapterPayload: payload,
+      requiredVariables: ['product'],
+    },
   })
+  await session.close()
 
-  await expect(session.executeStep(scenario.steps[0]!)).resolves.toEqual({
-    state: 'passed',
-    resolvedActions: [
-      {
-        description: 'Tap: I pay',
-        replay: { kind: 'find', query: 'I pay', action: 'click' },
-      },
-    ],
-    artifacts: [
-      {
-        kind: 'screenshot',
-        path: '/tmp/artifacts/step-01.png',
-        mediaType: 'image/png',
-      },
-      {
-        kind: 'device-log',
-        path: '/tmp/artifacts/session.log',
-        mediaType: 'text/plain',
-      },
-      {
-        kind: 'recording',
-        path: '/tmp/artifacts/session.mp4',
-        mediaType: 'video/mp4',
-      },
-      {
-        kind: 'trace',
-        path: '/tmp/artifacts/session.trace',
-      },
-    ],
-  })
-  expect(requests[1]).toMatchObject({
-    version: 2,
-    type: 'execute-step',
-    stepIndex: 0,
-    step: { type: 'action', text: 'I pay' },
+  expect(requests[0]).toMatchObject({
+    type: 'open-session',
+    executionCache: {
+      adapterPayload: payload,
+      requiredVariables: ['product'],
+    },
   })
 })
 
-test('cancels the worker session on abort and disposes the worker before reuse', async () => {
+test('cancels the worker session when the run is aborted', async () => {
   const requests: MobileWorkerRequest[] = []
   let disposed = false
-  const request: MobileWorkerClient['request'] = mock(async (message) => {
-    requests.push(message)
-    if (message.type === 'open-session') {
-      return {
-        version: 2 as const,
-        type: 'session-opened' as const,
-        sessionId: message.sessionId,
-        targetId: 'emulator-5554',
-      }
-    }
-    if (message.type === 'cancel-session') {
-      return {
-        version: 2 as const,
-        type: 'session-cancelled' as const,
-        sessionId: message.sessionId,
-      }
-    }
-    throw new Error(`Unexpected request ${message.type}`)
-  })
   const controller = new AbortController()
-  const adapter = createMobileAdapter(
-    {
-      application,
-    },
-    () =>
-      workerClient({
-        request,
-        async dispose() {
-          disposed = true
-        },
-      }),
+  const base = successfulWorker(requests)
+  const adapter = createMobileAdapter({ application }, () =>
+    workerClient(base.request, async () => {
+      disposed = true
+    }),
   )
   const session = await adapter.openSession({
     executionTargetProfile: { id: 'android' },
@@ -367,17 +237,20 @@ test('cancels the worker session on abort and disposes the worker before reuse',
   await session.close()
   await adapter.dispose?.()
 
-  expect(requests.map((message) => message.type)).toEqual([
+  expect(requests.map((request) => request.type)).toEqual([
     'open-session',
     'cancel-session',
   ])
   expect(disposed).toBe(true)
 })
 
-test('cancels installation when abort occurs while the logical session opens', async () => {
+test('cancels installation when abort occurs while opening', async () => {
   const requests: MobileWorkerRequest[] = []
-  const request: MobileWorkerClient['request'] = mock(
-    async (message, signal): Promise<MobileWorkerResponse> => {
+  const request = mock(
+    async (
+      message: MobileWorkerRequest,
+      signal?: AbortSignal,
+    ): Promise<MobileWorkerResponse> => {
       requests.push(message)
       if (message.type === 'open-session') {
         return new Promise((_, reject) => {
@@ -390,7 +263,7 @@ test('cancels installation when abort occurs while the logical session opens', a
       }
       if (message.type === 'cancel-session') {
         return {
-          version: 2,
+          version: 3,
           type: 'session-cancelled',
           sessionId: message.sessionId,
         }
@@ -399,11 +272,8 @@ test('cancels installation when abort occurs while the logical session opens', a
     },
   )
   const controller = new AbortController()
-  const adapter = createMobileAdapter(
-    {
-      application,
-    },
-    () => workerClient({ request }),
+  const adapter = createMobileAdapter({ application }, () =>
+    workerClient(request),
   )
 
   const opening = adapter.openSession({

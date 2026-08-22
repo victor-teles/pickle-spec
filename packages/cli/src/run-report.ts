@@ -20,8 +20,6 @@ type ResultPresentation = {
   mark: string
   color: number
   detail?: string
-  singular: string
-  plural: string
 }
 
 type PropertyPresentation = Pick<ResultPresentation, 'mark' | 'color'>
@@ -31,43 +29,22 @@ const resultPresentations: Record<TestResult['state'], ResultPresentation> = {
     mark: '×',
     color: 31,
     detail: 'failed',
-    singular: 'failed',
-    plural: 'failed',
   },
   'infrastructure-error': {
     mark: '!',
     color: 35,
     detail: 'infrastructure error',
-    singular: 'infrastructure error',
-    plural: 'infrastructure errors',
   },
-  'passed-with-adaptation': {
-    mark: '~',
-    color: 33,
-    detail: 'adapted',
-    singular: 'adapted',
-    plural: 'adapted',
-  },
-  passed: {
-    mark: '✓',
-    color: 32,
-    detail: 'passed',
-    singular: 'passed',
-    plural: 'passed',
-  },
+  passed: { mark: '✓', color: 32, detail: 'passed' },
   skipped: {
     mark: '↓',
     color: 90,
     detail: 'skipped',
-    singular: 'skipped',
-    plural: 'skipped',
   },
   cancelled: {
     mark: '○',
     color: 33,
     detail: 'cancelled',
-    singular: 'cancelled',
-    plural: 'cancelled',
   },
 }
 
@@ -78,7 +55,11 @@ type TextUnit = {
   width: number
 }
 
-type ResultPresentationEntry = [TestResult['state'], ResultPresentation]
+type ResultSummaryPresentation = {
+  states: readonly TestResult['state'][]
+  singular: string
+  plural: string
+}
 
 type SpecificationWriterOptions = {
   write: WriteLine
@@ -208,7 +189,7 @@ export function writeWrapped(
 }
 
 function resultSuffix(result: TestResult): string {
-  const details = []
+  const details: string[] = []
   const skipReason =
     result.state === 'skipped'
       ? result.message?.split(/\r?\n/, 1)[0]?.trim()
@@ -217,8 +198,20 @@ function resultSuffix(result: TestResult): string {
     ? `skipped: ${skipReason}`
     : resultPresentations[result.state].detail
   if (stateDetail) details.push(stateDetail)
-  if (result.flaky) {
-    details.push(`flaky, ${result.attempts ?? 2} attempts`)
+  if (result.flaky) details.push(`flaky, ${result.attempts ?? 2} attempts`)
+  if (result.executionMode) {
+    const mode = result.executionMode === 'replay' ? 'Replay' : 'Adaptive'
+    details.push(`mode ${mode}`)
+  }
+  if (result.cacheOutcome) {
+    const reason = result.cacheUncacheableReason
+      ? `: ${result.cacheUncacheableReason}`
+      : ''
+    details.push(`cache ${result.cacheOutcome}${reason}`)
+  }
+  if (result.inferenceCount !== undefined) {
+    const noun = result.inferenceCount === 1 ? 'inference' : 'inferences'
+    details.push(`${result.inferenceCount} ${noun}`)
   }
   return details.length > 0 ? ` (${details.join('; ')})` : ''
 }
@@ -503,37 +496,6 @@ export function diagnosticLines(
   return lines
 }
 
-export function policyLines(
-  exitStatus: TestRunExitStatus,
-  columns?: number,
-): string[] {
-  const count = exitStatus.rejectedAdaptedResults
-  if (count === 0) return []
-  const resultLabel = count === 1 ? 'Test result' : 'Test results'
-  const reference = count === 1 ? 'The Test result' : 'These Test results'
-  return [
-    '',
-    ...wrappedLines(
-      ' ! ',
-      'Adaptation policy rejected the Test run',
-      '   ',
-      columns,
-    ),
-    ...wrappedLines(
-      '   ',
-      `${count} adapted ${resultLabel} passed, but policy.adaptedResults is set to reject.`,
-      '   ',
-      columns,
-    ),
-    ...wrappedLines(
-      '   ',
-      `${reference} remains adapted and pickle run exits with code ${exitStatus.exitCode}.`,
-      '   ',
-      columns,
-    ),
-  ]
-}
-
 export function interruptionLines(
   exitStatus: TestRunExitStatus,
   columns?: number,
@@ -551,11 +513,21 @@ export function interruptionLines(
 }
 
 function testResultSummary(results: readonly TestResult[]): string {
-  const entries = Object.entries(
-    resultPresentations,
-  ) as ResultPresentationEntry[]
-  const labels = entries.flatMap(([state, { singular, plural }]) => {
-    const count = results.filter((result) => result.state === state).length
+  const entries: ResultSummaryPresentation[] = [
+    { states: ['failed'], singular: 'failed', plural: 'failed' },
+    {
+      states: ['infrastructure-error'],
+      singular: 'infrastructure error',
+      plural: 'infrastructure errors',
+    },
+    { states: ['passed'], singular: 'passed', plural: 'passed' },
+    { states: ['skipped'], singular: 'skipped', plural: 'skipped' },
+    { states: ['cancelled'], singular: 'cancelled', plural: 'cancelled' },
+  ]
+  const labels = entries.flatMap(({ states, singular, plural }) => {
+    const count = results.filter((result) =>
+      states.includes(result.state),
+    ).length
     if (count === 0) return []
     return [`${count} ${count === 1 ? singular : plural}`]
   })

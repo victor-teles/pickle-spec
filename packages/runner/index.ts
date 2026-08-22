@@ -32,26 +32,48 @@ export {
   validateRunConfiguration,
 } from './src/configuration'
 export type {
-  CandidateExecutionPlan,
-  CandidatePlanEvidence,
-  ExecutionPlan,
-  ExecutionPlanReview,
-  ExecutionPlanReviewStore,
-  ExecutionPlanStep,
-  ExecutionPlanStore,
-  FileExecutionPlanStore,
-  FilePlanStoreOptions,
-  PlanApplicability,
-  PromoteCandidatePlanInput,
-} from './src/execution-plan'
+  CacheOutcome,
+  DeserializeExecutionCacheEnvelopeInput,
+  ExecutionCacheAdapter,
+  ExecutionCacheCoordination,
+  ExecutionCacheEntryMetadata,
+  ExecutionCacheEntrySnapshot,
+  ExecutionCacheEnvelope,
+  ExecutionCacheKey,
+  ExecutionCacheKeyInput,
+  ExecutionCacheLease,
+  ExecutionCacheLeaseAcquisition,
+  ExecutionCacheLeasePublicationResult,
+  ExecutionCacheLeaseWaitResult,
+  ExecutionCachePayloadValidator,
+  ExecutionCacheStore,
+  ExecutionCacheTerminalOutcome,
+  ExecutionCacheUncacheableReason,
+  ExecutionCacheWriteMetadata,
+  ExecutionCacheWriteResult,
+  SerializedExecutionCacheEnvelope,
+  SerializedExecutionCacheTerminalOutcome,
+} from './src/execution-cache'
 export {
-  createFilePlanStore,
-  planApplies,
-} from './src/execution-plan'
+  deserializeExecutionCacheEnvelope,
+  deserializeExecutionCacheTerminalOutcome,
+  resolveExecutionCacheKey,
+  serializeExecutionCacheEnvelope,
+  serializeExecutionCacheTerminalOutcome,
+} from './src/execution-cache'
 export {
   historicalDurationsFrom,
   latestHistoricalDurations,
 } from './src/historical-durations'
+export type {
+  LocalExecutionCache,
+  LocalExecutionCacheOptions,
+} from './src/local-execution-cache'
+export {
+  defaultExecutionCacheMaxBytes,
+  openLocalExecutionCache,
+} from './src/local-execution-cache'
+export type { ExecutionCacheLeaseTiming } from './src/local-execution-cache-coordination'
 export type { FormatHtmlOptions, HtmlArtifactMode } from './src/outputs'
 export {
   formatHtml,
@@ -59,9 +81,11 @@ export {
   formatJunit,
   formatNdjson,
 } from './src/outputs'
+export { publicRunEvent, publicTestResult } from './src/public-results'
 export type { RerunFilter } from './src/rerun'
 export { selectRerunResults } from './src/rerun'
 export type {
+  ExecutionCachePolicy,
   ExecutionMode,
   ExecutionPolicy,
   ExecutionTargetAdapter,
@@ -69,18 +93,29 @@ export type {
   ExecutionTimeouts,
   FidelityPolicy,
   OpenSessionInput,
+  ReplayCacheInput,
   ResolvedAction,
   RetryPolicy,
   RunEvent,
   RunEventPayload,
+  ScenarioExecution,
+  ScenarioExecutionCache,
+  ScenarioIdentity,
   ScenarioRun,
+  ScenarioTargetSession,
   StepExecution,
+  StepExecutionContext,
+  StepExecutionTargetAdapter,
+  StepTargetSession,
   TargetSession,
+  TargetSessionCompletion,
+  TargetSessionReplayRepresentation,
   TestArtifact,
   TestResult,
   TestResultState,
 } from './src/run-scenario'
-export { isEvidenceState, runScenario } from './src/run-scenario'
+export { isEvidenceState } from './src/run-scenario'
+export { runScenario } from './src/run-scenario-entry'
 export type {
   RunScenariosInput,
   RunScheduleInput,

@@ -1,20 +1,20 @@
 import { expect, mock, test } from 'bun:test'
-import { mkdtemp, readFile, rm } from 'node:fs/promises'
+import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { AppError } from 'agent-device'
-import { isFunctionalAgentDeviceFailure } from './agent-device-client'
 import {
   type AgentDeviceClientPort,
-  AgentDeviceGateway,
-} from './agent-device-gateway'
+  observeAgentDeviceInferenceRoutes,
+} from './agent-device-client'
+import { AgentDeviceGateway } from './agent-device-gateway'
 
 const androidEmulator = {
   platform: 'android',
   target: 'mobile',
   kind: 'emulator',
   id: 'emulator-5554',
-  name: 'Pixel 9 API 35',
+  name: 'Pixel 9',
   booted: true,
   identifiers: {},
   android: { serial: 'emulator-5554' },
@@ -24,12 +24,11 @@ const iosSimulator = {
   platform: 'ios',
   target: 'mobile',
   kind: 'simulator',
-  id: 'F2D95476-0A9E-4A8C-9F48-8C77B2F5B8D0',
-  name: 'iPhone 16 Pro',
+  id: 'simulator-1',
+  name: 'iPhone 16',
   booted: true,
-  appleOs: 'ios',
   identifiers: {},
-  ios: { udid: 'F2D95476-0A9E-4A8C-9F48-8C77B2F5B8D0' },
+  ios: { udid: 'simulator-1' },
 }
 
 const application = {
@@ -37,35 +36,32 @@ const application = {
   binaryPath: '/tmp/checkout.apk',
 }
 
-const runningAppState = {
-  platform: 'android',
-  package: application.id,
-  activity: '.MainActivity',
+const scenario = {
+  steps: [
+    { type: 'action' as const, text: 'Pay' },
+    { type: 'outcome' as const, text: 'Receipt' },
+  ],
+  templateSteps: [
+    { type: 'action' as const, text: 'Pay' },
+    { type: 'outcome' as const, text: 'Receipt' },
+  ],
+  runtimeBindings: [],
 }
 
-const runningIosAppState = {
-  platform: 'ios',
-  appName: 'Checkout',
-  appBundleId: application.id,
-  source: 'session',
-  surface: 'app',
-}
-
-interface OpenTestSessionOptions {
-  targetId?: string
-  artifactDirectory?: string
-}
-
-function fakeClient(
+function client(
   overrides: Partial<AgentDeviceClientPort> = {},
 ): AgentDeviceClientPort {
-  return {
+  const observed = observeAgentDeviceInferenceRoutes({
     devices: {
       async list() {
-        return []
+        return [androidEmulator, iosSimulator]
       },
-      async capabilities() {
-        throw new Error('Unexpected capabilities request')
+      async capabilities(selection) {
+        return {
+          device:
+            selection.platform === 'android' ? androidEmulator : iosSimulator,
+          availableCommands: ['screenshot', 'logs', 'record', 'trace'],
+        }
       },
     },
     apps: {
@@ -73,104 +69,59 @@ function fakeClient(
       async open() {},
     },
     command: {
-      async appState() {
-        return { platform: 'android', package: '', activity: '' }
+      async appState(selection) {
+        return selection.platform === 'android'
+          ? {
+              platform: 'android',
+              package: application.id,
+              activity: '.MainActivity',
+            }
+          : {
+              platform: 'ios',
+              appName: 'Checkout',
+              appBundleId: application.id,
+              source: 'session',
+              surface: 'app',
+            }
       },
       async wait() {},
     },
     interactions: {
       async find() {},
     },
-    capture: {
-      async screenshot(options) {
-        return { path: options.path ?? '' }
+    replay: {
+      async run() {
+        return {
+          replayed: 3,
+          healed: 0,
+          session: 'session-1',
+          sessionActive: true,
+          artifactPaths: [],
+          message: 'Replay completed',
+        }
       },
+    },
+    capture: {
+      async screenshot() {},
     },
     observability: {
-      async logs() {
-        throw new Error('Unexpected logs request')
-      },
+      async logs() {},
     },
     recording: {
-      async record() {
-        throw new Error('Unexpected recording request')
-      },
-      async trace() {
-        throw new Error('Unexpected trace request')
-      },
+      async record() {},
+      async trace() {},
     },
     sessions: {
       async close() {},
     },
-    ...overrides,
-  }
+  })
+  return { ...observed, ...overrides }
 }
 
-function emulatorClient(
-  overrides: Partial<AgentDeviceClientPort> = {},
-): AgentDeviceClientPort {
-  return fakeClient({
-    devices: {
-      async list() {
-        return [androidEmulator]
-      },
-      async capabilities() {
-        return {
-          device: androidEmulator,
-          availableCommands: ['screenshot'],
-        }
-      },
-    },
-    command: {
-      async appState() {
-        return runningAppState
-      },
-      async wait() {},
-    },
-    ...overrides,
-  })
-}
+test('discovers only booted targets compatible with each mobile platform', async () => {
+  const gateway = new AgentDeviceGateway(() => client())
 
-async function openTestSession(
-  gateway: AgentDeviceGateway,
-  options: OpenTestSessionOptions = {},
-): Promise<void> {
-  await gateway.openSession({
-    sessionId: 'session-1',
-    targetId: options.targetId,
-    application,
-    artifactDirectory: options.artifactDirectory,
-  })
-}
-
-test('discovers compatible Android Emulator targets and normalizes capabilities', async () => {
-  const close = mock(async () => {})
-  const client = fakeClient({
-    devices: {
-      async list() {
-        return [
-          androidEmulator,
-          {
-            ...androidEmulator,
-            kind: 'device',
-            id: 'physical-1',
-            name: 'Physical phone',
-            android: { serial: 'physical-1' },
-          },
-        ]
-      },
-      async capabilities() {
-        return {
-          device: androidEmulator,
-          availableCommands: ['snapshot', 'screenshot', 'logs', 'find'],
-        }
-      },
-    },
-    sessions: { close },
-  })
-  const gateway = new AgentDeviceGateway(() => client)
-
-  expect(await gateway.discoverTargets()).toEqual([
+  await expect(gateway.discoverTargets('android')).resolves.toEqual([
     {
       id: androidEmulator.id,
       name: androidEmulator.name,
@@ -180,39 +131,12 @@ test('discovers compatible Android Emulator targets and normalizes capabilities'
         'android-emulator',
         'screenshots',
         'device-logs',
+        'recordings',
+        'traces',
       ],
     },
   ])
-  expect(close).toHaveBeenCalledTimes(1)
-})
-
-test('discovers compatible iOS Simulator targets and normalizes supported evidence', async () => {
-  const close = mock(async () => {})
-  const capabilities = mock(async () => ({
-    device: iosSimulator,
-    availableCommands: ['snapshot', 'screenshot', 'logs', 'record', 'find'],
-  }))
-  const client = fakeClient({
-    devices: {
-      async list() {
-        return [
-          iosSimulator,
-          {
-            ...iosSimulator,
-            kind: 'device',
-            id: 'physical-ios-1',
-            name: 'Physical iPhone',
-            ios: { udid: 'physical-ios-1' },
-          },
-        ]
-      },
-      capabilities,
-    },
-    sessions: { close },
-  })
-  const gateway = new AgentDeviceGateway(() => client)
-
-  expect(await gateway.discoverTargets('ios')).toEqual([
+  await expect(gateway.discoverTargets('ios')).resolves.toEqual([
     {
       id: iosSimulator.id,
       name: iosSimulator.name,
@@ -223,510 +147,226 @@ test('discovers compatible iOS Simulator targets and normalizes supported eviden
         'screenshots',
         'device-logs',
         'recordings',
+        'traces',
       ],
     },
   ])
-  expect(capabilities).toHaveBeenCalledWith({
-    platform: 'ios',
-    udid: iosSimulator.ios.udid,
-  })
-  expect(close).toHaveBeenCalledTimes(1)
 })
 
-test('reinstalls, opens, and verifies the configured application for a logical session', async () => {
+test('resets the selected application before the private Scenario Replay', async () => {
   const reinstall = mock(async () => {})
   const open = mock(async () => {})
-  const appState = mock(async () => runningAppState)
-  const client = emulatorClient({
-    apps: { reinstall, open },
-    command: { appState, async wait() {} },
-  })
-  const gateway = new AgentDeviceGateway(() => client)
-
-  await expect(
-    gateway.openSession({
-      sessionId: 'session-1',
-      targetId: androidEmulator.id,
-      application,
+  const replay = mock(async () => ({
+    replayed: 3,
+    healed: 0,
+    session: 'session-1',
+    sessionActive: true,
+    artifactPaths: [],
+    message: 'Replay completed',
+  }))
+  const gateway = new AgentDeviceGateway(() =>
+    client({
+      apps: { reinstall, open },
+      replay: { run: replay },
     }),
-  ).resolves.toEqual({ targetId: androidEmulator.id })
+  )
+
+  await gateway.openSession({
+    sessionId: 'session-1',
+    platform: 'android',
+    targetId: androidEmulator.id,
+    application,
+    mode: 'adaptive',
+    scenario,
+  })
+  await gateway.executeScenario('session-1')
+
   expect(reinstall).toHaveBeenCalledWith({
+    platform: 'android',
+    serial: androidEmulator.android.serial,
     app: application.id,
     appPath: application.binaryPath,
-    platform: 'android',
-    serial: androidEmulator.android.serial,
   })
   expect(open).toHaveBeenCalledWith({
+    platform: 'android',
+    serial: androidEmulator.android.serial,
     app: application.id,
-    platform: 'android',
-    serial: androidEmulator.android.serial,
   })
-  expect(appState).toHaveBeenCalledWith({
-    platform: 'android',
-    serial: androidEmulator.android.serial,
-  })
+  expect(replay).toHaveBeenCalledTimes(1)
 })
 
-test('reinstalls, opens, and verifies an iOS application for a logical session', async () => {
-  const reinstall = mock(async () => {})
-  const open = mock(async () => {})
-  const appState = mock(async () => runningIosAppState)
-  const client = fakeClient({
-    devices: {
-      async list() {
-        return [iosSimulator]
-      },
-      async capabilities() {
-        throw new Error('Unexpected capabilities request')
-      },
+test('classifies native Replay divergence at the matching Scenario step', async () => {
+  const replayError = new AppError(
+    'REPLAY_DIVERGENCE',
+    'Receipt was not visible',
+    {
+      divergence: { step: { index: 3 } },
     },
-    apps: { reinstall, open },
-    command: { appState, async wait() {} },
-  })
-  const gateway = new AgentDeviceGateway(() => client)
-
-  await expect(
-    gateway.openSession({
-      sessionId: 'session-1',
-      platform: 'ios',
-      targetId: iosSimulator.id,
-      application,
+  )
+  const gateway = new AgentDeviceGateway(() =>
+    client({
+      replay: {
+        async run() {
+          throw replayError
+        },
+      },
     }),
-  ).resolves.toEqual({ targetId: iosSimulator.id })
-  expect(reinstall).toHaveBeenCalledWith({
-    app: application.id,
-    appPath: application.binaryPath,
-    platform: 'ios',
-    udid: iosSimulator.ios.udid,
-  })
-  expect(open).toHaveBeenCalledWith({
-    app: application.id,
-    platform: 'ios',
-    udid: iosSimulator.ios.udid,
-  })
-  expect(appState).toHaveBeenCalledWith({
-    platform: 'ios',
-    udid: iosSimulator.ios.udid,
-  })
-})
-
-test('cancels a logical session while Android target discovery is in flight', async () => {
-  let resolveDevices: (devices: unknown[]) => void = () => {}
-  const devices = new Promise<unknown[]>((resolve) => {
-    resolveDevices = resolve
-  })
-  const reinstall = mock(async () => {})
-  const close = mock(async () => {})
-  const client = fakeClient({
-    devices: {
-      async list() {
-        return devices
-      },
-      async capabilities() {
-        throw new Error('Unexpected capabilities request')
-      },
-    },
-    apps: { reinstall, async open() {} },
-    sessions: { close },
-  })
-  const gateway = new AgentDeviceGateway(() => client)
-  const opening = gateway.openSession({
+  )
+  await gateway.openSession({
     sessionId: 'session-1',
     application,
+    mode: 'replay',
+    scenario,
   })
 
-  await gateway.cancelSession('session-1')
-  resolveDevices([androidEmulator])
-
-  await expect(opening).rejects.toThrow('Aborted')
-  expect(reinstall).not.toHaveBeenCalled()
-  expect(close).toHaveBeenCalledTimes(1)
+  await expect(gateway.executeScenario('session-1')).resolves.toEqual({
+    stepExecutions: [
+      {
+        state: 'passed',
+        resolvedActions: [{ description: 'Act: Pay' }],
+      },
+      {
+        state: 'failed',
+        resolvedActions: [{ description: 'Assert visible: Receipt' }],
+        replayDiverged: true,
+        message: 'Agent Device Replay diverged at Scenario step 2',
+      },
+    ],
+    replayDiverged: true,
+  })
 })
 
-test('normalizes Adaptive actions and screenshot artifacts without vendor results', async () => {
-  const find = mock(async () => ({ ref: '@e4', message: 'clicked' }))
+test('keeps Agent Device infrastructure failures out of divergence fallback', async () => {
+  const gateway = new AgentDeviceGateway(() =>
+    client({
+      replay: {
+        async run() {
+          throw new AppError('COMMAND_FAILED', 'ADB transport unavailable')
+        },
+      },
+    }),
+  )
+  await gateway.openSession({
+    sessionId: 'session-1',
+    application,
+    mode: 'replay',
+    scenario,
+  })
+
+  await expect(gateway.executeScenario('session-1')).rejects.toThrow(
+    'ADB transport unavailable',
+  )
+})
+
+test('captures Scenario-wide evidence around the exact Replay', async () => {
+  const artifactDirectory = await mkdtemp(join(tmpdir(), 'pickle-evidence-'))
+  const record = mock(
+    async (_options: { action: 'start' | 'stop'; path?: string }) => {},
+  )
+  const trace = mock(
+    async (_options: { action: 'start' | 'stop'; path?: string }) => {},
+  )
   const screenshot = mock(async (options: { path?: string }) => ({
     path: options.path ?? '',
   }))
   const gateway = new AgentDeviceGateway(() =>
-    emulatorClient({
-      interactions: { find },
+    client({
+      recording: { record, trace },
       capture: { screenshot },
     }),
   )
-  await openTestSession(gateway, {
-    targetId: androidEmulator.id,
-    artifactDirectory: '/tmp/pickle-mobile-artifacts',
-  })
-
-  const execution = await gateway.executeStep({
-    sessionId: 'session-1',
-    stepIndex: 0,
-    step: { type: 'action', text: 'Pay now' },
-  })
-
-  expect(execution).toEqual({
-    state: 'passed',
-    resolvedActions: [
-      {
-        description: 'Tap: Pay now',
-        replay: { kind: 'find', query: 'Pay now', action: 'click' },
-      },
-    ],
-    artifacts: [
-      {
-        kind: 'screenshot',
-        path: '/tmp/pickle-mobile-artifacts/session-1/step-01.png',
-        mediaType: 'image/png',
-      },
-    ],
-  })
-  expect(find).toHaveBeenCalledWith({
-    platform: 'android',
-    serial: androidEmulator.android.serial,
-    query: 'Pay now',
-    action: 'click',
-  })
-  expect(screenshot).toHaveBeenCalledWith({
-    path: '/tmp/pickle-mobile-artifacts/session-1/step-01.png',
-  })
-})
-
-test('replays normalized actions and adapts when a replay action is unavailable', async () => {
-  const find = mock(async (_options: unknown) => {})
-  const gateway = new AgentDeviceGateway(() =>
-    emulatorClient({ interactions: { find } }),
-  )
-  await openTestSession(gateway, {
-    artifactDirectory: '/tmp/pickle-mobile-artifacts',
-  })
-
-  const replayed = await gateway.executeStep({
-    sessionId: 'session-1',
-    stepIndex: 0,
-    step: { type: 'action', text: 'Pay now' },
-    plannedActions: [
-      {
-        description: 'Tap: Saved pay button',
-        replay: { kind: 'find', query: 'Saved pay button', action: 'click' },
-      },
-    ],
-  })
-  const adapted = await gateway.executeStep({
-    sessionId: 'session-1',
-    stepIndex: 1,
-    step: { type: 'action', text: 'Confirm order' },
-    plannedActions: [],
-  })
-
-  expect(replayed).toMatchObject({
-    state: 'passed',
-    resolvedActions: [{ description: 'Tap: Saved pay button' }],
-  })
-  expect(adapted).toMatchObject({
-    state: 'passed-with-adaptation',
-    resolvedActions: [{ description: 'Tap: Confirm order' }],
-  })
-  expect(find.mock.calls.map((call) => call[0])).toEqual([
-    {
-      platform: 'android',
-      serial: androidEmulator.android.serial,
-      query: 'Saved pay button',
-      action: 'click',
-    },
-    {
-      platform: 'android',
-      serial: androidEmulator.android.serial,
-      query: 'Confirm order',
-      action: 'click',
-    },
-  ])
-})
-
-test('classifies unexpected worker and device errors as infrastructure errors', async () => {
-  const gateway = new AgentDeviceGateway(() =>
-    emulatorClient({
-      interactions: {
-        async find() {
-          throw new Error('ADB disconnected')
-        },
-      },
-    }),
-  )
-  await openTestSession(gateway)
-
-  await expect(
-    gateway.executeStep({
-      sessionId: 'session-1',
-      stepIndex: 0,
-      step: { type: 'action', text: 'Pay now' },
-    }),
-  ).resolves.toEqual({
-    state: 'infrastructure-error',
-    resolvedActions: [],
-    message: 'ADB disconnected',
-  })
-})
-
-test('normalizes iOS device errors into the common infrastructure-error model', async () => {
-  const gateway = new AgentDeviceGateway(() =>
-    fakeClient({
-      devices: {
-        async list() {
-          return [iosSimulator]
-        },
-        async capabilities() {
-          throw new Error('Unexpected capabilities request')
-        },
-      },
-      command: {
-        async appState() {
-          return runningIosAppState
-        },
-        async wait() {},
-      },
-      interactions: {
-        async find() {
-          throw new AppError('COMMAND_FAILED', 'XCTest runner disconnected', {
-            reason: 'IOS_RUNNER_CONNECT_TIMEOUT',
-            retriable: true,
-          })
-        },
-      },
-    }),
-  )
-  await gateway.openSession({
-    sessionId: 'session-1',
-    platform: 'ios',
-    application,
-  })
-
-  await expect(
-    gateway.executeStep({
-      sessionId: 'session-1',
-      stepIndex: 0,
-      step: { type: 'action', text: 'Pay now' },
-    }),
-  ).resolves.toEqual({
-    state: 'infrastructure-error',
-    resolvedActions: [],
-    message: 'XCTest runner disconnected',
-  })
-})
-
-test('classifies unannotated daemon and iOS runner command failures as infrastructure', () => {
-  for (const message of [
-    'Daemon request timed out',
-    'Failed to communicate with daemon',
-    'Remote daemon is unavailable',
-    'Runner did not accept connection',
-    'Invalid runner response',
-  ]) {
-    expect(
-      isFunctionalAgentDeviceFailure(new AppError('COMMAND_FAILED', message)),
-    ).toBe(false)
-  }
-})
-
-test('normalizes iOS interaction errors into the common failure model', async () => {
-  const find = mock(async () => {
-    throw new AppError('AMBIGUOUS_MATCH', 'Multiple buttons matched')
-  })
-  const gateway = new AgentDeviceGateway(() =>
-    fakeClient({
-      devices: {
-        async list() {
-          return [iosSimulator]
-        },
-        async capabilities() {
-          throw new Error('Unexpected capabilities request')
-        },
-      },
-      command: {
-        async appState() {
-          return runningIosAppState
-        },
-        async wait() {},
-      },
-      interactions: { find },
-    }),
-  )
-  await gateway.openSession({
-    sessionId: 'session-1',
-    platform: 'ios',
-    application,
-  })
-
-  await expect(
-    gateway.executeStep({
-      sessionId: 'session-1',
-      stepIndex: 0,
-      step: { type: 'action', text: 'Pay now' },
-    }),
-  ).resolves.toEqual({
-    state: 'failed',
-    resolvedActions: [],
-    message: 'Multiple buttons matched',
-  })
-  expect(find).toHaveBeenCalledWith({
-    platform: 'ios',
-    udid: iosSimulator.ios.udid,
-    query: 'Pay now',
-    action: 'click',
-  })
-})
-
-test('classifies iOS selector misses and offscreen elements as functional', () => {
-  for (const code of ['ELEMENT_NOT_FOUND', 'ELEMENT_OFFSCREEN']) {
-    expect(
-      isFunctionalAgentDeviceFailure(
-        new AppError(code, `iOS interaction failed: ${code}`),
-      ),
-    ).toBe(true)
-  }
-})
-
-test('reports requested screenshot capture failures as infrastructure errors', async () => {
-  const gateway = new AgentDeviceGateway(() =>
-    emulatorClient({
-      capture: {
-        async screenshot() {
-          throw new Error('Screenshot helper is unavailable')
-        },
-      },
-    }),
-  )
-  await openTestSession(gateway, {
-    artifactDirectory: '/tmp/pickle-mobile-artifacts',
-  })
-
-  await expect(
-    gateway.executeStep({
-      sessionId: 'session-1',
-      stepIndex: 0,
-      step: { type: 'action', text: 'Pay now' },
-    }),
-  ).resolves.toMatchObject({
-    state: 'infrastructure-error',
-    message: 'Screenshot capture failed: Screenshot helper is unavailable',
-  })
-})
-
-test('captures requested iOS logs, recordings, and traces as common test artifacts', async () => {
-  const root = await mkdtemp(join(tmpdir(), 'pickle-ios-evidence-'))
-  const sourceLogPath = join(root, 'app.log')
-  await Bun.write(sourceLogPath, 'Checkout started\n')
-  const logs = mock(async (options: { action: string }) =>
-    options.action === 'path' ? { path: sourceLogPath } : {},
-  )
-  const record = mock(async (options: { action: string; path?: string }) => ({
-    recording: options.action === 'start' ? 'started' : 'stopped',
-    outPath: options.path ?? '',
-  }))
-  const trace = mock(async (options: { action: string; path?: string }) => ({
-    trace: options.action === 'start' ? 'started' : 'stopped',
-    outPath: options.path ?? '',
-  }))
-  const gateway = new AgentDeviceGateway(() =>
-    fakeClient({
-      devices: {
-        async list() {
-          return [iosSimulator]
-        },
-        async capabilities() {
-          return {
-            device: iosSimulator,
-            availableCommands: ['logs', 'record', 'trace'],
-          }
-        },
-      },
-      command: {
-        async appState() {
-          return runningIosAppState
-        },
-        async wait() {},
-      },
-      observability: { logs },
-      recording: { record, trace },
-    }),
-  )
 
   try {
     await gateway.openSession({
       sessionId: 'session-1',
-      platform: 'ios',
       application,
-      artifactDirectory: root,
-      artifacts: ['device-log', 'recording', 'trace'],
+      artifactDirectory,
+      artifacts: ['recording', 'trace', 'screenshot'],
+      mode: 'adaptive',
+      scenario,
     })
 
-    await expect(
-      gateway.executeStep({
-        sessionId: 'session-1',
-        stepIndex: 0,
-        step: { type: 'action', text: 'Pay now' },
-      }),
-    ).resolves.toMatchObject({
-      state: 'passed',
-      artifacts: [
+    await expect(gateway.executeScenario('session-1')).resolves.toMatchObject({
+      stepExecutions: [
+        { state: 'passed' },
         {
-          kind: 'device-log',
-          path: join(root, 'session-1', 'step-01.log'),
-          mediaType: 'text/plain',
-        },
-        {
-          kind: 'recording',
-          path: join(root, 'session-1', 'step-01.mp4'),
-          mediaType: 'video/mp4',
-        },
-        {
-          kind: 'trace',
-          path: join(root, 'session-1', 'step-01.trace'),
+          state: 'passed',
+          artifacts: [
+            { kind: 'recording', mediaType: 'video/mp4' },
+            { kind: 'trace' },
+            { kind: 'screenshot', mediaType: 'image/png' },
+          ],
         },
       ],
     })
-    expect(record.mock.calls.map((call) => call[0].action)).toEqual([
+    expect(record.mock.calls.map(([options]) => options.action)).toEqual([
       'start',
       'stop',
     ])
-    expect(trace.mock.calls.map((call) => call[0].action)).toEqual([
+    expect(trace.mock.calls.map(([options]) => options.action)).toEqual([
       'start',
       'stop',
     ])
-    await gateway.closeSession('session-1')
-    expect(logs.mock.calls.map((call) => call[0].action)).toEqual([
-      'start',
-      'path',
-      'stop',
-    ])
+    expect(screenshot).toHaveBeenCalledTimes(1)
   } finally {
-    await rm(root, { recursive: true, force: true })
+    await gateway.dispose()
+    await rm(artifactDirectory, { recursive: true, force: true })
   }
 })
 
-test('redacts configured text before persisting device logs', async () => {
-  const root = await mkdtemp(join(tmpdir(), 'pickle-ios-redaction-'))
-  const sourceLogPath = join(root, 'app.log')
-  await Bun.write(sourceLogPath, 'token=secret-value\n')
+test('rejects binary evidence redaction before opening Agent Device', async () => {
+  const createClient = mock(() => client())
+  const gateway = new AgentDeviceGateway(createClient)
+
+  await expect(
+    gateway.openSession({
+      sessionId: 'session-1',
+      application,
+      artifacts: ['screenshot'],
+      redactions: [{ match: 'secret' }],
+      mode: 'adaptive',
+      scenario,
+    }),
+  ).rejects.toThrow('Binary mobile evidence cannot apply text redactions')
+  expect(createClient).not.toHaveBeenCalled()
+})
+
+test('rejects an invalid cached .ad before opening Agent Device', async () => {
+  const createClient = mock(() => client())
+  const gateway = new AgentDeviceGateway(createClient)
+
+  await expect(
+    gateway.openSession({
+      sessionId: 'session-1',
+      application,
+      mode: 'replay',
+      scenario,
+      executionCache: {
+        adapterPayload: {
+          format: 'agent-device-ad',
+          script:
+            'context platform=android\n' +
+            'open "com.example.checkout" --relaunch\n' +
+            'find "Email" fill "private@example.com"\n',
+          stepRanges: [{ from: 2, to: 2 }],
+        },
+        requiredVariables: [],
+      },
+    }),
+  ).rejects.toThrow('Mobile Replay cache payload is invalid')
+  expect(createClient).not.toHaveBeenCalled()
+})
+
+test('redacts runtime binding values from text evidence', async () => {
+  const artifactDirectory = await mkdtemp(join(tmpdir(), 'pickle-evidence-'))
+  const sourceLog = join(artifactDirectory, 'device.log')
+  const privateValue = 'account-4111111111111111'
+  await Bun.write(sourceLog, `Checkout account: ${privateValue}`)
   const gateway = new AgentDeviceGateway(() =>
-    fakeClient({
-      devices: {
-        async list() {
-          return [iosSimulator]
-        },
-        async capabilities() {
-          return { device: iosSimulator, availableCommands: ['logs'] }
-        },
-      },
-      command: {
-        async appState() {
-          return runningIosAppState
-        },
-        async wait() {},
-      },
+    client({
       observability: {
         async logs(options) {
-          return options.action === 'path' ? { path: sourceLogPath } : {}
+          return options.action === 'path' ? { path: sourceLog } : undefined
         },
       },
     }),
@@ -734,111 +374,37 @@ test('redacts configured text before persisting device logs', async () => {
 
   try {
     await gateway.openSession({
-      sessionId: 'session-1',
-      platform: 'ios',
+      sessionId: 'session-redaction',
       application,
-      artifactDirectory: root,
+      artifactDirectory,
       artifacts: ['device-log'],
-      redactions: [{ match: 'secret-value', replacement: '[REDACTED]' }],
-    })
-    await gateway.executeStep({
-      sessionId: 'session-1',
-      stepIndex: 0,
-      step: { type: 'action', text: 'Pay now' },
+      mode: 'adaptive',
+      scenario: {
+        steps: [
+          { type: 'action', text: `Pay ${privateValue}` },
+          { type: 'outcome', text: 'Receipt' },
+        ],
+        templateSteps: [
+          { type: 'action', text: 'Pay <account>' },
+          { type: 'outcome', text: 'Receipt' },
+        ],
+        runtimeBindings: [{ name: 'account', value: privateValue }],
+      },
     })
 
-    expect(await readFile(join(root, 'session-1', 'step-01.log'), 'utf8')).toBe(
-      'token=[REDACTED]\n',
+    const execution = await gateway.executeScenario('session-redaction')
+    const artifactPath = execution.stepExecutions.at(-1)?.artifacts?.[0]?.path
+
+    expect(artifactPath).toBeDefined()
+    expect(await Bun.file(artifactPath!).text()).toBe(
+      'Checkout account: [REDACTED]',
     )
+    expect(JSON.stringify(execution)).not.toContain(privateValue)
+    expect(
+      JSON.stringify(await gateway.completeSession('session-redaction')),
+    ).not.toContain(privateValue)
   } finally {
-    await gateway.dispose().catch(() => {})
-    await rm(root, { recursive: true, force: true })
+    await gateway.dispose()
+    await rm(artifactDirectory, { recursive: true, force: true })
   }
-})
-
-test('rejects requested evidence that the selected target does not support', async () => {
-  const reinstall = mock(async () => {})
-  const gateway = new AgentDeviceGateway(() =>
-    fakeClient({
-      devices: {
-        async list() {
-          return [iosSimulator]
-        },
-        async capabilities() {
-          return { device: iosSimulator, availableCommands: ['screenshot'] }
-        },
-      },
-      apps: { reinstall, async open() {} },
-    }),
-  )
-
-  await expect(
-    gateway.openSession({
-      sessionId: 'session-1',
-      platform: 'ios',
-      application,
-      artifacts: ['recording'],
-    }),
-  ).rejects.toThrow('does not support requested evidence: recording')
-  expect(reinstall).not.toHaveBeenCalled()
-})
-
-test('rejects Scenario requirements unsupported by the selected target', async () => {
-  const reinstall = mock(async () => {})
-  const gateway = new AgentDeviceGateway(() =>
-    fakeClient({
-      devices: {
-        async list() {
-          return [iosSimulator]
-        },
-        async capabilities() {
-          return { device: iosSimulator, availableCommands: ['screenshot'] }
-        },
-      },
-      apps: { reinstall, async open() {} },
-    }),
-  )
-
-  await expect(
-    gateway.openSession({
-      sessionId: 'session-1',
-      platform: 'ios',
-      application,
-      requiredCapabilities: ['traces'],
-    }),
-  ).rejects.toThrow('does not satisfy required capabilities: traces')
-  expect(reinstall).not.toHaveBeenCalled()
-})
-
-test('rejects text redaction policies for binary evidence', async () => {
-  const gateway = new AgentDeviceGateway(() => fakeClient())
-
-  await expect(
-    gateway.openSession({
-      sessionId: 'session-1',
-      platform: 'ios',
-      application,
-      artifacts: ['recording'],
-      redactions: [{ match: 'secret' }],
-    }),
-  ).rejects.toThrow('Binary mobile evidence cannot apply text redactions')
-})
-
-test('retains session ownership when close fails so disposal can retry', async () => {
-  let closeAttempts = 0
-  const close = mock(async () => {
-    closeAttempts++
-    if (closeAttempts === 1) throw new Error('Close failed')
-  })
-  const gateway = new AgentDeviceGateway(() =>
-    emulatorClient({ sessions: { close } }),
-  )
-  await openTestSession(gateway)
-
-  await expect(gateway.closeSession('session-1')).rejects.toThrow(
-    'Close failed',
-  )
-  await gateway.dispose()
-
-  expect(close).toHaveBeenCalledTimes(2)
 })

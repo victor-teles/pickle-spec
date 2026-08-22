@@ -38,51 +38,56 @@ function conformanceWorker(): MobileWorkerClient {
     async request(request) {
       switch (request.type) {
         case 'discover-targets':
-          return { version: 2, type: 'targets-discovered', targets: [] }
+          return { version: 3, type: 'targets-discovered', targets: [] }
         case 'open-session':
           sessions.set(request.sessionId, request)
           return {
-            version: 2,
+            version: 3,
             type: 'session-opened',
             sessionId: request.sessionId,
             targetId:
               request.platform === 'ios' ? 'ios-simulator-1' : 'emulator-5554',
           }
-        case 'execute-step': {
+        case 'execute-scenario': {
           const session = sessions.get(request.sessionId)
           if (!session) throw new Error('Session is not open')
-          const planned =
-            session.plan?.steps[request.stepIndex]?.resolvedActions
           return {
-            version: 2,
-            type: 'step-executed',
+            version: 3,
+            type: 'scenario-executed',
             sessionId: request.sessionId,
             execution: {
-              state: 'passed',
-              resolvedActions: planned ?? [
-                {
-                  description: `Adaptive: ${request.step.text}`,
-                  replay: {
-                    kind: 'find',
-                    query: request.step.text,
-                    action: request.step.type === 'outcome' ? 'wait' : 'click',
+              stepExecutions: session.scenario.templateSteps.map((step) => ({
+                state: 'passed',
+                resolvedActions: [
+                  {
+                    description:
+                      step.type === 'action'
+                        ? `Act: ${step.text}`
+                        : `Assert visible: ${step.text}`,
                   },
-                },
-              ],
+                ],
+              })),
             },
           }
         }
+        case 'complete-session':
+          return {
+            version: 3,
+            type: 'session-completed',
+            sessionId: request.sessionId,
+            completion: { inferenceCount: 0 },
+          }
         case 'close-session':
           sessions.delete(request.sessionId)
           return {
-            version: 2,
+            version: 3,
             type: 'session-closed',
             sessionId: request.sessionId,
           }
         case 'cancel-session':
           sessions.delete(request.sessionId)
           return {
-            version: 2,
+            version: 3,
             type: 'session-cancelled',
             sessionId: request.sessionId,
           }
@@ -96,13 +101,7 @@ function conformanceWorker(): MobileWorkerClient {
 
 defineAdapterConformanceSuite({
   name: 'Android mobile',
-  createAdapter: () =>
-    createMobileAdapter(
-      {
-        application,
-      },
-      conformanceWorker,
-    ),
+  createAdapter: () => createMobileAdapter({ application }, conformanceWorker),
   executionTargetProfile: { id: 'android' },
   specification,
   scenario,
@@ -114,26 +113,13 @@ defineAdapterConformanceSuite({
     'recordings',
     'traces',
   ],
-  replayActions: scenario.steps.map((step) => [
-    {
-      description: `Replay: ${step.text}`,
-      replay: {
-        kind: 'find',
-        query: step.text,
-        action: step.type === 'outcome' ? 'wait' : 'click',
-      },
-    },
-  ]),
 })
 
 defineAdapterConformanceSuite({
   name: 'iOS mobile',
   createAdapter: () =>
     createMobileAdapter(
-      {
-        executionTarget: 'ios-simulator',
-        application: iosApplication,
-      },
+      { executionTarget: 'ios-simulator', application: iosApplication },
       conformanceWorker,
     ),
   executionTargetProfile: { id: 'ios' },
@@ -147,14 +133,4 @@ defineAdapterConformanceSuite({
     'recordings',
     'traces',
   ],
-  replayActions: scenario.steps.map((step) => [
-    {
-      description: `Replay: ${step.text}`,
-      replay: {
-        kind: 'find',
-        query: step.text,
-        action: step.type === 'outcome' ? 'wait' : 'click',
-      },
-    },
-  ]),
 })

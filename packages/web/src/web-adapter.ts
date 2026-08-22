@@ -1,17 +1,23 @@
 import { mkdir } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import {
-  type ExecutionTargetAdapter,
   isEvidenceState,
   type ResolvedAction,
   type StepExecution,
-  slug,
+  type StepExecutionTargetAdapter,
   type TestArtifact,
 } from '@pickle-spec/runner'
-import type { ScenarioStep } from '@pickle-spec/spec'
+import type { ScenarioVariableBinding } from '@pickle-spec/spec'
 import { abortError } from './abort'
 import { type ResolvedFidelity, resolveFidelityPolicy } from './fidelity'
 import { stagehandFactory } from './stagehand-factory'
+import { createWebCacheSession } from './web-cache-session'
+import {
+  parseWebExecutionCachePayload,
+  type WebAssertionDraft,
+  type WebInstruction,
+  webTargetConfigurationFingerprint,
+} from './web-execution-cache'
 import {
   type BrowserOptions,
   defaultModelName,
@@ -19,6 +25,12 @@ import {
   type WebAdapterOptions,
 } from './web-options'
 import { WebProcessPool } from './web-pool'
+import {
+  errorMessage,
+  navigationTarget,
+  navigationUrl,
+  promptFor,
+} from './web-step'
 
 export type {
   BrowserOptions,
@@ -58,8 +70,15 @@ export interface WebScreenshotCapture {
 
 export interface WebClientContext {
   browser: BrowserOptions
+  mode?: 'adaptive' | 'replay'
   fidelity?: ResolvedFidelity
   signal?: AbortSignal
+}
+
+export interface WebDirectExecutionResult {
+  success: boolean
+  actualState?: string
+  message?: string
 }
 
 export interface WebAutomation {
@@ -67,6 +86,15 @@ export interface WebAutomation {
   observe(prompt: string, signal?: AbortSignal): Promise<WebObservedAction[]>
   act(action: WebObservedAction, signal?: AbortSignal): Promise<WebActResult>
   verify(prompt: string, signal?: AbortSignal): Promise<WebVerificationResult>
+  compileAssertion?(
+    prompt: string,
+    signal?: AbortSignal,
+  ): Promise<WebAssertionDraft>
+  executeInstruction?(
+    instruction: WebInstruction,
+    bindings: readonly ScenarioVariableBinding[],
+    signal?: AbortSignal,
+  ): Promise<WebDirectExecutionResult>
   screenshot(options: WebScreenshotCapture): Promise<Uint8Array>
   readIsolationState(): Promise<WebIsolationState>
   close(): Promise<void>
@@ -81,18 +109,6 @@ export interface WebAutomationFactory {
   launch(input: WebClientContext): Promise<WebBrowserProcess>
 }
 
-const navigationPattern = new RegExp(
-  '(?:' +
-    'I (?:am on|navigate to|visit|go to|open)' +
-    '|(?:eu )?(?:navego para|visito|abro|estou em)' +
-    '|(?:yo )?(?:navego a|visito|abro|estoy en)' +
-    '|(?:je )?(?:navigue vers|visite|ouvre|suis sur)' +
-    ')' +
-    '\\s+(?:(?:the|a|o|la|le|el|à)\\s+)?' +
-    '["\']?(.+?)["\']?\\s*$',
-  'i',
-)
-
 const providerApiKeyEnvNamesByProvider: Record<string, string[]> = {
   openai: ['OPENAI_API_KEY'],
   anthropic: ['ANTHROPIC_API_KEY'],
@@ -104,30 +120,12 @@ const providerApiKeyEnvNamesByProvider: Record<string, string[]> = {
 type BrowserLaunchConfig = {
   browser: BrowserOptions | undefined
   requireProviderApiKey: boolean
+  requiresInference: boolean
 }
 
-function promptFor(step: ScenarioStep): string {
-  let prompt = step.text
-  if (step.argument?.dataTable) {
-    prompt += '\n\nWith the following data:\n'
-    prompt += step.argument.dataTable.map((row) => row.join(' | ')).join('\n')
-  }
-  if (step.argument?.docString) prompt += `\n\n${step.argument.docString}`
-  return prompt
-}
-
-function screenshotName(value: string): string {
-  return slug(value).slice(0, 80)
-}
-
-function navigationUrl(baseUrl: string, target: string): string {
-  if (/^https?:\/\//i.test(target)) return target
-  if (target.startsWith('/')) return new URL(target, baseUrl).toString()
-  return baseUrl
-}
-
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error)
+function screenshotIdentity(kind: string, value: string): string {
+  const digest = new Bun.CryptoHasher('sha256').update(value).digest('hex')
+  return `${kind}-${digest.slice(0, 16)}`
 }
 
 function replayPayload(handle: unknown): Record<string, unknown> | undefined {
@@ -136,13 +134,6 @@ function replayPayload(handle: unknown): Record<string, unknown> | undefined {
     return JSON.parse(JSON.stringify(handle)) as Record<string, unknown>
   } catch {
     return undefined
-  }
-}
-
-function plannedAction(action: ResolvedAction): WebObservedAction {
-  return {
-    description: action.description,
-    handle: action.replay ?? {},
   }
 }
 
@@ -165,14 +156,18 @@ function resolveModelApiKey(
 function resolveBrowserLaunchOptions({
   browser,
   requireProviderApiKey,
+  requiresInference,
 }: BrowserLaunchConfig): BrowserOptions {
-  const modelApiKey = resolveModelApiKey(browser)
+  const modelApiKey = requiresInference
+    ? resolveModelApiKey(browser)
+    : undefined
   const next = {
     ...browser,
     modelApiKey,
   }
   if (
     requireProviderApiKey &&
+    requiresInference &&
     next.environment !== 'browserbase' &&
     !next.modelApiKey
   ) {
@@ -203,7 +198,7 @@ export function createWebAdapter(
   options: WebAdapterOptions,
   factory?: WebAutomationFactory,
   behavior: WebAdapterBehavior = {},
-): ExecutionTargetAdapter {
+): StepExecutionTargetAdapter {
   const automationFactory = factory ?? stagehandFactory
   const requireProviderApiKey = factory === undefined
   const fidelity = resolveFidelityPolicy(options)
@@ -214,7 +209,16 @@ export function createWebAdapter(
 
   return {
     capabilities: ['web', 'screenshots'],
-    planFormatVersion: 'web.1',
+    executionCache: {
+      adapterKind: 'web',
+      adapterCacheSchemaVersion: '1',
+      targetConfigurationFingerprint: webTargetConfigurationFingerprint({
+        options,
+        behavior,
+        fidelity,
+      }),
+      parse: parseWebExecutionCachePayload,
+    },
     fidelityPolicy: {
       profile: fidelity.profile,
       tradeOffs: fidelity.tradeOffs,
@@ -223,7 +227,9 @@ export function createWebAdapter(
       await pool.dispose()
     },
     async openSession(input) {
-      let executionMode = input.mode ?? 'adaptive'
+      const executionMode = input.mode ?? 'adaptive'
+      const cacheReplay =
+        executionMode === 'replay' && input.executionCache !== undefined
       const browserOptions = resolveBrowserLaunchOptions({
         browser: {
           ...options.browser,
@@ -233,16 +239,30 @@ export function createWebAdapter(
               : (options.browser?.selfHeal ?? true),
         },
         requireProviderApiKey,
+        requiresInference: !cacheReplay,
       })
       const logicalSession = await pool.openLogicalSession(
         browserOptions,
         input.signal,
         fidelity,
+        executionMode,
       )
       const automation = logicalSession.automation
       let closePromise: Promise<void> | undefined
       let navigated = false
       let stepIndex = 0
+      const specificationArtifactId = screenshotIdentity(
+        'specification',
+        input.specification.id ?? input.specification.source.uri,
+      )
+      const scenarioArtifactId = screenshotIdentity(
+        'scenario',
+        input.scenario.id ??
+          input.scenario.template?.name ??
+          (input.runtimeBindings?.length
+            ? 'parameterized'
+            : input.scenario.name),
+      )
 
       const close = async () => {
         if (closePromise) return closePromise
@@ -258,13 +278,16 @@ export function createWebAdapter(
       }
       input.signal?.addEventListener('abort', onAbort, { once: true })
 
-      if (behavior.navigationPolicy === 'eager') {
+      if (
+        behavior.navigationPolicy === 'eager' &&
+        !cacheReplay &&
+        !automation.executeInstruction
+      ) {
         await automation.navigate(options.baseUrl, input.signal)
         navigated = true
       }
 
       async function screenshot(
-        step: ScenarioStep,
         state: StepExecution['state'],
       ): Promise<TestArtifact | undefined> {
         const screenshotOptions = options.screenshots
@@ -275,13 +298,13 @@ export function createWebAdapter(
           const format = screenshotOptions?.format ?? 'png'
           const directory = resolve(
             screenshotOptions?.outputDir ?? './.pickle/artifacts',
-            screenshotName(input.specification.name),
-            screenshotName(input.scenario.name),
+            specificationArtifactId,
+            scenarioArtifactId,
           )
           await mkdir(directory, { recursive: true })
           const path = join(
             directory,
-            `step-${String(stepIndex).padStart(2, '0')}-${state}-${screenshotName(step.text).slice(0, 40)}.${format}`,
+            `step-${String(stepIndex).padStart(2, '0')}-${state}.${format}`,
           )
           await Bun.write(
             path,
@@ -300,11 +323,8 @@ export function createWebAdapter(
         }
       }
 
-      async function finish(
-        step: ScenarioStep,
-        result: StepExecution,
-      ): Promise<StepExecution> {
-        const artifact = await screenshot(step, result.state)
+      async function finish(result: StepExecution): Promise<StepExecution> {
+        const artifact = await screenshot(result.state)
         return artifact ? { ...result, artifacts: [artifact] } : result
       }
 
@@ -347,29 +367,24 @@ export function createWebAdapter(
         return { state: 'passed', resolvedActions }
       }
 
-      async function adapt(
-        prompt: string,
-        signal?: AbortSignal,
-      ): Promise<StepExecution> {
-        const adapted = await resolveByObservation(prompt, signal)
-        if (adapted.state !== 'passed') return adapted
-        executionMode = 'adaptive'
-        return { ...adapted, state: 'passed-with-adaptation' }
-      }
-
-      async function replayOrAdapt(
-        prompt: string,
-        planned: readonly ResolvedAction[],
-        signal?: AbortSignal,
-      ): Promise<StepExecution> {
-        if (planned.length === 0) return adapt(prompt, signal)
-        const resolvedActions: ResolvedAction[] = []
-        for (const action of planned) {
-          const result = await automation.act(plannedAction(action), signal)
-          resolvedActions.push(action)
-          if (!result.success) return adapt(prompt, signal)
+      if (
+        cacheReplay ||
+        (executionMode === 'adaptive' && automation.executeInstruction)
+      ) {
+        const cacheSession = createWebCacheSession({
+          input,
+          options,
+          automation,
+          finish,
+        })
+        return {
+          ...cacheSession,
+          async executeStep(step, signal, context) {
+            stepIndex++
+            return cacheSession.executeStep(step, signal, context)
+          },
+          close,
         }
-        return { state: 'passed', resolvedActions }
       }
 
       return {
@@ -380,12 +395,12 @@ export function createWebAdapter(
           const prompt = promptFor(step)
 
           try {
-            const navigation = prompt.match(navigationPattern)
-            if (navigation) {
-              const url = navigationUrl(options.baseUrl, navigation[1]!.trim())
+            const target = navigationTarget(prompt)
+            if (target) {
+              const url = navigationUrl(options.baseUrl, target)
               await automation.navigate(url, operationSignal)
               navigated = true
-              return finish(step, {
+              return finish({
                 state: 'passed',
                 resolvedActions: [{ description: `Navigate to ${url}` }],
               })
@@ -398,33 +413,19 @@ export function createWebAdapter(
                 operationSignal,
               )
               if (!verification.meetsExpectation) {
-                return finish(step, {
+                return finish({
                   state: 'failed',
                   resolvedActions: [{ description: `Verify: ${prompt}` }],
                   message: `Expected: "${prompt}" | Actual: ${verification.actualState}`,
                 })
               }
-              return finish(step, {
+              return finish({
                 state: 'passed',
                 resolvedActions: [{ description: `Verify: ${prompt}` }],
               })
             }
 
-            if (executionMode === 'replay') {
-              return finish(
-                step,
-                await replayOrAdapt(
-                  prompt,
-                  input.plan?.steps[stepIndex - 1]?.resolvedActions ?? [],
-                  operationSignal,
-                ),
-              )
-            }
-
-            return finish(
-              step,
-              await resolveByObservation(prompt, operationSignal),
-            )
+            return finish(await resolveByObservation(prompt, operationSignal))
           } catch (error) {
             if (
               operationSignal?.aborted ||
@@ -432,7 +433,7 @@ export function createWebAdapter(
             ) {
               throw abortError()
             }
-            return finish(step, {
+            return finish({
               state: 'infrastructure-error',
               resolvedActions: [],
               message: errorMessage(error),

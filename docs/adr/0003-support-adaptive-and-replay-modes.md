@@ -1,3 +1,7 @@
+---
+status: superseded by ADR-0012
+---
+
 # Support Adaptive and Replay modes
 
 Pickle Spec supports Adaptive mode for resolving actions and Replay mode for repeatable test runs. Execution plans remain reviewable files under `.pickle/plans/`.

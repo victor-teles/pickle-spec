@@ -9,7 +9,6 @@ import {
   diagnosticLines,
   groupResults,
   interruptionLines,
-  policyLines,
   renderTestResult,
   renderTestStepResult,
   summaryLines,
@@ -251,7 +250,6 @@ export function createLiveRunReporter(
     results: readonly TestResult[],
     durationMs: number,
     summaryNotice: readonly string[],
-    resultPolicyLines: readonly string[],
   ): void {
     if (finished) return
     setPagedRefresh(false)
@@ -265,7 +263,7 @@ export function createLiveRunReporter(
     const summary = summaryLines(specifications, results, startTime, durationMs)
     summary.splice(1, 0, ...summaryNotice)
     finished = true
-    terminal.finish([...diagnostics, ...resultPolicyLines, ...summary])
+    terminal.finish([...diagnostics, ...summary])
   }
 
   function finishFailure(
@@ -283,7 +281,6 @@ export function createLiveRunReporter(
         '                 ',
         columns(),
       ),
-      [],
     )
   }
 
@@ -299,12 +296,7 @@ export function createLiveRunReporter(
     durationMs: number,
     exitStatus: TestRunExitStatus,
   ): void {
-    finishOutput(
-      results,
-      durationMs,
-      interruptionLines(exitStatus, columns()),
-      policyLines(exitStatus, columns()),
-    )
+    finishOutput(results, durationMs, interruptionLines(exitStatus, columns()))
   }
 
   function complete(result: TestResult): void {

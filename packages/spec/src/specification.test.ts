@@ -91,6 +91,26 @@ Feature: Search
             type: 'outcome',
           },
         ],
+        template: {
+          name: 'Find a product',
+          variableNames: ['product'],
+          steps: [
+            {
+              keyword: 'When',
+              text: 'the customer searches for <product>',
+              type: 'action',
+            },
+            {
+              keyword: 'Then',
+              text: 'the product page shows <product>',
+              type: 'outcome',
+            },
+          ],
+        },
+        runtimeBindings: [
+          { name: 'pickle_id', value: 'rowdddddddddddddd' },
+          { name: 'product', value: 'Pickles' },
+        ],
       },
       {
         name: 'Find a product',
@@ -114,6 +134,26 @@ Feature: Search
             text: 'the product page shows Olives',
             type: 'outcome',
           },
+        ],
+        template: {
+          name: 'Find a product',
+          variableNames: ['product'],
+          steps: [
+            {
+              keyword: 'When',
+              text: 'the customer searches for <product>',
+              type: 'action',
+            },
+            {
+              keyword: 'Then',
+              text: 'the product page shows <product>',
+              type: 'outcome',
+            },
+          ],
+        },
+        runtimeBindings: [
+          { name: 'pickle_id', value: 'roweeeeeeeeeeeeee' },
+          { name: 'product', value: 'Olives' },
         ],
       },
     ])
@@ -239,6 +279,29 @@ Feature: Search
             type: 'outcome',
           },
         ],
+        template: {
+          name: 'Find a product',
+          variableNames: ['product'],
+          steps: [
+            {
+              keyword: 'Given',
+              text: 'the search page is open',
+              type: 'context',
+            },
+            {
+              keyword: 'When',
+              text: 'the customer searches for <product>',
+              type: 'action',
+            },
+            { keyword: 'And', text: 'opens the first result', type: 'action' },
+            {
+              keyword: 'Then',
+              text: 'the product page shows <product>',
+              type: 'outcome',
+            },
+          ],
+        },
+        runtimeBindings: [{ name: 'product', value: 'Pickles' }],
       },
       {
         name: 'Find a product',
@@ -264,7 +327,140 @@ Feature: Search
             type: 'outcome',
           },
         ],
+        template: {
+          name: 'Find a product',
+          variableNames: ['product'],
+          steps: [
+            {
+              keyword: 'Given',
+              text: 'the search page is open',
+              type: 'context',
+            },
+            {
+              keyword: 'When',
+              text: 'the customer searches for <product>',
+              type: 'action',
+            },
+            { keyword: 'And', text: 'opens the first result', type: 'action' },
+            {
+              keyword: 'Then',
+              text: 'the product page shows <product>',
+              type: 'outcome',
+            },
+          ],
+        },
+        runtimeBindings: [{ name: 'product', value: 'Olives' }],
       },
+    ])
+  })
+
+  test('separates Scenario Outline templates from ordered runtime bindings', () => {
+    const specification = parseSpecification({
+      uri: 'features/sign-in.feature',
+      source: `Feature: Sign in
+  Scenario Outline: Sign in as <role>
+    When the customer enters <email>
+      | field | value   |
+      | email | <email> |
+    Then the greeting says
+      """
+      Welcome <role>
+      """
+
+    Examples:
+      | role  | email              |
+      | admin | secret@example.com |`,
+    })
+
+    expect(specification.scenarios[0]).toMatchObject({
+      name: 'Sign in as admin',
+      steps: [
+        {
+          text: 'the customer enters secret@example.com',
+          argument: {
+            dataTable: [
+              ['field', 'value'],
+              ['email', 'secret@example.com'],
+            ],
+          },
+        },
+        {
+          text: 'the greeting says',
+          argument: { docString: 'Welcome admin' },
+        },
+      ],
+      template: {
+        name: 'Sign in as <role>',
+        variableNames: ['role', 'email'],
+        steps: [
+          {
+            text: 'the customer enters <email>',
+            argument: {
+              dataTable: [
+                ['field', 'value'],
+                ['email', '<email>'],
+              ],
+            },
+          },
+          {
+            text: 'the greeting says',
+            argument: { docString: 'Welcome <role>' },
+          },
+        ],
+      },
+      runtimeBindings: [
+        { name: 'role', value: 'admin' },
+        { name: 'email', value: 'secret@example.com' },
+      ],
+    })
+  })
+
+  test('rejects duplicate Scenario Outline variable names', () => {
+    expect(() =>
+      parseSpecification({
+        uri: 'features/search.feature',
+        source: `Feature: Search
+  Scenario Outline: Search
+    When the customer searches for <product>
+
+    Examples:
+      | product | product |
+      | Pickles | Olives  |`,
+      }),
+    ).toThrow('duplicate variable name "product"')
+  })
+
+  test('requires pickle_id only when the Scenario Outline template references it', () => {
+    const referenced = parseSpecification({
+      uri: 'features/search.feature',
+      source: `Feature: Search
+  Scenario Outline: Search row <pickle_id>
+    When the customer searches
+
+    Examples:
+      | pickle_id             | product |
+      | rowdddddddddddddd     | Pickles |`,
+    })
+    const identityOnly = parseSpecification({
+      uri: 'features/search.feature',
+      source: `Feature: Search
+  Scenario Outline: Search for <product>
+    When the customer searches for <product>
+
+    Examples:
+      | pickle_id             | product |
+      | rowdddddddddddddd     | Pickles |`,
+    })
+
+    expect(referenced.scenarios[0]?.template?.variableNames).toEqual([
+      'pickle_id',
+    ])
+    expect(identityOnly.scenarios[0]?.template?.variableNames).toEqual([
+      'product',
+    ])
+    expect(referenced.scenarios[0]?.runtimeBindings).toEqual([
+      { name: 'pickle_id', value: 'rowdddddddddddddd' },
+      { name: 'product', value: 'Pickles' },
     ])
   })
 

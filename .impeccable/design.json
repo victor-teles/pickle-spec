@@ -154,9 +154,9 @@
           "oklch(0.94 0.01 185)"
         ]
       },
-      "plan-amber": {
+      "cache-amber": {
         "role": "tertiary",
-        "displayName": "Plan Amber",
+        "displayName": "Cache Amber",
         "canonical": "oklch(0.8 0.11 85)",
         "tonalRamp": [
           "oklch(0.22 0.05 85)",
@@ -169,9 +169,9 @@
           "oklch(0.95 0.03 85)"
         ]
       },
-      "plan-ink": {
+      "cache-ink": {
         "role": "tertiary",
-        "displayName": "Plan Ink",
+        "displayName": "Cache Ink",
         "canonical": "oklch(0.22 0.05 85)",
         "tonalRamp": [
           "oklch(0.18 0.04 85)",
@@ -296,12 +296,12 @@
       "css": ".ds-badge { display: inline-flex; align-items: center; border-radius: 0.4rem; padding: 0.125rem 0.5rem; font-family: \"JetBrains Mono\", ui-monospace, monospace; font-size: 0.75rem; font-weight: 500; border: 1px solid transparent; } .ds-badge-failed { background: var(--destructive); color: var(--destructive-foreground); }"
     },
     {
-      "name": "Adaptation Badge",
+      "name": "Adaptive Fallback Badge",
       "kind": "chip",
-      "refersTo": "badge-adaptation",
-      "description": "Labeled chip for passed-with-adaptation.",
-      "html": "<span class=\"ds-badge ds-badge-adaptation\">passed-with-adaptation</span>",
-      "css": ".ds-badge { display: inline-flex; align-items: center; border-radius: 0.4rem; padding: 0.125rem 0.5rem; font-family: \"JetBrains Mono\", ui-monospace, monospace; font-size: 0.75rem; font-weight: 500; border: 1px solid transparent; } .ds-badge-adaptation { background: var(--adaptation); color: var(--adaptation-foreground); }"
+      "refersTo": "badge-cache-fallback",
+      "description": "Labeled cache-outcome chip for an Adaptive fallback.",
+      "html": "<span class=\"ds-badge ds-badge-cache-fallback\">Adaptive fallback</span>",
+      "css": ".ds-badge { display: inline-flex; align-items: center; border-radius: 0.4rem; padding: 0.125rem 0.5rem; font-family: \"JetBrains Mono\", ui-monospace, monospace; font-size: 0.75rem; font-weight: 500; border: 1px solid transparent; } .ds-badge-cache-fallback { background: var(--warning); color: var(--warning-foreground); }"
     },
     {
       "name": "Passed Badge",
@@ -316,7 +316,7 @@
       "kind": "nav",
       "refersTo": "nav-active",
       "description": "Text-only area nav. Active item sits in a brine tint well.",
-      "html": "<nav class=\"ds-nav\" aria-label=\"Studio\"><a class=\"ds-nav-link\" href=\"#specifications\">Specifications</a><a class=\"ds-nav-link ds-nav-link-active\" href=\"#runs\">Runs</a><a class=\"ds-nav-link\" href=\"#plans\">Plans</a><a class=\"ds-nav-link\" href=\"#settings\">Settings</a></nav>",
+      "html": "<nav class=\"ds-nav\" aria-label=\"Studio\"><a class=\"ds-nav-link\" href=\"#specifications\">Specifications</a><a class=\"ds-nav-link ds-nav-link-active\" href=\"#runs\">Runs</a><a class=\"ds-nav-link\" href=\"#settings\">Settings</a></nav>",
       "css": ".ds-nav { display: flex; gap: 0.25rem; } .ds-nav-link { border-radius: 0.4rem; padding: 0.375rem 0.75rem; font-family: \"Inter\", ui-sans-serif, system-ui, sans-serif; font-size: 0.875rem; color: var(--muted-foreground); text-decoration: none; } .ds-nav-link:hover { background: var(--secondary); } .ds-nav-link-active { background: var(--accent); color: var(--accent-foreground); } .ds-nav-link:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }"
     },
     {
@@ -330,10 +330,10 @@
   ],
   "narrative": {
     "northStar": "The Spec Ledger",
-    "overview": "Studio is a bound technical ledger that happens to run on a screen. Feature files are the page; test results are the ink; an adaptation is a distinct mark, never a silent rewrite. The operator sits in a dark room with a local project, reading live state the way one reads a night-shift instrument — not a marketing dashboard.\n\nThe atmosphere is clinical lab, executed at the craft level of dark developer tools (Vercel, Cursor): near-black cool field, hairline plates, one light primary action, and color reserved for result state. Density is high. Chrome is thin. Empty space is leftover work, not a lifestyle.",
+    "overview": "Studio is a bound technical ledger that happens to run on a screen. Feature files are the page; test results are the ink; cache outcomes distinguish Replay from an Adaptive fallback without changing the result state. The operator sits in a dark room with a local project, reading live state the way one reads a night-shift instrument — not a marketing dashboard.\n\nThe atmosphere is clinical lab, executed at the craft level of dark developer tools (Vercel, Cursor): near-black cool field, hairline plates, one light primary action, and color reserved for result state. Density is high. Chrome is thin. Empty space is leftover work, not a lifestyle.",
     "keyCharacteristics": [
       "Dark cool field with one-step raised plates, never a drop shadow",
-      "Bone-white primary action; teal, amber, and oxide only name a test-result state",
+      "Bone-white primary action; teal and oxide name result state, while amber names Cache outcome",
       "Inter for UI, JetBrains Mono for measurements and resolved actions",
       "Compact 8px corners, 9px controls, hairline borders",
       "Status is a labeled chip, never a color-only dot"

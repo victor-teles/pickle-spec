@@ -13,7 +13,7 @@ A platform-independent example of expected product behavior within a specificati
 _Avoid_: Test case, script
 
 **Identifier**:
-The durable identity of a specification, scenario, examples block, or examples row. Test results, execution plans, and history attach to this identity.
+The durable identity of a specification, scenario, examples block, or examples row. Test results, execution cache entries, and history attach to this identity.
 _Avoid_: Pickle ID, cucumber ID, test ID
 
 **Derived identifier**:
@@ -40,17 +40,29 @@ _Avoid_: Report, output, log
 The local interface for authoring specifications, managing test runs, and reviewing test results.
 _Avoid_: Workbench, dashboard, report viewer, admin panel
 
-**Execution plan**:
-A reusable sequence of resolved actions for one scenario and execution target.
-_Avoid_: Script, recording, cache
+**Execution cache**:
+A local, reusable representation of the deterministic actions and verifications learned from a successful adaptive execution of a scenario against an execution target profile.
+_Avoid_: Script, recording
 
 **Adaptive mode**:
-A test run mode that resolves scenario actions while the scenario runs.
+A test run mode that uses model inference to resolve and verify scenario behavior while the scenario runs.
 _Avoid_: AI mode, exploration mode, dynamic mode
 
 **Replay mode**:
-A test run mode that uses an existing execution plan.
-_Avoid_: Deterministic mode, recorded mode, cached mode
+A test run mode that uses an applicable execution cache without model inference.
+_Avoid_: Adaptive mode, exploration mode
+
+**Cache refresh**:
+A user-requested Adaptive execution that bypasses the current execution cache entry and atomically replaces it only after the scenario succeeds.
+_Avoid_: Forced Replay
+
+**Cache-only**:
+An execution setting that permits Replay mode but fails on a missing or divergent execution cache entry instead of using model inference.
+_Avoid_: Offline mode
+
+**Cache outcome**:
+The classification of how an execution cache affected a test result, recorded separately from whether the scenario passed or failed.
+_Avoid_: Test result state, cache status, execution mode
 
 **Logical session**:
 An isolated execution-target state that belongs to one scenario attempt.
@@ -60,21 +72,13 @@ _Avoid_: Browser, context, device session
 A named configuration that selects an execution target and its required capabilities for a test run.
 _Avoid_: Project, device profile, engine configuration
 
-**Adaptation**:
-The successful resolution of new actions after an execution plan cannot complete a scenario.
-_Avoid_: Self-healing, automatic fix, fallback
-
-**Candidate plan**:
-An execution plan produced by an adaptation and awaiting explicit approval.
-_Avoid_: Updated plan, healed plan, draft plan
+**Adaptive fallback**:
+The observable transition from Replay mode to Adaptive mode after a cached execution diverges.
+_Avoid_: Automatic fix
 
 **Run event**:
 A recorded state change within a test run.
 _Avoid_: Log message, update, notification
-
-**Plan promotion**:
-The explicit approval that replaces an execution plan with its candidate plan.
-_Avoid_: Plan update, plan merge, accepting a fix
 
 **Specification state**:
 The lifecycle classification of a specification: `draft`, `active`, or `deprecated`.
@@ -89,7 +93,7 @@ A test result state caused by an unavailable or failed execution resource instea
 _Avoid_: Test failure, broken test, runner crash
 
 **Scenario revision**:
-The content revision of a scenario used to determine whether an execution plan remains applicable.
+The content revision of a scenario used to determine whether an execution cache entry remains applicable.
 _Avoid_: Scenario version, content hash, change ID
 
 **Application revision**:

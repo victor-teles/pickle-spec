@@ -1,6 +1,11 @@
+import type {
+  CacheOutcome,
+  ExecutionCacheUncacheableReason,
+  ExecutionMode,
+} from '@pickle-spec/runner'
+
 export type TestResultState =
   | 'passed'
-  | 'passed-with-adaptation'
   | 'failed'
   | 'skipped'
   | 'cancelled'
@@ -21,6 +26,10 @@ export type TestResult = {
   executionTargetProfile: { id: string }
   state: TestResultState
   steps: StepResult[]
+  executionMode?: ExecutionMode
+  cacheOutcome?: CacheOutcome
+  cacheUncacheableReason?: ExecutionCacheUncacheableReason
+  inferenceCount?: number
   message?: string
 }
 
@@ -71,20 +80,15 @@ export function cellKey(scenarioId: string, profileId: string) {
 }
 
 export function needsAttention(state: TestResultState | 'running'): boolean {
-  return (
-    state === 'failed' ||
-    state === 'infrastructure-error' ||
-    state === 'passed-with-adaptation'
-  )
+  return state === 'failed' || state === 'infrastructure-error'
 }
 
 export function resultPriority(state: TestResultState | 'running'): number {
   if (state === 'failed' || state === 'infrastructure-error') return 0
-  if (state === 'passed-with-adaptation') return 1
-  if (state === 'cancelled') return 2
-  if (state === 'running') return 3
-  if (state === 'skipped') return 5
-  return 4
+  if (state === 'cancelled') return 1
+  if (state === 'running') return 2
+  if (state === 'skipped') return 4
+  return 3
 }
 
 export function attentionCells(cells: MatrixCell[]): MatrixCell[] {

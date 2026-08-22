@@ -1,6 +1,11 @@
 import { mkdir, open, rm, stat } from 'node:fs/promises'
 import { basename, dirname, join, relative, resolve, sep } from 'node:path'
 import { migrateRunArchive } from './archive-migrate'
+import {
+  publicRunEvent,
+  recordableTestResult,
+  withoutPrivateStepResultData,
+} from './public-results'
 import type { RunEvent, TestResult, TestStepResult } from './run-scenario'
 import { openTestRunStore, type TestRunManifest } from './test-run-store'
 
@@ -74,10 +79,11 @@ function mapStepArtifacts(
   step: TestStepResult,
   mapPath: MapArtifactPath,
 ): TestStepResult {
-  if (!step.artifacts) return step
+  const publicStep = withoutPrivateStepResultData(step)
+  if (!publicStep.artifacts) return publicStep
   return {
-    ...step,
-    artifacts: step.artifacts.map((artifact) => ({
+    ...publicStep,
+    artifacts: publicStep.artifacts.map((artifact) => ({
       ...artifact,
       path: mapPath(artifact.path),
     })),
@@ -88,9 +94,10 @@ function mapResultArtifacts(
   result: TestResult,
   mapPath: MapArtifactPath,
 ): TestResult {
+  const recordable = recordableTestResult(result)
   return {
-    ...result,
-    steps: result.steps.map((step) => mapStepArtifacts(step, mapPath)),
+    ...recordable,
+    steps: recordable.steps.map((step) => mapStepArtifacts(step, mapPath)),
   }
 }
 
@@ -99,12 +106,18 @@ function mapEventArtifacts(
   mapPath: MapArtifactPath,
 ): RunEvent {
   if (event.type === 'scenario-finished') {
-    return { ...event, result: mapResultArtifacts(event.result, mapPath) }
+    return publicRunEvent({
+      ...event,
+      result: mapResultArtifacts(event.result, mapPath),
+    })
   }
   if (event.type === 'step-finished') {
-    return { ...event, result: mapStepArtifacts(event.result, mapPath) }
+    return publicRunEvent({
+      ...event,
+      result: mapStepArtifacts(event.result, mapPath),
+    })
   }
-  return event
+  return publicRunEvent(event)
 }
 
 type LoadedRun = {

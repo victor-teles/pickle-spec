@@ -12,6 +12,7 @@ import {
 } from './components/ui/dialog'
 import { Input } from './components/ui/input'
 import { Label } from './components/ui/label'
+import { ExecutionCacheSettings } from './execution-cache-settings'
 
 type StudioSuite = {
   name: string
@@ -313,6 +314,8 @@ export function SettingsPanel<
 
   return (
     <main className="min-w-0 space-y-8 p-6">
+      <ExecutionCacheSettings api={props.api} />
+
       <section className="space-y-3" aria-labelledby="suites-heading">
         <h2 id="suites-heading" className="text-lg font-medium">
           Test suites

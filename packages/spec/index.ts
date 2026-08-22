@@ -51,6 +51,8 @@ export type {
   ParseSpecificationInput,
   Scenario,
   ScenarioStep,
+  ScenarioTemplate,
+  ScenarioVariableBinding,
   Specification,
   SpecificationSource,
 } from './src/specification'

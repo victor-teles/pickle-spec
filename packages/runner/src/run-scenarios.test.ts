@@ -67,7 +67,7 @@ test('runs selected Scenarios concurrently while preserving stable test-result o
   expect(openSession).toHaveBeenCalledTimes(2)
 })
 
-test('plans Scenario results in declaration and configured profile order', () => {
+test('schedules Scenario results in declaration and configured profile order', () => {
   const schedule = scheduleScenarios({
     selections: [selections[0]!, selections[2]!],
     executionTargetProfiles: [{ id: 'web' }, { id: 'android' }],
@@ -87,6 +87,45 @@ test('plans Scenario results in declaration and configured profile order', () =>
     ['First', 'web'],
     ['First', 'android'],
     ['Third', 'web'],
+  ])
+})
+
+test('keeps Scenario Outline rows unambiguous in the public schedule', () => {
+  const outlineSelections = ['row-a', 'row-b'].map((examplesRowId) => ({
+    specification: selections[0]!.specification,
+    scenario: {
+      ...selections[0]!.scenario,
+      id: 'shared-scenario',
+      name: `Bound ${examplesRowId}`,
+      examplesId: 'examples-a',
+      examplesRowId,
+      template: {
+        name: 'Bound <value>',
+        steps: selections[0]!.scenario.steps,
+        variableNames: ['value'],
+      },
+      runtimeBindings: [{ name: 'value', value: examplesRowId }],
+    },
+  }))
+
+  const schedule = scheduleScenarios({
+    selections: outlineSelections,
+    executionTargetProfiles: [{ id: 'web' }],
+  })
+
+  expect(schedule.map((item) => item.scenario)).toEqual([
+    {
+      id: 'shared-scenario',
+      name: 'Bound <value>',
+      examplesId: 'examples-a',
+      examplesRowId: 'row-a',
+    },
+    {
+      id: 'shared-scenario',
+      name: 'Bound <value>',
+      examplesId: 'examples-a',
+      examplesRowId: 'row-b',
+    },
   ])
 })
 

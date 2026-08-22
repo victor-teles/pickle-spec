@@ -1,6 +1,16 @@
 import { expect, test } from 'bun:test'
-import type { WorkerStepExecution } from './worker-protocol'
 import { type MobileDeviceGateway, MobileWorkerRuntime } from './worker-runtime'
+
+const application = {
+  id: 'com.example.checkout',
+  binaryPath: '/tmp/checkout.apk',
+}
+
+const scenario = {
+  steps: [{ type: 'action' as const, text: 'Pay' }],
+  templateSteps: [{ type: 'action' as const, text: 'Pay' }],
+  runtimeBindings: [],
+}
 
 function gateway(
   overrides: Partial<MobileDeviceGateway> = {},
@@ -12,8 +22,11 @@ function gateway(
     async openSession() {
       return { targetId: 'emulator-5554' }
     },
-    async executeStep() {
-      return { state: 'passed', resolvedActions: [] }
+    async executeScenario() {
+      return { stepExecutions: [] }
+    },
+    async completeSession() {
+      return { inferenceCount: 0 }
     },
     async closeSession() {},
     async dispose() {},
@@ -21,176 +34,110 @@ function gateway(
   }
 }
 
-const application = {
-  id: 'com.example.checkout',
-  binaryPath: '/tmp/checkout.apk',
+const openRequest = {
+  version: 3 as const,
+  type: 'open-session' as const,
+  sessionId: 'session-1',
+  platform: 'android' as const,
+  application,
+  mode: 'adaptive' as const,
+  scenario,
 }
 
-test('serializes mutable operations within one Android logical session', async () => {
+test('serializes Scenario execution and completion in one logical session', async () => {
   let active = 0
   let maximumActive = 0
   const order: string[] = []
   const runtime = new MobileWorkerRuntime(
     gateway({
-      async executeStep(input): Promise<WorkerStepExecution> {
+      async executeScenario() {
         active++
         maximumActive = Math.max(maximumActive, active)
-        order.push(`start:${input.step.text}`)
+        order.push('execute:start')
         await new Promise((resolve) => setTimeout(resolve, 10))
-        order.push(`end:${input.step.text}`)
+        order.push('execute:end')
         active--
         return {
-          state: 'passed',
-          resolvedActions: [{ description: input.step.text }],
+          stepExecutions: [{ state: 'passed', resolvedActions: [] }],
         }
       },
+      async completeSession() {
+        order.push('complete')
+        return { inferenceCount: 0 }
+      },
     }),
   )
-  await runtime.handle({
-    version: 2,
-    type: 'open-session',
+  await runtime.handle(openRequest)
+
+  const execution = runtime.handle({
+    version: 3,
+    type: 'execute-scenario',
     sessionId: 'session-1',
-    application,
-    mode: 'adaptive',
+  })
+  const completion = runtime.handle({
+    version: 3,
+    type: 'complete-session',
+    sessionId: 'session-1',
   })
 
-  const first = runtime.handle({
-    version: 2,
-    type: 'execute-step',
-    sessionId: 'session-1',
-    stepIndex: 0,
-    step: { type: 'action', text: 'First action' },
-  })
-  const second = runtime.handle({
-    version: 2,
-    type: 'execute-step',
-    sessionId: 'session-1',
-    stepIndex: 1,
-    step: { type: 'action', text: 'Second action' },
-  })
-
-  await expect(Promise.all([first, second])).resolves.toMatchObject([
-    { type: 'step-executed', execution: { state: 'passed' } },
-    { type: 'step-executed', execution: { state: 'passed' } },
+  await expect(Promise.all([execution, completion])).resolves.toMatchObject([
+    { type: 'scenario-executed' },
+    { type: 'session-completed' },
   ])
   expect(maximumActive).toBe(1)
-  expect(order).toEqual([
-    'start:First action',
-    'end:First action',
-    'start:Second action',
-    'end:Second action',
-  ])
+  expect(order).toEqual(['execute:start', 'execute:end', 'complete'])
 })
 
-test('supplies Replay plan actions to the matching step', async () => {
-  const plannedActions: unknown[] = []
-  const runtime = new MobileWorkerRuntime(
-    gateway({
-      async executeStep(input) {
-        plannedActions.push(input.plannedActions)
-        return { state: 'passed', resolvedActions: [] }
-      },
-    }),
-  )
-  await runtime.handle({
-    version: 2,
-    type: 'open-session',
-    sessionId: 'session-1',
-    application,
-    mode: 'replay',
-    plan: {
-      steps: [
-        {
-          resolvedActions: [
-            {
-              description: 'Tap saved button',
-              replay: { kind: 'find', query: 'Saved', action: 'click' },
-            },
-          ],
-        },
-      ],
-    },
-  })
-
-  await runtime.handle({
-    version: 2,
-    type: 'execute-step',
-    sessionId: 'session-1',
-    stepIndex: 0,
-    step: { type: 'action', text: 'Tap button' },
-  })
-
-  expect(plannedActions).toEqual([
-    [
-      {
-        description: 'Tap saved button',
-        replay: { kind: 'find', query: 'Saved', action: 'click' },
-      },
-    ],
-  ])
-})
-
-test('routes iOS discovery and logical sessions through the mobile gateway', async () => {
-  const discoveries: string[] = []
+test('routes the full Replay cache through the gateway', async () => {
   const openings: unknown[] = []
   const runtime = new MobileWorkerRuntime(
     gateway({
-      async discoverTargets(platform) {
-        discoveries.push(platform)
-        return []
-      },
       async openSession(input) {
         openings.push(input)
-        return { targetId: 'ios-simulator-1' }
+        return { targetId: 'emulator-5554' }
       },
     }),
   )
+  const payload = {
+    format: 'agent-device-ad' as const,
+    script:
+      'context platform=android\nopen "com.example.checkout" --relaunch\nfind "Pay" click\n',
+    stepRanges: [{ from: 2, to: 2 }],
+  }
 
   await runtime.handle({
-    version: 2,
-    type: 'discover-targets',
-    platform: 'ios',
-  })
-  await runtime.handle({
-    version: 2,
-    type: 'open-session',
-    sessionId: 'session-1',
-    platform: 'ios',
-    application: {
-      id: 'com.example.checkout',
-      binaryPath: '/tmp/Checkout.app',
-    },
-    mode: 'adaptive',
+    ...openRequest,
+    mode: 'replay',
+    executionCache: { adapterPayload: payload, requiredVariables: [] },
   })
 
-  expect(discoveries).toEqual(['ios'])
   expect(openings).toEqual([
     {
       sessionId: 'session-1',
-      platform: 'ios',
-      application: {
-        id: 'com.example.checkout',
-        binaryPath: '/tmp/Checkout.app',
-      },
+      platform: 'android',
       targetId: undefined,
+      application,
       artifactDirectory: undefined,
       artifacts: undefined,
       redactions: undefined,
       requiredCapabilities: undefined,
+      mode: 'replay',
+      scenario,
+      executionCache: { adapterPayload: payload, requiredVariables: [] },
     },
   ])
 })
 
-test('cancellation stops the active device operation before the session can be reused', async () => {
+test('cancellation finishes the active Scenario before allowing reuse', async () => {
   let finishOperation: (() => void) | undefined
   let cancelled = false
   const runtime = new MobileWorkerRuntime(
     gateway({
-      async executeStep() {
+      async executeScenario() {
         await new Promise<void>((resolve) => {
           finishOperation = resolve
         })
-        return { state: 'cancelled', resolvedActions: [] }
+        return { stepExecutions: [] }
       },
       async cancelSession() {
         cancelled = true
@@ -198,26 +145,17 @@ test('cancellation stops the active device operation before the session can be r
       },
     }),
   )
-  const openRequest = {
-    version: 2 as const,
-    type: 'open-session' as const,
-    sessionId: 'session-1',
-    application,
-    mode: 'adaptive' as const,
-  }
   await runtime.handle(openRequest)
   const execution = runtime.handle({
-    version: 2,
-    type: 'execute-step',
+    version: 3,
+    type: 'execute-scenario',
     sessionId: 'session-1',
-    stepIndex: 0,
-    step: { type: 'action', text: 'Long action' },
   })
   await new Promise((resolve) => setTimeout(resolve, 0))
 
   await expect(
     runtime.handle({
-      version: 2,
+      version: 3,
       type: 'cancel-session',
       sessionId: 'session-1',
     }),

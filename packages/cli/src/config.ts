@@ -36,12 +36,12 @@ export interface ProjectExecutionTargetProfile {
   web?: WebAdapterOptions
 }
 
-export interface ProjectPolicy {
-  adaptedResults?: 'accept' | 'reject'
-}
-
 export interface ProjectRetention {
   days?: number
+  maxBytes?: number
+}
+
+export interface ProjectCache {
   maxBytes?: number
 }
 
@@ -61,13 +61,13 @@ export interface PickleConfig {
   executionTargetProfiles?: Record<string, ProjectExecutionTargetProfile>
   executionTargetProfile?: ExecutionTargetProfile
   applicationRevision?: string
-  policy?: ProjectPolicy
   web?: WebAdapterOptions
   selection?: SelectionOptions
   execution?: ExecutionSettings
   concurrency?: number
   server?: ServerConfig
   retention?: ProjectRetention
+  cache?: ProjectCache
   artifacts?: ProjectArtifacts
   links?: Record<string, string>
   secrets?: Record<string, ProjectSecretRef>
@@ -248,13 +248,6 @@ const pickleConfigSchema = strictObject('configuration', {
       error: 'applicationRevision must not be empty',
     })
     .optional(),
-  policy: strictObject('policy', {
-    adaptedResults: z
-      .enum(['accept', 'reject'], {
-        error: 'policy.adaptedResults must be accept or reject',
-      })
-      .optional(),
-  }).optional(),
   web: webAdapterOptionsSchema.optional(),
   selection: selectionOptionsSchema.optional(),
   execution: executionSettingsSchema.optional(),
@@ -299,11 +292,13 @@ const pickleConfigSchema = strictObject('configuration', {
     days: optionalPositiveInteger('retention.days'),
     maxBytes: optionalPositiveInteger('retention.maxBytes'),
   }).optional(),
+  cache: strictObject('cache', {
+    maxBytes: optionalPositiveInteger('cache.maxBytes'),
+  }).optional(),
   artifacts: strictObject('artifacts', {
     capture: z
-      .enum(['off', 'on-failure-or-adaptation', 'always'], {
-        error:
-          'artifacts.capture must be off, on-failure-or-adaptation, or always',
+      .enum(['off', 'on-failure', 'always'], {
+        error: 'artifacts.capture must be off, on-failure, or always',
       })
       .optional(),
   }).optional(),

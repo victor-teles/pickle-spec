@@ -33,6 +33,9 @@ function passedResult(name = 'Complete a purchase'): TestResult {
     executionTargetProfile: { id: 'deterministic' },
     state: 'passed',
     steps: [],
+    executionMode: 'adaptive',
+    cacheOutcome: 'uncacheable',
+    inferenceCount: 0,
   }
 }
 
@@ -162,6 +165,82 @@ test('materializes a manifest from events without replacing the event stream', a
   ])
 })
 
+test('materializes explicit uncacheable metadata for legacy adapter results', async () => {
+  const root = await tempRoot()
+  const store = openTestRunStore({
+    root,
+    createId: () => 'run-legacy-adapter',
+    now: () => new Date('2026-08-15T12:00:00.000Z'),
+  })
+  const run = await store.create()
+  const {
+    executionMode: _executionMode,
+    cacheOutcome: _cacheOutcome,
+    inferenceCount: _inferenceCount,
+    ...legacyResult
+  } = passedResult()
+  await run.append({ type: 'scenario-finished', result: legacyResult })
+
+  expect((await run.materialize()).results[0]).toMatchObject({
+    executionMode: 'adaptive',
+    cacheOutcome: 'uncacheable',
+    inferenceCount: 0,
+  })
+})
+
+test('persists public evidence without private replay data', async () => {
+  const root = await tempRoot()
+  const store = openTestRunStore({
+    root,
+    createId: () => 'run-public-evidence',
+    now: () => new Date('2026-08-15T12:00:00.000Z'),
+  })
+  const run = await store.create()
+  await run.append({
+    type: 'scenario-finished',
+    result: {
+      ...passedResult(),
+      executionMode: 'replay',
+      cacheOutcome: 'hit',
+      inferenceCount: 0,
+      steps: [
+        {
+          step: { keyword: 'When', text: 'I submit', type: 'action' },
+          state: 'passed',
+          resolvedActions: [
+            {
+              description: 'Submit the form',
+              replay: { raw: 'private-replay-payload' },
+            },
+          ],
+        },
+      ],
+    },
+  })
+
+  const manifest = await run.materialize()
+  expect(manifest.results[0]).toMatchObject({
+    executionMode: 'replay',
+    cacheOutcome: 'hit',
+    inferenceCount: 0,
+    steps: [
+      {
+        resolvedActions: [{ description: 'Submit the form' }],
+      },
+    ],
+  })
+  expect(
+    await Bun.file(
+      join(root, '.pickle', 'runs', run.id, 'events.ndjson'),
+    ).text(),
+  ).not.toContain('private-replay-payload')
+  expect(
+    await Bun.file(
+      join(root, '.pickle', 'runs', run.id, 'manifest.json'),
+    ).text(),
+  ).not.toContain('private-replay-payload')
+})
+
 test('an in-progress manifest omits finishedAt until the test run finishes', async () => {
   const root = await tempRoot()
   const store = openTestRunStore({
@@ -253,6 +332,9 @@ test('rebuilds the query index from persisted test runs after it is deleted', as
       durationMs: 0,
       state: 'passed',
       resultCount: 1,
+      executionModes: ['adaptive'],
+      cacheOutcomes: ['uncacheable'],
+      inferenceCount: 0,
     },
     {
       id: 'run-2',
@@ -263,6 +345,9 @@ test('rebuilds the query index from persisted test runs after it is deleted', as
       durationMs: 0,
       state: 'failed',
       resultCount: 1,
+      executionModes: ['adaptive'],
+      cacheOutcomes: ['uncacheable'],
+      inferenceCount: 0,
     },
   ])
 
@@ -285,13 +370,21 @@ test('lists immutable history metadata for Studio after rebuilding the index', a
   })
   await run.append({
     type: 'scenario-finished',
-    result: passedResult(),
+    result: {
+      ...passedResult(),
+      executionMode: 'replay',
+      cacheOutcome: 'hit',
+      inferenceCount: 0,
+    },
   })
   await run.append({
     type: 'scenario-finished',
     result: {
       ...passedResult('Complete a mobile purchase'),
       executionTargetProfile: { id: 'android' },
+      executionMode: 'adaptive',
+      cacheOutcome: 'fallback',
+      inferenceCount: 3,
     },
   })
   clock = new Date('2026-08-15T12:00:03.500Z')
@@ -316,6 +409,9 @@ test('lists immutable history metadata for Studio after rebuilding the index', a
       durationMs: 3_500,
       state: 'passed',
       resultCount: 2,
+      executionModes: ['adaptive', 'replay'],
+      cacheOutcomes: ['fallback', 'hit'],
+      inferenceCount: 3,
     },
   ])
 })
@@ -359,6 +455,9 @@ test('backfills history metadata when opening an older query index', async () =>
       durationMs: 0,
       state: 'passed',
       resultCount: 1,
+      executionModes: ['adaptive'],
+      cacheOutcomes: ['uncacheable'],
+      inferenceCount: 0,
     },
   ])
 })
@@ -389,6 +488,9 @@ test('rebuilds the query index from an events-only test run', async () => {
       startedAt: '2026-08-15T12:00:00.000Z',
       state: 'passed',
       resultCount: 1,
+      executionModes: ['adaptive'],
+      cacheOutcomes: ['uncacheable'],
+      inferenceCount: 0,
     },
   ])
 })
@@ -402,10 +504,6 @@ test('persists every final state and records flaky without adding a new state', 
   const run = await store.create()
   const states = [
     passedResult('Passed purchase'),
-    {
-      ...passedResult('Adapted purchase'),
-      state: 'passed-with-adaptation' as const,
-    },
     {
       ...passedResult('Failed purchase'),
       state: 'failed' as const,
@@ -441,7 +539,6 @@ test('persists every final state and records flaky without adding a new state', 
     manifest.results.map((result) => [result.state, result.flaky]),
   ).toEqual([
     ['passed', undefined],
-    ['passed-with-adaptation', undefined],
     ['failed', undefined],
     ['skipped', undefined],
     ['cancelled', undefined],
@@ -452,7 +549,6 @@ test('persists every final state and records flaky without adding a new state', 
   expect(new Set(manifest.results.map((result) => result.state))).toEqual(
     new Set([
       'passed',
-      'passed-with-adaptation',
       'failed',
       'skipped',
       'cancelled',
@@ -461,28 +557,19 @@ test('persists every final state and records flaky without adding a new state', 
   )
 })
 
-test('captures failure and adaptation artifacts according to the configured policy', async () => {
+test('captures only failure artifacts under the default evidence policy', async () => {
   const root = await tempRoot()
   const screenshot = join(root, 'source-screenshot.png')
   await Bun.write(screenshot, new Uint8Array([137, 80, 78, 71]))
   const store = openTestRunStore({
     root,
     createId: () => 'run-artifacts',
-    artifactCapture: 'on-failure-or-adaptation',
   })
   const run = await store.create()
 
   await run.append({
     type: 'scenario-finished',
     result: resultWithArtifact('Passed purchase', 'passed', screenshot),
-  })
-  await run.append({
-    type: 'scenario-finished',
-    result: resultWithArtifact(
-      'Adapted purchase',
-      'passed-with-adaptation',
-      screenshot,
-    ),
   })
   await run.append({
     type: 'scenario-finished',
@@ -507,7 +594,7 @@ test('captures failure and adaptation artifacts according to the configured poli
   })
 
   const manifest = await run.materialize()
-  const [passed, adapted, failed] = manifest.results
+  const [passed, failed] = manifest.results
   const artifactsDirectory = join(
     root,
     '.pickle',
@@ -517,22 +604,15 @@ test('captures failure and adaptation artifacts according to the configured poli
   )
 
   expect(passed?.steps[0]?.artifacts).toBeUndefined()
-  expect(adapted?.steps[0]?.artifacts?.[0]).toMatchObject({
-    kind: 'screenshot',
-    mediaType: 'image/png',
-  })
-  expect(
-    adapted?.steps[0]?.artifacts?.[0]?.path.startsWith(artifactsDirectory),
-  ).toBe(true)
   expect(
     failed?.steps[0]?.artifacts?.[0]?.path.startsWith(artifactsDirectory),
   ).toBe(true)
   expect(
     failed?.steps[1]?.artifacts?.[0]?.path.startsWith(artifactsDirectory),
   ).toBe(true)
-  expect(
-    await Bun.file(adapted!.steps[0]!.artifacts![0]!.path).bytes(),
-  ).toEqual(new Uint8Array([137, 80, 78, 71]))
+  expect(await Bun.file(failed!.steps[1]!.artifacts![0]!.path).bytes()).toEqual(
+    new Uint8Array([137, 80, 78, 71]),
+  )
   expect(await Bun.file(screenshot).exists()).toBe(true)
 })
 
@@ -595,6 +675,9 @@ test('retention removes eligible local data without changing retained test runs'
       durationMs: 0,
       state: 'passed',
       resultCount: 1,
+      executionModes: ['adaptive'],
+      cacheOutcomes: ['uncacheable'],
+      inferenceCount: 0,
     },
   ])
 })
@@ -687,6 +770,9 @@ test('retention evicts the oldest runs when stored bytes exceed the limit', asyn
       durationMs: 0,
       state: 'passed',
       resultCount: 1,
+      executionModes: ['adaptive'],
+      cacheOutcomes: ['uncacheable'],
+      inferenceCount: 0,
     },
   ])
 })

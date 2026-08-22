@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, mock, spyOn, test } from 'bun:test'
 import { localBrowser, Stagehand } from '@browserbasehq/stagehand'
+import type { Scenario, Specification } from '@pickle-spec/spec'
 import { z } from 'zod'
+import { createWebAdapter } from '../index'
 import { stagehandFactory } from './stagehand-factory'
 
 type LaunchedBrowser = Awaited<ReturnType<typeof localBrowser.launch>>
@@ -10,6 +12,10 @@ describe('stagehandFactory', () => {
 
   test('omits unset Stagehand options from the JSON-RPC initialization payload', async () => {
     const browser = {
+      context: {
+        activePage: mock(async () => null),
+        cookies: mock(async () => []),
+      },
       close: mock(async () => {}),
     } as unknown as LaunchedBrowser
     const stagehand = {
@@ -19,6 +25,7 @@ describe('stagehandFactory', () => {
         },
       },
       close: mock(async () => {}),
+      observe: mock(async () => ({ data: [] })),
     } as unknown as Stagehand
     spyOn(localBrowser, 'launch').mockResolvedValue(browser)
     spyOn(Stagehand, 'create').mockImplementation(async (input) => {
@@ -36,11 +43,81 @@ describe('stagehandFactory', () => {
     })
 
     try {
-      await expect(
-        browserProcess.openContext({ browser: browserOptions }),
-      ).resolves.toBeDefined()
+      const automation = await browserProcess.openContext({
+        browser: browserOptions,
+      })
+      await automation.observe('find the submit button')
     } finally {
       await browserProcess.close()
     }
+  })
+
+  test('runs public cache Replay without model credentials or creating Stagehand', async () => {
+    const goto = mock(async () => null)
+    const page = {
+      goto,
+      evaluate: mock(async () => 0),
+    }
+    const browser = {
+      context: {
+        activePage: mock(async () => page),
+        cookies: mock(async () => []),
+      },
+      close: mock(async () => {}),
+    } as unknown as LaunchedBrowser
+    spyOn(localBrowser, 'launch').mockResolvedValue(browser)
+    const create = spyOn(Stagehand, 'create')
+    const scenario: Scenario = {
+      name: 'Open account',
+      tags: ['@web'],
+      steps: [
+        { keyword: 'Given', text: 'I navigate to /account', type: 'context' },
+      ],
+    }
+    const specification: Specification = {
+      name: 'Account',
+      source: { uri: 'features/account.feature', language: 'en' },
+      tags: ['@web'],
+      scenarios: [scenario],
+    }
+    const adapter = createWebAdapter({ baseUrl: 'https://example.test' })
+
+    try {
+      const session = await adapter.openSession({
+        executionTargetProfile: { id: 'web' },
+        specification,
+        scenario,
+        mode: 'replay',
+        executionCache: {
+          requiredVariables: [],
+          adapterPayload: {
+            schemaVersion: 1,
+            steps: [
+              {
+                instructions: [
+                  {
+                    kind: 'navigate',
+                    url: {
+                      segments: [{ literal: 'https://example.test/account' }],
+                    },
+                  },
+                ],
+              },
+            ],
+          },
+        },
+      })
+      await session.executeStep(scenario.steps[0]!, undefined, {
+        stepIndex: 0,
+        templateStep: scenario.steps[0]!,
+        runtimeBindings: [],
+      })
+      await session.close()
+    } finally {
+      await adapter.dispose?.()
+    }
+
+    expect(goto).toHaveBeenCalledTimes(1)
+    expect(create).not.toHaveBeenCalled()
   })
 })

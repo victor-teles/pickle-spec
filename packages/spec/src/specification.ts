@@ -37,6 +37,17 @@ export interface ScenarioStep {
   }
 }
 
+export interface ScenarioTemplate {
+  name: string
+  steps: ScenarioStep[]
+  variableNames: string[]
+}
+
+export interface ScenarioVariableBinding {
+  name: string
+  value: string
+}
+
 export interface Scenario {
   name: string
   tags: string[]
@@ -45,6 +56,8 @@ export interface Scenario {
   examplesId?: string
   examplesRowId?: string
   capabilityRequirements?: string[]
+  template?: ScenarioTemplate
+  runtimeBindings?: ScenarioVariableBinding[]
 }
 
 export interface Specification {
@@ -60,6 +73,14 @@ export interface ParseSpecificationInput {
   source: string
   uri: string
   language?: string
+}
+
+type OutlineRow = {
+  header: string[]
+  cells: string[]
+  examplesTags: string[]
+  examplesName: string
+  scenarioName: string
 }
 
 const requiresTagPrefix = '@pickle:requires:'
@@ -94,16 +115,32 @@ function stepType(
   }
 }
 
-function collectStepInfo(
-  document: GherkinDocument,
-): Map<string, Pick<ScenarioStep, 'keyword' | 'type'>> {
-  const result = new Map<string, Pick<ScenarioStep, 'keyword' | 'type'>>()
+function mapSourceArgument(step: Step): ScenarioStep['argument'] {
+  if (step.dataTable) {
+    return {
+      dataTable: step.dataTable.rows.map((row) =>
+        row.cells.map((cell) => cell.value),
+      ),
+    }
+  }
+  if (step.docString) return { docString: step.docString.content }
+  return undefined
+}
+
+function collectStepInfo(document: GherkinDocument): Map<string, ScenarioStep> {
+  const result = new Map<string, ScenarioStep>()
 
   function addSteps(steps: readonly Step[]): void {
     let previous: ScenarioStepType = 'context'
     for (const step of steps) {
       previous = stepType(step.keywordType, previous)
-      result.set(step.id, { keyword: step.keyword.trim(), type: previous })
+      const argument = mapSourceArgument(step)
+      result.set(step.id, {
+        keyword: step.keyword.trim(),
+        text: step.text,
+        type: previous,
+        argument,
+      })
     }
   }
 
@@ -135,7 +172,7 @@ function mapArgument(step: PickleStep): ScenarioStep['argument'] {
 
 function mapStep(
   step: PickleStep,
-  infoByAstNodeId: ReadonlyMap<string, Pick<ScenarioStep, 'keyword' | 'type'>>,
+  infoByAstNodeId: ReadonlyMap<string, ScenarioStep>,
 ): ScenarioStep {
   const info = infoByAstNodeId.get(step.astNodeIds[0] ?? '')
   const argument = mapArgument(step)
@@ -145,6 +182,44 @@ function mapStep(
     type: info?.type ?? 'context',
     ...(argument ? { argument } : {}),
   }
+}
+
+function templateStep(
+  step: PickleStep,
+  infoByAstNodeId: ReadonlyMap<string, ScenarioStep>,
+): ScenarioStep {
+  return (
+    infoByAstNodeId.get(step.astNodeIds[0] ?? '') ??
+    mapStep(step, infoByAstNodeId)
+  )
+}
+
+function templateVariableNames(
+  name: string,
+  steps: readonly ScenarioStep[],
+  header: readonly string[],
+): string[] {
+  const referenced = new Set<string>()
+  const collect = (value: string) => {
+    for (const match of value.matchAll(/<([^>]+)>/g)) referenced.add(match[1]!)
+  }
+  collect(name)
+  for (const step of steps) {
+    collect(step.text)
+    for (const row of step.argument?.dataTable ?? []) {
+      for (const cell of row) collect(cell)
+    }
+    if (step.argument?.docString) collect(step.argument.docString)
+  }
+  return header.filter((variable) => referenced.has(variable))
+}
+
+function outlineVariables(row: OutlineRow): ScenarioVariableBinding[] {
+  const runtimeBindings: ScenarioVariableBinding[] = []
+  for (const [index, name] of row.header.entries()) {
+    runtimeBindings.push({ name, value: row.cells[index] ?? '' })
+  }
+  return runtimeBindings
 }
 
 export function parseSpecification(
@@ -165,16 +240,7 @@ export function parseSpecification(
 
   const infoByAstNodeId = collectStepInfo(document)
   const scenariosById = new Map<string, { tags: string[]; name: string }>()
-  const rowsById = new Map<
-    string,
-    {
-      header: string[]
-      cells: string[]
-      examplesTags: string[]
-      examplesName: string
-      scenarioName: string
-    }
-  >()
+  const rowsById = new Map<string, OutlineRow>()
   collectIdentityNodes(document, scenariosById, rowsById)
   const featureTags = feature.tags.map((tag) => tag.name)
   const featureIdentity = identityFromTags(featureTags)
@@ -185,6 +251,23 @@ export function parseSpecification(
       const row = rowsById.get(pickle.astNodeIds[1] ?? '')
       const tags = pickle.tags.map(({ name }) => name)
       const requirements = capabilityRequirements(tags)
+      const runtimeBindings = row ? outlineVariables(row) : undefined
+      const templateSteps = row
+        ? pickle.steps.map((step) => templateStep(step, infoByAstNodeId))
+        : undefined
+      const templateName = row ? (scenarioNode?.name ?? pickle.name) : undefined
+      const template =
+        row && templateName && templateSteps
+          ? {
+              name: templateName,
+              steps: templateSteps,
+              variableNames: templateVariableNames(
+                templateName,
+                templateSteps,
+                row.header,
+              ),
+            }
+          : undefined
       return {
         name: pickle.name,
         tags,
@@ -195,26 +278,28 @@ export function parseSpecification(
           scenarioNode?.name ?? pickle.name,
           scenarioTags,
         ),
-        ...(row
-          ? {
-              examplesId: resolveExamplesId(
-                input.uri,
-                feature.name,
-                row.scenarioName,
-                row.examplesName,
-                row.examplesTags,
-              ),
-              examplesRowId: resolveExamplesRowId(
-                input.uri,
-                feature.name,
-                row.scenarioName,
-                row.examplesName,
-                row.header,
-                row.cells,
-              ),
-            }
-          : {}),
-        ...(requirements ? { capabilityRequirements: requirements } : {}),
+        examplesId: row
+          ? resolveExamplesId(
+              input.uri,
+              feature.name,
+              row.scenarioName,
+              row.examplesName,
+              row.examplesTags,
+            )
+          : undefined,
+        examplesRowId: row
+          ? resolveExamplesRowId(
+              input.uri,
+              feature.name,
+              row.scenarioName,
+              row.examplesName,
+              row.header,
+              row.cells,
+            )
+          : undefined,
+        template,
+        runtimeBindings,
+        capabilityRequirements: requirements,
       }
     },
   )
@@ -235,19 +320,18 @@ export function parseSpecification(
 function collectIdentityNodes(
   document: GherkinDocument,
   scenariosById: Map<string, { tags: string[]; name: string }>,
-  rowsById: Map<
-    string,
-    {
-      header: string[]
-      cells: string[]
-      examplesTags: string[]
-      examplesName: string
-      scenarioName: string
-    }
-  >,
+  rowsById: Map<string, OutlineRow>,
 ): void {
   function visitExamples(scenarioName: string, examples: Examples): void {
     const header = examples.tableHeader?.cells.map((cell) => cell.value) ?? []
+    const duplicate = header.find(
+      (name, index) => header.indexOf(name) !== index,
+    )
+    if (duplicate) {
+      throw new Error(
+        `Scenario Outline Examples contain duplicate variable name "${duplicate}"`,
+      )
+    }
     const examplesTags = examples.tags.map((tag) => tag.name)
     for (const row of examples.tableBody) {
       rowsById.set(row.id, {
