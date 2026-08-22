@@ -31,17 +31,49 @@ const archiveScenarioInput = object('archive result.scenario', {
   id: z.unknown().optional(),
 })
 
+const executionModeInput = z
+  .enum(['adaptive', 'replay'])
+  .optional()
+  .catch(undefined)
+
+const cacheOutcomeInput = z
+  .enum(['hit', 'miss', 'refresh', 'fallback', 'uncacheable'])
+  .optional()
+  .catch(undefined)
+
+const inferenceCountInput = z
+  .number()
+  .int()
+  .nonnegative()
+  .safe()
+  .optional()
+  .catch(undefined)
+
+const cacheUncacheableReasonInput = z
+  .enum([
+    'application-revision-missing',
+    'bound-parameter-value',
+    'non-deterministic-action',
+    'non-deterministic-assertion',
+    'payload-validation-failed',
+    'entry-too-large',
+  ])
+  .optional()
+  .catch(undefined)
+
+const failureKindInput = z.literal('cache-miss').optional().catch(undefined)
+
 const archiveResultInput = object('archive result', {
   specification: z.unknown().optional(),
   scenario: z.unknown().optional(),
   executionTargetProfile: z.unknown().optional(),
   state: z.unknown().optional(),
   steps: z.unknown().optional(),
-  executionMode: z.unknown().optional(),
-  cacheOutcome: z.unknown().optional(),
-  inferenceCount: z.unknown().optional(),
-  cacheUncacheableReason: z.unknown().optional(),
-  failureKind: z.unknown().optional(),
+  executionMode: executionModeInput,
+  cacheOutcome: cacheOutcomeInput,
+  inferenceCount: inferenceCountInput,
+  cacheUncacheableReason: cacheUncacheableReasonInput,
+  failureKind: failureKindInput,
   message: z.unknown().optional(),
   attempts: z.unknown().optional(),
   flaky: z.unknown().optional(),
@@ -119,23 +151,11 @@ function migrateResult(result: unknown): TestResult {
       value.executionTargetProfile as TestResult['executionTargetProfile'],
     state: value.state as TestResult['state'],
     steps: Array.isArray(value.steps) ? value.steps.map(migrateStep) : [],
-    executionMode:
-      typeof value.executionMode === 'string'
-        ? (value.executionMode as TestResult['executionMode'])
-        : undefined,
-    cacheOutcome:
-      typeof value.cacheOutcome === 'string'
-        ? (value.cacheOutcome as TestResult['cacheOutcome'])
-        : undefined,
-    inferenceCount:
-      typeof value.inferenceCount === 'number'
-        ? value.inferenceCount
-        : undefined,
-    cacheUncacheableReason:
-      typeof value.cacheUncacheableReason === 'string'
-        ? (value.cacheUncacheableReason as TestResult['cacheUncacheableReason'])
-        : undefined,
-    failureKind: value.failureKind === 'cache-miss' ? 'cache-miss' : undefined,
+    executionMode: value.executionMode,
+    cacheOutcome: value.cacheOutcome,
+    inferenceCount: value.inferenceCount,
+    cacheUncacheableReason: value.cacheUncacheableReason,
+    failureKind: value.failureKind,
     message: typeof value.message === 'string' ? value.message : undefined,
     attempts: typeof value.attempts === 'number' ? value.attempts : undefined,
     flaky: typeof value.flaky === 'boolean' ? value.flaky : undefined,

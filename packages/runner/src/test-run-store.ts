@@ -517,11 +517,9 @@ function listRuns(db: Database): TestRunSummary[] {
           : {}),
         state: indexed.state,
         resultCount: indexed.resultCount,
-        ...(executionModes.length > 0 ? { executionModes } : {}),
-        ...(cacheOutcomes.length > 0 ? { cacheOutcomes } : {}),
-        ...(indexed.inferenceCount !== null
-          ? { inferenceCount: indexed.inferenceCount }
-          : {}),
+        executionModes: executionModes.length > 0 ? executionModes : undefined,
+        cacheOutcomes: cacheOutcomes.length > 0 ? cacheOutcomes : undefined,
+        inferenceCount: indexed.inferenceCount ?? undefined,
       }
     })
 }

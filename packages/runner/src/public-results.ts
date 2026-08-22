@@ -6,6 +6,11 @@ import type {
   TestStepResult,
 } from './run-scenario'
 
+interface EventResultMappers {
+  step(result: TestStepResult): TestStepResult
+  scenario(result: TestResult): TestResult
+}
+
 function publicState(state: TestResultState): TestResultState {
   return state === 'passed-with-adaptation' ? 'passed' : state
 }
@@ -31,13 +36,10 @@ export function withoutPrivateTestResultData(result: TestResult): TestResult {
 export function withoutPrivateRunEventPayloadData(
   event: RunEventPayload,
 ): RunEventPayload {
-  if (event.type === 'step-finished') {
-    return { ...event, result: withoutPrivateStepResultData(event.result) }
-  }
-  if (event.type === 'scenario-finished') {
-    return { ...event, result: withoutPrivateTestResultData(event.result) }
-  }
-  return event
+  return mapEventResults(event, {
+    step: withoutPrivateStepResultData,
+    scenario: withoutPrivateTestResultData,
+  })
 }
 
 function publicStepResult(result: TestStepResult): TestStepResult {
@@ -49,18 +51,33 @@ function publicStepResult(result: TestStepResult): TestStepResult {
 
 export function publicTestResult(result: TestResult): TestResult {
   return {
-    ...withoutPrivateTestResultData(result),
+    ...result,
     state: publicState(result.state),
     steps: result.steps.map(publicStepResult),
   }
 }
 
 export function publicRunEvent(event: RunEvent): RunEvent {
+  return mapEventResults(event, {
+    step: publicStepResult,
+    scenario: publicTestResult,
+  })
+}
+
+function mapEventResults(event: RunEvent, mappers: EventResultMappers): RunEvent
+function mapEventResults(
+  event: RunEventPayload,
+  mappers: EventResultMappers,
+): RunEventPayload
+function mapEventResults(
+  event: RunEvent | RunEventPayload,
+  mappers: EventResultMappers,
+): RunEvent | RunEventPayload {
   if (event.type === 'step-finished') {
-    return { ...event, result: publicStepResult(event.result) }
+    return { ...event, result: mappers.step(event.result) }
   }
   if (event.type === 'scenario-finished') {
-    return { ...event, result: publicTestResult(event.result) }
+    return { ...event, result: mappers.scenario(event.result) }
   }
   return event
 }

@@ -257,6 +257,52 @@ test('import preserves the original archive and migrates older schemas in memory
   }
 })
 
+test('migration normalizes invalid Execution cache metadata from untrusted archives', async () => {
+  const root = await tempRoot()
+  try {
+    const archivePath = join(root, 'invalid-cache-metadata.json')
+    await Bun.write(
+      archivePath,
+      JSON.stringify({
+        manifest: {
+          id: 'run-invalid-cache-metadata',
+          startedAt: '2026-08-01T00:00:00.000Z',
+          state: 'passed',
+          results: [
+            {
+              specification: {
+                name: 'Checkout',
+                uri: 'features/checkout.feature',
+              },
+              scenario: { name: 'Complete a purchase' },
+              executionTargetProfile: { id: 'deterministic' },
+              state: 'passed',
+              steps: [],
+              executionMode: 'automatic',
+              cacheOutcome: 'stale',
+              inferenceCount: -1,
+              cacheUncacheableReason: 'unknown',
+              failureKind: 'model-error',
+            },
+          ],
+        },
+      }),
+    )
+
+    const archive = await readRunArchive(archivePath)
+
+    expect(archive.manifest.results[0]).toMatchObject({
+      executionMode: undefined,
+      cacheOutcome: undefined,
+      inferenceCount: undefined,
+      cacheUncacheableReason: undefined,
+      failureKind: undefined,
+    })
+  } finally {
+    await rm(root, { recursive: true, force: true })
+  }
+})
+
 test('import refuses to overwrite an existing immutable run or retained archive', async () => {
   const root = await tempRoot()
   try {
