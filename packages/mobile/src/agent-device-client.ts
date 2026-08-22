@@ -38,6 +38,11 @@ type FindOptions = MobileSelection & {
   action: 'click'
 }
 
+type ReplayRunOptions = MobileSelection & {
+  path: string
+  env?: string[]
+}
+
 interface LogsOptions {
   action: 'start' | 'stop' | 'path'
 }
@@ -62,6 +67,9 @@ export interface AgentDeviceClientPort {
   }
   interactions: {
     find(options: FindOptions): Promise<unknown>
+  }
+  replay: {
+    run(options: ReplayRunOptions): Promise<unknown>
   }
   capture: {
     screenshot(options: { path?: string }): Promise<unknown>
@@ -149,6 +157,29 @@ const functionalFailureCodes = new Set([
 
 export function isFunctionalAgentDeviceFailure(error: unknown): boolean {
   return isAgentDeviceError(error) && functionalFailureCodes.has(error.code)
+}
+
+export function isAgentDeviceReplayDivergence(error: unknown): boolean {
+  return isAgentDeviceError(error) && error.code === 'REPLAY_DIVERGENCE'
+}
+
+type ReplayDivergenceDetails = {
+  divergence?: {
+    step?: {
+      index?: unknown
+    }
+  }
+}
+
+export function agentDeviceReplayPlanStep(error: unknown): number | undefined {
+  if (!isAgentDeviceError(error) || error.code !== 'REPLAY_DIVERGENCE') {
+    return undefined
+  }
+  const details = error.details as ReplayDivergenceDetails | undefined
+  const index = details?.divergence?.step?.index
+  return typeof index === 'number' && Number.isInteger(index) && index > 0
+    ? index
+    : undefined
 }
 
 export const defaultAgentDeviceClientFactory: AgentDeviceClientFactory = (

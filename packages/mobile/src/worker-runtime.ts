@@ -2,13 +2,13 @@ import type {
   MobileApplication,
   MobileArtifactKind,
   MobilePlatform,
-  MobileStep,
   MobileTarget,
   MobileTextRedaction,
   MobileWorkerRequest,
   MobileWorkerResponse,
-  WorkerResolvedAction,
-  WorkerStepExecution,
+  MobileWorkerScenario,
+  WorkerScenarioExecution,
+  WorkerSessionCompletion,
 } from './worker-protocol'
 import { mobileWorkerProtocolVersion } from './worker-protocol.ts'
 
@@ -21,13 +21,12 @@ export interface OpenMobileGatewaySessionInput {
   artifacts?: readonly MobileArtifactKind[]
   redactions?: readonly MobileTextRedaction[]
   requiredCapabilities?: readonly string[]
-}
-
-export interface ExecuteMobileGatewayStepInput {
-  sessionId: string
-  stepIndex: number
-  step: MobileStep
-  plannedActions?: readonly WorkerResolvedAction[]
+  mode: 'adaptive' | 'replay'
+  scenario: MobileWorkerScenario
+  executionCache?: Extract<
+    MobileWorkerRequest,
+    { type: 'open-session' }
+  >['executionCache']
 }
 
 export interface MobileDeviceGateway {
@@ -35,24 +34,16 @@ export interface MobileDeviceGateway {
   openSession(
     input: OpenMobileGatewaySessionInput,
   ): Promise<{ targetId: string }>
-  executeStep(
-    input: ExecuteMobileGatewayStepInput,
-  ): Promise<WorkerStepExecution>
+  executeScenario(sessionId: string): Promise<WorkerScenarioExecution>
+  completeSession(sessionId: string): Promise<WorkerSessionCompletion>
   closeSession(sessionId: string): Promise<void>
   cancelSession?(sessionId: string): Promise<void>
   dispose(): Promise<void>
 }
 
-interface RuntimeSession {
-  mode: 'adaptive' | 'replay'
-  plan?: {
-    steps: Array<{ resolvedActions: WorkerResolvedAction[] }>
-  }
-}
-
 export class MobileWorkerRuntime {
   private readonly gateway: MobileDeviceGateway
-  private readonly sessions = new Map<string, RuntimeSession>()
+  private readonly sessions = new Set<string>()
   private readonly queues = new Map<string, Promise<void>>()
   private readonly cancelling = new Set<string>()
 
@@ -88,11 +79,11 @@ export class MobileWorkerRuntime {
           artifacts: request.artifacts,
           redactions: request.redactions,
           requiredCapabilities: request.requiredCapabilities,
-        })
-        this.sessions.set(request.sessionId, {
           mode: request.mode,
-          plan: request.plan,
+          scenario: request.scenario,
+          executionCache: request.executionCache,
         })
+        this.sessions.add(request.sessionId)
         return {
           version: mobileWorkerProtocolVersion,
           type: 'session-opened',
@@ -100,30 +91,36 @@ export class MobileWorkerRuntime {
           targetId: opened.targetId,
         }
       }
-      case 'execute-step': {
-        const session = this.sessions.get(request.sessionId)
-        if (!session) {
+      case 'execute-scenario': {
+        if (!this.sessions.has(request.sessionId)) {
           throw new Error(
             `Mobile logical session "${request.sessionId}" is not open`,
           )
         }
         const execution = await this.serialize(request.sessionId, () =>
-          this.gateway.executeStep({
-            sessionId: request.sessionId,
-            stepIndex: request.stepIndex,
-            step: request.step,
-            plannedActions:
-              session.mode === 'replay'
-                ? (session.plan?.steps[request.stepIndex]?.resolvedActions ??
-                  [])
-                : undefined,
-          }),
+          this.gateway.executeScenario(request.sessionId),
         )
         return {
           version: mobileWorkerProtocolVersion,
-          type: 'step-executed',
+          type: 'scenario-executed',
           sessionId: request.sessionId,
           execution,
+        }
+      }
+      case 'complete-session': {
+        if (!this.sessions.has(request.sessionId)) {
+          throw new Error(
+            `Mobile logical session "${request.sessionId}" is not open`,
+          )
+        }
+        const completion = await this.serialize(request.sessionId, () =>
+          this.gateway.completeSession(request.sessionId),
+        )
+        return {
+          version: mobileWorkerProtocolVersion,
+          type: 'session-completed',
+          sessionId: request.sessionId,
+          completion,
         }
       }
       case 'close-session':

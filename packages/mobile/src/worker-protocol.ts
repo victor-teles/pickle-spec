@@ -1,6 +1,7 @@
 import { z } from 'zod'
+import { mobileExecutionCachePayloadSchema } from './mobile-execution-cache'
 
-export const mobileWorkerProtocolVersion = 2 as const
+export const mobileWorkerProtocolVersion = 3 as const
 
 export const androidCapabilities = [
   'android',
@@ -48,23 +49,50 @@ const mobileTextRedactionSchema = z.strictObject({
 
 const workerResolvedActionSchema = z.strictObject({
   description: z.string(),
-  replay: z.record(z.string(), z.unknown()).optional(),
 })
 
 const mobileStepSchema = z.strictObject({
   type: z.enum(['context', 'action', 'outcome']),
   text: z.string(),
+  argument: z
+    .strictObject({
+      dataTable: z.array(z.array(z.string())).optional(),
+      docString: z.string().optional(),
+    })
+    .optional(),
 })
 
+const mobileRuntimeBindingSchema = z.strictObject({
+  name: z.string().min(1),
+  value: z.string(),
+})
+
+const mobileScenarioSchema = z
+  .strictObject({
+    steps: z.array(mobileStepSchema).min(1),
+    templateSteps: z.array(mobileStepSchema).min(1),
+    runtimeBindings: z.array(mobileRuntimeBindingSchema),
+  })
+  .superRefine((scenario, context) => {
+    if (scenario.steps.length !== scenario.templateSteps.length) {
+      context.addIssue({
+        code: 'custom',
+        message: 'Runtime and template Scenario steps must have equal length',
+      })
+    }
+    const names = scenario.runtimeBindings.map((binding) => binding.name)
+    if (new Set(names).size !== names.length) {
+      context.addIssue({
+        code: 'custom',
+        message: 'Runtime binding names must be unique',
+      })
+    }
+  })
+
 const workerStepExecutionSchema = z.strictObject({
-  state: z.enum([
-    'passed',
-    'passed-with-adaptation',
-    'failed',
-    'cancelled',
-    'infrastructure-error',
-  ]),
+  state: z.enum(['passed', 'failed', 'cancelled', 'infrastructure-error']),
   resolvedActions: z.array(workerResolvedActionSchema),
+  replayDiverged: z.boolean().optional(),
   message: z.string().optional(),
   artifacts: z
     .array(
@@ -77,12 +105,39 @@ const workerStepExecutionSchema = z.strictObject({
     .optional(),
 })
 
-const executionPlanSchema = z.strictObject({
-  steps: z.array(
-    z.strictObject({
-      resolvedActions: z.array(workerResolvedActionSchema),
-    }),
-  ),
+const workerScenarioExecutionSchema = z.strictObject({
+  stepExecutions: z.array(workerStepExecutionSchema),
+  replayDiverged: z.boolean().optional(),
+})
+
+const workerCacheCandidateSchema = z.discriminatedUnion('cacheable', [
+  z.strictObject({
+    cacheable: z.literal(true),
+    adapterPayload: mobileExecutionCachePayloadSchema,
+    requiredVariables: z.array(z.string().min(1)),
+  }),
+  z.strictObject({
+    cacheable: z.literal(false),
+    reason: z.enum([
+      'application-revision-missing',
+      'bound-parameter-value',
+      'non-deterministic-action',
+      'non-deterministic-assertion',
+      'payload-validation-failed',
+      'entry-too-large',
+    ]),
+  }),
+])
+
+const workerSessionCompletionSchema = z.strictObject({
+  inferenceCount: z.number().int().nonnegative(),
+  evaluationModel: z.string().min(1).optional(),
+  cacheCandidate: workerCacheCandidateSchema.optional(),
+})
+
+const workerReplayCacheSchema = z.strictObject({
+  adapterPayload: mobileExecutionCachePayloadSchema,
+  requiredVariables: z.array(z.string().min(1)),
 })
 
 export const mobileWorkerRequestSchema = z.discriminatedUnion('type', [
@@ -103,14 +158,18 @@ export const mobileWorkerRequestSchema = z.discriminatedUnion('type', [
     artifacts: z.array(mobileArtifactKindSchema).optional(),
     redactions: z.array(mobileTextRedactionSchema).optional(),
     requiredCapabilities: z.array(z.string().min(1)).optional(),
-    plan: executionPlanSchema.optional(),
+    scenario: mobileScenarioSchema,
+    executionCache: workerReplayCacheSchema.optional(),
   }),
   z.strictObject({
     version: z.literal(mobileWorkerProtocolVersion),
-    type: z.literal('execute-step'),
+    type: z.literal('execute-scenario'),
     sessionId: z.string().min(1),
-    stepIndex: z.number().int().nonnegative(),
-    step: mobileStepSchema,
+  }),
+  z.strictObject({
+    version: z.literal(mobileWorkerProtocolVersion),
+    type: z.literal('complete-session'),
+    sessionId: z.string().min(1),
   }),
   z.strictObject({
     version: z.literal(mobileWorkerProtocolVersion),
@@ -143,9 +202,15 @@ export const mobileWorkerResponseSchema = z.discriminatedUnion('type', [
   }),
   z.strictObject({
     version: z.literal(mobileWorkerProtocolVersion),
-    type: z.literal('step-executed'),
+    type: z.literal('scenario-executed'),
     sessionId: z.string().min(1),
-    execution: workerStepExecutionSchema,
+    execution: workerScenarioExecutionSchema,
+  }),
+  z.strictObject({
+    version: z.literal(mobileWorkerProtocolVersion),
+    type: z.literal('session-completed'),
+    sessionId: z.string().min(1),
+    completion: workerSessionCompletionSchema,
   }),
   z.strictObject({
     version: z.literal(mobileWorkerProtocolVersion),
@@ -194,7 +259,14 @@ export type AndroidApplication = MobileApplication
 export type IosTarget = MobileTarget
 export type IosApplication = MobileApplication
 export type MobileStep = z.infer<typeof mobileStepSchema>
+export type MobileWorkerScenario = z.infer<typeof mobileScenarioSchema>
 export type WorkerResolvedAction = z.infer<typeof workerResolvedActionSchema>
 export type WorkerStepExecution = z.infer<typeof workerStepExecutionSchema>
+export type WorkerScenarioExecution = z.infer<
+  typeof workerScenarioExecutionSchema
+>
+export type WorkerSessionCompletion = z.infer<
+  typeof workerSessionCompletionSchema
+>
 export type MobileWorkerRequest = z.infer<typeof mobileWorkerRequestSchema>
 export type MobileWorkerResponse = z.infer<typeof mobileWorkerResponseSchema>

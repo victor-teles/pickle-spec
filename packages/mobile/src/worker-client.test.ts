@@ -11,9 +11,9 @@ test('launches the versioned worker protocol explicitly through Node', async () 
 
   try {
     expect(
-      await client.request({ version: 2, type: 'discover-targets' }),
+      await client.request({ version: 3, type: 'discover-targets' }),
     ).toEqual({
-      version: 2,
+      version: 3,
       type: 'targets-discovered',
       targets: [],
     })
@@ -34,7 +34,7 @@ test('rejects a request when disposal interrupts worker startup', async () => {
   const client = createNodeWorkerClient({
     workerEntry: new URL('../test/slow-worker.mjs', import.meta.url),
   })
-  const request = client.request({ version: 2, type: 'discover-targets' })
+  const request = client.request({ version: 3, type: 'discover-targets' })
   const rejection = request.catch((error: unknown) => error)
   await new Promise((resolve) => setTimeout(resolve, 10))
 
