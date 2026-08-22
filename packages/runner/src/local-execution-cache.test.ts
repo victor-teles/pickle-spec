@@ -172,9 +172,9 @@ describe('local Execution cache', () => {
       await cache.coordination.wait(
         cacheKey,
         waiter.ownerToken,
-        waiter.baselinePayloadDigest,
+        waiter.baselineRevision,
       ),
-    ).toEqual({ status: 'released', entryChanged: false })
+    ).toEqual({ status: 'released', published: false })
     expect((await cache.coordination.acquire(cacheKey)).acquired).toBe(true)
   })
 
@@ -217,6 +217,35 @@ describe('local Execution cache', () => {
     expect(await cache.read(original.key)).toBe(replacement.source)
   })
 
+  test('preserves a previous entry when a refresh publication is too large', async () => {
+    const projectRoot = await tempRoot('pickle-project')
+    const cacheRoot = await tempRoot('pickle-cache')
+    const probe = await openLocalExecutionCache({ projectRoot, cacheRoot })
+    const original = serialized(probe.projectKey, 'scenario-v1', '#short')
+    const oversized = serialized(
+      probe.projectKey,
+      'scenario-v1',
+      `#${'oversized'.repeat(20)}`,
+    )
+    const cache = await openLocalExecutionCache({
+      projectRoot,
+      cacheRoot,
+      maxBytes: Buffer.byteLength(original.source, 'utf8') + 1,
+    })
+    await cache.write(original, writeMetadata)
+    const acquired = await cache.coordination.acquire(original.key)
+    if (!acquired.acquired) throw new Error('lease missing')
+
+    expect(
+      await cache.coordination.publish(
+        acquired.lease,
+        oversized,
+        writeMetadata,
+      ),
+    ).toEqual({ published: true, stored: false, evictedEntries: 0 })
+    expect(await cache.read(original.key)).toBe(original.source)
+  })
+
   test('bounds and cancels lease waiting without acquiring another lease', async () => {
     const projectRoot = await tempRoot('pickle-project')
     const cacheRoot = await tempRoot('pickle-cache')
@@ -242,7 +271,7 @@ describe('local Execution cache', () => {
       await cache.coordination.wait(
         cacheKey,
         waiter.ownerToken,
-        waiter.baselinePayloadDigest,
+        waiter.baselineRevision,
       ),
     ).toEqual({ status: 'timed-out' })
 
@@ -250,7 +279,7 @@ describe('local Execution cache', () => {
     const waiting = cache.coordination.wait(
       cacheKey,
       waiter.ownerToken,
-      waiter.baselinePayloadDigest,
+      waiter.baselineRevision,
       controller.signal,
     )
     controller.abort()
@@ -453,6 +482,66 @@ describe('local Execution cache', () => {
     await migrated.write(entry, writeMetadata)
 
     expect(await migrated.read(entry.key)).toBe(entry.source)
+  })
+
+  test('migrates a version-two cache to revision-based publication', async () => {
+    const projectRoot = await tempRoot('pickle-project')
+    const cacheRoot = await tempRoot('pickle-cache')
+    const initial = await openLocalExecutionCache({ projectRoot, cacheRoot })
+    const databasePath = join(
+      cacheRoot,
+      initial.projectKey,
+      'execution-cache.sqlite',
+    )
+    await rm(databasePath, { force: true })
+    await rm(`${databasePath}-wal`, { force: true })
+    await rm(`${databasePath}-shm`, { force: true })
+    const legacy = new Database(databasePath, { create: true })
+    legacy.run(`
+      CREATE TABLE entries (
+        key_digest TEXT PRIMARY KEY,
+        project_key TEXT NOT NULL,
+        scenario_id TEXT NOT NULL,
+        scenario_revision TEXT NOT NULL,
+        execution_target_profile_id TEXT NOT NULL,
+        target_configuration_fingerprint TEXT NOT NULL,
+        application_revision TEXT NOT NULL,
+        adapter_kind TEXT NOT NULL,
+        adapter_cache_schema_version TEXT NOT NULL,
+        serialized_envelope TEXT NOT NULL,
+        payload_digest TEXT NOT NULL,
+        source_run_id TEXT NOT NULL,
+        evaluation_model TEXT,
+        evaluation_inference_count INTEGER NOT NULL,
+        created_at TEXT NOT NULL,
+        last_used_at TEXT NOT NULL,
+        hit_count INTEGER NOT NULL,
+        size_bytes INTEGER NOT NULL
+      )
+    `)
+    legacy.run(`
+      CREATE TABLE leases (
+        key_digest TEXT PRIMARY KEY,
+        owner_token TEXT NOT NULL,
+        expires_at INTEGER NOT NULL,
+        baseline_payload_digest TEXT
+      )
+    `)
+    legacy.run('PRAGMA user_version = 2')
+    legacy.close()
+
+    const migrated = await openLocalExecutionCache({ projectRoot, cacheRoot })
+    const entry = serialized(migrated.projectKey, 'scenario-v1')
+    await migrated.write(entry, writeMetadata)
+    const first = await migrated.coordination.acquire(entry.key)
+    if (!first.acquired) throw new Error('lease missing')
+
+    expect(
+      await migrated.coordination.publish(first.lease, entry, writeMetadata),
+    ).toEqual({ published: true, stored: true, evictedEntries: 0 })
+    expect((await migrated.coordination.readCurrent(entry.key))?.revision).toBe(
+      2,
+    )
   })
 
   test('restricts local cache permissions and clears only the current checkout', async () => {

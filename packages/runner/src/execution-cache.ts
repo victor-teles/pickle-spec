@@ -47,8 +47,13 @@ export type SerializedExecutionCacheEnvelope = {
 export interface ExecutionCacheLease {
   key: ExecutionCacheKey
   ownerToken: string
-  baselinePayloadDigest?: string
+  baselineRevision?: number
   heartbeatMs: number
+}
+
+export interface ExecutionCacheEntrySnapshot {
+  source: string
+  revision: number
 }
 
 export type ExecutionCacheLeaseAcquisition =
@@ -56,11 +61,11 @@ export type ExecutionCacheLeaseAcquisition =
   | {
       acquired: false
       ownerToken: string
-      baselinePayloadDigest?: string
+      baselineRevision?: number
     }
 
 export type ExecutionCacheLeaseWaitResult =
-  | { status: 'released'; entryChanged: boolean }
+  | { status: 'released'; published: boolean }
   | { status: 'timed-out' | 'cancelled' }
 
 export interface ExecutionCacheLeasePublicationResult
@@ -69,13 +74,15 @@ export interface ExecutionCacheLeasePublicationResult
 }
 
 export interface ExecutionCacheCoordination {
-  readCurrent(key: ExecutionCacheKey): Promise<string | undefined>
+  readCurrent(
+    key: ExecutionCacheKey,
+  ): Promise<ExecutionCacheEntrySnapshot | undefined>
   acquire(key: ExecutionCacheKey): Promise<ExecutionCacheLeaseAcquisition>
   renew(lease: ExecutionCacheLease): Promise<boolean>
   wait(
     key: ExecutionCacheKey,
     ownerToken: string,
-    baselinePayloadDigest: string | undefined,
+    baselineRevision: number | undefined,
     signal?: AbortSignal,
   ): Promise<ExecutionCacheLeaseWaitResult>
   publish(

@@ -2,7 +2,6 @@ import { type Scenario, scenarioRevision } from '@pickle-spec/spec'
 import {
   type CacheOutcome,
   deserializeExecutionCacheEnvelope,
-  type ExecutionCacheCoordination,
   type ExecutionCacheEnvelope,
   type ExecutionCacheKey,
   type ExecutionCacheLease,
@@ -11,6 +10,7 @@ import {
   type SerializedExecutionCacheEnvelope,
   serializeExecutionCacheEnvelope,
 } from './execution-cache'
+import { coordinateExecutionCacheRun } from './execution-cache-run-coordinator'
 import {
   type AttemptScenarioRun,
   createTestResult,
@@ -279,46 +279,6 @@ async function finalizeAdaptiveRun(
   return finishRun(input, events, result)
 }
 
-function waitForDelay(delayMs: number, signal: AbortSignal): Promise<void> {
-  if (signal.aborted) return Promise.resolve()
-  return new Promise((resolve) => {
-    const timer = setTimeout(() => {
-      signal.removeEventListener('abort', onAbort)
-      resolve()
-    }, delayMs)
-    const onAbort = () => {
-      clearTimeout(timer)
-      resolve()
-    }
-    signal.addEventListener('abort', onAbort, { once: true })
-  })
-}
-
-function startLeaseHeartbeat(
-  coordination: ExecutionCacheCoordination,
-  lease: ExecutionCacheLease,
-): { stop(): Promise<boolean> } {
-  const controller = new AbortController()
-  let ownershipLost = false
-  const heartbeat = (async () => {
-    while (!controller.signal.aborted) {
-      await waitForDelay(lease.heartbeatMs, controller.signal)
-      if (controller.signal.aborted) return
-      if (!(await coordination.renew(lease))) {
-        ownershipLost = true
-        return
-      }
-    }
-  })()
-  return {
-    async stop() {
-      controller.abort()
-      await heartbeat
-      return ownershipLost
-    },
-  }
-}
-
 async function finishLeaseWait(
   input: RunScenarioInput,
   events: RunEvent[],
@@ -378,14 +338,20 @@ async function replayPublishedEntry(
   })
 }
 
+interface RunCoordinatedAdaptiveInput {
+  input: RunScenarioInput
+  events: RunEvent[]
+  cacheKey: ExecutionCacheKey
+  cacheOutcome: CacheOutcome
+  observedRevision?: number
+  inferenceOffset?: number
+}
+
 async function runCoordinatedAdaptive(
-  input: RunScenarioInput,
-  events: RunEvent[],
-  cacheKey: ExecutionCacheKey,
-  cacheOutcome: CacheOutcome,
-  observedSource?: string,
-  inferenceOffset = 0,
+  options: RunCoordinatedAdaptiveInput,
 ): Promise<ScenarioRun> {
+  const { cacheKey, cacheOutcome, events, input } = options
+  const inferenceOffset = options.inferenceOffset ?? 0
   const coordination = input.executionCache!.store.coordination
   if (!coordination) {
     const adaptive = await runCachedAttempts(input, 'adaptive', events)
@@ -396,78 +362,46 @@ async function runCoordinatedAdaptive(
     return finalizeAdaptiveRun(input, events, { run, cacheKey, cacheOutcome })
   }
 
-  for (;;) {
-    const acquisition = await coordination.acquire(cacheKey)
-    if (!acquisition.acquired) {
-      const waited = await coordination.wait(
-        cacheKey,
-        acquisition.ownerToken,
-        acquisition.baselinePayloadDigest,
-        input.signal,
-      )
-      if (waited.status !== 'released') {
-        return finishLeaseWait(
-          input,
-          events,
-          cacheOutcome,
-          waited.status,
-          inferenceOffset,
-        )
-      }
-      if (waited.entryChanged) {
-        const replay = await replayPublishedEntry(
-          input,
-          events,
-          cacheKey,
-          inferenceOffset,
-        )
-        if (replay) return replay
-      }
-      continue
-    }
-
-    const heartbeat = startLeaseHeartbeat(coordination, acquisition.lease)
-    try {
-      const currentSource = await coordination.readCurrent(cacheKey)
-      if (currentSource && currentSource !== observedSource) {
-        const replay = await replayPublishedEntry(
-          input,
-          events,
-          cacheKey,
-          inferenceOffset,
-        )
-        if (replay) return replay
-      }
-
-      const adaptive = await runCachedAttempts(input, 'adaptive', events)
+  return coordinateExecutionCacheRun({
+    coordination,
+    cacheKey,
+    signal: input.signal,
+    observedRevision: options.observedRevision,
+    replayPublished: () =>
+      replayPublishedEntry(input, events, cacheKey, inferenceOffset),
+    waitEnded: (status) =>
+      finishLeaseWait(input, events, cacheOutcome, status, inferenceOffset),
+    evaluate: () => runCachedAttempts(input, 'adaptive', events),
+    async ownershipLost(adaptive) {
       const run = {
         ...adaptive,
         inferenceCount: inferenceOffset + adaptive.inferenceCount,
       }
-      if (await heartbeat.stop()) {
-        await appendEvent(events, input, {
-          type: 'inference-count-updated',
-          inferenceCount: run.inferenceCount,
-        })
-        return finishRun(input, events, {
-          ...run.result,
-          state: 'infrastructure-error',
-          cacheOutcome,
-          inferenceCount: run.inferenceCount,
-          message: 'Execution cache lease ownership was lost during evaluation',
-        })
+      await appendEvent(events, input, {
+        type: 'inference-count-updated',
+        inferenceCount: run.inferenceCount,
+      })
+      return finishRun(input, events, {
+        ...run.result,
+        state: 'infrastructure-error',
+        cacheOutcome,
+        inferenceCount: run.inferenceCount,
+        message: 'Execution cache lease ownership was lost during evaluation',
+      })
+    },
+    completeOwner(adaptive, lease) {
+      const run = {
+        ...adaptive,
+        inferenceCount: inferenceOffset + adaptive.inferenceCount,
       }
       return finalizeAdaptiveRun(input, events, {
         run,
         cacheKey,
         cacheOutcome,
-        lease: acquisition.lease,
+        lease,
       })
-    } finally {
-      await heartbeat.stop()
-      await coordination.release(acquisition.lease)
-    }
-  }
+    },
+  })
 }
 
 export async function runCacheOnlyMiss(
@@ -527,17 +461,19 @@ export async function runScenarioWithExecutionCache(
 
   if (cachePolicy === 'refresh') {
     await appendEvent(events, input, { type: 'cache-refresh', cacheKey })
-    const observedSource =
+    const observedSnapshot =
       await input.executionCache!.store.coordination?.readCurrent(cacheKey)
-    return runCoordinatedAdaptive(
+    return runCoordinatedAdaptive({
       input,
       events,
       cacheKey,
-      'refresh',
-      observedSource,
-    )
+      cacheOutcome: 'refresh',
+      observedRevision: observedSnapshot?.revision,
+    })
   }
 
+  const observedSnapshot =
+    await input.executionCache!.store.coordination?.readCurrent(cacheKey)
   const source = await input.executionCache!.store.read(cacheKey)
   const cacheEntry = source
     ? deserializeExecutionCacheEnvelope({
@@ -557,7 +493,13 @@ export async function runScenarioWithExecutionCache(
       )
     }
     await appendEvent(events, input, { type: 'cache-miss', cacheKey })
-    return runCoordinatedAdaptive(input, events, cacheKey, 'miss')
+    return runCoordinatedAdaptive({
+      input,
+      events,
+      cacheKey,
+      cacheOutcome: 'miss',
+      observedRevision: observedSnapshot?.revision,
+    })
   }
 
   await appendEvent(events, input, { type: 'cache-hit', cacheKey })
@@ -588,12 +530,12 @@ export async function runScenarioWithExecutionCache(
     type: 'adaptive-fallback-started',
     cacheKey,
   })
-  return runCoordinatedAdaptive(
+  return runCoordinatedAdaptive({
     input,
     events,
     cacheKey,
-    'fallback',
-    source,
-    replay.inferenceCount,
-  )
+    cacheOutcome: 'fallback',
+    observedRevision: observedSnapshot?.revision,
+    inferenceOffset: replay.inferenceCount,
+  })
 }

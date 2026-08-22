@@ -37,6 +37,7 @@ export type {
   ExecutionCacheAdapter,
   ExecutionCacheCoordination,
   ExecutionCacheEntryMetadata,
+  ExecutionCacheEntrySnapshot,
   ExecutionCacheEnvelope,
   ExecutionCacheKey,
   ExecutionCacheKeyInput,

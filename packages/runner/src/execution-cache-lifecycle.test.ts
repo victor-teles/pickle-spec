@@ -247,7 +247,7 @@ describe('Execution cache lifecycle', () => {
               cacheCandidate: {
                 cacheable: true as const,
                 adapterPayload: {
-                  operations: [`revision-${adaptiveExecutions}`],
+                  operations: ['same-deterministic-payload'],
                 },
                 requiredVariables: [],
               },
@@ -291,7 +291,7 @@ describe('Execution cache lifecycle', () => {
       cacheOutcome: 'hit',
     })
     expect(replayedOperations.at(-1)).toEqual({
-      operations: ['revision-2'],
+      operations: ['same-deterministic-payload'],
     })
   })
 

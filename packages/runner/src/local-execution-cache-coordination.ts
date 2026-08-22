@@ -1,13 +1,19 @@
-import type { Database } from 'bun:sqlite'
-import { createHash, randomUUID } from 'node:crypto'
+import { randomUUID } from 'node:crypto'
 import type {
   ExecutionCacheCoordination,
   ExecutionCacheKey,
   ExecutionCacheLease,
-  ExecutionCacheWriteMetadata,
-  SerializedExecutionCacheEnvelope,
 } from './execution-cache'
 import type { LocalExecutionCacheDatabase } from './local-execution-cache-database'
+import {
+  assertExecutionCacheProjectKey,
+  evictLeastRecentlyUsed,
+  executionCacheEntryIsRetained,
+  executionCacheEntrySize,
+  executionCacheKeyDigest,
+  readExecutionCacheEntrySnapshot,
+  writeExecutionCacheEntry,
+} from './local-execution-cache-records'
 
 export interface ExecutionCacheLeaseTiming {
   ttlMs: number
@@ -28,28 +34,7 @@ interface LocalExecutionCacheCoordinationOptions {
 interface LeaseRow {
   ownerToken: string
   expiresAt: number
-  baselinePayloadDigest: string | null
-}
-
-interface PayloadDigestRow {
-  payloadDigest: string
-}
-
-interface StoredEnvelopeRow {
-  source: string
-}
-
-interface RetainedEntryRow {
-  retained: number
-}
-
-interface StoredBytesRow {
-  bytes: number
-}
-
-interface StoredEntrySize {
-  keyDigest: string
-  sizeBytes: number
+  baselineRevision: number | null
 }
 
 const defaultTiming: ExecutionCacheLeaseTiming = {
@@ -60,43 +45,6 @@ const defaultTiming: ExecutionCacheLeaseTiming = {
   maxPollMs: 500,
 }
 
-function digest(value: string): string {
-  return createHash('sha256').update(value).digest('hex')
-}
-
-function keyDigest(key: ExecutionCacheKey): string {
-  return digest(
-    JSON.stringify([
-      key.projectKey,
-      key.scenarioId,
-      key.scenarioRevision,
-      key.executionTargetProfileId,
-      key.targetConfigurationFingerprint,
-      key.applicationRevision,
-      key.adapterKind,
-      key.adapterCacheSchemaVersion,
-    ]),
-  )
-}
-
-function assertProjectKey(projectKey: string, key: ExecutionCacheKey): void {
-  if (key.projectKey !== projectKey) {
-    throw new Error('Execution cache key belongs to another checkout')
-  }
-}
-
-function currentPayloadDigest(
-  db: Database,
-  digestKey: string,
-): string | undefined {
-  const row = db
-    .query(
-      'SELECT payload_digest AS payloadDigest FROM entries WHERE key_digest = ?',
-    )
-    .get(digestKey) as PayloadDigestRow | null
-  return row?.payloadDigest
-}
-
 function leaseFromRow(
   key: ExecutionCacheKey,
   row: LeaseRow,
@@ -105,9 +53,7 @@ function leaseFromRow(
   return {
     key,
     ownerToken: row.ownerToken,
-    ...(row.baselinePayloadDigest
-      ? { baselinePayloadDigest: row.baselinePayloadDigest }
-      : {}),
+    baselineRevision: row.baselineRevision ?? undefined,
     heartbeatMs,
   }
 }
@@ -130,80 +76,6 @@ function waitForDelay(delayMs: number, signal?: AbortSignal): Promise<boolean> {
 function pollDelay(timing: ExecutionCacheLeaseTiming): number {
   const range = timing.maxPollMs - timing.minPollMs
   return timing.minPollMs + Math.floor(Math.random() * (range + 1))
-}
-
-function writeEntry(
-  db: Database,
-  serialized: SerializedExecutionCacheEnvelope,
-  metadata: ExecutionCacheWriteMetadata,
-  timestamp: string,
-  baselinePayloadDigest: string | undefined,
-): boolean {
-  const key = serialized.key
-  const values = [
-    serialized.source,
-    digest(serialized.source),
-    metadata.sourceRunId,
-    metadata.evaluationModel ?? null,
-    metadata.evaluationInferenceCount,
-    timestamp,
-    timestamp,
-    Buffer.byteLength(serialized.source, 'utf8'),
-    keyDigest(key),
-  ]
-  if (baselinePayloadDigest) {
-    const result = db.run(
-      `UPDATE entries SET
-         serialized_envelope = ?, payload_digest = ?, source_run_id = ?,
-         evaluation_model = ?, evaluation_inference_count = ?, created_at = ?,
-         last_used_at = ?, hit_count = 0, size_bytes = ?
-       WHERE key_digest = ? AND payload_digest = ?`,
-      [...values, baselinePayloadDigest],
-    )
-    return result.changes === 1
-  }
-  const result = db.run(
-    `INSERT OR IGNORE INTO entries (
-       serialized_envelope, payload_digest, source_run_id, evaluation_model,
-       evaluation_inference_count, created_at, last_used_at, hit_count,
-       size_bytes, key_digest, project_key, scenario_id, scenario_revision,
-       execution_target_profile_id, target_configuration_fingerprint,
-       application_revision, adapter_kind, adapter_cache_schema_version
-     ) VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    [
-      ...values,
-      key.projectKey,
-      key.scenarioId,
-      key.scenarioRevision,
-      key.executionTargetProfileId,
-      key.targetConfigurationFingerprint,
-      key.applicationRevision,
-      key.adapterKind,
-      key.adapterCacheSchemaVersion,
-    ],
-  )
-  return result.changes === 1
-}
-
-function evictLeastRecentlyUsed(db: Database, maxBytes: number): number {
-  const total = db
-    .query('SELECT COALESCE(SUM(size_bytes), 0) AS bytes FROM entries')
-    .get() as StoredBytesRow
-  let retainedBytes = total.bytes
-  let evictedEntries = 0
-  while (retainedBytes > maxBytes) {
-    const oldest = db
-      .query(
-        `SELECT key_digest AS keyDigest, size_bytes AS sizeBytes
-         FROM entries ORDER BY last_used_at, created_at, key_digest LIMIT 1`,
-      )
-      .get() as StoredEntrySize | null
-    if (!oldest) break
-    db.run('DELETE FROM entries WHERE key_digest = ?', [oldest.keyDigest])
-    retainedBytes -= oldest.sizeBytes
-    evictedEntries++
-  }
-  return evictedEntries
 }
 
 function validateTiming(
@@ -233,27 +105,22 @@ export function createLocalExecutionCacheCoordination(
   const timing = validateTiming(options.timing)
   return {
     async readCurrent(key) {
-      assertProjectKey(projectKey, key)
-      return database.use((db) => {
-        const row = db
-          .query(
-            'SELECT serialized_envelope AS source FROM entries WHERE key_digest = ?',
-          )
-          .get(keyDigest(key)) as StoredEnvelopeRow | null
-        return row?.source
-      })
+      assertExecutionCacheProjectKey(projectKey, key)
+      return database.use((db) =>
+        readExecutionCacheEntrySnapshot(db, executionCacheKeyDigest(key)),
+      )
     },
     async acquire(key) {
-      assertProjectKey(projectKey, key)
+      assertExecutionCacheProjectKey(projectKey, key)
       return database.use((db) =>
         db
           .transaction(() => {
-            const digestKey = keyDigest(key)
+            const digestKey = executionCacheKeyDigest(key)
             const timestamp = now().getTime()
             const existing = db
               .query(
                 `SELECT owner_token AS ownerToken, expires_at AS expiresAt,
-                      baseline_payload_digest AS baselinePayloadDigest
+                      baseline_revision AS baselineRevision
                FROM leases WHERE key_digest = ?`,
               )
               .get(digestKey) as LeaseRow | null
@@ -261,34 +128,35 @@ export function createLocalExecutionCacheCoordination(
               return {
                 acquired: false as const,
                 ownerToken: existing.ownerToken,
-                ...(existing.baselinePayloadDigest
-                  ? { baselinePayloadDigest: existing.baselinePayloadDigest }
-                  : {}),
+                baselineRevision: existing.baselineRevision ?? undefined,
               }
             }
             const ownerToken = randomUUID()
-            const baselinePayloadDigest = currentPayloadDigest(db, digestKey)
+            const baselineRevision = readExecutionCacheEntrySnapshot(
+              db,
+              digestKey,
+            )?.revision
             db.run(
               `INSERT INTO leases (
-               key_digest, owner_token, expires_at, baseline_payload_digest
+               key_digest, owner_token, expires_at, baseline_revision
              ) VALUES (?, ?, ?, ?)
              ON CONFLICT(key_digest) DO UPDATE SET
                owner_token = excluded.owner_token,
                expires_at = excluded.expires_at,
-               baseline_payload_digest = excluded.baseline_payload_digest
+               baseline_revision = excluded.baseline_revision
              WHERE leases.expires_at <= ?`,
               [
                 digestKey,
                 ownerToken,
                 timestamp + timing.ttlMs,
-                baselinePayloadDigest ?? null,
+                baselineRevision ?? null,
                 timestamp,
               ],
             )
             const acquired = db
               .query(
                 `SELECT owner_token AS ownerToken, expires_at AS expiresAt,
-                      baseline_payload_digest AS baselinePayloadDigest
+                      baseline_revision AS baselineRevision
                FROM leases WHERE key_digest = ?`,
               )
               .get(digestKey) as LeaseRow
@@ -296,9 +164,7 @@ export function createLocalExecutionCacheCoordination(
               return {
                 acquired: false as const,
                 ownerToken: acquired.ownerToken,
-                ...(acquired.baselinePayloadDigest
-                  ? { baselinePayloadDigest: acquired.baselinePayloadDigest }
-                  : {}),
+                baselineRevision: acquired.baselineRevision ?? undefined,
               }
             }
             return {
@@ -310,7 +176,7 @@ export function createLocalExecutionCacheCoordination(
       )
     },
     async renew(lease) {
-      assertProjectKey(projectKey, lease.key)
+      assertExecutionCacheProjectKey(projectKey, lease.key)
       return database.use((db) => {
         const timestamp = now().getTime()
         const result = db.run(
@@ -318,7 +184,7 @@ export function createLocalExecutionCacheCoordination(
            WHERE key_digest = ? AND owner_token = ? AND expires_at > ?`,
           [
             timestamp + timing.ttlMs,
-            keyDigest(lease.key),
+            executionCacheKeyDigest(lease.key),
             lease.ownerToken,
             timestamp,
           ],
@@ -326,8 +192,8 @@ export function createLocalExecutionCacheCoordination(
         return result.changes === 1
       })
     },
-    async wait(key, ownerToken, baselinePayloadDigest, signal) {
-      assertProjectKey(projectKey, key)
+    async wait(key, ownerToken, baselineRevision, signal) {
+      assertExecutionCacheProjectKey(projectKey, key)
       const deadline = now().getTime() + timing.waitTimeoutMs
       while (!signal?.aborted) {
         const timestamp = now().getTime()
@@ -337,16 +203,18 @@ export function createLocalExecutionCacheCoordination(
               `SELECT 1 FROM leases
                  WHERE key_digest = ? AND owner_token = ? AND expires_at > ?`,
             )
-            .get(keyDigest(key), ownerToken, timestamp),
+            .get(executionCacheKeyDigest(key), ownerToken, timestamp),
         )
         if (signal?.aborted) break
         if (!active) {
-          const current = await database.use((db) =>
-            currentPayloadDigest(db, keyDigest(key)),
+          const currentRevision = await database.use(
+            (db) =>
+              readExecutionCacheEntrySnapshot(db, executionCacheKeyDigest(key))
+                ?.revision,
           )
           return {
             status: 'released' as const,
-            entryChanged: current !== baselinePayloadDigest,
+            published: currentRevision !== baselineRevision,
           }
         }
         if (timestamp >= deadline) break
@@ -360,9 +228,12 @@ export function createLocalExecutionCacheCoordination(
       }
     },
     async publish(lease, serialized, metadata) {
-      assertProjectKey(projectKey, lease.key)
-      assertProjectKey(projectKey, serialized.key)
-      if (keyDigest(lease.key) !== keyDigest(serialized.key)) {
+      assertExecutionCacheProjectKey(projectKey, lease.key)
+      assertExecutionCacheProjectKey(projectKey, serialized.key)
+      if (
+        executionCacheKeyDigest(lease.key) !==
+        executionCacheKeyDigest(serialized.key)
+      ) {
         throw new Error('Execution cache lease cannot publish another key')
       }
       return database.use((db) =>
@@ -372,10 +243,10 @@ export function createLocalExecutionCacheCoordination(
             const active = db
               .query(
                 `SELECT owner_token AS ownerToken, expires_at AS expiresAt,
-                      baseline_payload_digest AS baselinePayloadDigest
+                      baseline_revision AS baselineRevision
                FROM leases WHERE key_digest = ?`,
               )
-              .get(keyDigest(lease.key)) as LeaseRow | null
+              .get(executionCacheKeyDigest(lease.key)) as LeaseRow | null
             if (
               !active ||
               active.ownerToken !== lease.ownerToken ||
@@ -383,27 +254,34 @@ export function createLocalExecutionCacheCoordination(
             ) {
               return { published: false, stored: false, evictedEntries: 0 }
             }
-            const published = writeEntry(
+            if (executionCacheEntrySize(serialized) > maxBytes) {
+              db.run(
+                'DELETE FROM leases WHERE key_digest = ? AND owner_token = ?',
+                [executionCacheKeyDigest(lease.key), lease.ownerToken],
+              )
+              return { published: true, stored: false, evictedEntries: 0 }
+            }
+            const published = writeExecutionCacheEntry(
               db,
               serialized,
               metadata,
               timestamp.toISOString(),
-              active.baselinePayloadDigest ?? undefined,
+              {
+                kind: 'compare-and-swap',
+                expectedRevision: active.baselineRevision ?? undefined,
+              },
             )
             db.run(
               'DELETE FROM leases WHERE key_digest = ? AND owner_token = ?',
-              [keyDigest(lease.key), lease.ownerToken],
+              [executionCacheKeyDigest(lease.key), lease.ownerToken],
             )
             if (!published) {
               return { published: false, stored: false, evictedEntries: 0 }
             }
             const evictedEntries = evictLeastRecentlyUsed(db, maxBytes)
-            const retained = db
-              .query('SELECT 1 AS retained FROM entries WHERE key_digest = ?')
-              .get(keyDigest(serialized.key)) as RetainedEntryRow | null
             return {
               published: true,
-              stored: retained !== null,
+              stored: executionCacheEntryIsRetained(db, serialized.key),
               evictedEntries,
             }
           })
@@ -411,10 +289,10 @@ export function createLocalExecutionCacheCoordination(
       )
     },
     async release(lease) {
-      assertProjectKey(projectKey, lease.key)
+      assertExecutionCacheProjectKey(projectKey, lease.key)
       await database.use((db) => {
         db.run('DELETE FROM leases WHERE key_digest = ? AND owner_token = ?', [
-          keyDigest(lease.key),
+          executionCacheKeyDigest(lease.key),
           lease.ownerToken,
         ])
       })
