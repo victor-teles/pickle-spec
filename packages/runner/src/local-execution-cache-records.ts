@@ -35,7 +35,32 @@ export type ExecutionCacheEntryWriteMode =
   | { kind: 'upsert' }
   | { kind: 'compare-and-swap'; expectedRevision?: number }
 
-type ExecutionCacheEntryWriteValue = string | number | null
+interface EntryWriteFields {
+  serializedEnvelope: string
+  payloadDigest: string
+  sourceRunId: string
+  evaluationModel: string | null
+  evaluationInferenceCount: number
+  createdAt: string
+  lastUsedAt: string
+  sizeBytes: number
+  keyDigest: string
+}
+
+interface CompareAndSwapEntryBindings extends EntryWriteFields {
+  expectedRevision: number
+}
+
+interface InsertEntryBindings extends EntryWriteFields {
+  projectKey: string
+  scenarioId: string
+  scenarioRevision: string
+  executionTargetProfileId: string
+  targetConfigurationFingerprint: string
+  applicationRevision: string
+  adapterKind: string
+  adapterCacheSchemaVersion: string
+}
 
 export function executionCacheDigest(value: string): string {
   return createHash('sha256').update(value).digest('hex')
@@ -88,22 +113,53 @@ export function readExecutionCacheEntrySnapshot(
   return row ?? undefined
 }
 
-function entryWriteValues(
+function entryWriteFields(
   serialized: SerializedExecutionCacheEnvelope,
   metadata: ExecutionCacheWriteMetadata,
   timestamp: string,
-): ExecutionCacheEntryWriteValue[] {
-  return [
-    serialized.source,
-    executionCacheDigest(serialized.source),
-    metadata.sourceRunId,
-    metadata.evaluationModel ?? null,
-    metadata.evaluationInferenceCount,
-    timestamp,
-    timestamp,
-    executionCacheEntrySize(serialized),
-    executionCacheKeyDigest(serialized.key),
-  ]
+): EntryWriteFields {
+  return {
+    serializedEnvelope: serialized.source,
+    payloadDigest: executionCacheDigest(serialized.source),
+    sourceRunId: metadata.sourceRunId,
+    evaluationModel: metadata.evaluationModel ?? null,
+    evaluationInferenceCount: metadata.evaluationInferenceCount,
+    createdAt: timestamp,
+    lastUsedAt: timestamp,
+    sizeBytes: executionCacheEntrySize(serialized),
+    keyDigest: executionCacheKeyDigest(serialized.key),
+  }
+}
+
+function compareAndSwapEntryBindings(
+  serialized: SerializedExecutionCacheEnvelope,
+  metadata: ExecutionCacheWriteMetadata,
+  timestamp: string,
+  expectedRevision: number,
+): CompareAndSwapEntryBindings {
+  return {
+    ...entryWriteFields(serialized, metadata, timestamp),
+    expectedRevision,
+  }
+}
+
+function insertEntryBindings(
+  serialized: SerializedExecutionCacheEnvelope,
+  metadata: ExecutionCacheWriteMetadata,
+  timestamp: string,
+): InsertEntryBindings {
+  const key = serialized.key
+  return {
+    ...entryWriteFields(serialized, metadata, timestamp),
+    projectKey: key.projectKey,
+    scenarioId: key.scenarioId,
+    scenarioRevision: key.scenarioRevision,
+    executionTargetProfileId: key.executionTargetProfileId,
+    targetConfigurationFingerprint: key.targetConfigurationFingerprint,
+    applicationRevision: key.applicationRevision,
+    adapterKind: key.adapterKind,
+    adapterCacheSchemaVersion: key.adapterCacheSchemaVersion,
+  }
 }
 
 export function writeExecutionCacheEntry(
@@ -113,16 +169,31 @@ export function writeExecutionCacheEntry(
   timestamp: string,
   mode: ExecutionCacheEntryWriteMode,
 ): boolean {
-  const key = serialized.key
-  const values = entryWriteValues(serialized, metadata, timestamp)
   if (mode.kind === 'compare-and-swap' && mode.expectedRevision !== undefined) {
+    const bindings = compareAndSwapEntryBindings(
+      serialized,
+      metadata,
+      timestamp,
+      mode.expectedRevision,
+    )
     const result = db.run(
       `UPDATE entries SET
          serialized_envelope = ?, payload_digest = ?, source_run_id = ?,
          evaluation_model = ?, evaluation_inference_count = ?, created_at = ?,
          last_used_at = ?, hit_count = 0, size_bytes = ?, revision = revision + 1
        WHERE key_digest = ? AND revision = ?`,
-      [...values, mode.expectedRevision],
+      [
+        bindings.serializedEnvelope,
+        bindings.payloadDigest,
+        bindings.sourceRunId,
+        bindings.evaluationModel,
+        bindings.evaluationInferenceCount,
+        bindings.createdAt,
+        bindings.lastUsedAt,
+        bindings.sizeBytes,
+        bindings.keyDigest,
+        bindings.expectedRevision,
+      ],
     )
     return result.changes === 1
   }
@@ -140,6 +211,7 @@ export function writeExecutionCacheEntry(
            size_bytes = excluded.size_bytes,
            revision = entries.revision + 1`
       : 'ON CONFLICT(key_digest) DO NOTHING'
+  const bindings = insertEntryBindings(serialized, metadata, timestamp)
   const result = db.run(
     `INSERT INTO entries (
        serialized_envelope, payload_digest, source_run_id, evaluation_model,
@@ -150,7 +222,25 @@ export function writeExecutionCacheEntry(
        revision
      ) VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
      ${conflictClause}`,
-    [...values, ...executionCacheKeyValues(key)],
+    [
+      bindings.serializedEnvelope,
+      bindings.payloadDigest,
+      bindings.sourceRunId,
+      bindings.evaluationModel,
+      bindings.evaluationInferenceCount,
+      bindings.createdAt,
+      bindings.lastUsedAt,
+      bindings.sizeBytes,
+      bindings.keyDigest,
+      bindings.projectKey,
+      bindings.scenarioId,
+      bindings.scenarioRevision,
+      bindings.executionTargetProfileId,
+      bindings.targetConfigurationFingerprint,
+      bindings.applicationRevision,
+      bindings.adapterKind,
+      bindings.adapterCacheSchemaVersion,
+    ],
   )
   return result.changes === 1
 }
