@@ -196,6 +196,50 @@ test('keeps schedule and completion callbacks out of NDJSON output', () => {
   })
 })
 
+test('normalizes legacy adaptation states at the streaming NDJSON boundary', () => {
+  const run = passedRun({
+    specificationUri: 'features/a.feature',
+    specificationName: 'First',
+    scenarioId: 'scenario-a',
+    scenarioName: 'Scenario A',
+    profileId: 'web',
+    durationMs: 10,
+  })
+  run.result.state = 'passed-with-adaptation'
+  run.result.steps = [
+    {
+      step: { keyword: 'Then', text: 'it passes', type: 'outcome' },
+      state: 'passed-with-adaptation',
+      resolvedActions: [],
+    },
+  ]
+  const lines: string[] = []
+  const reporter = createRunReporter('ndjson', {
+    write: (line) => lines.push(line),
+  })
+  const event = {
+    schemaVersion: 1 as const,
+    sequence: 1,
+    type: 'scenario-finished' as const,
+    result: run.result,
+  }
+
+  reporter.event(event)
+  reporter.finish([run], 10)
+
+  expect(lines).toHaveLength(2)
+  expect(lines.join('\n')).not.toContain('passed-with-adaptation')
+  expect(JSON.parse(lines[0]!)).toMatchObject({
+    kind: 'run-event',
+    event: { result: { state: 'passed', steps: [{ state: 'passed' }] } },
+  })
+  expect(JSON.parse(lines[1]!)).toMatchObject({
+    kind: 'test-result',
+    result: { state: 'passed', steps: [{ state: 'passed' }] },
+  })
+  expect(run.result.state).toBe('passed-with-adaptation')
+})
+
 test('streams human output as each Test result completes', () => {
   const run = passedRun({
     specificationUri: 'features/a.feature',
