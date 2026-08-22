@@ -27,7 +27,7 @@ export async function runCacheCommand(
   const report = options.report ?? console.log
   const cache = await openLocalExecutionCache({
     projectRoot: options.projectRoot ?? process.cwd(),
-    cacheRoot: options.cacheRoot,
+    cacheRoot: options.cacheRoot ?? process.env.PICKLE_CACHE_ROOT,
   })
   const entries = await cache.inspect()
   if (subcommand === 'inspect') {

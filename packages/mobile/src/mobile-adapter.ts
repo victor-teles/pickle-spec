@@ -1,4 +1,4 @@
-import type { ExecutionTargetAdapter } from '@pickle-spec/runner'
+import type { StepExecutionTargetAdapter } from '@pickle-spec/runner'
 import {
   createNodeWorkerClient,
   type MobileWorkerClient,
@@ -50,7 +50,8 @@ export type MobileAdapterOptions =
   | AndroidMobileAdapterOptions
   | IosMobileAdapterOptions
 
-export interface MobileExecutionTargetAdapter extends ExecutionTargetAdapter {
+export interface MobileExecutionTargetAdapter
+  extends StepExecutionTargetAdapter {
   discoverTargets(): Promise<Array<AndroidTarget | IosTarget>>
 }
 

@@ -34,6 +34,7 @@ export {
 export type {
   CacheOutcome,
   DeserializeExecutionCacheEnvelopeInput,
+  ExecutionCacheAdapter,
   ExecutionCacheEntryMetadata,
   ExecutionCacheEnvelope,
   ExecutionCacheKey,
@@ -89,6 +90,7 @@ export {
 export type { RerunFilter } from './src/rerun'
 export { selectRerunResults } from './src/rerun'
 export type {
+  ExecutionCachePolicy,
   ExecutionMode,
   ExecutionPolicy,
   ExecutionTargetAdapter,
@@ -96,18 +98,29 @@ export type {
   ExecutionTimeouts,
   FidelityPolicy,
   OpenSessionInput,
+  ReplayCacheInput,
   ResolvedAction,
   RetryPolicy,
   RunEvent,
   RunEventPayload,
+  ScenarioExecution,
+  ScenarioExecutionCache,
+  ScenarioIdentity,
   ScenarioRun,
+  ScenarioTargetSession,
   StepExecution,
+  StepExecutionContext,
+  StepExecutionTargetAdapter,
+  StepTargetSession,
   TargetSession,
+  TargetSessionCacheCandidate,
+  TargetSessionCompletion,
   TestArtifact,
   TestResult,
   TestResultState,
 } from './src/run-scenario'
-export { isEvidenceState, runScenario } from './src/run-scenario'
+export { isEvidenceState } from './src/run-scenario'
+export { runScenario } from './src/run-scenario-entry'
 export type {
   RunScenariosInput,
   RunScheduleInput,

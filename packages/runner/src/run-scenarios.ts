@@ -1,14 +1,16 @@
 import type { ScenarioSelection } from '@pickle-spec/spec'
 import type { ExecutionPlanStore } from './execution-plan'
-import {
-  type ExecutionPolicy,
-  type ExecutionTargetAdapter,
-  type ExecutionTargetProfile,
-  type RunEvent,
-  runScenario,
-  type ScenarioRun,
-  type TestResult,
+import type {
+  ExecutionCachePolicy,
+  ExecutionPolicy,
+  ExecutionTargetAdapter,
+  ExecutionTargetProfile,
+  RunEvent,
+  ScenarioExecutionCache,
+  ScenarioRun,
+  TestResult,
 } from './run-scenario'
+import { runScenario } from './run-scenario-entry'
 
 export interface RunTarget {
   executionTargetProfile: ExecutionTargetProfile
@@ -46,6 +48,8 @@ export interface RunScenariosInput extends ExecutionPolicy {
   executionTargetProfile?: ExecutionTargetProfile
   adapter?: ExecutionTargetAdapter
   plans?: ExecutionPlanStore
+  executionCache?: ScenarioExecutionCache
+  cachePolicy?: ExecutionCachePolicy
   applicationRevision?: string
   ci?: boolean
   concurrency?: number
@@ -80,8 +84,15 @@ export function scheduleScenarios(
                 name: selection.specification.name,
               },
               scenario: {
-                id: selection.scenario.id,
-                name: selection.scenario.name,
+                name:
+                  selection.scenario.template?.name ?? selection.scenario.name,
+                ...(selection.scenario.id ? { id: selection.scenario.id } : {}),
+                ...(selection.scenario.examplesId
+                  ? { examplesId: selection.scenario.examplesId }
+                  : {}),
+                ...(selection.scenario.examplesRowId
+                  ? { examplesRowId: selection.scenario.examplesRowId }
+                  : {}),
               },
               executionTargetProfile,
             },
@@ -163,6 +174,8 @@ export async function runScenarios(
         executionTargetProfile: target.executionTargetProfile,
         adapter: target.adapter,
         plans: input.plans,
+        executionCache: input.executionCache,
+        cachePolicy: input.cachePolicy,
         applicationRevision: input.applicationRevision,
         ci: input.ci,
         signal: input.signal,

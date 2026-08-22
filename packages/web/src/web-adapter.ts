@@ -1,10 +1,10 @@
 import { mkdir } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import {
-  type ExecutionTargetAdapter,
   isEvidenceState,
   type ResolvedAction,
   type StepExecution,
+  type StepExecutionTargetAdapter,
   slug,
   type TestArtifact,
 } from '@pickle-spec/runner'
@@ -203,7 +203,7 @@ export function createWebAdapter(
   options: WebAdapterOptions,
   factory?: WebAutomationFactory,
   behavior: WebAdapterBehavior = {},
-): ExecutionTargetAdapter {
+): StepExecutionTargetAdapter {
   const automationFactory = factory ?? stagehandFactory
   const requireProviderApiKey = factory === undefined
   const fidelity = resolveFidelityPolicy(options)

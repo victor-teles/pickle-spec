@@ -1381,6 +1381,100 @@ Feature: Purchase
     expect(await Bun.file(approvedPath).text()).toBe(approved)
   })
 
+  test('runs Adaptive, Replay, refresh, and cache-only through the local Execution cache', async () => {
+    const project = await createCheckProject('execution-cache-lifecycle', {
+      config: {
+        schemaVersion: 1,
+        specifications: 'features/**/*.feature',
+        applicationRevision: 'app-1',
+        cache: { maxBytes: 1024 * 1024 },
+        executionTargetProfile: { id: 'deterministic' },
+      },
+      specification: validSpecification,
+      extensions: `
+const marker = process.env.PICKLE_CACHE_TEST_MARKER
+
+async function record(value) {
+  if (!marker) return
+  const previous = await Bun.file(marker).exists()
+    ? await Bun.file(marker).text()
+    : ''
+  await Bun.write(marker, previous + value + '\\n')
+}
+
+export default {
+  adapter: {
+    executionCache: {
+      adapterKind: 'cli-deterministic',
+      adapterCacheSchemaVersion: '1',
+      targetConfigurationFingerprint: 'cli-target-1',
+      parse(payload) {
+        if (!payload || typeof payload !== 'object') return undefined
+        if (!Array.isArray(payload.operations)) return undefined
+        return payload
+      },
+    },
+    async openSession(input) {
+      await record(input.mode)
+      return {
+        async executeStep() {
+          return { state: 'passed', resolvedActions: [] }
+        },
+        async complete() {
+          return {
+            inferenceCount: input.mode === 'adaptive' ? 1 : 0,
+            evaluationModel: 'deterministic-fixture',
+            cacheCandidate: {
+              cacheable: true,
+              adapterPayload: { operations: ['assert:validation'] },
+              requiredVariables: [],
+            },
+          }
+        },
+        async close() {},
+      }
+    },
+  },
+}
+`,
+    })
+    const marker = join(project, 'cache-modes.txt')
+    const cacheRoot = join(project, '.test-execution-cache')
+    const run = (...flags: string[]) =>
+      Bun.spawnSync({
+        cmd: [pickleCommand, 'run', '--reporter', 'ndjson', ...flags],
+        cwd: project,
+        env: {
+          ...Bun.env,
+          PICKLE_CACHE_ROOT: cacheRoot,
+          PICKLE_CACHE_TEST_MARKER: marker,
+        },
+      })
+
+    const adaptive = run()
+    const replay = run('--cache-only')
+    const refresh = run('--refresh-cache')
+    const cold = run('--cache-only', '--application-revision', 'app-2')
+    const conflicting = run('--cache-only', '--refresh-cache')
+
+    expect(adaptive.stderr.toString()).toBe('')
+    expect(adaptive.exitCode).toBe(0)
+    expect(replay.exitCode).toBe(0)
+    expect(refresh.exitCode).toBe(0)
+    expect(cold.exitCode).toBe(1)
+    expect(conflicting.exitCode).toBe(2)
+    expect(conflicting.stderr.toString()).toContain(
+      '--refresh-cache cannot be combined with --cache-only',
+    )
+    expect(await Bun.file(marker).text()).toBe('adaptive\nreplay\nadaptive\n')
+    expect(replay.stdout.toString()).toContain('"executionMode":"replay"')
+    expect(replay.stdout.toString()).toContain('"cacheOutcome":"hit"')
+    expect(replay.stdout.toString()).toContain('"inferenceCount":0')
+    expect(refresh.stdout.toString()).toContain('"cacheOutcome":"refresh"')
+    expect(refresh.stdout.toString()).toContain('"inferenceCount":1')
+    expect(cold.stdout.toString()).toContain('"failureKind":"cache-miss"')
+  })
+
   test('check rejects an unknown adapted-result policy', async () => {
     const project = await createCheckProject('invalid-adapted-policy', {
       config: {

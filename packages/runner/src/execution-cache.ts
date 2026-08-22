@@ -31,6 +31,11 @@ export interface ExecutionCachePayloadValidator<AdapterPayload = unknown> {
   ): AdapterPayload | undefined
 }
 
+export interface ExecutionCacheAdapter<AdapterPayload = unknown>
+  extends ExecutionCachePayloadValidator<AdapterPayload> {
+  targetConfigurationFingerprint: string
+}
+
 declare const serializedExecutionCacheEnvelope: unique symbol
 
 export type SerializedExecutionCacheEnvelope = {

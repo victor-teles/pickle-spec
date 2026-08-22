@@ -10,8 +10,12 @@ function stepDigest(step: ScenarioStep): string {
   ])
 }
 
-export function scenarioRevision(scenario: Pick<Scenario, 'steps'>): string {
+export function scenarioRevision(
+  scenario: Pick<Scenario, 'steps' | 'template'>,
+): string {
   const hasher = new Bun.CryptoHasher('sha256')
-  hasher.update(scenario.steps.map(stepDigest).join('\0'))
+  hasher.update(
+    (scenario.template?.steps ?? scenario.steps).map(stepDigest).join('\0'),
+  )
   return hasher.digest('hex')
 }

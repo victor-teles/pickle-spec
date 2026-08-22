@@ -69,6 +69,8 @@ interface RunArguments {
   failures?: boolean
   adaptations?: boolean
   fast?: boolean
+  refreshCache?: boolean
+  cacheOnly?: boolean
   reporter?: RunReporterName
 }
 
@@ -203,6 +205,12 @@ function parseRunArguments(argv: string[]): RunArguments {
       case '--fast':
         args.fast = true
         break
+      case '--refresh-cache':
+        args.refreshCache = true
+        break
+      case '--cache-only':
+        args.cacheOnly = true
+        break
       case '--reporter': {
         const reporter = valueAfter(argv, index++)
         if (reporter !== 'default' && reporter !== 'ndjson') {
@@ -215,6 +223,9 @@ function parseRunArguments(argv: string[]): RunArguments {
         throw new Error(`Unknown option: ${flag}`)
     }
     index++
+  }
+  if (args.refreshCache && args.cacheOnly) {
+    throw new Error('--refresh-cache cannot be combined with --cache-only')
   }
   return args
 }

@@ -57,4 +57,23 @@ Feature: Checkout
       scenarioRevision(withArgument.scenarios[0]!),
     )
   })
+
+  test('uses the Scenario Outline template instead of runtime binding values', () => {
+    const specification = parseSpecification({
+      uri: 'features/search.feature',
+      source: `Feature: Search
+  Scenario Outline: Find <product>
+    When the customer searches for <product>
+    Then the result contains <product>
+
+    Examples:
+      | product |
+      | Pickles |
+      | Olives  |`,
+    })
+
+    expect(scenarioRevision(specification.scenarios[0]!)).toBe(
+      scenarioRevision(specification.scenarios[1]!),
+    )
+  })
 })
