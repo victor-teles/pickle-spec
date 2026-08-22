@@ -3,6 +3,7 @@ import { afterEach, expect, test } from 'bun:test'
 import { mkdir, mkdtemp, readdir, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
+import { resolveLocalProjectStorage } from '@pickle-spec/runner'
 import { providerCredentialEnvironmentNames } from '@pickle-spec/runner/benchmarking'
 
 const roots: string[] = []
@@ -128,6 +129,7 @@ function childEnvironment(
     ...Bun.env,
     CI: 'true',
     PICKLE_CACHE_ROOT: options.cacheRoot,
+    PICKLE_HOME: options.cacheRoot,
     PICKLE_CONFIDENTIALITY_SENTINEL: options.runtimeSentinel,
     PICKLE_CONFIDENTIALITY_INFERENCE_MARKER: options.inferenceMarker,
     PICKLE_CONFIDENTIALITY_FAIL_ON_INFERENCE: options.cacheOnly
@@ -436,7 +438,15 @@ export default {
     }
   }
 
-  const runStateFiles = await filesUnder(join(projectRoot, '.pickle'))
+  const runStateFiles = (
+    await Promise.all(
+      [cacheRoot, concurrentCacheRoot].map((pickleHome) =>
+        filesUnder(
+          resolveLocalProjectStorage(projectRoot, pickleHome).projectDirectory,
+        ),
+      ),
+    )
+  ).flat()
   const eventFiles = runStateFiles.filter((path) =>
     path.endsWith('events.ndjson'),
   )

@@ -3,15 +3,48 @@ import { mkdir, mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
-  importRunArchive,
-  openTestRunStore,
+  type ImportRunArchiveInput,
+  importRunArchive as importRunArchiveBase,
+  openTestRunStore as openTestRunStoreBase,
   readRunArchive,
-  writeRunArchive,
+  resolveLocalProjectStorage,
+  type TestRunStoreOptions,
+  type WriteRunArchiveInput,
+  writeRunArchive as writeRunArchiveBase,
 } from '../index'
 import type { TestResult } from './run-scenario'
 
 async function tempRoot(): Promise<string> {
   return mkdtemp(join(tmpdir(), 'pickle-archive-'))
+}
+
+function pickleHomeFor(root: string): string {
+  return join(root, '.pickle-home')
+}
+
+function storageFor(root: string) {
+  return resolveLocalProjectStorage(root, pickleHomeFor(root))
+}
+
+function openTestRunStore(options: TestRunStoreOptions) {
+  return openTestRunStoreBase({
+    ...options,
+    pickleHome: pickleHomeFor(options.root),
+  })
+}
+
+function writeRunArchive(input: WriteRunArchiveInput) {
+  return writeRunArchiveBase({
+    ...input,
+    pickleHome: pickleHomeFor(input.root),
+  })
+}
+
+function importRunArchive(input: ImportRunArchiveInput) {
+  return importRunArchiveBase({
+    ...input,
+    pickleHome: pickleHomeFor(input.root),
+  })
 }
 
 function passedResult(): TestResult {
@@ -215,7 +248,10 @@ test('import preserves the original archive and migrates older schemas in memory
     await Bun.write(archivePath, original)
 
     const imported = await importRunArchive({ root, archivePath })
-    const preserved = join(root, '.pickle', 'archives', 'run-legacy.json')
+    const preserved = join(
+      storageFor(root).archivesDirectory,
+      'run-legacy.json',
+    )
 
     expect(await Bun.file(preserved).text()).toBe(original)
     expect(await Bun.file(archivePath).text()).toBe(original)
@@ -392,9 +428,7 @@ test('import refuses to overwrite an existing immutable run or retained archive'
     await Bun.write(archivePath, original)
     const imported = await importRunArchive({ root, archivePath })
     const eventsPath = join(
-      root,
-      '.pickle',
-      'runs',
+      storageFor(root).runsDirectory,
       'run-existing',
       'events.ndjson',
     )
@@ -458,7 +492,7 @@ test('concurrent imports reserve an immutable run before writing it', async () =
     })
     expect(
       await Bun.file(
-        join(root, '.pickle', 'archives', 'run-concurrent.json'),
+        join(storageFor(root).archivesDirectory, 'run-concurrent.json'),
       ).text(),
     ).toBe(original)
   } finally {
@@ -469,7 +503,10 @@ test('concurrent imports reserve an immutable run before writing it', async () =
 test('import rejects run identifiers and artifact paths that escape the run directory', async () => {
   const root = await tempRoot()
   try {
-    const existingDirectory = join(root, '.pickle', 'runs', 'run-existing')
+    const existingDirectory = join(
+      storageFor(root).runsDirectory,
+      'run-existing',
+    )
     const existingEventsPath = join(existingDirectory, 'events.ndjson')
     await mkdir(existingDirectory, { recursive: true })
     await Bun.write(existingEventsPath, 'immutable\n')

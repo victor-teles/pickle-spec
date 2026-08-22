@@ -15,6 +15,7 @@ import {
   latestHistoricalDurations,
   openLocalExecutionCache,
   openTestRunStore,
+  resolveLocalProjectStorage,
   resolveRunConfiguration,
   runScenarios,
   scheduleScenarios,
@@ -30,6 +31,7 @@ import {
   validateSpecificationMetadata,
 } from '@pickle-spec/spec'
 import { createWebAdapter, type WebAdapterOptions } from '@pickle-spec/web'
+import { resolveApplicationRevision } from './application-revision'
 import {
   defaultExtensionsFile,
   defaultSpecificationGlob,
@@ -298,7 +300,11 @@ export async function loadPersistedRun(root: string, runId: string) {
   const run = await store.open(runId)
   const events = await run.events()
   if (events.length === 0) throw new Error(`Unknown test run "${runId}"`)
-  const manifestPath = resolve(root, '.pickle', 'runs', runId, 'manifest.json')
+  const manifestPath = resolve(
+    resolveLocalProjectStorage(root).runsDirectory,
+    runId,
+    'manifest.json',
+  )
   const manifest = (await Bun.file(manifestPath).exists())
     ? ((await Bun.file(manifestPath).json()) as TestRunManifest)
     : await run.materialize({ finished: false })
@@ -313,6 +319,10 @@ export async function startProjectRun(
     throw new Error('--refresh-cache cannot be combined with --cache-only')
   }
   const root = input.root
+  const applicationRevision = resolveApplicationRevision(
+    args.applicationRevision ?? input.config.applicationRevision,
+    root,
+  )
   const store = openTestRunStore({
     root,
     artifactCapture: input.config.artifacts?.capture,
@@ -320,12 +330,7 @@ export async function startProjectRun(
   const testRun = await store.create({
     ...(args.rerunId ? { sourceRunId: args.rerunId } : {}),
     ...(args.suite ? { suite: args.suite } : {}),
-    ...((args.applicationRevision ?? input.config.applicationRevision)
-      ? {
-          applicationRevision:
-            args.applicationRevision ?? input.config.applicationRevision,
-        }
-      : {}),
+    ...(applicationRevision ? { applicationRevision } : {}),
   })
 
   const done = new Promise<{
@@ -426,8 +431,7 @@ export async function startProjectRun(
       const runConfiguration = {
         ...runConfigurationFrom(input.config, profileIds),
         concurrency: args.concurrency ?? input.config.concurrency,
-        applicationRevision:
-          args.applicationRevision ?? input.config.applicationRevision,
+        applicationRevision,
         execution: {
           infrastructureRetries:
             args.retries ?? input.config.execution?.infrastructureRetries,

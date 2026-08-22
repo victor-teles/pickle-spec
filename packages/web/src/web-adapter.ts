@@ -3,6 +3,7 @@ import { join, resolve } from 'node:path'
 import {
   isEvidenceState,
   type ResolvedAction,
+  resolveLocalProjectStorage,
   type StepExecution,
   type StepExecutionTargetAdapter,
   type TestArtifact,
@@ -296,8 +297,12 @@ export function createWebAdapter(
 
         try {
           const format = screenshotOptions?.format ?? 'png'
+          const defaultOutputDirectory = join(
+            resolveLocalProjectStorage(process.cwd()).projectDirectory,
+            'artifacts',
+          )
           const directory = resolve(
-            screenshotOptions?.outputDir ?? './.pickle/artifacts',
+            screenshotOptions?.outputDir ?? defaultOutputDirectory,
             specificationArtifactId,
             scenarioArtifactId,
           )

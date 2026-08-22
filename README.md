@@ -91,8 +91,7 @@ Create `pickle.config.jsonc` in the project root:
           "headless": true
         },
         "screenshots": {
-          "mode": "on-failure",
-          "outputDir": ".pickle/artifacts"
+          "mode": "on-failure"
         }
       }
     }
@@ -184,6 +183,8 @@ An applicable entry runs in Replay mode without model inference. Web Replay exec
 
 Entries apply to one project, Scenario revision, execution target profile and configuration fingerprint, application revision, adapter, and adapter cache schema version. Set `applicationRevision` in `pickle.config.jsonc` or pass `--application-revision`; a run without it remains Adaptive and does not read or write the cache.
 
+Use `"applicationRevision": "git:HEAD"` when the application under test is versioned by the current repository. Pickle Spec resolves it to the current commit before selecting a cache entry. For externally deployed applications, provide a release or deployment identifier instead.
+
 Entries store placeholders and variable names instead of bound runtime values. An execution remains `uncacheable` when its adapter cannot separate reusable structure from runtime values.
 
 If Replay diverges, normal execution performs an observable Adaptive fallback. A successful fallback returns `passed` and atomically replaces the entry. Execution mode, Cache outcome, and inference count remain separate from the Scenario result.
@@ -199,14 +200,14 @@ pickle cache clear
 
 `--refresh-cache` bypasses the current entry and replaces it only after success. `--cache-only` never calls a model and fails on a miss or divergence. CI that requires zero inference must use `--cache-only`.
 
-Each checkout stores its cache outside the repository under `~/.pickle/cache/projects/<project-key>/execution-cache.sqlite`. SQLite is the only cache tier. The cache retains multiple Scenario and application revisions without a fixed TTL. Its default configurable limit is 100 MiB, with least-recently-used eviction by `lastUsedAt`. Studio shows cache behavior with results, offers Cache refresh beside Run, and keeps cache inspection and clearing under Settings.
+Pickle Spec stores one shared cache database at `~/.pickle/execution-cache.sqlite` and scopes every entry to its project. Git worktrees from the same repository share a project identity instead of creating another database. SQLite is the only cache tier. Each project's entries retain multiple Scenario and application revisions without a fixed TTL. The default configurable limit is 100 MiB per project, with least-recently-used eviction by `lastUsedAt`. Studio shows cache behavior with results, offers Cache refresh beside Run, and keeps cache inspection and clearing under Settings.
 
 See [Replay performance gate](docs/replay-performance.md) for the controlled
 web/mobile benchmark, budgets, and rerun protocol.
 
 ## Persist, rerun, compare, and export test runs
 
-Every `pickle run` writes an immutable test run under `.pickle/runs/`.
+Every `pickle run` writes an immutable test run under `~/.pickle/projects/<project-name>-<project-key>/runs/`. Pickle Spec does not create runtime folders inside the project.
 
 To create a selective rerun from an earlier test run, use:
 
@@ -226,7 +227,7 @@ pickle export <run-id> --archive run.archive.json
 pickle import run.archive.json
 ```
 
-Import preserves the original archive bytes under `.pickle/archives/` and migrates older schemas in memory.
+Import preserves the original archive bytes under `~/.pickle/projects/<project-name>-<project-key>/archives/` and migrates older schemas in memory.
 
 To compare compatible test runs, use:
 

@@ -1,7 +1,7 @@
 import { Database, SQLiteError } from 'bun:sqlite'
 import { randomUUID } from 'node:crypto'
 import { chmod, mkdir, rename } from 'node:fs/promises'
-import { join } from 'node:path'
+import { dirname } from 'node:path'
 
 export interface LocalExecutionCacheDatabase {
   use<Value>(operation: (db: Database) => Value): Promise<Value>
@@ -14,10 +14,17 @@ interface DatabaseOpenOptions {
 type CacheSchemaVersion = Record<'user_version', number>
 type CacheIntegrityCheck = Record<'quick_check', string>
 type FileSystemError = Error & { code?: string }
+type TableColumn = Record<'name', string>
 
-const cacheSchemaVersion = 4
+const cacheSchemaVersion = 5
 
 class InvalidExecutionCacheDatabaseError extends Error {}
+
+function hasColumn(db: Database, table: string, column: string): boolean {
+  return (db.query(`PRAGMA table_info(${table})`).all() as TableColumn[]).some(
+    (item) => item.name === column,
+  )
+}
 
 function migrate(db: Database): void {
   const version = db.query('PRAGMA user_version').get() as CacheSchemaVersion
@@ -56,8 +63,13 @@ function migrate(db: Database): void {
       ON entries(last_used_at, created_at, key_digest)
     `)
     db.run(`
+      CREATE INDEX IF NOT EXISTS entries_project_lru
+      ON entries(project_key, last_used_at, created_at, key_digest)
+    `)
+    db.run(`
       CREATE TABLE IF NOT EXISTS leases (
         key_digest TEXT PRIMARY KEY,
+        project_key TEXT NOT NULL,
         owner_token TEXT NOT NULL,
         expires_at INTEGER NOT NULL,
         baseline_revision INTEGER
@@ -66,6 +78,7 @@ function migrate(db: Database): void {
     db.run(`
       CREATE TABLE IF NOT EXISTS lease_outcomes (
         key_digest TEXT NOT NULL,
+        project_key TEXT NOT NULL,
         owner_token TEXT NOT NULL,
         terminal_outcome TEXT NOT NULL,
         completed_at INTEGER NOT NULL,
@@ -81,8 +94,30 @@ function migrate(db: Database): void {
         'ALTER TABLE entries ADD COLUMN revision INTEGER NOT NULL DEFAULT 1',
       )
     }
-    if (version.user_version === 2) {
+    if (!hasColumn(db, 'leases', 'baseline_revision')) {
       db.run('ALTER TABLE leases ADD COLUMN baseline_revision INTEGER')
+    }
+    if (!hasColumn(db, 'leases', 'project_key')) {
+      db.run('ALTER TABLE leases ADD COLUMN project_key TEXT')
+    }
+    if (!hasColumn(db, 'lease_outcomes', 'project_key')) {
+      db.run('ALTER TABLE lease_outcomes ADD COLUMN project_key TEXT')
+    }
+    if (version.user_version > 0 && version.user_version < 5) {
+      db.run(`
+        UPDATE leases SET project_key = (
+          SELECT project_key FROM entries
+          WHERE entries.key_digest = leases.key_digest
+        )
+      `)
+      db.run(`
+        UPDATE lease_outcomes SET project_key = (
+          SELECT project_key FROM entries
+          WHERE entries.key_digest = lease_outcomes.key_digest
+        )
+      `)
+      db.run('DELETE FROM leases WHERE project_key IS NULL')
+      db.run('DELETE FROM lease_outcomes WHERE project_key IS NULL')
     }
     db.run(`PRAGMA user_version = ${cacheSchemaVersion}`)
   }).immediate()
@@ -188,9 +223,9 @@ async function withRecovery<Value>(
 }
 
 export async function openLocalExecutionCacheDatabase(
-  cacheDirectory: string,
+  databasePath: string,
 ): Promise<LocalExecutionCacheDatabase> {
-  const databasePath = join(cacheDirectory, 'execution-cache.sqlite')
+  const cacheDirectory = dirname(databasePath)
   await mkdir(cacheDirectory, { recursive: true, mode: 0o700 })
   if (process.platform !== 'win32') await chmod(cacheDirectory, 0o700)
   await withRecovery(databasePath, () => undefined, {

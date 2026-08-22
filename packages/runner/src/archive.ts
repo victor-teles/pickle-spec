@@ -1,6 +1,7 @@
 import { mkdir, open, rm, stat } from 'node:fs/promises'
 import { basename, dirname, join, relative, resolve, sep } from 'node:path'
 import { migrateRunArchive } from './archive-migrate'
+import { resolveLocalProjectStorage } from './local-project-storage'
 import {
   publicRunEvent,
   recordableTestResult,
@@ -27,12 +28,14 @@ export interface RunArchive {
 
 export interface WriteRunArchiveInput {
   root: string
+  pickleHome?: string
   runId: string
   outputPath: string
 }
 
 export interface ImportRunArchiveInput {
   root: string
+  pickleHome?: string
   archivePath: string
 }
 
@@ -126,12 +129,19 @@ type LoadedRun = {
   events: RunEvent[]
 }
 
-async function loadRunFiles(root: string, runId: string): Promise<LoadedRun> {
-  const store = openTestRunStore({ root })
+async function loadRunFiles(
+  root: string,
+  runId: string,
+  pickleHome?: string,
+): Promise<LoadedRun> {
+  const store = openTestRunStore({ root, pickleHome })
   const run = await store.open(runId)
   const events = await run.events()
   if (events.length === 0) throw new Error(`Unknown test run "${runId}"`)
-  const runDirectory = join(root, '.pickle', 'runs', runId)
+  const runDirectory = join(
+    resolveLocalProjectStorage(root, pickleHome).runsDirectory,
+    runId,
+  )
   const manifestFile = Bun.file(join(runDirectory, 'manifest.json'))
   const manifest = (await manifestFile.exists())
     ? ((await manifestFile.json()) as TestRunManifest)
@@ -145,6 +155,7 @@ export async function writeRunArchive(
   const { runDirectory, manifest, events } = await loadRunFiles(
     input.root,
     input.runId,
+    input.pickleHome,
   )
   const collected = collectArtifacts(manifest.results, runDirectory)
   const pathMap = new Map(
@@ -194,9 +205,9 @@ export async function importRunArchive(
     JSON.parse(new TextDecoder().decode(originalBytes)),
   )
   validateRunId(archive.manifest.id)
-  const pickleDirectory = join(input.root, '.pickle')
-  const archivesDirectory = join(pickleDirectory, 'archives')
-  const runDirectory = join(pickleDirectory, 'runs', archive.manifest.id)
+  const storage = resolveLocalProjectStorage(input.root, input.pickleHome)
+  const archivesDirectory = storage.archivesDirectory
+  const runDirectory = join(storage.runsDirectory, archive.manifest.id)
   const preservedArchivePath = join(
     archivesDirectory,
     `${archive.manifest.id}.json`,
@@ -259,7 +270,10 @@ export async function importRunArchive(
       join(runDirectory, 'manifest.json'),
       `${JSON.stringify(manifest, null, 2)}\n`,
     )
-    await openTestRunStore({ root: input.root }).rebuildIndex()
+    await openTestRunStore({
+      root: input.root,
+      pickleHome: input.pickleHome,
+    }).rebuildIndex()
 
     return { manifest, events, preservedArchivePath }
   } catch (error) {

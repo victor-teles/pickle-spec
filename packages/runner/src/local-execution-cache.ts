@@ -1,7 +1,3 @@
-import { createHash } from 'node:crypto'
-import { realpath } from 'node:fs/promises'
-import { homedir } from 'node:os'
-import { join, resolve } from 'node:path'
 import type {
   ExecutionCacheCoordination,
   ExecutionCacheStore,
@@ -12,6 +8,10 @@ import {
 } from './local-execution-cache-coordination'
 import { openLocalExecutionCacheDatabase } from './local-execution-cache-database'
 import { createLocalExecutionCacheEntries } from './local-execution-cache-entries'
+import {
+  localProjectKey,
+  resolveLocalProjectStorage,
+} from './local-project-storage'
 
 export interface LocalExecutionCacheOptions {
   projectRoot: string
@@ -28,17 +28,14 @@ export interface LocalExecutionCache extends ExecutionCacheStore {
 
 export const defaultExecutionCacheMaxBytes = 100 * 1024 * 1024
 
-function projectKeyFor(canonicalProjectRoot: string): string {
-  return createHash('sha256').update(canonicalProjectRoot).digest('hex')
-}
-
 export async function openLocalExecutionCache(
   options: LocalExecutionCacheOptions,
 ): Promise<LocalExecutionCache> {
-  const canonicalProjectRoot = await realpath(resolve(options.projectRoot))
-  const projectKey = projectKeyFor(canonicalProjectRoot)
-  const cacheRoot =
-    options.cacheRoot ?? join(homedir(), '.pickle', 'cache', 'projects')
+  const projectKey = localProjectKey(options.projectRoot)
+  const databasePath = options.cacheRoot
+    ? resolveLocalProjectStorage(options.projectRoot, options.cacheRoot)
+        .executionCachePath
+    : resolveLocalProjectStorage(options.projectRoot).executionCachePath
   const maxBytes = options.maxBytes ?? defaultExecutionCacheMaxBytes
   const now = options.now ?? (() => new Date())
   if (!Number.isSafeInteger(maxBytes) || maxBytes < 1) {
@@ -46,9 +43,7 @@ export async function openLocalExecutionCache(
       'Execution cache maxBytes must be an integer greater than 0',
     )
   }
-  const database = await openLocalExecutionCacheDatabase(
-    join(cacheRoot, projectKey),
-  )
+  const database = await openLocalExecutionCacheDatabase(databasePath)
   const store = createLocalExecutionCacheEntries({
     database,
     projectKey,

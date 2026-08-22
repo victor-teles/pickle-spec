@@ -107,7 +107,11 @@ export function createLocalExecutionCacheEntries(
               now().toISOString(),
               { kind: 'upsert' },
             )
-            const evictedEntries = evictLeastRecentlyUsed(db, maxBytes)
+            const evictedEntries = evictLeastRecentlyUsed(
+              db,
+              projectKey,
+              maxBytes,
+            )
             return {
               stored: executionCacheEntryIsRetained(db, serialized.key),
               evictedEntries,
@@ -146,9 +150,10 @@ export function createLocalExecutionCacheEntries(
                payload_digest AS payloadDigest,
                size_bytes AS sizeBytes
              FROM entries
+             WHERE project_key = ?
              ORDER BY last_used_at DESC, created_at DESC, key_digest`,
           )
-          .all()
+          .all(projectKey)
           .map((row) => metadataFromRow(row as IndexedExecutionCacheEntry)),
       )
     },
@@ -156,9 +161,11 @@ export function createLocalExecutionCacheEntries(
       await database.use((db) =>
         db
           .transaction(() => {
-            db.run('DELETE FROM entries')
-            db.run('DELETE FROM leases')
-            db.run('DELETE FROM lease_outcomes')
+            db.run('DELETE FROM entries WHERE project_key = ?', [projectKey])
+            db.run('DELETE FROM leases WHERE project_key = ?', [projectKey])
+            db.run('DELETE FROM lease_outcomes WHERE project_key = ?', [
+              projectKey,
+            ])
           })
           .immediate(),
       )

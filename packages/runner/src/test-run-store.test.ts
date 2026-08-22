@@ -3,7 +3,11 @@ import { afterEach, expect, test } from 'bun:test'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { openTestRunStore } from '../index'
+import {
+  openTestRunStore as openTestRunStoreBase,
+  resolveLocalProjectStorage,
+  type TestRunStoreOptions,
+} from '../index'
 import type { TestResult } from './run-scenario'
 
 const directories: string[] = []
@@ -20,6 +24,17 @@ async function tempRoot(): Promise<string> {
   const root = await mkdtemp(join(tmpdir(), 'pickle-test-runs-'))
   directories.push(root)
   return root
+}
+
+function storageFor(root: string) {
+  return resolveLocalProjectStorage(root, join(root, '.pickle-home'))
+}
+
+function openTestRunStore(options: TestRunStoreOptions) {
+  return openTestRunStoreBase({
+    ...options,
+    pickleHome: storageFor(options.root).pickleHome,
+  })
 }
 
 function passedResult(name = 'Complete a purchase'): TestResult {
@@ -60,9 +75,7 @@ test('persists a test run with a stable identifier and an append-only versioned 
   })
 
   const eventsPath = join(
-    root,
-    '.pickle',
-    'runs',
+    storageFor(root).runsDirectory,
     'run-stable-id',
     'events.ndjson',
   )
@@ -101,6 +114,8 @@ test('persists a test run with a stable identifier and an append-only versioned 
   expect((await run.events()).map((event) => event.sequence)).toEqual([
     1, 2, 3, 4,
   ])
+  expect(await Bun.file(join(root, '.pickle')).exists()).toBe(false)
+  expect(eventsPath.startsWith(storageFor(root).pickleHome)).toBe(true)
 })
 
 test('materializes a manifest from events without replacing the event stream', async () => {
@@ -121,9 +136,7 @@ test('materializes a manifest from events without replacing the event stream', a
   })
 
   const eventsPath = join(
-    root,
-    '.pickle',
-    'runs',
+    storageFor(root).runsDirectory,
     'run-manifest',
     'events.ndjson',
   )
@@ -141,7 +154,7 @@ test('materializes a manifest from events without replacing the event stream', a
   expect(await Bun.file(eventsPath).text()).toBe(beforeManifest)
   expect(
     await Bun.file(
-      join(root, '.pickle', 'runs', 'run-manifest', 'manifest.json'),
+      join(storageFor(root).runsDirectory, 'run-manifest', 'manifest.json'),
     ).json(),
   ).toEqual(manifest)
 
@@ -231,12 +244,12 @@ test('persists public evidence without private replay data', async () => {
   })
   expect(
     await Bun.file(
-      join(root, '.pickle', 'runs', run.id, 'events.ndjson'),
+      join(storageFor(root).runsDirectory, run.id, 'events.ndjson'),
     ).text(),
   ).not.toContain('private-replay-payload')
   expect(
     await Bun.file(
-      join(root, '.pickle', 'runs', run.id, 'manifest.json'),
+      join(storageFor(root).runsDirectory, run.id, 'manifest.json'),
     ).text(),
   ).not.toContain('private-replay-payload')
 })
@@ -351,7 +364,7 @@ test('rebuilds the query index from persisted test runs after it is deleted', as
     },
   ])
 
-  await rm(join(root, '.pickle', 'index.sqlite'), { force: true })
+  await rm(storageFor(root).runIndexPath, { force: true })
   await store.rebuildIndex()
   expect(await store.list()).toEqual(summaries)
 })
@@ -394,7 +407,7 @@ test('lists immutable history metadata for Studio after rebuilding the index', a
     suite: 'checkout',
     applicationRevision: 'app-42',
   })
-  await rm(join(root, '.pickle', 'index.sqlite'), { force: true })
+  await rm(storageFor(root).runIndexPath, { force: true })
   await store.rebuildIndex()
 
   expect(await store.list()).toEqual([
@@ -430,7 +443,7 @@ test('backfills history metadata when opening an older query index', async () =>
   })
   await run.materialize()
 
-  const indexPath = join(root, '.pickle', 'index.sqlite')
+  const indexPath = storageFor(root).runIndexPath
   await rm(indexPath, { force: true })
   const legacy = new Database(indexPath, { create: true })
   legacy.run(`
@@ -474,10 +487,13 @@ test('rebuilds the query index from an events-only test run', async () => {
     type: 'scenario-finished',
     result: passedResult(),
   })
-  await rm(join(root, '.pickle', 'runs', 'run-recovered', 'manifest.json'), {
-    force: true,
-  })
-  await rm(join(root, '.pickle', 'index.sqlite'), { force: true })
+  await rm(
+    join(storageFor(root).runsDirectory, 'run-recovered', 'manifest.json'),
+    {
+      force: true,
+    },
+  )
+  await rm(storageFor(root).runIndexPath, { force: true })
 
   await store.rebuildIndex()
   expect(await store.list()).toEqual([
@@ -596,9 +612,7 @@ test('captures only failure artifacts under the default evidence policy', async 
   const manifest = await run.materialize()
   const [passed, failed] = manifest.results
   const artifactsDirectory = join(
-    root,
-    '.pickle',
-    'runs',
+    storageFor(root).runsDirectory,
     'run-artifacts',
     'artifacts',
   )
@@ -641,7 +655,7 @@ test('retention removes eligible local data without changing retained test runs'
   })
   await retained.materialize()
 
-  const retainedDirectory = join(root, '.pickle', 'runs', 'run-2')
+  const retainedDirectory = join(storageFor(root).runsDirectory, 'run-2')
   const eventsBefore = await Bun.file(
     join(retainedDirectory, 'events.ndjson'),
   ).text()
@@ -656,7 +670,7 @@ test('retention removes eligible local data without changing retained test runs'
   expect(result.removed).toEqual(['run-1'])
   expect(
     await Bun.file(
-      join(root, '.pickle', 'runs', 'run-1', 'events.ndjson'),
+      join(storageFor(root).runsDirectory, 'run-1', 'events.ndjson'),
     ).exists(),
   ).toBe(false)
   expect(await Bun.file(join(retainedDirectory, 'events.ndjson')).text()).toBe(
@@ -697,7 +711,7 @@ test('a rerun creates a new test run with a source-run reference', async () => {
   })
   const sourceManifest = await source.materialize()
   const sourceEvents = await Bun.file(
-    join(root, '.pickle', 'runs', source.id, 'events.ndjson'),
+    join(storageFor(root).runsDirectory, source.id, 'events.ndjson'),
   ).text()
 
   const rerun = await store.create({ sourceRunId: source.id })
@@ -718,12 +732,12 @@ test('a rerun creates a new test run with a source-run reference', async () => {
   })
   expect(
     await Bun.file(
-      join(root, '.pickle', 'runs', source.id, 'events.ndjson'),
+      join(storageFor(root).runsDirectory, source.id, 'events.ndjson'),
     ).text(),
   ).toBe(sourceEvents)
   expect(
     await Bun.file(
-      join(root, '.pickle', 'runs', source.id, 'manifest.json'),
+      join(storageFor(root).runsDirectory, source.id, 'manifest.json'),
     ).json(),
   ).toEqual(sourceManifest)
 })
@@ -749,7 +763,7 @@ test('retention evicts the oldest runs when stored bytes exceed the limit', asyn
   })
   await second.materialize()
   const retainedEvents = await Bun.file(
-    join(root, '.pickle', 'runs', 'run-2', 'events.ndjson'),
+    join(storageFor(root).runsDirectory, 'run-2', 'events.ndjson'),
   ).text()
 
   const result = await store.applyRetention({ maxBytes: 1 })
@@ -757,7 +771,7 @@ test('retention evicts the oldest runs when stored bytes exceed the limit', asyn
   expect(result.removed).toEqual(['run-1'])
   expect(
     await Bun.file(
-      join(root, '.pickle', 'runs', 'run-2', 'events.ndjson'),
+      join(storageFor(root).runsDirectory, 'run-2', 'events.ndjson'),
     ).text(),
   ).toBe(retainedEvents)
   expect(await store.list()).toEqual([
