@@ -18,6 +18,11 @@ describe('public CLI workspace seam', () => {
     specifications: 'features/**/*.feature',
     web: { baseUrl: 'https://example.com' },
   }
+  const deterministicRunConfig = {
+    schemaVersion: 1,
+    specifications: 'features/**/*.feature',
+    executionTargetProfile: { id: 'deterministic' },
+  }
   const validSpecification = {
     path: 'features/example.feature',
     source: `@pickle:id:specaaaaaaaaaaaa @pickle:state:active
@@ -54,6 +59,14 @@ Feature: Example
       cmd: [pickleCommand, 'check'],
       cwd: project,
       env: { ...Bun.env },
+    })
+  }
+
+  function runProject(project: string, env: Record<string, string> = {}) {
+    return Bun.spawnSync({
+      cmd: [pickleCommand, 'run'],
+      cwd: project,
+      env: { ...Bun.env, ...env },
     })
   }
 
@@ -699,19 +712,15 @@ Feature: Checkout
     ).text()
     const project = await createCheckProject('adaptation-policy-output', {
       config: {
-        schemaVersion: 1,
-        specifications: 'features/**/*.feature',
-        executionTargetProfile: { id: 'deterministic' },
+        ...deterministicRunConfig,
         policy: { adaptedResults: 'accept' },
       },
       specification: validSpecification,
       extensions,
     })
     const runAdapted = () =>
-      Bun.spawnSync({
-        cmd: [pickleCommand, 'run'],
-        cwd: project,
-        env: { ...Bun.env, PICKLE_TEST_OUTCOME: 'passed-with-adaptation' },
+      runProject(project, {
+        PICKLE_TEST_OUTCOME: 'passed-with-adaptation',
       })
 
     const accepted = runAdapted()
@@ -729,9 +738,7 @@ Feature: Checkout
     await Bun.write(
       join(project, 'pickle.config.jsonc'),
       JSON.stringify({
-        schemaVersion: 1,
-        specifications: 'features/**/*.feature',
-        executionTargetProfile: { id: 'deterministic' },
+        ...deterministicRunConfig,
         policy: { adaptedResults: 'reject' },
       }),
     )
@@ -766,13 +773,8 @@ Feature: Checkout
         policy: { adaptedResults: 'reject' },
       }),
     )
-    const rejectedWithCancellation = Bun.spawnSync({
-      cmd: [pickleCommand, 'run'],
-      cwd: project,
-      env: {
-        ...Bun.env,
-        PICKLE_TEST_OUTCOMES: 'passed-with-adaptation,cancelled',
-      },
+    const rejectedWithCancellation = runProject(project, {
+      PICKLE_TEST_OUTCOMES: 'passed-with-adaptation,cancelled',
     })
     const mixedOutput = rejectedWithCancellation.stdout.toString()
 
@@ -791,19 +793,15 @@ Feature: Checkout
     ).text()
     const flakyProject = await createCheckProject('flaky-result-output', {
       config: {
-        schemaVersion: 1,
-        specifications: 'features/**/*.feature',
-        executionTargetProfile: { id: 'deterministic' },
+        ...deterministicRunConfig,
         execution: { functionalRetries: 1 },
       },
       specification: validSpecification,
       extensions,
     })
 
-    const flaky = Bun.spawnSync({
-      cmd: [pickleCommand, 'run'],
-      cwd: flakyProject,
-      env: { ...Bun.env, PICKLE_TEST_OUTCOMES: 'failed,passed' },
+    const flaky = runProject(flakyProject, {
+      PICKLE_TEST_OUTCOMES: 'failed,passed',
     })
     const flakyOutput = flaky.stdout.toString()
 
@@ -817,11 +815,7 @@ Feature: Checkout
     expect(flakyOutput).toContain(' Flaky results   1')
 
     const skippedProject = await createCheckProject('skipped-result-output', {
-      config: {
-        schemaVersion: 1,
-        specifications: 'features/**/*.feature',
-        executionTargetProfile: { id: 'deterministic' },
-      },
+      config: deterministicRunConfig,
       specification: {
         path: 'features/ignored.feature',
         source: `@pickle:id:specignoredaaaaaa @pickle:state:active
@@ -833,11 +827,7 @@ Feature: Ignored
       extensions,
     })
 
-    const skipped = Bun.spawnSync({
-      cmd: [pickleCommand, 'run'],
-      cwd: skippedProject,
-      env: { ...Bun.env },
-    })
+    const skipped = runProject(skippedProject)
     const skippedOutput = skipped.stdout.toString()
 
     expect(skipped.exitCode).toBe(0)
@@ -852,20 +842,14 @@ Feature: Ignored
     const cancelledProject = await createCheckProject(
       'cancelled-result-output',
       {
-        config: {
-          schemaVersion: 1,
-          specifications: 'features/**/*.feature',
-          executionTargetProfile: { id: 'deterministic' },
-        },
+        config: deterministicRunConfig,
         specification: validSpecification,
         extensions,
       },
     )
 
-    const cancelled = Bun.spawnSync({
-      cmd: [pickleCommand, 'run'],
-      cwd: cancelledProject,
-      env: { ...Bun.env, PICKLE_TEST_OUTCOME: 'cancelled' },
+    const cancelled = runProject(cancelledProject, {
+      PICKLE_TEST_OUTCOME: 'cancelled',
     })
     const cancelledOutput = cancelled.stdout.toString()
 
