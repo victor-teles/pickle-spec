@@ -1,8 +1,4 @@
-import {
-  resolveScenarioId,
-  type Scenario,
-  scenarioRevision,
-} from '@pickle-spec/spec'
+import { type Scenario, scenarioRevision } from '@pickle-spec/spec'
 import {
   type CacheOutcome,
   deserializeExecutionCacheEnvelope,
@@ -10,6 +6,7 @@ import {
   type ExecutionCacheKey,
   type ExecutionCacheUncacheableReason,
   resolveExecutionCacheKey,
+  type SerializedExecutionCacheEnvelope,
   serializeExecutionCacheEnvelope,
 } from './execution-cache'
 import {
@@ -24,7 +21,12 @@ import {
   type TestResult,
   withAttemptMetadata,
 } from './run-scenario'
-import { nonemptyBindings, stringContainsBinding } from './scenario-runtime'
+import { createScenarioRetryTracker } from './scenario-retry'
+import {
+  nonemptyBindings,
+  scenarioDefinitionId,
+  stringContainsBinding,
+} from './scenario-runtime'
 
 interface RetriedScenarioRun extends AttemptScenarioRun {
   inferenceCount: number
@@ -50,10 +52,7 @@ async function runCachedAttempts(
   events: RunEvent[],
   cacheEntry?: ExecutionCacheEnvelope,
 ): Promise<RetriedScenarioRun> {
-  const infrastructureRetries = input.retry?.infrastructureErrors ?? 0
-  const functionalRetries = input.retry?.functionalFailures ?? 0
-  let infrastructureFailures = 0
-  let functionalFailures = 0
+  const retries = createScenarioRetryTracker(input.retry)
   let inferenceCount = 0
   let runtimeValueExposed = false
 
@@ -87,23 +86,15 @@ async function runCachedAttempts(
           },
         }
       : run
-    const shouldRetryInfrastructure =
-      !completedRun.replayDiverged &&
-      completedRun.result.state === 'infrastructure-error' &&
-      infrastructureFailures < infrastructureRetries &&
-      !input.signal?.aborted
-    const shouldRetryFunctional =
-      !completedRun.replayDiverged &&
-      completedRun.result.state === 'failed' &&
-      functionalFailures < functionalRetries &&
-      !input.signal?.aborted
-    const shouldRetry = shouldRetryInfrastructure || shouldRetryFunctional
+    const shouldRetry = retries.shouldRetry({
+      state: completedRun.result.state,
+      replayDiverged: completedRun.replayDiverged,
+      aborted: Boolean(input.signal?.aborted),
+    })
     const result = withAttemptMetadata(completedRun.result, attempt)
 
     if (shouldRetry) {
       await appendEvent(events, input, { type: 'scenario-finished', result })
-      if (shouldRetryInfrastructure) infrastructureFailures++
-      if (shouldRetryFunctional) functionalFailures++
       continue
     }
     return {
@@ -115,25 +106,13 @@ async function runCachedAttempts(
   }
 }
 
-function resolvedScenarioId(input: RunScenarioInput): string {
-  return (
-    input.scenario.id ??
-    resolveScenarioId(
-      input.specification.source.uri,
-      input.specification.name,
-      input.scenario.template?.name ?? input.scenario.name,
-      input.scenario.tags,
-    )
-  )
-}
-
 function cacheKeyFor(input: RunScenarioInput): ExecutionCacheKey | undefined {
   const adapterCache = input.adapter.executionCache
   const runtimeCache = input.executionCache
   if (!adapterCache || !runtimeCache) return undefined
   return resolveExecutionCacheKey({
     projectKey: runtimeCache.projectKey,
-    scenarioId: resolvedScenarioId(input),
+    scenarioId: scenarioDefinitionId(input.specification, input.scenario),
     scenarioRevision: scenarioRevision(input.scenario),
     executionTargetProfileId: input.executionTargetProfile.id,
     targetConfigurationFingerprint: adapterCache.targetConfigurationFingerprint,
@@ -240,8 +219,9 @@ async function finalizeAdaptiveRun(
   }
 
   if (!reason && cacheKey && candidate?.cacheable) {
+    let serialized: SerializedExecutionCacheEnvelope | undefined
     try {
-      const serialized = serializeExecutionCacheEnvelope(
+      serialized = serializeExecutionCacheEnvelope(
         {
           schemaVersion: 1,
           key: cacheKey,
@@ -250,20 +230,23 @@ async function finalizeAdaptiveRun(
         },
         input.adapter.executionCache!,
       )
-      if (serializedContainsRuntimeValue(serialized.source, input.scenario)) {
-        reason = 'bound-parameter-value'
-      } else {
-        const write = await input.executionCache!.store.write(serialized, {
-          sourceRunId: input.executionCache!.sourceRunId,
-          evaluationModel: run.completion?.evaluationModel,
-          evaluationInferenceCount: run.inferenceCount,
-        })
-        if (!write.stored) reason = 'entry-too-large'
-        else
-          await appendEvent(events, input, { type: 'cache-written', cacheKey })
-      }
     } catch {
       reason = 'payload-validation-failed'
+    }
+    if (
+      serialized &&
+      serializedContainsRuntimeValue(serialized.source, input.scenario)
+    ) {
+      reason = 'bound-parameter-value'
+    }
+    if (!reason && serialized) {
+      const write = await input.executionCache!.store.write(serialized, {
+        sourceRunId: input.executionCache!.sourceRunId,
+        evaluationModel: run.completion?.evaluationModel,
+        evaluationInferenceCount: run.inferenceCount,
+      })
+      if (!write.stored) reason = 'entry-too-large'
+      else await appendEvent(events, input, { type: 'cache-written', cacheKey })
     }
   }
 
@@ -394,7 +377,6 @@ export async function runScenarioWithExecutionCache(
     })
   }
 
-  await input.executionCache!.store.delete(cacheKey)
   await appendEvent(events, input, {
     type: 'adaptive-fallback-started',
     cacheKey,

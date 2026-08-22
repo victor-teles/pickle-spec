@@ -86,13 +86,9 @@ export function scheduleScenarios(
               scenario: {
                 name:
                   selection.scenario.template?.name ?? selection.scenario.name,
-                ...(selection.scenario.id ? { id: selection.scenario.id } : {}),
-                ...(selection.scenario.examplesId
-                  ? { examplesId: selection.scenario.examplesId }
-                  : {}),
-                ...(selection.scenario.examplesRowId
-                  ? { examplesRowId: selection.scenario.examplesRowId }
-                  : {}),
+                id: selection.scenario.id,
+                examplesId: selection.scenario.examplesId,
+                examplesRowId: selection.scenario.examplesRowId,
               },
               executionTargetProfile,
             },

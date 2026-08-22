@@ -1,7 +1,9 @@
-import type {
-  Scenario,
-  ScenarioStep,
-  ScenarioVariableBinding,
+import {
+  resolveScenarioId,
+  type Scenario,
+  type ScenarioStep,
+  type ScenarioVariableBinding,
+  type Specification,
 } from '@pickle-spec/spec'
 import type {
   ScenarioIdentity,
@@ -9,15 +11,33 @@ import type {
   TestArtifact,
 } from './run-scenario'
 
+export interface PublicStepExecution {
+  execution: StepExecution
+  runtimeValueExposed: boolean
+}
+
 export function scenarioIdentity(scenario: Scenario): ScenarioIdentity {
   return {
     name: scenario.template?.name ?? scenario.name,
-    ...(scenario.id ? { id: scenario.id } : {}),
-    ...(scenario.examplesId ? { examplesId: scenario.examplesId } : {}),
-    ...(scenario.examplesRowId
-      ? { examplesRowId: scenario.examplesRowId }
-      : {}),
+    id: scenario.id,
+    examplesId: scenario.examplesId,
+    examplesRowId: scenario.examplesRowId,
   }
+}
+
+export function scenarioDefinitionId(
+  specification: Specification,
+  scenario: Scenario,
+): string {
+  return (
+    scenario.id ??
+    resolveScenarioId(
+      specification.source.uri,
+      specification.name,
+      scenario.template?.name ?? scenario.name,
+      scenario.tags,
+    )
+  )
 }
 
 export function templateStepAt(
@@ -98,16 +118,16 @@ function publicArtifacts(
   return artifacts?.map((artifact) => ({
     ...artifact,
     path: redactString(artifact.path, bindings),
-    ...(artifact.mediaType
-      ? { mediaType: redactString(artifact.mediaType, bindings) }
-      : {}),
+    mediaType: artifact.mediaType
+      ? redactString(artifact.mediaType, bindings)
+      : undefined,
   }))
 }
 
 export function publicStepExecution(
   execution: StepExecution,
   bindings: readonly ScenarioVariableBinding[],
-): { execution: StepExecution; runtimeValueExposed: boolean } {
+): PublicStepExecution {
   const runtimeValueExposed = valueContainsBinding(
     {
       resolvedActions: execution.resolvedActions,
@@ -122,21 +142,17 @@ export function publicStepExecution(
       ...execution,
       resolvedActions: execution.resolvedActions.map((action) => ({
         description: redactString(action.description, bindings),
-        ...(action.replay
-          ? {
-              replay: redactReplayValue(action.replay, bindings) as Record<
-                string,
-                unknown
-              >,
-            }
-          : {}),
+        replay: action.replay
+          ? (redactReplayValue(action.replay, bindings) as Record<
+              string,
+              unknown
+            >)
+          : undefined,
       })),
-      ...(execution.message
-        ? { message: redactString(execution.message, bindings) }
-        : {}),
-      ...(execution.artifacts
-        ? { artifacts: publicArtifacts(execution.artifacts, bindings) }
-        : {}),
+      message: execution.message
+        ? redactString(execution.message, bindings)
+        : undefined,
+      artifacts: publicArtifacts(execution.artifacts, bindings),
     },
   }
 }

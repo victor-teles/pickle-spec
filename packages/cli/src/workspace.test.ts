@@ -1393,6 +1393,7 @@ Feature: Purchase
       specification: validSpecification,
       extensions: `
 const marker = process.env.PICKLE_CACHE_TEST_MARKER
+const behavior = process.env.PICKLE_CACHE_TEST_BEHAVIOR
 
 async function record(value) {
   if (!marker) return
@@ -1418,17 +1419,30 @@ export default {
       await record(input.mode)
       return {
         async executeStep() {
+          if (input.mode === 'replay' && behavior === 'diverge') {
+            return {
+              state: 'failed',
+              replayDiverged: true,
+              resolvedActions: [],
+            }
+          }
           return { state: 'passed', resolvedActions: [] }
         },
         async complete() {
           return {
             inferenceCount: input.mode === 'adaptive' ? 1 : 0,
             evaluationModel: 'deterministic-fixture',
-            cacheCandidate: {
-              cacheable: true,
-              adapterPayload: { operations: ['assert:validation'] },
-              requiredVariables: [],
-            },
+            cacheCandidate:
+              behavior === 'uncacheable'
+                ? {
+                    cacheable: false,
+                    reason: 'non-deterministic-assertion',
+                  }
+                : {
+                    cacheable: true,
+                    adapterPayload: { operations: ['assert:validation'] },
+                    requiredVariables: [],
+                  },
           }
         },
         async close() {},
@@ -1440,7 +1454,10 @@ export default {
     })
     const marker = join(project, 'cache-modes.txt')
     const cacheRoot = join(project, '.test-execution-cache')
-    const run = (...flags: string[]) =>
+    const runWithBehavior = (
+      behavior: string | undefined,
+      ...flags: string[]
+    ) =>
       Bun.spawnSync({
         cmd: [pickleCommand, 'run', '--reporter', 'ndjson', ...flags],
         cwd: project,
@@ -1448,14 +1465,18 @@ export default {
           ...Bun.env,
           PICKLE_CACHE_ROOT: cacheRoot,
           PICKLE_CACHE_TEST_MARKER: marker,
+          PICKLE_CACHE_TEST_BEHAVIOR: behavior,
         },
       })
+    const run = (...flags: string[]) => runWithBehavior(undefined, ...flags)
 
     const adaptive = run()
     const replay = run('--cache-only')
     const refresh = run('--refresh-cache')
     const cold = run('--cache-only', '--application-revision', 'app-2')
     const conflicting = run('--cache-only', '--refresh-cache')
+    const fallback = runWithBehavior('diverge')
+    const uncacheable = runWithBehavior('uncacheable', '--refresh-cache')
 
     expect(adaptive.stderr.toString()).toBe('')
     expect(adaptive.exitCode).toBe(0)
@@ -1463,16 +1484,25 @@ export default {
     expect(refresh.exitCode).toBe(0)
     expect(cold.exitCode).toBe(1)
     expect(conflicting.exitCode).toBe(2)
+    expect(fallback.exitCode).toBe(0)
+    expect(uncacheable.exitCode).toBe(0)
     expect(conflicting.stderr.toString()).toContain(
       '--refresh-cache cannot be combined with --cache-only',
     )
-    expect(await Bun.file(marker).text()).toBe('adaptive\nreplay\nadaptive\n')
+    expect(await Bun.file(marker).text()).toBe(
+      'adaptive\nreplay\nadaptive\nreplay\nadaptive\nadaptive\n',
+    )
     expect(replay.stdout.toString()).toContain('"executionMode":"replay"')
     expect(replay.stdout.toString()).toContain('"cacheOutcome":"hit"')
     expect(replay.stdout.toString()).toContain('"inferenceCount":0')
     expect(refresh.stdout.toString()).toContain('"cacheOutcome":"refresh"')
     expect(refresh.stdout.toString()).toContain('"inferenceCount":1')
     expect(cold.stdout.toString()).toContain('"failureKind":"cache-miss"')
+    expect(fallback.stdout.toString()).toContain('"cacheOutcome":"fallback"')
+    expect(uncacheable.stdout.toString()).toContain('"state":"passed"')
+    expect(uncacheable.stdout.toString()).toContain(
+      '"cacheOutcome":"uncacheable"',
+    )
   })
 
   test('check rejects an unknown adapted-result policy', async () => {

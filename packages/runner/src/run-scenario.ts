@@ -1,290 +1,31 @@
-import {
-  ignoreTag,
-  resolveScenarioId,
-  type Scenario,
-  type ScenarioStep,
-  type ScenarioTemplate,
-  type ScenarioVariableBinding,
-  type Specification,
-  scenarioRevision,
-} from '@pickle-spec/spec'
+import { ignoreTag } from '@pickle-spec/spec'
+import type { ExecutionCacheEnvelope } from './execution-cache'
+import type { ExecutionPlan } from './execution-plan'
 import type {
-  CacheOutcome,
-  ExecutionCacheAdapter,
-  ExecutionCacheEnvelope,
-  ExecutionCacheKey,
-  ExecutionCacheStore,
-  ExecutionCacheUncacheableReason,
-} from './execution-cache'
-import {
-  type ExecutionPlan,
-  type ExecutionPlanStore,
-  type PlanApplicability,
-  planApplies,
-} from './execution-plan'
+  ExecutionMode,
+  ExecutionTimeouts,
+  RunEvent,
+  RunEventPayload,
+  RunScenarioInput,
+  ScenarioRun,
+  StepExecution,
+  TargetSession,
+  TargetSessionCompletion,
+  TestResult,
+  TestResultState,
+  TestStepResult,
+} from './run-scenario-types'
 import {
   nonemptyBindings,
   publicStepExecution,
   redactString,
+  scenarioDefinitionId,
   scenarioIdentity,
   stringContainsBinding,
   templateStepAt,
 } from './scenario-runtime'
 
-export type TestResultState =
-  | 'passed'
-  | 'passed-with-adaptation'
-  | 'failed'
-  | 'skipped'
-  | 'cancelled'
-  | 'infrastructure-error'
-
-export function isEvidenceState(state: TestResultState): boolean {
-  return (
-    state === 'failed' ||
-    state === 'infrastructure-error' ||
-    state === 'passed-with-adaptation'
-  )
-}
-
-export type ExecutionMode = 'adaptive' | 'replay'
-
-export interface ExecutionTargetProfile {
-  id: string
-  adapter?: string
-  capabilities?: readonly string[]
-}
-
-export interface ResolvedAction {
-  description: string
-  replay?: Record<string, unknown>
-}
-
-export interface TestArtifact {
-  kind: 'screenshot' | 'trace' | 'recording' | 'device-log'
-  path: string
-  mediaType?: string
-}
-
-export interface StepExecution {
-  state: TestResultState
-  resolvedActions: ResolvedAction[]
-  replayDiverged?: boolean
-  message?: string
-  artifacts?: TestArtifact[]
-}
-
-export interface StepExecutionContext {
-  stepIndex: number
-  templateStep: ScenarioStep
-  runtimeBindings: readonly ScenarioVariableBinding[]
-}
-
-export type TargetSessionCacheCandidate =
-  | {
-      cacheable: true
-      adapterPayload: unknown
-      requiredVariables: readonly string[]
-    }
-  | {
-      cacheable: false
-      reason: ExecutionCacheUncacheableReason
-    }
-
-export interface TargetSessionCompletion {
-  inferenceCount: number
-  evaluationModel?: string
-  cacheCandidate?: TargetSessionCacheCandidate
-}
-
-export interface ScenarioExecution {
-  stepExecutions: StepExecution[]
-  replayDiverged?: boolean
-}
-
-interface TargetSessionLifecycle {
-  complete?(): Promise<TargetSessionCompletion>
-  close(): Promise<void>
-}
-
-export interface StepTargetSession extends TargetSessionLifecycle {
-  executeStep(
-    step: ScenarioStep,
-    signal?: AbortSignal,
-    context?: StepExecutionContext,
-  ): Promise<StepExecution>
-  executeScenario?: never
-}
-
-export interface ScenarioTargetSession extends TargetSessionLifecycle {
-  executeStep?: never
-  executeScenario(signal?: AbortSignal): Promise<ScenarioExecution>
-}
-
-export type TargetSession = StepTargetSession | ScenarioTargetSession
-
-export interface ReplayCacheInput {
-  adapterPayload: unknown
-  requiredVariables: readonly string[]
-}
-
-export interface OpenSessionInput {
-  executionTargetProfile: ExecutionTargetProfile
-  specification: Specification
-  scenario: Scenario
-  mode?: ExecutionMode
-  plan?: ExecutionPlan
-  executionCache?: ReplayCacheInput
-  scenarioTemplate?: ScenarioTemplate
-  runtimeBindings?: readonly ScenarioVariableBinding[]
-  signal?: AbortSignal
-}
-
-export interface FidelityPolicy {
-  profile: 'default' | 'fast'
-  tradeOffs: readonly string[]
-}
-
-export interface ExecutionTargetAdapter<
-  Session extends TargetSession = TargetSession,
-> {
-  capabilities?: readonly string[]
-  planFormatVersion?: string
-  executionCache?: ExecutionCacheAdapter
-  fidelityPolicy?: FidelityPolicy
-  openSession(input: OpenSessionInput): Promise<Session>
-  dispose?(): Promise<void>
-}
-
-export type StepExecutionTargetAdapter =
-  ExecutionTargetAdapter<StepTargetSession>
-
-export interface ScenarioIdentity {
-  name: string
-  id?: string
-  examplesId?: string
-  examplesRowId?: string
-}
-
-export interface TestStepResult {
-  step: ScenarioStep
-  state: TestResultState
-  resolvedActions: ResolvedAction[]
-  message?: string
-  artifacts?: TestArtifact[]
-}
-
-export interface TestResult {
-  schemaVersion: 1
-  specification: {
-    name: string
-    uri: string
-  }
-  scenario: ScenarioIdentity
-  executionTargetProfile: ExecutionTargetProfile
-  state: TestResultState
-  steps: TestStepResult[]
-  executionMode?: ExecutionMode
-  cacheOutcome?: CacheOutcome
-  inferenceCount?: number
-  cacheUncacheableReason?: ExecutionCacheUncacheableReason
-  failureKind?: 'cache-miss'
-  message?: string
-  attempts?: number
-  flaky?: boolean
-  durationMs?: number
-  fidelityPolicy?: FidelityPolicy
-}
-
-interface RunEventEnvelope {
-  schemaVersion: 1
-  sequence: number
-}
-
-export type RunEventPayload =
-  | {
-      type: 'run-started'
-      run: {
-        id: string
-        startedAt: string
-        sourceRunId?: string
-        suite?: string
-        applicationRevision?: string
-      }
-    }
-  | {
-      type: 'scenario-started'
-      scenario: TestResult['scenario']
-      executionTargetProfile?: ExecutionTargetProfile
-    }
-  | {
-      type: 'step-started'
-      step: ScenarioStep
-      scenario?: TestResult['scenario']
-      executionTargetProfile?: ExecutionTargetProfile
-    }
-  | {
-      type: 'step-finished'
-      result: TestStepResult
-      scenario?: TestResult['scenario']
-      executionTargetProfile?: ExecutionTargetProfile
-    }
-  | { type: 'cache-hit'; cacheKey: ExecutionCacheKey }
-  | { type: 'cache-miss'; cacheKey: ExecutionCacheKey }
-  | { type: 'cache-refresh'; cacheKey: ExecutionCacheKey }
-  | { type: 'replay-diverged'; cacheKey: ExecutionCacheKey }
-  | { type: 'adaptive-fallback-started'; cacheKey: ExecutionCacheKey }
-  | { type: 'cache-written'; cacheKey: ExecutionCacheKey }
-  | {
-      type: 'cache-uncacheable'
-      reason: ExecutionCacheUncacheableReason
-    }
-  | { type: 'inference-count-updated'; inferenceCount: number }
-  | { type: 'scenario-finished'; result: TestResult; scheduleIndex?: number }
-
-export type RunEvent = RunEventEnvelope & RunEventPayload
-
-export interface ScenarioRun {
-  events: RunEvent[]
-  result: TestResult
-}
-
-export interface RetryPolicy {
-  infrastructureErrors: number
-  functionalFailures?: number
-}
-
-export interface ExecutionTimeouts {
-  stepMs?: number
-  scenarioMs?: number
-}
-
-export interface ExecutionPolicy {
-  retry?: RetryPolicy
-  timeout?: ExecutionTimeouts
-}
-
-export type ExecutionCachePolicy = 'prefer-cache' | 'refresh' | 'cache-only'
-
-export interface ScenarioExecutionCache {
-  store: ExecutionCacheStore
-  projectKey: string
-  sourceRunId: string
-}
-
-export interface RunScenarioInput extends ExecutionPolicy {
-  specification: Specification
-  scenario: Scenario
-  executionTargetProfile: ExecutionTargetProfile
-  adapter: ExecutionTargetAdapter
-  plans?: ExecutionPlanStore
-  executionCache?: ScenarioExecutionCache
-  cachePolicy?: ExecutionCachePolicy
-  applicationRevision?: string
-  ci?: boolean
-  signal?: AbortSignal
-  onEvent?: (event: RunEvent) => void | Promise<void>
-}
+export * from './run-scenario-types'
 
 class ExecutionDeadlineError extends Error {
   constructor(message: string) {
@@ -377,66 +118,6 @@ export interface AttemptScenarioRun extends ScenarioRun {
   runtimeValueExposed: boolean
 }
 
-function planQuery(input: RunScenarioInput): PlanApplicability {
-  return {
-    scenarioId:
-      input.scenario.id ??
-      resolveScenarioId(
-        input.specification.source.uri,
-        input.specification.name,
-        input.scenario.template?.name ?? input.scenario.name,
-        input.scenario.tags,
-      ),
-    scenarioRevision: scenarioRevision(input.scenario),
-    executionTargetProfileId: input.executionTargetProfile.id,
-    planFormatVersion: input.adapter.planFormatVersion ?? '1',
-    ...(input.applicationRevision !== undefined
-      ? { applicationRevision: input.applicationRevision }
-      : {}),
-  }
-}
-
-async function selectPlan(input: RunScenarioInput): Promise<{
-  mode: ExecutionMode
-  plan?: ExecutionPlan
-  query: PlanApplicability
-}> {
-  const query = planQuery(input)
-  const found = await input.plans?.findApproved(query)
-  const plan = found && planApplies(found, query) ? found : undefined
-  if (plan && input.applicationRevision === undefined && input.ci) {
-    throw new Error(
-      'CI Replay requires applicationRevision. Set applicationRevision or --application-revision.',
-    )
-  }
-  return {
-    mode: plan ? 'replay' : 'adaptive',
-    ...(plan ? { plan } : {}),
-    query,
-  }
-}
-
-function candidatePlan(
-  query: PlanApplicability,
-  steps: TestStepResult[],
-): ExecutionPlan {
-  return {
-    schemaVersion: 1,
-    ...query,
-    steps: steps.map((step) => ({ resolvedActions: step.resolvedActions })),
-  }
-}
-
-function shouldSaveCandidate(
-  state: TestResultState,
-  mode: ExecutionMode,
-): boolean {
-  return (
-    state === 'passed-with-adaptation' ||
-    (state === 'passed' && mode === 'adaptive')
-  )
-}
-
 export function withAttemptMetadata(
   result: TestResult,
   attempt: number,
@@ -457,7 +138,7 @@ export function createTestResult(
   durationMs: number,
   message?: string,
 ): TestResult {
-  const scenarioId = planQuery(input).scenarioId
+  const scenarioId = scenarioDefinitionId(input.specification, input.scenario)
   return {
     schemaVersion: 1,
     specification: {
@@ -481,7 +162,7 @@ function attemptIdentity(input: ScenarioAttemptInput) {
   return {
     scenario: {
       ...scenarioIdentity(input.scenario),
-      id: planQuery(input).scenarioId,
+      id: scenarioDefinitionId(input.specification, input.scenario),
     },
     executionTargetProfile: input.executionTargetProfile,
   }
@@ -552,21 +233,15 @@ export async function runScenarioAttempt(
       specification: input.specification,
       scenario: input.scenario,
       mode: input.mode,
-      ...(input.plan ? { plan: input.plan } : {}),
-      ...(input.cacheEntry
+      plan: input.plan,
+      executionCache: input.cacheEntry
         ? {
-            executionCache: {
-              adapterPayload: input.cacheEntry.adapterPayload,
-              requiredVariables: input.cacheEntry.requiredVariables,
-            },
+            adapterPayload: input.cacheEntry.adapterPayload,
+            requiredVariables: input.cacheEntry.requiredVariables,
           }
-        : {}),
-      ...(input.scenario.template
-        ? { scenarioTemplate: input.scenario.template }
-        : {}),
-      ...(input.scenario.runtimeBindings
-        ? { runtimeBindings: input.scenario.runtimeBindings }
-        : {}),
+        : undefined,
+      scenarioTemplate: input.scenario.template,
+      runtimeBindings: input.scenario.runtimeBindings,
       signal: input.signal,
     })
   } catch (error) {
@@ -599,6 +274,14 @@ export async function runScenarioAttempt(
   ): Promise<boolean> => {
     const templateStep = templateStepAt(input.scenario, stepIndex)
     const projected = publicStepExecution(execution, bindings)
+    const cacheAdapted =
+      input.adapter.executionCache !== undefined &&
+      projected.execution.state === 'passed-with-adaptation'
+    const publicState = cacheAdapted
+      ? input.mode === 'adaptive'
+        ? 'passed'
+        : 'failed'
+      : projected.execution.state
     runtimeValueExposed ||= projected.runtimeValueExposed
     if (input.signal?.aborted) {
       state = 'cancelled'
@@ -613,14 +296,12 @@ export async function runScenarioAttempt(
     }
     await recordStep({
       step: templateStep,
-      state: projected.execution.state,
+      state: publicState,
       resolvedActions: projected.execution.resolvedActions,
-      ...(projected.execution.message
-        ? { message: projected.execution.message }
-        : {}),
-      ...(projected.execution.artifacts?.length
-        ? { artifacts: projected.execution.artifacts }
-        : {}),
+      message: projected.execution.message,
+      artifacts: projected.execution.artifacts?.length
+        ? projected.execution.artifacts
+        : undefined,
     })
 
     if (execution.replayDiverged) {
@@ -629,8 +310,14 @@ export async function runScenarioAttempt(
       message = projected.execution.message
       return false
     }
+    if (cacheAdapted && input.mode === 'replay') {
+      replayDiverged = true
+      state = 'failed'
+      message ??= 'Replay adapted instead of executing deterministically'
+      return false
+    }
     if (execution.state === 'passed-with-adaptation') {
-      state = 'passed-with-adaptation'
+      state = publicState
       return true
     }
     if (execution.state !== 'passed') {
@@ -642,10 +329,10 @@ export async function runScenarioAttempt(
   }
 
   try {
-    if (!session.executeScenario && !session.executeStep) {
+    if (Boolean(session.executeScenario) === Boolean(session.executeStep)) {
       state = 'infrastructure-error'
       message =
-        'Target session must provide executeStep or executeScenario execution'
+        'Target session must provide exactly one of executeStep or executeScenario'
     } else if (session.executeScenario) {
       try {
         const executeScenario = session.executeScenario
@@ -760,69 +447,4 @@ export async function runScenarioAttempt(
   }
 
   return finish(state, steps, message)
-}
-
-export async function runLegacyScenario(
-  input: RunScenarioInput,
-): Promise<ScenarioRun> {
-  const events: RunEvent[] = []
-  const infrastructureRetries = input.retry?.infrastructureErrors ?? 0
-  const functionalRetries = input.retry?.functionalFailures ?? 0
-  let infrastructureFailures = 0
-  let functionalFailures = 0
-  const selected = await selectPlan(input)
-
-  for (let attempt = 1; ; attempt++) {
-    const run = await runScenarioAttempt({
-      ...input,
-      mode: selected.mode,
-      ...(selected.plan ? { plan: selected.plan } : {}),
-      onEvent: async (event) => {
-        if (event.type === 'scenario-finished') return
-        const versionedEvent = {
-          ...event,
-          sequence: events.length + 1,
-        } as RunEvent
-        events.push(versionedEvent)
-        await input.onEvent?.(versionedEvent)
-      },
-      retry: undefined,
-    })
-    const shouldRetryInfrastructure =
-      run.result.state === 'infrastructure-error' &&
-      infrastructureFailures < infrastructureRetries &&
-      !input.signal?.aborted
-    const shouldRetryFunctional =
-      run.result.state === 'failed' &&
-      functionalFailures < functionalRetries &&
-      !input.signal?.aborted
-    const shouldRetry = shouldRetryInfrastructure || shouldRetryFunctional
-    const result = withAttemptMetadata(run.result, attempt)
-
-    for (const event of run.events) {
-      if (event.type !== 'scenario-finished') continue
-      const versionedEvent = {
-        ...event,
-        sequence: events.length + 1,
-        ...(shouldRetry ? {} : { result }),
-      } as RunEvent
-      events.push(versionedEvent)
-      await input.onEvent?.(versionedEvent)
-    }
-
-    if (shouldRetryInfrastructure) {
-      infrastructureFailures++
-      continue
-    }
-    if (shouldRetryFunctional) {
-      functionalFailures++
-      continue
-    }
-    if (input.plans && shouldSaveCandidate(result.state, selected.mode)) {
-      await input.plans.saveCandidate(
-        candidatePlan(selected.query, result.steps),
-      )
-    }
-    return { events, result }
-  }
 }

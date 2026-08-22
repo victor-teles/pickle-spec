@@ -75,6 +75,14 @@ export interface ParseSpecificationInput {
   language?: string
 }
 
+type OutlineRow = {
+  header: string[]
+  cells: string[]
+  examplesTags: string[]
+  examplesName: string
+  scenarioName: string
+}
+
 const requiresTagPrefix = '@pickle:requires:'
 
 type ScenarioStepType = ScenarioStep['type']
@@ -206,17 +214,12 @@ function templateVariableNames(
   return header.filter((variable) => referenced.has(variable))
 }
 
-function outlineVariables(row: {
-  header: readonly string[]
-  cells: readonly string[]
-}): {
-  runtimeBindings: ScenarioVariableBinding[]
-} {
+function outlineVariables(row: OutlineRow): ScenarioVariableBinding[] {
   const runtimeBindings: ScenarioVariableBinding[] = []
   for (const [index, name] of row.header.entries()) {
     runtimeBindings.push({ name, value: row.cells[index] ?? '' })
   }
-  return { runtimeBindings }
+  return runtimeBindings
 }
 
 export function parseSpecification(
@@ -237,16 +240,7 @@ export function parseSpecification(
 
   const infoByAstNodeId = collectStepInfo(document)
   const scenariosById = new Map<string, { tags: string[]; name: string }>()
-  const rowsById = new Map<
-    string,
-    {
-      header: string[]
-      cells: string[]
-      examplesTags: string[]
-      examplesName: string
-      scenarioName: string
-    }
-  >()
+  const rowsById = new Map<string, OutlineRow>()
   collectIdentityNodes(document, scenariosById, rowsById)
   const featureTags = feature.tags.map((tag) => tag.name)
   const featureIdentity = identityFromTags(featureTags)
@@ -257,11 +251,23 @@ export function parseSpecification(
       const row = rowsById.get(pickle.astNodeIds[1] ?? '')
       const tags = pickle.tags.map(({ name }) => name)
       const requirements = capabilityRequirements(tags)
-      const outline = row ? outlineVariables(row) : undefined
+      const runtimeBindings = row ? outlineVariables(row) : undefined
       const templateSteps = row
         ? pickle.steps.map((step) => templateStep(step, infoByAstNodeId))
         : undefined
       const templateName = row ? (scenarioNode?.name ?? pickle.name) : undefined
+      const template =
+        row && templateName && templateSteps
+          ? {
+              name: templateName,
+              steps: templateSteps,
+              variableNames: templateVariableNames(
+                templateName,
+                templateSteps,
+                row.header,
+              ),
+            }
+          : undefined
       return {
         name: pickle.name,
         tags,
@@ -272,36 +278,28 @@ export function parseSpecification(
           scenarioNode?.name ?? pickle.name,
           scenarioTags,
         ),
-        ...(row
-          ? {
-              examplesId: resolveExamplesId(
-                input.uri,
-                feature.name,
-                row.scenarioName,
-                row.examplesName,
-                row.examplesTags,
-              ),
-              examplesRowId: resolveExamplesRowId(
-                input.uri,
-                feature.name,
-                row.scenarioName,
-                row.examplesName,
-                row.header,
-                row.cells,
-              ),
-              template: {
-                name: templateName!,
-                steps: templateSteps!,
-                variableNames: templateVariableNames(
-                  templateName!,
-                  templateSteps!,
-                  row.header,
-                ),
-              },
-              runtimeBindings: outline?.runtimeBindings ?? [],
-            }
-          : {}),
-        ...(requirements ? { capabilityRequirements: requirements } : {}),
+        examplesId: row
+          ? resolveExamplesId(
+              input.uri,
+              feature.name,
+              row.scenarioName,
+              row.examplesName,
+              row.examplesTags,
+            )
+          : undefined,
+        examplesRowId: row
+          ? resolveExamplesRowId(
+              input.uri,
+              feature.name,
+              row.scenarioName,
+              row.examplesName,
+              row.header,
+              row.cells,
+            )
+          : undefined,
+        template,
+        runtimeBindings,
+        capabilityRequirements: requirements,
       }
     },
   )
@@ -322,16 +320,7 @@ export function parseSpecification(
 function collectIdentityNodes(
   document: GherkinDocument,
   scenariosById: Map<string, { tags: string[]; name: string }>,
-  rowsById: Map<
-    string,
-    {
-      header: string[]
-      cells: string[]
-      examplesTags: string[]
-      examplesName: string
-      scenarioName: string
-    }
-  >,
+  rowsById: Map<string, OutlineRow>,
 ): void {
   function visitExamples(scenarioName: string, examples: Examples): void {
     const header = examples.tableHeader?.cells.map((cell) => cell.value) ?? []

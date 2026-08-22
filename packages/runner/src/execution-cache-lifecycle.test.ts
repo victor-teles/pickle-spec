@@ -13,6 +13,11 @@ import type {
 } from '../index'
 import { runScenario } from '../index'
 
+type RunScenarioInput = Parameters<typeof runScenario>[0]
+type CacheRunInput = RunScenarioInput & {
+  executionCache: NonNullable<RunScenarioInput['executionCache']>
+}
+
 const specification: Specification = {
   name: 'Checkout',
   source: { uri: 'features/checkout.feature', language: 'en' },
@@ -70,6 +75,33 @@ function memoryStore() {
   return { entries, store, writes }
 }
 
+interface CacheRunFixtureOptions {
+  adapter: ExecutionTargetAdapter
+  store: ExecutionCacheStore
+  selectedScenario?: Scenario
+  sourceRunId?: string
+}
+
+function cacheRunInput({
+  adapter,
+  store,
+  selectedScenario = scenario,
+  sourceRunId = 'run-1',
+}: CacheRunFixtureOptions): CacheRunInput {
+  return {
+    specification,
+    scenario: selectedScenario,
+    executionTargetProfile: { id: 'test' },
+    adapter,
+    applicationRevision: 'app-1',
+    executionCache: {
+      store,
+      projectKey: 'project-1',
+      sourceRunId,
+    },
+  }
+}
+
 describe('Execution cache lifecycle', () => {
   test('stores one successful Adaptive execution and replays it on the next run', async () => {
     const modes: string[] = []
@@ -98,18 +130,7 @@ describe('Execution cache lifecycle', () => {
       openSession,
     }
     const { store } = memoryStore()
-    const input = {
-      specification,
-      scenario,
-      executionTargetProfile: { id: 'test' },
-      adapter,
-      applicationRevision: 'app-1',
-      executionCache: {
-        store,
-        projectKey: 'project-1',
-        sourceRunId: 'run-1',
-      },
-    }
+    const input = cacheRunInput({ adapter, store })
 
     const adaptive = await runScenario(input)
     const replay = await runScenario({
@@ -172,18 +193,7 @@ describe('Execution cache lifecycle', () => {
         }
       },
     }
-    const input = {
-      specification,
-      scenario,
-      executionTargetProfile: { id: 'test' },
-      adapter,
-      applicationRevision: 'app-1',
-      executionCache: {
-        store,
-        projectKey: 'project-1',
-        sourceRunId: 'run-1',
-      },
-    }
+    const input = cacheRunInput({ adapter, store })
 
     await runScenario(input)
     const refresh = await runScenario({
@@ -266,18 +276,7 @@ describe('Execution cache lifecycle', () => {
         }
       },
     }
-    const input = {
-      specification,
-      scenario,
-      executionTargetProfile: { id: 'test' },
-      adapter,
-      applicationRevision: 'app-1',
-      executionCache: {
-        store,
-        projectKey: 'project-1',
-        sourceRunId: 'run-1',
-      },
-    }
+    const input = cacheRunInput({ adapter, store })
     await runScenario(input)
     expect(seed).toBe(false)
 
@@ -334,18 +333,7 @@ describe('Execution cache lifecycle', () => {
         }
       },
     }
-    const input = {
-      specification,
-      scenario,
-      executionTargetProfile: { id: 'test' },
-      adapter,
-      applicationRevision: 'app-1',
-      executionCache: {
-        store,
-        projectKey: 'project-1',
-        sourceRunId: 'run-1',
-      },
-    }
+    const input = cacheRunInput({ adapter, store })
     await runScenario(input)
     replayShouldDiverge = true
 
@@ -499,10 +487,14 @@ describe('Execution cache lifecycle', () => {
 
   test('writes only after the persisted representation completes and the session closes', async () => {
     const order: string[] = []
+    const executedOperations: string[] = []
     const { store } = memoryStore()
     const originalWrite = store.write.bind(store)
     store.write = async (...args) => {
       order.push('write')
+      expect(JSON.parse(args[0].source)).toMatchObject({
+        adapterPayload: { operations: executedOperations },
+      })
       return originalWrite(...args)
     }
 
@@ -514,8 +506,11 @@ describe('Execution cache lifecycle', () => {
         executionCache,
         async openSession() {
           return {
-            async executeStep() {
+            async executeStep(_step, _signal, context) {
               order.push('execute')
+              executedOperations.push(
+                context?.stepIndex === 0 ? 'confirm' : 'assert-receipt',
+              )
               return { state: 'passed' as const, resolvedActions: [] }
             },
             async complete() {
@@ -524,7 +519,7 @@ describe('Execution cache lifecycle', () => {
                 inferenceCount: 1,
                 cacheCandidate: {
                   cacheable: true as const,
-                  adapterPayload: { operations: ['deterministic'] },
+                  adapterPayload: { operations: [...executedOperations] },
                   requiredVariables: [],
                 },
               }
@@ -908,18 +903,7 @@ describe('Execution cache lifecycle', () => {
         }
       },
     }
-    const input = {
-      specification,
-      scenario,
-      executionTargetProfile: { id: 'test' },
-      adapter,
-      applicationRevision: 'app-1',
-      executionCache: {
-        store,
-        projectKey: 'project-1',
-        sourceRunId: 'run-1',
-      },
-    }
+    const input = cacheRunInput({ adapter, store })
 
     await runScenario(input)
     const fallback = await runScenario({
@@ -985,18 +969,7 @@ describe('Execution cache lifecycle', () => {
         }
       },
     }
-    const input = {
-      specification,
-      scenario,
-      executionTargetProfile: { id: 'test' },
-      adapter,
-      applicationRevision: 'app-1',
-      executionCache: {
-        store,
-        projectKey: 'project-1',
-        sourceRunId: 'run-1',
-      },
-    }
+    const input = cacheRunInput({ adapter, store })
 
     await runScenario(input)
     const refresh = await runScenario({
@@ -1159,7 +1132,164 @@ describe('Execution cache lifecycle', () => {
     expect(run.result).toMatchObject({
       state: 'infrastructure-error',
       message:
-        'Target session must provide executeStep or executeScenario execution',
+        'Target session must provide exactly one of executeStep or executeScenario',
+    })
+    expect(writes).toEqual([])
+  })
+
+  test('normalizes Adaptive adaptation to passed and treats Replay adaptation as divergence', async () => {
+    const { store } = memoryStore()
+    const modes: string[] = []
+    const adapter: ExecutionTargetAdapter = {
+      executionCache,
+      async openSession(input) {
+        modes.push(input.mode ?? 'adaptive')
+        return {
+          async executeStep() {
+            return {
+              state: 'passed-with-adaptation' as const,
+              resolvedActions: [],
+            }
+          },
+          async complete() {
+            return {
+              inferenceCount: 1,
+              cacheCandidate: {
+                cacheable: true as const,
+                adapterPayload: { operations: ['deterministic'] },
+                requiredVariables: [],
+              },
+            }
+          },
+          async close() {},
+        }
+      },
+    }
+    const input = cacheRunInput({ adapter, store })
+
+    const adaptive = await runScenario(input)
+    const fallback = await runScenario({
+      ...input,
+      executionCache: { ...input.executionCache, sourceRunId: 'run-2' },
+    })
+    const cacheOnly = await runScenario({
+      ...input,
+      cachePolicy: 'cache-only',
+      executionCache: { ...input.executionCache, sourceRunId: 'run-3' },
+    })
+
+    expect(modes).toEqual(['adaptive', 'replay', 'adaptive', 'replay'])
+    expect(adaptive.result).toMatchObject({ state: 'passed' })
+    expect(adaptive.result.steps.every((step) => step.state === 'passed')).toBe(
+      true,
+    )
+    expect(fallback.result).toMatchObject({
+      state: 'passed',
+      cacheOutcome: 'fallback',
+    })
+    expect(cacheOnly.result).toMatchObject({
+      state: 'failed',
+      failureKind: 'cache-miss',
+    })
+  })
+
+  test('preserves a divergent entry until Adaptive fallback can replace it', async () => {
+    const { store, writes } = memoryStore()
+    const modes: string[] = []
+    let adaptiveAttempt = 0
+    const adapter: ExecutionTargetAdapter = {
+      executionCache,
+      async openSession(input) {
+        modes.push(input.mode ?? 'adaptive')
+        if (input.mode === 'adaptive') adaptiveAttempt++
+        return {
+          async executeStep() {
+            if (input.mode === 'replay') {
+              return {
+                state: 'failed' as const,
+                replayDiverged: true,
+                resolvedActions: [],
+              }
+            }
+            return {
+              state:
+                adaptiveAttempt === 1
+                  ? ('passed' as const)
+                  : ('failed' as const),
+              resolvedActions: [],
+            }
+          },
+          async complete() {
+            return {
+              inferenceCount: 1,
+              cacheCandidate: {
+                cacheable: true as const,
+                adapterPayload: { operations: ['original'] },
+                requiredVariables: [],
+              },
+            }
+          },
+          async close() {},
+        }
+      },
+    }
+    const input = cacheRunInput({ adapter, store })
+
+    await runScenario(input)
+    const failedFallback = await runScenario({
+      ...input,
+      executionCache: { ...input.executionCache, sourceRunId: 'run-2' },
+    })
+    const cacheOnly = await runScenario({
+      ...input,
+      cachePolicy: 'cache-only',
+      executionCache: { ...input.executionCache, sourceRunId: 'run-3' },
+    })
+
+    expect(failedFallback.result.state).toBe('failed')
+    expect(cacheOnly.result).toMatchObject({
+      state: 'failed',
+      cacheOutcome: 'hit',
+      failureKind: 'cache-miss',
+    })
+    expect(modes).toEqual(['adaptive', 'replay', 'adaptive', 'replay'])
+    expect(writes).toHaveLength(1)
+  })
+
+  test('rejects a runtime session that exposes both execution seams', async () => {
+    const { store, writes } = memoryStore()
+    const invalidSession = {
+      async executeStep() {
+        return { state: 'passed' as const, resolvedActions: [] }
+      },
+      async executeScenario() {
+        return { stepExecutions: [] }
+      },
+      async close() {},
+    } as unknown as TargetSession
+
+    const run = await runScenario({
+      specification,
+      scenario,
+      executionTargetProfile: { id: 'test' },
+      adapter: {
+        executionCache,
+        async openSession() {
+          return invalidSession
+        },
+      },
+      applicationRevision: 'app-1',
+      executionCache: {
+        store,
+        projectKey: 'project-1',
+        sourceRunId: 'run-1',
+      },
+    })
+
+    expect(run.result).toMatchObject({
+      state: 'infrastructure-error',
+      message:
+        'Target session must provide exactly one of executeStep or executeScenario',
     })
     expect(writes).toEqual([])
   })

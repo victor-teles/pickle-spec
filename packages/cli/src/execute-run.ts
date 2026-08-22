@@ -494,15 +494,13 @@ export async function startProjectRun(
         : undefined
       const shared = {
         plans: planStore,
-        ...(executionCache
+        executionCache: executionCache
           ? {
-              executionCache: {
-                store: executionCache,
-                projectKey: executionCache.projectKey,
-                sourceRunId: testRun.id,
-              },
+              store: executionCache,
+              projectKey: executionCache.projectKey,
+              sourceRunId: testRun.id,
             }
-          : {}),
+          : undefined,
         cachePolicy: args.cacheOnly
           ? ('cache-only' as const)
           : args.refreshCache

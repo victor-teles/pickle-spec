@@ -1,12 +1,9 @@
-import {
-  type RunScenarioInput,
-  runLegacyScenario,
-  type ScenarioRun,
-} from './run-scenario'
+import type { RunScenarioInput, ScenarioRun } from './run-scenario'
 import {
   runCacheOnlyMiss,
   runScenarioWithExecutionCache,
 } from './run-scenario-cache'
+import { runLegacyScenario } from './run-scenario-legacy'
 
 export async function runScenario(
   input: RunScenarioInput,
