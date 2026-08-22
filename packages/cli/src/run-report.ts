@@ -19,8 +19,6 @@ type ResultPresentation = {
   mark: string
   color: number
   detail?: string
-  singular: string
-  plural: string
 }
 
 const resultPresentations: Record<TestResult['state'], ResultPresentation> = {
@@ -28,42 +26,38 @@ const resultPresentations: Record<TestResult['state'], ResultPresentation> = {
     mark: '×',
     color: 31,
     detail: 'failed',
-    singular: 'failed',
-    plural: 'failed',
   },
   'infrastructure-error': {
     mark: '!',
     color: 35,
     detail: 'infrastructure error',
-    singular: 'infrastructure error',
-    plural: 'infrastructure errors',
   },
   'passed-with-adaptation': {
     mark: '✓',
     color: 32,
-    singular: 'passed',
-    plural: 'passed',
   },
-  passed: { mark: '✓', color: 32, singular: 'passed', plural: 'passed' },
+  passed: { mark: '✓', color: 32 },
   skipped: {
     mark: '↓',
     color: 90,
     detail: 'skipped',
-    singular: 'skipped',
-    plural: 'skipped',
   },
   cancelled: {
     mark: '○',
     color: 33,
     detail: 'cancelled',
-    singular: 'cancelled',
-    plural: 'cancelled',
   },
 }
 
 type TextUnit = {
   value: string
   width: number
+}
+
+type ResultSummaryPresentation = {
+  states: readonly TestResult['state'][]
+  singular: string
+  plural: string
 }
 
 type SpecificationWriterOptions = {
@@ -484,11 +478,7 @@ export function diagnosticLines(
 }
 
 function testResultSummary(results: readonly TestResult[]): string {
-  const entries: Array<{
-    states: readonly TestResult['state'][]
-    singular: string
-    plural: string
-  }> = [
+  const entries: ResultSummaryPresentation[] = [
     { states: ['failed'], singular: 'failed', plural: 'failed' },
     {
       states: ['infrastructure-error'],
