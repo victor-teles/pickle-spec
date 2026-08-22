@@ -4,11 +4,11 @@ import type {
   ReplayBenchmarkSample,
   ReplayBenchmarkStatistics,
   ReplayPerformanceBenchmarkResult,
-} from '@pickle-spec/runner'
+} from '@pickle-spec/runner/benchmarking'
 import {
   evaluateReplayPerformanceBenchmark,
   runReplayPerformanceBenchmark,
-} from '@pickle-spec/runner'
+} from '@pickle-spec/runner/benchmarking'
 
 export type MobileBenchmarkMode = ReplayBenchmarkMode
 export type MobileBenchmarkSample = ReplayBenchmarkSample

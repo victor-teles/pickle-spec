@@ -3,7 +3,7 @@ import { pathToFileURL } from 'node:url'
 import {
   minimumReplayBenchmarkSamplePairs,
   removeProviderCredentials,
-} from '@pickle-spec/runner'
+} from '@pickle-spec/runner/benchmarking'
 import { z } from 'zod'
 import {
   type MobileBenchmarkMode,
@@ -17,24 +17,27 @@ interface MobileBenchmarkDriverModule {
   ) => number | Promise<number>
 }
 
-interface MobileBenchmarkCliOptions {
-  samplePairs?: number
-  driverPath?: string
-}
-
 const samplePairsSchema = z.coerce
   .number()
   .int()
   .min(minimumReplayBenchmarkSamplePairs)
 const driverPathSchema = z.string().min(1)
 const benchmarkArgumentsSchema = z.union([
-  z.tuple([]).transform(() => ({})),
+  z
+    .tuple([])
+    .transform(() => ({ samplePairs: undefined, driverPath: undefined })),
   z
     .tuple([z.literal('--samples'), samplePairsSchema])
-    .transform(([, samplePairs]) => ({ samplePairs })),
+    .transform(([, samplePairs]) => ({
+      samplePairs,
+      driverPath: undefined,
+    })),
   z
     .tuple([z.literal('--driver'), driverPathSchema])
-    .transform(([, driverPath]) => ({ driverPath })),
+    .transform(([, driverPath]) => ({
+      samplePairs: undefined,
+      driverPath,
+    })),
   z
     .tuple([
       z.literal('--samples'),
@@ -58,6 +61,7 @@ const benchmarkArgumentsSchema = z.union([
       driverPath,
     })),
 ])
+type MobileBenchmarkCliOptions = z.infer<typeof benchmarkArgumentsSchema>
 
 function parseArguments(args: readonly string[]): MobileBenchmarkCliOptions {
   return benchmarkArgumentsSchema.parse(args)

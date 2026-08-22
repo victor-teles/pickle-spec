@@ -81,29 +81,7 @@ export {
   formatJunit,
   formatNdjson,
 } from './src/outputs'
-export type { ProviderCredentialEnvironment } from './src/provider-credentials'
-export {
-  assertNoProviderCredentials,
-  providerCredentialEnvironmentNames,
-  removeProviderCredentials,
-} from './src/provider-credentials'
 export { publicRunEvent, publicTestResult } from './src/public-results'
-export type {
-  EvaluateReplayPerformanceBenchmarkInput,
-  ReplayBenchmarkBudgets,
-  ReplayBenchmarkGate,
-  ReplayBenchmarkMode,
-  ReplayBenchmarkSample,
-  ReplayBenchmarkStatistics,
-  ReplayPerformanceBenchmarkResult,
-  RunReplayPerformanceBenchmarkInput,
-} from './src/replay-benchmark'
-export {
-  defaultReplayBenchmarkWarmupPairs,
-  evaluateReplayPerformanceBenchmark,
-  minimumReplayBenchmarkSamplePairs,
-  runReplayPerformanceBenchmark,
-} from './src/replay-benchmark'
 export type { RerunFilter } from './src/rerun'
 export { selectRerunResults } from './src/rerun'
 export type {

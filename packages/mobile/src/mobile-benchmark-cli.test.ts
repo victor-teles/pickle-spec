@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from 'bun:test'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { providerCredentialEnvironmentNames } from '@pickle-spec/runner'
+import { providerCredentialEnvironmentNames } from '@pickle-spec/runner/benchmarking'
 
 const temporaryDirectories: string[] = []
 const cliPath = join(import.meta.dir, 'mobile-benchmark-cli.ts')

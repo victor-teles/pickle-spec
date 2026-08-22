@@ -2,7 +2,7 @@ import { expect, test } from 'bun:test'
 import {
   evaluateReplayPerformanceBenchmark,
   runReplayPerformanceBenchmark,
-} from '../index'
+} from '../benchmarking'
 
 test('evaluates nearest-rank percentiles against inclusive Replay budgets', () => {
   const samples = Array.from({ length: 20 }, (_, index) => ({

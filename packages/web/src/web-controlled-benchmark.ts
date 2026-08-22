@@ -1,11 +1,8 @@
 import { mkdir, mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import {
-  assertNoProviderCredentials,
-  openLocalExecutionCache,
-  runScenario,
-} from '@pickle-spec/runner'
+import { openLocalExecutionCache, runScenario } from '@pickle-spec/runner'
+import { assertNoProviderCredentials } from '@pickle-spec/runner/benchmarking'
 import { parseSpecification } from '@pickle-spec/spec'
 import {
   createWebAdapter,

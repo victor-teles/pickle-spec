@@ -1,4 +1,4 @@
-import { removeProviderCredentials } from '@pickle-spec/runner'
+import { removeProviderCredentials } from '@pickle-spec/runner/benchmarking'
 import { z } from 'zod'
 import type { WebPerformanceBenchmarkResult } from './web-benchmark'
 import {

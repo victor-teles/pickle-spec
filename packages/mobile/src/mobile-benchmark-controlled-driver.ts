@@ -2,12 +2,11 @@ import { createHash } from 'node:crypto'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { openLocalExecutionCache, runScenario } from '@pickle-spec/runner'
 import {
   assertNoProviderCredentials,
-  openLocalExecutionCache,
   type ProviderCredentialEnvironment,
-  runScenario,
-} from '@pickle-spec/runner'
+} from '@pickle-spec/runner/benchmarking'
 import { compileMobileScenario } from './mobile-ad-script'
 import { createMobileAdapter } from './mobile-adapter'
 import type { MobileBenchmarkMode } from './mobile-benchmark'
