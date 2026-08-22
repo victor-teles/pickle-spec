@@ -184,6 +184,15 @@ type RecordExecution = (
 ) => Promise<boolean>
 type RecordStep = (result: TestStepResult) => Promise<void>
 
+interface SessionExecutionContext {
+  input: ScenarioAttemptInput
+  bindings: readonly ScenarioVariableBinding[]
+  progress: AttemptProgress
+  emit: EmitAttemptEvent
+  recordExecution: RecordExecution
+  recordStep: RecordStep
+}
+
 function recordExecutionError(
   progress: AttemptProgress,
   error: unknown,
@@ -199,13 +208,10 @@ function recordExecutionError(
 }
 
 async function executeScenarioSession(
-  input: ScenarioAttemptInput,
   session: ScenarioTargetSession,
-  bindings: readonly ScenarioVariableBinding[],
-  progress: AttemptProgress,
-  emit: EmitAttemptEvent,
-  recordExecution: RecordExecution,
+  context: SessionExecutionContext,
 ): Promise<void> {
+  const { bindings, emit, input, progress, recordExecution } = context
   try {
     const scenarioExecution = await executeWithDeadline(
       (operationSignal) => session.executeScenario(operationSignal),
@@ -244,15 +250,12 @@ async function executeScenarioSession(
 }
 
 async function executeStepSession(
-  input: ScenarioAttemptInput,
   session: StepTargetSession,
   scenarioStartedAt: number,
-  bindings: readonly ScenarioVariableBinding[],
-  progress: AttemptProgress,
-  emit: EmitAttemptEvent,
-  recordStep: RecordStep,
-  recordExecution: RecordExecution,
+  context: SessionExecutionContext,
 ): Promise<void> {
+  const { bindings, emit, input, progress, recordExecution, recordStep } =
+    context
   for (const [stepIndex, step] of input.scenario.steps.entries()) {
     if (input.signal?.aborted) {
       progress.state = 'cancelled'
@@ -458,31 +461,24 @@ export async function runScenarioAttempt(
     return true
   }
 
+  const executionContext: SessionExecutionContext = {
+    input,
+    bindings,
+    progress,
+    emit,
+    recordExecution,
+    recordStep,
+  }
+
   try {
     if (Boolean(session.executeScenario) === Boolean(session.executeStep)) {
       progress.state = 'infrastructure-error'
       progress.message =
         'Target session must provide exactly one of executeStep or executeScenario'
     } else if (session.executeScenario) {
-      await executeScenarioSession(
-        input,
-        session,
-        bindings,
-        progress,
-        emit,
-        recordExecution,
-      )
+      await executeScenarioSession(session, executionContext)
     } else {
-      await executeStepSession(
-        input,
-        session,
-        scenarioStartedAt,
-        bindings,
-        progress,
-        emit,
-        recordStep,
-        recordExecution,
-      )
+      await executeStepSession(session, scenarioStartedAt, executionContext)
     }
     if (
       progress.state === 'passed' &&
