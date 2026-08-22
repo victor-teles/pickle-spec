@@ -36,7 +36,10 @@ type MonacoEditorHost = {
   }
 }
 
-async function saveExecutionTargetProfile(page: Page): Promise<void> {
+async function saveExecutionTargetProfile(
+  page: Page,
+  profileId: string,
+): Promise<void> {
   const responsePromise = page.waitForResponse(
     (response) =>
       new URL(response.url()).pathname === '/api/config' &&
@@ -50,6 +53,10 @@ async function saveExecutionTargetProfile(page: Page): Promise<void> {
   if (!response.ok()) {
     throw new Error(`Profile update failed with status ${response.status()}`)
   }
+  await page
+    .getByRole('status')
+    .filter({ hasText: `Execution target profile ${profileId} saved` })
+    .waitFor({ timeout: 10_000 })
 }
 
 describe('Studio browser seam', () => {
@@ -1106,10 +1113,10 @@ Feature: Checkout
       await page.getByRole('button', { name: 'Settings' }).click()
       await page.getByRole('button', { name: 'chrome' }).click()
       await page.getByLabel('Profile capabilities').fill('geolocation')
-      await saveExecutionTargetProfile(page)
+      await saveExecutionTargetProfile(page, 'chrome')
       await page.getByRole('button', { name: 'firefox' }).click()
       await page.getByLabel('Profile capabilities').fill('geolocation')
-      await saveExecutionTargetProfile(page)
+      await saveExecutionTargetProfile(page, 'firefox')
       await page.getByRole('button', { name: 'Specifications' }).click()
       await page.getByRole('button', { name: 'Run Specification' }).waitFor({
         timeout: 10_000,

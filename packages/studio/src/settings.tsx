@@ -95,6 +95,7 @@ export function SettingsPanel<
   const [capabilities, setCapabilities] = useState(
     (selectedProfile?.capabilities ?? []).join(', '),
   )
+  const [savedProfileId, setSavedProfileId] = useState<string>()
   const [secretName, setSecretName] = useState('')
   const [secretValue, setSecretValue] = useState('')
   const [git, setGit] = useState<GitStatus>()
@@ -205,6 +206,7 @@ export function SettingsPanel<
       props.onError('An execution target profile id is required')
       return
     }
+    setSavedProfileId(undefined)
     const profiles = Object.fromEntries(
       (props.project.profileDetails ?? []).map((profile) => [
         profile.id,
@@ -226,13 +228,13 @@ export function SettingsPanel<
     }
     props.onError(undefined)
     try {
-      props.onProject(
-        await props.api<T>('/api/config', {
-          method: 'PUT',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ executionTargetProfiles: profiles }),
-        }),
-      )
+      const project = await props.api<T>('/api/config', {
+        method: 'PUT',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ executionTargetProfiles: profiles }),
+      })
+      props.onProject(project)
+      setSavedProfileId(id)
     } catch (reason) {
       props.onError(reasonMessage(reason))
     }
@@ -449,6 +451,11 @@ export function SettingsPanel<
         <Button type="button" onClick={() => void saveProfiles()}>
           Save execution target profile
         </Button>
+        {savedProfileId ? (
+          <p role="status" className="text-sm text-muted-foreground">
+            Execution target profile {savedProfileId} saved.
+          </p>
+        ) : null}
       </section>
 
       <section className="space-y-3" aria-labelledby="credentials-heading">
