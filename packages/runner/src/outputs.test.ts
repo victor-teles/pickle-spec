@@ -65,14 +65,20 @@ const events: RunEvent[] = [
 ]
 
 test('formats versioned JSON from the materialized test-run schema', () => {
-  expect(JSON.parse(formatJson(manifest))).toEqual({
+  const formatted = JSON.parse(formatJson(manifest))
+  expect(formatted).toEqual({
     schemaVersion: 1,
     id: 'run-ci',
     startedAt: '2026-08-15T12:00:00.000Z',
     finishedAt: '2026-08-15T12:01:00.000Z',
     state: 'failed',
-    results: manifest.results,
+    results: manifest.results.map((testResult) =>
+      testResult.state === 'passed-with-adaptation'
+        ? { ...testResult, state: 'passed' }
+        : testResult,
+    ),
   })
+  expect(manifest.results[1]?.state).toBe('passed-with-adaptation')
 })
 
 test('formats NDJSON from the versioned run-event schema', () => {
@@ -114,18 +120,70 @@ test('preserves Execution cache behavior in JSON and NDJSON', () => {
   ).toContain('"executionMode":"replay"')
 })
 
+test('normalizes the removed adaptation state at JSON and NDJSON boundaries', () => {
+  const adapted = result('Legacy adaptation', 'passed-with-adaptation', {
+    steps: [
+      {
+        step: { keyword: 'Then', text: 'checkout succeeds', type: 'outcome' },
+        state: 'passed-with-adaptation',
+        resolvedActions: [],
+      },
+    ],
+  })
+  const legacyManifest: TestRunManifest = {
+    ...manifest,
+    state: 'passed-with-adaptation',
+    results: [adapted],
+  }
+  const legacyEvents: RunEvent[] = [
+    {
+      schemaVersion: 1,
+      sequence: 1,
+      type: 'step-finished',
+      result: adapted.steps[0]!,
+    },
+    {
+      schemaVersion: 1,
+      sequence: 2,
+      type: 'scenario-finished',
+      result: adapted,
+    },
+  ]
+
+  const formattedManifest = JSON.parse(formatJson(legacyManifest))
+  const formattedEvents = formatNdjson(legacyEvents)
+    .trim()
+    .split('\n')
+    .map((line) => JSON.parse(line))
+
+  expect(formattedManifest.state).toBe('passed')
+  expect(formattedManifest.results[0].state).toBe('passed')
+  expect(formattedManifest.results[0].steps[0].state).toBe('passed')
+  expect(formattedEvents[0].result.state).toBe('passed')
+  expect(formattedEvents[1].result.state).toBe('passed')
+  expect(adapted.state).toBe('passed-with-adaptation')
+})
+
 test('formats JUnit XML with cache metadata, stable states, flaky, and error classes', () => {
-  manifest.results[0] = result('Complete a purchase', 'passed', {
-    executionMode: 'replay',
-    cacheOutcome: 'hit',
-    inferenceCount: 0,
-  })
-  manifest.results[1] = result('Adapt the purchase', 'passed-with-adaptation', {
-    executionMode: 'adaptive',
-    cacheOutcome: 'fallback',
-    inferenceCount: 3,
-  })
-  expect(formatJunit(manifest)).toBe(`<?xml version="1.0" encoding="UTF-8"?>
+  const junitManifest: TestRunManifest = {
+    ...manifest,
+    results: [
+      result('Complete a purchase', 'passed', {
+        executionMode: 'replay',
+        cacheOutcome: 'hit',
+        inferenceCount: 0,
+      }),
+      result('Adapt the purchase', 'passed-with-adaptation', {
+        executionMode: 'adaptive',
+        cacheOutcome: 'fallback',
+        inferenceCount: 3,
+      }),
+      ...manifest.results.slice(2),
+    ],
+  }
+  expect(
+    formatJunit(junitManifest),
+  ).toBe(`<?xml version="1.0" encoding="UTF-8"?>
 <testsuites id="run-ci" name="run-ci" tests="7" failures="1" errors="2" skipped="1">
   <testsuite name="Checkout" tests="7" failures="1" errors="2" skipped="1">
     <testcase name="Complete a purchase" classname="features/checkout.feature">

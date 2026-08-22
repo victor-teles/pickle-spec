@@ -1,13 +1,49 @@
-import type { RunEvent, TestResult, TestResultState } from './run-scenario'
+import type {
+  RunEvent,
+  TestResult,
+  TestResultState,
+  TestStepResult,
+} from './run-scenario'
 import { isEvidenceState } from './run-scenario'
 import type { TestRunManifest } from './test-run-store'
 
 export function formatJson(manifest: TestRunManifest): string {
-  return `${JSON.stringify(manifest, null, 2)}\n`
+  const output: TestRunManifest = {
+    ...manifest,
+    state: outputState(manifest.state),
+    results: manifest.results.map(outputTestResult),
+  }
+  return `${JSON.stringify(output, null, 2)}\n`
 }
 
 export function formatNdjson(events: readonly RunEvent[]): string {
-  return `${events.map((event) => JSON.stringify(event)).join('\n')}\n`
+  return `${events.map((event) => JSON.stringify(outputRunEvent(event))).join('\n')}\n`
+}
+
+function outputState(state: TestResultState): TestResultState {
+  return state === 'passed-with-adaptation' ? 'passed' : state
+}
+
+function outputStepResult(result: TestStepResult): TestStepResult {
+  return { ...result, state: outputState(result.state) }
+}
+
+function outputTestResult(result: TestResult): TestResult {
+  return {
+    ...result,
+    state: outputState(result.state),
+    steps: result.steps.map(outputStepResult),
+  }
+}
+
+function outputRunEvent(event: RunEvent): RunEvent {
+  if (event.type === 'step-finished') {
+    return { ...event, result: outputStepResult(event.result) }
+  }
+  if (event.type === 'scenario-finished') {
+    return { ...event, result: outputTestResult(event.result) }
+  }
+  return event
 }
 
 export type HtmlArtifactMode = 'failures-and-adaptations' | 'all'
