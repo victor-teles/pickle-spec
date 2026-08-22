@@ -7,7 +7,7 @@ import {
   type StepExecutionTargetAdapter,
   type TestArtifact,
 } from '@pickle-spec/runner'
-import type { ScenarioStep, ScenarioVariableBinding } from '@pickle-spec/spec'
+import type { ScenarioVariableBinding } from '@pickle-spec/spec'
 import { abortError } from './abort'
 import { type ResolvedFidelity, resolveFidelityPolicy } from './fidelity'
 import { stagehandFactory } from './stagehand-factory'
@@ -331,10 +331,7 @@ export function createWebAdapter(
         }
       }
 
-      async function finish(
-        _step: ScenarioStep,
-        result: StepExecution,
-      ): Promise<StepExecution> {
+      async function finish(result: StepExecution): Promise<StepExecution> {
         const artifact = await screenshot(result.state)
         return artifact ? { ...result, artifacts: [artifact] } : result
       }
@@ -435,7 +432,7 @@ export function createWebAdapter(
               const url = navigationUrl(options.baseUrl, target)
               await automation.navigate(url, operationSignal)
               navigated = true
-              return finish(step, {
+              return finish({
                 state: 'passed',
                 resolvedActions: [{ description: `Navigate to ${url}` }],
               })
@@ -448,13 +445,13 @@ export function createWebAdapter(
                 operationSignal,
               )
               if (!verification.meetsExpectation) {
-                return finish(step, {
+                return finish({
                   state: 'failed',
                   resolvedActions: [{ description: `Verify: ${prompt}` }],
                   message: `Expected: "${prompt}" | Actual: ${verification.actualState}`,
                 })
               }
-              return finish(step, {
+              return finish({
                 state: 'passed',
                 resolvedActions: [{ description: `Verify: ${prompt}` }],
               })
@@ -462,7 +459,6 @@ export function createWebAdapter(
 
             if (executionMode === 'replay') {
               return finish(
-                step,
                 await replayOrAdapt(
                   prompt,
                   input.plan?.steps[stepIndex - 1]?.resolvedActions ?? [],
@@ -471,10 +467,7 @@ export function createWebAdapter(
               )
             }
 
-            return finish(
-              step,
-              await resolveByObservation(prompt, operationSignal),
-            )
+            return finish(await resolveByObservation(prompt, operationSignal))
           } catch (error) {
             if (
               operationSignal?.aborted ||
@@ -482,7 +475,7 @@ export function createWebAdapter(
             ) {
               throw abortError()
             }
-            return finish(step, {
+            return finish({
               state: 'infrastructure-error',
               resolvedActions: [],
               message: errorMessage(error),

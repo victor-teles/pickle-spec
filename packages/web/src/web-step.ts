@@ -1,6 +1,6 @@
 import type { ScenarioStep } from '@pickle-spec/spec'
 
-export const navigationPattern = new RegExp(
+const navigationPattern = new RegExp(
   '(?:' +
     'I (?:am on|navigate to|visit|go to|open)' +
     '|(?:eu )?(?:navego para|visito|abro|estou em)' +
