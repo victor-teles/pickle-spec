@@ -1,8 +1,12 @@
-import { describe, expect, mock, test } from 'bun:test'
+import { afterEach, describe, expect, mock, test } from 'bun:test'
+import { mkdtemp, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import {
   parseSpecification,
   type Scenario,
   type Specification,
+  scenarioRevision,
 } from '@pickle-spec/spec'
 import { z } from 'zod'
 import type {
@@ -11,7 +15,7 @@ import type {
   ExecutionTargetAdapter,
   TargetSession,
 } from '../index'
-import { runScenario } from '../index'
+import { openLocalExecutionCache, runScenario } from '../index'
 
 type RunScenarioInput = Parameters<typeof runScenario>[0]
 type CacheRunInput = RunScenarioInput & {
@@ -50,6 +54,33 @@ const executionCache: ExecutionCacheAdapter<Payload> = {
   },
 }
 
+const cacheRoots: string[] = []
+
+afterEach(async () => {
+  await Promise.all(
+    cacheRoots
+      .splice(0)
+      .map((root) => rm(root, { recursive: true, force: true })),
+  )
+})
+
+async function localStore(waitTimeoutMs = 100) {
+  const projectRoot = await mkdtemp(join(tmpdir(), 'pickle-project-'))
+  const cacheRoot = await mkdtemp(join(tmpdir(), 'pickle-cache-'))
+  cacheRoots.push(projectRoot, cacheRoot)
+  return openLocalExecutionCache({
+    projectRoot,
+    cacheRoot,
+    leaseTiming: {
+      ttlMs: 100,
+      heartbeatMs: 20,
+      waitTimeoutMs,
+      minPollMs: 1,
+      maxPollMs: 2,
+    },
+  })
+}
+
 function memoryStore() {
   const entries = new Map<string, string>()
   const writes: string[] = []
@@ -84,6 +115,7 @@ interface CacheRunFixtureOptions {
   selectedScenario?: Scenario
   selectedSpecification?: Specification
   sourceRunId?: string
+  projectKey?: string
 }
 
 function cacheRunInput({
@@ -95,6 +127,7 @@ function cacheRunInput({
   selectedScenario = scenario,
   selectedSpecification = specification,
   sourceRunId = 'run-1',
+  projectKey = 'project-1',
 }: CacheRunFixtureOptions): CacheRunInput {
   return {
     specification: selectedSpecification,
@@ -106,13 +139,258 @@ function cacheRunInput({
     retry,
     executionCache: {
       store,
-      projectKey: 'project-1',
+      projectKey,
       sourceRunId,
     },
   }
 }
 
 describe('Execution cache lifecycle', () => {
+  test('serializes concurrent misses and lets the waiter replay the published entry', async () => {
+    const cache = await localStore()
+    let adaptiveExecutions = 0
+    let releaseEvaluation: (() => void) | undefined
+    let evaluationStarted: (() => void) | undefined
+    const started = new Promise<void>((resolve) => {
+      evaluationStarted = resolve
+    })
+    const evaluationGate = new Promise<void>((resolve) => {
+      releaseEvaluation = resolve
+    })
+    const modes: string[] = []
+    const adapter: ExecutionTargetAdapter = {
+      executionCache,
+      async openSession(input) {
+        modes.push(input.mode ?? 'adaptive')
+        if (input.mode === 'adaptive') adaptiveExecutions++
+        return {
+          async executeStep() {
+            if (input.mode === 'adaptive') {
+              evaluationStarted?.()
+              await evaluationGate
+            }
+            return { state: 'passed' as const, resolvedActions: [] }
+          },
+          async complete() {
+            return {
+              inferenceCount: input.mode === 'adaptive' ? 1 : 0,
+              cacheCandidate: {
+                cacheable: true as const,
+                adapterPayload: { operations: ['confirm', 'assert-receipt'] },
+                requiredVariables: [],
+              },
+            }
+          },
+          async close() {},
+        }
+      },
+    }
+    const input = cacheRunInput({
+      adapter,
+      store: cache,
+      projectKey: cache.projectKey,
+    })
+
+    const ownerRun = runScenario(input)
+    await started
+    const waiterRun = runScenario({
+      ...input,
+      executionCache: { ...input.executionCache, sourceRunId: 'run-2' },
+    })
+    releaseEvaluation?.()
+    const [owner, waiter] = await Promise.all([ownerRun, waiterRun])
+
+    expect(adaptiveExecutions).toBe(1)
+    expect(modes).toEqual(['adaptive', 'replay'])
+    expect(owner.result).toMatchObject({
+      state: 'passed',
+      executionMode: 'adaptive',
+      cacheOutcome: 'miss',
+    })
+    expect(waiter.result).toMatchObject({
+      state: 'passed',
+      executionMode: 'replay',
+      cacheOutcome: 'hit',
+      inferenceCount: 0,
+    })
+  })
+
+  test('serializes concurrent refreshes and keeps the successful replacement', async () => {
+    const cache = await localStore()
+    let adaptiveExecutions = 0
+    let holdRefresh = false
+    let releaseRefresh: (() => void) | undefined
+    let refreshStarted: (() => void) | undefined
+    const started = new Promise<void>((resolve) => {
+      refreshStarted = resolve
+    })
+    const refreshGate = new Promise<void>((resolve) => {
+      releaseRefresh = resolve
+    })
+    const replayedOperations: unknown[] = []
+    const adapter: ExecutionTargetAdapter = {
+      executionCache,
+      async openSession(input) {
+        if (input.mode === 'adaptive') adaptiveExecutions++
+        else replayedOperations.push(input.executionCache?.adapterPayload)
+        return {
+          async executeStep() {
+            if (input.mode === 'adaptive' && holdRefresh) {
+              refreshStarted?.()
+              await refreshGate
+            }
+            return { state: 'passed' as const, resolvedActions: [] }
+          },
+          async complete() {
+            return {
+              inferenceCount: input.mode === 'adaptive' ? 1 : 0,
+              cacheCandidate: {
+                cacheable: true as const,
+                adapterPayload: {
+                  operations: [`revision-${adaptiveExecutions}`],
+                },
+                requiredVariables: [],
+              },
+            }
+          },
+          async close() {},
+        }
+      },
+    }
+    const input = cacheRunInput({
+      adapter,
+      store: cache,
+      projectKey: cache.projectKey,
+    })
+    await runScenario(input)
+    holdRefresh = true
+
+    const ownerRun = runScenario({
+      ...input,
+      cachePolicy: 'refresh',
+      executionCache: { ...input.executionCache, sourceRunId: 'run-2' },
+    })
+    await started
+    const waiterRun = runScenario({
+      ...input,
+      cachePolicy: 'refresh',
+      executionCache: { ...input.executionCache, sourceRunId: 'run-3' },
+    })
+    releaseRefresh?.()
+    const [owner, waiter] = await Promise.all([ownerRun, waiterRun])
+
+    expect(adaptiveExecutions).toBe(2)
+    expect(owner.result).toMatchObject({
+      state: 'passed',
+      executionMode: 'adaptive',
+      cacheOutcome: 'refresh',
+    })
+    expect(waiter.result).toMatchObject({
+      state: 'passed',
+      executionMode: 'replay',
+      cacheOutcome: 'hit',
+    })
+    expect(replayedOperations.at(-1)).toEqual({
+      operations: ['revision-2'],
+    })
+  })
+
+  test('reports lease wait timeout as infrastructure error without retrying or inferring', async () => {
+    const cache = await localStore(8)
+    const cacheKey = {
+      projectKey: cache.projectKey,
+      scenarioId: scenario.id!,
+      scenarioRevision: scenarioRevision(scenario),
+      executionTargetProfileId: 'test',
+      targetConfigurationFingerprint:
+        executionCache.targetConfigurationFingerprint,
+      applicationRevision: 'app-1',
+      adapterKind: executionCache.adapterKind,
+      adapterCacheSchemaVersion: executionCache.adapterCacheSchemaVersion,
+    }
+    const lease = await cache.coordination.acquire(cacheKey)
+    if (!lease.acquired) throw new Error('lease missing')
+    const openSession = mock(async () => {
+      throw new Error('must not infer')
+    })
+    const adapter: ExecutionTargetAdapter = { executionCache, openSession }
+
+    const run = await runScenario(
+      cacheRunInput({
+        adapter,
+        store: cache,
+        projectKey: cache.projectKey,
+        retry: { infrastructureErrors: 3 },
+      }),
+    )
+
+    expect(openSession).not.toHaveBeenCalled()
+    expect(run.result).toMatchObject({
+      state: 'infrastructure-error',
+      cacheOutcome: 'miss',
+      inferenceCount: 0,
+      message: 'Execution cache lease wait timed out',
+    })
+    expect(run.result.attempts).toBeUndefined()
+    await cache.coordination.release(lease.lease)
+  })
+
+  test('discards an Adaptive evaluation after heartbeat loses ownership', async () => {
+    const cache = await localStore()
+    let adaptiveExecutions = 0
+    const store: ExecutionCacheStore = {
+      ...cache,
+      coordination: {
+        ...cache.coordination,
+        async renew() {
+          return false
+        },
+      },
+    }
+    const adapter: ExecutionTargetAdapter = {
+      executionCache,
+      async openSession() {
+        adaptiveExecutions++
+        return {
+          async executeStep() {
+            await new Promise((resolve) => setTimeout(resolve, 25))
+            return { state: 'passed' as const, resolvedActions: [] }
+          },
+          async complete() {
+            return {
+              inferenceCount: 1,
+              cacheCandidate: {
+                cacheable: true as const,
+                adapterPayload: { operations: ['must-be-discarded'] },
+                requiredVariables: [],
+              },
+            }
+          },
+          async close() {},
+        }
+      },
+    }
+
+    const run = await runScenario(
+      cacheRunInput({
+        adapter,
+        store,
+        projectKey: cache.projectKey,
+        retry: { infrastructureErrors: 3 },
+      }),
+    )
+
+    expect(adaptiveExecutions).toBe(1)
+    expect(run.result).toMatchObject({
+      state: 'infrastructure-error',
+      cacheOutcome: 'miss',
+      inferenceCount: 1,
+      message: 'Execution cache lease ownership was lost during evaluation',
+    })
+    expect(run.result.attempts).toBeUndefined()
+    expect(await cache.inspect()).toEqual([])
+  })
+
   test('stores one successful Adaptive execution and replays it on the next run', async () => {
     const modes: string[] = []
     const openSession = mock(async (input) => {

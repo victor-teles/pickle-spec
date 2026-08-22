@@ -69,13 +69,17 @@ function key(projectKey: string, scenarioRevision: string): ExecutionCacheKey {
   }
 }
 
-function serialized(projectKey: string, scenarioRevision: string) {
+function serialized(
+  projectKey: string,
+  scenarioRevision: string,
+  target = '#checkout',
+) {
   const cacheKey = key(projectKey, scenarioRevision)
   const envelope: ExecutionCacheEnvelope<TestPayload> = {
     schemaVersion: 1,
     key: cacheKey,
     requiredVariables: [],
-    adapterPayload: { operation: 'click', target: '#checkout' },
+    adapterPayload: { operation: 'click', target },
   }
   return serializeExecutionCacheEnvelope(envelope, payloadValidator)
 }
@@ -87,6 +91,172 @@ const writeMetadata = {
 }
 
 describe('local Execution cache', () => {
+  test('atomically transfers an expired lease to a new owner', async () => {
+    const projectRoot = await tempRoot('pickle-project')
+    const cacheRoot = await tempRoot('pickle-cache')
+    let timestamp = new Date('2026-08-21T12:00:00.000Z')
+    const cache = await openLocalExecutionCache({
+      projectRoot,
+      cacheRoot,
+      now: () => timestamp,
+      leaseTiming: {
+        ttlMs: 30,
+        heartbeatMs: 10,
+        waitTimeoutMs: 30,
+        minPollMs: 1,
+        maxPollMs: 2,
+      },
+    })
+    const cacheKey = key(cache.projectKey, 'scenario-v1')
+
+    const first = await cache.coordination.acquire(cacheKey)
+    expect(first.acquired).toBe(true)
+    expect((await cache.coordination.acquire(cacheKey)).acquired).toBe(false)
+
+    timestamp = new Date(timestamp.getTime() + 31)
+    const takeover = await cache.coordination.acquire(cacheKey)
+
+    expect(takeover.acquired).toBe(true)
+    if (!first.acquired || !takeover.acquired) throw new Error('lease missing')
+    expect(takeover.lease.ownerToken).not.toBe(first.lease.ownerToken)
+    expect(await cache.coordination.renew(first.lease)).toBe(false)
+    expect(await cache.coordination.renew(takeover.lease)).toBe(true)
+  })
+
+  test('heartbeat renewal keeps a lease from being taken over', async () => {
+    const projectRoot = await tempRoot('pickle-project')
+    const cacheRoot = await tempRoot('pickle-cache')
+    let timestamp = new Date('2026-08-21T12:00:00.000Z')
+    const cache = await openLocalExecutionCache({
+      projectRoot,
+      cacheRoot,
+      now: () => timestamp,
+      leaseTiming: { ttlMs: 30, heartbeatMs: 10 },
+    })
+    const cacheKey = key(cache.projectKey, 'scenario-v1')
+    const acquired = await cache.coordination.acquire(cacheKey)
+    if (!acquired.acquired) throw new Error('lease missing')
+
+    timestamp = new Date(timestamp.getTime() + 20)
+    expect(await cache.coordination.renew(acquired.lease)).toBe(true)
+    timestamp = new Date(timestamp.getTime() + 20)
+
+    expect((await cache.coordination.acquire(cacheKey)).acquired).toBe(false)
+  })
+
+  test('wakes a waiter when the observed lease expires', async () => {
+    const projectRoot = await tempRoot('pickle-project')
+    const cacheRoot = await tempRoot('pickle-cache')
+    let timestamp = new Date('2026-08-21T12:00:00.000Z')
+    const cache = await openLocalExecutionCache({
+      projectRoot,
+      cacheRoot,
+      now: () => timestamp,
+      leaseTiming: {
+        ttlMs: 30,
+        heartbeatMs: 2,
+        waitTimeoutMs: 30,
+        minPollMs: 1,
+        maxPollMs: 2,
+      },
+    })
+    const cacheKey = key(cache.projectKey, 'scenario-v1')
+    const owner = await cache.coordination.acquire(cacheKey)
+    const waiter = await cache.coordination.acquire(cacheKey)
+    if (!owner.acquired || waiter.acquired) {
+      throw new Error('unexpected lease acquisition state')
+    }
+    timestamp = new Date(timestamp.getTime() + 31)
+
+    expect(
+      await cache.coordination.wait(
+        cacheKey,
+        waiter.ownerToken,
+        waiter.baselinePayloadDigest,
+      ),
+    ).toEqual({ status: 'released', entryChanged: false })
+    expect((await cache.coordination.acquire(cacheKey)).acquired).toBe(true)
+  })
+
+  test('rejects publication by a previous owner after expired takeover', async () => {
+    const projectRoot = await tempRoot('pickle-project')
+    const cacheRoot = await tempRoot('pickle-cache')
+    let timestamp = new Date('2026-08-21T12:00:00.000Z')
+    const cache = await openLocalExecutionCache({
+      projectRoot,
+      cacheRoot,
+      now: () => timestamp,
+      leaseTiming: { ttlMs: 30, heartbeatMs: 10 },
+    })
+    const original = serialized(cache.projectKey, 'scenario-v1', '#original')
+    const stale = serialized(cache.projectKey, 'scenario-v1', '#stale')
+    const replacement = serialized(
+      cache.projectKey,
+      'scenario-v1',
+      '#replacement',
+    )
+    await cache.write(original, writeMetadata)
+    const first = await cache.coordination.acquire(original.key)
+    if (!first.acquired) throw new Error('first lease missing')
+
+    timestamp = new Date(timestamp.getTime() + 31)
+    const takeover = await cache.coordination.acquire(original.key)
+    if (!takeover.acquired) throw new Error('takeover lease missing')
+
+    expect(
+      await cache.coordination.publish(first.lease, stale, writeMetadata),
+    ).toEqual({ published: false, stored: false, evictedEntries: 0 })
+    expect(await cache.read(original.key)).toBe(original.source)
+    expect(
+      await cache.coordination.publish(
+        takeover.lease,
+        replacement,
+        writeMetadata,
+      ),
+    ).toEqual({ published: true, stored: true, evictedEntries: 0 })
+    expect(await cache.read(original.key)).toBe(replacement.source)
+  })
+
+  test('bounds and cancels lease waiting without acquiring another lease', async () => {
+    const projectRoot = await tempRoot('pickle-project')
+    const cacheRoot = await tempRoot('pickle-cache')
+    const cache = await openLocalExecutionCache({
+      projectRoot,
+      cacheRoot,
+      leaseTiming: {
+        ttlMs: 100,
+        heartbeatMs: 20,
+        waitTimeoutMs: 8,
+        minPollMs: 1,
+        maxPollMs: 2,
+      },
+    })
+    const cacheKey = key(cache.projectKey, 'scenario-v1')
+    const owner = await cache.coordination.acquire(cacheKey)
+    const waiter = await cache.coordination.acquire(cacheKey)
+    if (!owner.acquired || waiter.acquired) {
+      throw new Error('unexpected lease acquisition state')
+    }
+
+    expect(
+      await cache.coordination.wait(
+        cacheKey,
+        waiter.ownerToken,
+        waiter.baselinePayloadDigest,
+      ),
+    ).toEqual({ status: 'timed-out' })
+
+    const controller = new AbortController()
+    const waiting = cache.coordination.wait(
+      cacheKey,
+      waiter.ownerToken,
+      waiter.baselinePayloadDigest,
+      controller.signal,
+    )
+    controller.abort()
+    expect(await waiting).toEqual({ status: 'cancelled' })
+  })
+
   test('persists multiple revisions outside the canonical checkout', async () => {
     const projectRoot = await tempRoot('pickle-project')
     const cacheRoot = await tempRoot('pickle-cache')
@@ -301,10 +471,16 @@ describe('local Execution cache', () => {
     const secondEntry = serialized(second.projectKey, 'scenario-v1')
     await first.write(firstEntry, writeMetadata)
     await second.write(secondEntry, writeMetadata)
+    expect((await first.coordination.acquire(firstEntry.key)).acquired).toBe(
+      true,
+    )
 
     await first.clear()
 
     expect(await first.inspect()).toEqual([])
+    expect((await first.coordination.acquire(firstEntry.key)).acquired).toBe(
+      true,
+    )
     expect(await second.read(secondEntry.key)).toBe(secondEntry.source)
     if (process.platform !== 'win32') {
       const directory = join(cacheRoot, first.projectKey)

@@ -35,10 +35,15 @@ export type {
   CacheOutcome,
   DeserializeExecutionCacheEnvelopeInput,
   ExecutionCacheAdapter,
+  ExecutionCacheCoordination,
   ExecutionCacheEntryMetadata,
   ExecutionCacheEnvelope,
   ExecutionCacheKey,
   ExecutionCacheKeyInput,
+  ExecutionCacheLease,
+  ExecutionCacheLeaseAcquisition,
+  ExecutionCacheLeasePublicationResult,
+  ExecutionCacheLeaseWaitResult,
   ExecutionCachePayloadValidator,
   ExecutionCacheStore,
   ExecutionCacheUncacheableReason,
@@ -80,6 +85,7 @@ export {
   defaultExecutionCacheMaxBytes,
   openLocalExecutionCache,
 } from './src/local-execution-cache'
+export type { ExecutionCacheLeaseTiming } from './src/local-execution-cache-coordination'
 export type { FormatHtmlOptions, HtmlArtifactMode } from './src/outputs'
 export {
   formatHtml,

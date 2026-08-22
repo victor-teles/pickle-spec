@@ -257,7 +257,14 @@ export function createLocalExecutionCacheEntries(
       )
     },
     async clear() {
-      await database.use((db) => db.run('DELETE FROM entries'))
+      await database.use((db) =>
+        db
+          .transaction(() => {
+            db.run('DELETE FROM entries')
+            db.run('DELETE FROM leases')
+          })
+          .immediate(),
+      )
     },
   }
 }

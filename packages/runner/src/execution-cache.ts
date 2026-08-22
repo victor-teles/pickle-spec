@@ -44,6 +44,48 @@ export type SerializedExecutionCacheEnvelope = {
   readonly [serializedExecutionCacheEnvelope]: true
 }
 
+export interface ExecutionCacheLease {
+  key: ExecutionCacheKey
+  ownerToken: string
+  baselinePayloadDigest?: string
+  heartbeatMs: number
+}
+
+export type ExecutionCacheLeaseAcquisition =
+  | { acquired: true; lease: ExecutionCacheLease }
+  | {
+      acquired: false
+      ownerToken: string
+      baselinePayloadDigest?: string
+    }
+
+export type ExecutionCacheLeaseWaitResult =
+  | { status: 'released'; entryChanged: boolean }
+  | { status: 'timed-out' | 'cancelled' }
+
+export interface ExecutionCacheLeasePublicationResult
+  extends ExecutionCacheWriteResult {
+  published: boolean
+}
+
+export interface ExecutionCacheCoordination {
+  readCurrent(key: ExecutionCacheKey): Promise<string | undefined>
+  acquire(key: ExecutionCacheKey): Promise<ExecutionCacheLeaseAcquisition>
+  renew(lease: ExecutionCacheLease): Promise<boolean>
+  wait(
+    key: ExecutionCacheKey,
+    ownerToken: string,
+    baselinePayloadDigest: string | undefined,
+    signal?: AbortSignal,
+  ): Promise<ExecutionCacheLeaseWaitResult>
+  publish(
+    lease: ExecutionCacheLease,
+    serializedEnvelope: SerializedExecutionCacheEnvelope,
+    metadata: ExecutionCacheWriteMetadata,
+  ): Promise<ExecutionCacheLeasePublicationResult>
+  release(lease: ExecutionCacheLease): Promise<void>
+}
+
 export interface ExecutionCacheStore {
   read(key: ExecutionCacheKey): Promise<string | undefined>
   write(
@@ -53,6 +95,7 @@ export interface ExecutionCacheStore {
   delete(key: ExecutionCacheKey): Promise<void>
   inspect(): Promise<ExecutionCacheEntryMetadata[]>
   clear(): Promise<void>
+  coordination?: ExecutionCacheCoordination
 }
 
 export type CacheOutcome =
