@@ -505,10 +505,6 @@ test('persists every final state and records flaky without adding a new state', 
   const states = [
     passedResult('Passed purchase'),
     {
-      ...passedResult('Adapted purchase'),
-      state: 'passed-with-adaptation' as const,
-    },
-    {
       ...passedResult('Failed purchase'),
       state: 'failed' as const,
       message: 'Payment was declined',
@@ -543,7 +539,6 @@ test('persists every final state and records flaky without adding a new state', 
     manifest.results.map((result) => [result.state, result.flaky]),
   ).toEqual([
     ['passed', undefined],
-    ['passed-with-adaptation', undefined],
     ['failed', undefined],
     ['skipped', undefined],
     ['cancelled', undefined],
@@ -554,7 +549,6 @@ test('persists every final state and records flaky without adding a new state', 
   expect(new Set(manifest.results.map((result) => result.state))).toEqual(
     new Set([
       'passed',
-      'passed-with-adaptation',
       'failed',
       'skipped',
       'cancelled',
@@ -579,14 +573,6 @@ test('captures only failure artifacts under the default evidence policy', async 
   })
   await run.append({
     type: 'scenario-finished',
-    result: resultWithArtifact(
-      'Adapted purchase',
-      'passed-with-adaptation',
-      screenshot,
-    ),
-  })
-  await run.append({
-    type: 'scenario-finished',
     result: {
       ...resultWithArtifact('Failed purchase', 'failed', screenshot),
       steps: [
@@ -608,7 +594,7 @@ test('captures only failure artifacts under the default evidence policy', async 
   })
 
   const manifest = await run.materialize()
-  const [passed, adapted, failed] = manifest.results
+  const [passed, failed] = manifest.results
   const artifactsDirectory = join(
     root,
     '.pickle',
@@ -618,7 +604,6 @@ test('captures only failure artifacts under the default evidence policy', async 
   )
 
   expect(passed?.steps[0]?.artifacts).toBeUndefined()
-  expect(adapted?.steps[0]?.artifacts).toBeUndefined()
   expect(
     failed?.steps[0]?.artifacts?.[0]?.path.startsWith(artifactsDirectory),
   ).toBe(true)

@@ -136,7 +136,7 @@ test('Adaptive executes the exact private full-Scenario .ad before returning it'
   )
   expect(completion).toEqual({
     inferenceCount: 0,
-    cacheCandidate: {
+    replayRepresentation: {
       cacheable: true,
       requiredVariables: ['product'],
       adapterPayload: {

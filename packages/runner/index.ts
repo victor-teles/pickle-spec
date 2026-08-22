@@ -61,23 +61,6 @@ export {
   serializeExecutionCacheEnvelope,
   serializeExecutionCacheTerminalOutcome,
 } from './src/execution-cache'
-export type {
-  CandidateExecutionPlan,
-  CandidatePlanEvidence,
-  ExecutionPlan,
-  ExecutionPlanReview,
-  ExecutionPlanReviewStore,
-  ExecutionPlanStep,
-  ExecutionPlanStore,
-  FileExecutionPlanStore,
-  FilePlanStoreOptions,
-  PlanApplicability,
-  PromoteCandidatePlanInput,
-} from './src/execution-plan'
-export {
-  createFilePlanStore,
-  planApplies,
-} from './src/execution-plan'
 export {
   historicalDurationsFrom,
   latestHistoricalDurations,
@@ -125,8 +108,8 @@ export type {
   StepExecutionTargetAdapter,
   StepTargetSession,
   TargetSession,
-  TargetSessionCacheCandidate,
   TargetSessionCompletion,
+  TargetSessionReplayRepresentation,
   TestArtifact,
   TestResult,
   TestResultState,

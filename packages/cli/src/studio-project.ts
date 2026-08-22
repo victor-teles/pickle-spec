@@ -252,9 +252,6 @@ export async function loadStudioProject(
       config,
       specifications,
     ),
-    policy: {
-      adaptedResults: config.policy?.adaptedResults ?? 'accept',
-    },
   }
 }
 

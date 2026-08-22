@@ -68,7 +68,6 @@ function bytesLabel(bytes: number): string {
 
 function stateVariant(state: TestRunSummary['state']) {
   if (state === 'failed' || state === 'infrastructure-error') return 'failed'
-  if (state === 'passed-with-adaptation') return 'adaptation'
   if (state === 'passed') return 'passed'
   return 'default'
 }
@@ -395,24 +394,6 @@ export function HistoryPanel(props: HistoryPanelProps) {
               </p>
             </div>
             <div className="flex flex-wrap items-center gap-2">
-              <Button
-                type="button"
-                variant="adaptation"
-                disabled={
-                  props.runPhase === 'running' ||
-                  !reviewed.results.some(
-                    (result) => result.state === 'passed-with-adaptation',
-                  )
-                }
-                onClick={() =>
-                  void props.onRerun({
-                    rerunId: reviewed.id,
-                    adaptations: true,
-                  })
-                }
-              >
-                Rerun adaptations
-              </Button>
               <Button
                 variant="outline"
                 nativeButton={false}

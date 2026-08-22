@@ -31,7 +31,7 @@ const manifest: TestRunManifest = {
   state: 'failed',
   results: [
     result('Complete a purchase', 'passed'),
-    result('Adapt the purchase', 'passed-with-adaptation'),
+    result('Review the purchase', 'passed'),
     result('Pay for the order', 'failed'),
     result('Retry the purchase', 'infrastructure-error'),
     result('Mobile purchase', 'failed', {
@@ -44,29 +44,12 @@ test('selectRerunResults returns every result when no filter is provided', () =>
   expect(selectRerunResults(manifest, {})).toEqual(manifest.results)
 })
 
-test('selectRerunResults selects failures and adaptations', () => {
+test('selectRerunResults selects failures', () => {
   expect(
     selectRerunResults(manifest, { failures: true }).map(
       (item) => item.scenario.name,
     ),
   ).toEqual(['Pay for the order', 'Retry the purchase', 'Mobile purchase'])
-
-  expect(
-    selectRerunResults(manifest, { adaptations: true }).map(
-      (item) => item.scenario.name,
-    ),
-  ).toEqual(['Adapt the purchase'])
-
-  expect(
-    selectRerunResults(manifest, { failures: true, adaptations: true }).map(
-      (item) => item.scenario.name,
-    ),
-  ).toEqual([
-    'Adapt the purchase',
-    'Pay for the order',
-    'Retry the purchase',
-    'Mobile purchase',
-  ])
 })
 
 test('selectRerunResults intersects state filters with Scenario and profile identifiers', () => {

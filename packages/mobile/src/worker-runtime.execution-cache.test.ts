@@ -65,7 +65,7 @@ test('routes one complete Scenario through the versioned worker protocol', async
       async completeSession() {
         return {
           inferenceCount: 0,
-          cacheCandidate: {
+          replayRepresentation: {
             cacheable: true as const,
             requiredVariables: ['product'],
             adapterPayload: {
@@ -119,7 +119,7 @@ test('routes one complete Scenario through the versioned worker protocol', async
     type: 'session-completed',
     completion: {
       inferenceCount: 0,
-      cacheCandidate: { cacheable: true, requiredVariables: ['product'] },
+      replayRepresentation: { cacheable: true, requiredVariables: ['product'] },
     },
   })
   expect(openings).toEqual([

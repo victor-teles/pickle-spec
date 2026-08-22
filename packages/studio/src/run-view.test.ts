@@ -51,13 +51,10 @@ test('keeps a pinned cell when a later failure arrives', () => {
   expect(view.pinned).toBe(true)
 })
 
-test('prefers a failed cell over an Adaptation when unpinned', () => {
-  let view = reduceRun(emptyRunView(), started('Adapt the purchase', 'adapt'))
-  view = reduceRun(
-    view,
-    finished('Adapt the purchase', 'adapt', 'passed-with-adaptation'),
-  )
-  expect(view.selected?.state).toBe('passed-with-adaptation')
+test('prefers a failed cell over a passed cell when unpinned', () => {
+  let view = reduceRun(emptyRunView(), started('Review the purchase', 'review'))
+  view = reduceRun(view, finished('Review the purchase', 'review', 'passed'))
+  expect(view.selected?.state).toBe('passed')
   view = reduceRun(view, started('Pay for the order', 'pay'))
   view = reduceRun(view, finished('Pay for the order', 'pay', 'failed'))
   expect(view.selected?.scenarioName).toBe('Pay for the order')

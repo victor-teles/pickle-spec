@@ -175,9 +175,9 @@ export function registerStudioHardeningTests(
       join(project, 'features', 'checkout.feature'),
       `@pickle:id:speccheckaaaaaaaa @pickle:state:active
 Feature: Checkout
-  @pickle:id:scnadaptcccccccc
-  Scenario: Adapt the purchase
-    Then the basket adapts
+  @pickle:id:scnreviewccccccc
+  Scenario: Review the purchase
+    Then the basket is reviewed
   @pickle:id:scnpaybbbbbbbbbb
   Scenario: Pay for the order
     Then payment is captured
@@ -188,6 +188,7 @@ Feature: Checkout
     )
     const { child, url } = await startStudio(project, {
       PICKLE_STUDIO_RELEASE_FAILURE: releaseFailure,
+      PICKLE_STUDIO_INITIAL_FAILURE: 'true',
     })
     const page = await browser.newPage()
     try {
@@ -200,25 +201,25 @@ Feature: Checkout
       await page.keyboard.press('Enter')
 
       const attention = page.getByRole('list', { name: 'Needs attention' })
-      const adaptation = attention.getByRole('button', {
-        name: /Adapt the purchase.*passed-with-adaptation/,
+      const focusedFailure = attention.getByRole('button', {
+        name: /Review the purchase.*failed/,
       })
-      await adaptation.waitFor()
-      await tabTo(page, adaptation)
+      await focusedFailure.waitFor()
+      await tabTo(page, focusedFailure)
       expect(
         await attention.getByRole('listitem').first().textContent(),
-      ).toContain('Adapt the purchase')
+      ).toContain('Review the purchase')
 
       await Bun.write(releaseFailure, 'continue')
       await attention
         .getByRole('button', { name: /Pay for the order.*failed/ })
         .waitFor()
       expect(
-        await adaptation.evaluate((element) => element.matches(':focus')),
+        await focusedFailure.evaluate((element) => element.matches(':focus')),
       ).toBe(true)
       expect(
         await attention.getByRole('listitem').first().textContent(),
-      ).toContain('Adapt the purchase')
+      ).toContain('Review the purchase')
     } finally {
       await page.close()
       child.kill()

@@ -1,12 +1,6 @@
 import { describe, expect, mock, test } from 'bun:test'
+import type { Scenario, Specification } from '@pickle-spec/spec'
 import {
-  type Scenario,
-  type Specification,
-  scenarioRevision,
-} from '@pickle-spec/spec'
-import {
-  type ExecutionPlan,
-  type ExecutionPlanStore,
   type ExecutionTargetAdapter,
   type OpenSessionInput,
   runScenario,
@@ -281,37 +275,6 @@ describe('runScenario', () => {
     })
   })
 
-  test('preserves a successful adaptation as the final result state', async () => {
-    let step = 0
-    const run = await runScenario({
-      specification,
-      scenario,
-      executionTargetProfile: { id: 'deterministic' },
-      adapter: {
-        async openSession() {
-          return {
-            async executeStep() {
-              step += 1
-              return {
-                state:
-                  step === 1
-                    ? ('passed-with-adaptation' as const)
-                    : ('passed' as const),
-                resolvedActions: [
-                  { description: 'Completed deterministic action' },
-                ],
-              }
-            },
-            async close() {},
-          }
-        },
-      },
-    })
-
-    expect(run.result.state).toBe('passed-with-adaptation')
-    expect(run.result.steps).toHaveLength(2)
-  })
-
   test('materializes an adapter exception during a step as an infrastructure error', async () => {
     const close = mock(async () => {})
     const run = await runScenario({
@@ -494,234 +457,38 @@ describe('runScenario', () => {
     expect(close).toHaveBeenCalledTimes(1)
   })
 
-  test('runs in Adaptive mode and writes a candidate when no approved plan applies', async () => {
-    const candidates: ExecutionPlan[] = []
-    const openSession = mock(async () => ({
-      async executeStep(step: Scenario['steps'][number]) {
-        return {
-          state: 'passed' as const,
-          resolvedActions: [{ description: `Resolved: ${step.text}` }],
-        }
-      },
-      async close() {},
-    }))
-    const plans: ExecutionPlanStore = {
-      async findApproved() {
-        return undefined
-      },
-      async saveCandidate(plan) {
-        candidates.push(plan)
-      },
-    }
-
-    const run = await runScenario({
-      specification,
-      scenario,
-      executionTargetProfile: { id: 'web' },
-      adapter: { planFormatVersion: 'web.1', openSession },
-      plans,
-      applicationRevision: 'app-1',
-    })
-
-    expect(run.result.state).toBe('passed')
-    expect(run.result.executionMode).toBe('adaptive')
-    expect(openSession).toHaveBeenCalledWith(
-      expect.objectContaining({ mode: 'adaptive' }),
-    )
-    expect(candidates).toEqual([
-      {
-        schemaVersion: 1,
-        scenarioId: expect.any(String),
-        scenarioRevision: scenarioRevision(scenario),
-        executionTargetProfileId: 'web',
-        planFormatVersion: 'web.1',
-        applicationRevision: 'app-1',
-        steps: [
-          {
-            resolvedActions: [
-              { description: 'Resolved: a product is in the basket' },
-            ],
-          },
-          {
-            resolvedActions: [
-              { description: 'Resolved: the purchase succeeds' },
-            ],
-          },
-        ],
-      },
-    ])
-  })
-
-  test('runs an applicable approved plan in Replay mode without writing a candidate', async () => {
-    const approved: ExecutionPlan = {
-      schemaVersion: 1,
-      scenarioId: 'purchase',
-      scenarioRevision: scenarioRevision(scenario),
-      executionTargetProfileId: 'web',
-      planFormatVersion: 'web.1',
-      applicationRevision: 'app-1',
-      steps: [
-        {
-          resolvedActions: [
-            { description: 'Open the basket', replay: { selector: '#basket' } },
-            { description: 'Confirm the item', replay: { selector: '#ok' } },
-          ],
-        },
-        {
-          resolvedActions: [{ description: 'See the receipt' }],
-        },
-      ],
-    }
-    const candidates: ExecutionPlan[] = []
+  test('runs a custom adapter only in Adaptive and rejects cache-only before opening', async () => {
     const openSession = mock(async (input: OpenSessionInput) => ({
-      async executeStep() {
-        return {
-          state: 'passed' as const,
-          resolvedActions: input.plan?.steps[0]?.resolvedActions ?? [],
-        }
-      },
-      async close() {},
-    }))
-
-    const run = await runScenario({
-      specification,
-      scenario: { ...scenario, id: 'purchase' },
-      executionTargetProfile: { id: 'web' },
-      adapter: { planFormatVersion: 'web.1', openSession },
-      applicationRevision: 'app-1',
-      plans: {
-        async findApproved() {
-          return approved
-        },
-        async saveCandidate(plan) {
-          candidates.push(plan)
-        },
-      },
-    })
-
-    expect(run.result.state).toBe('passed')
-    expect(run.result.executionMode).toBe('replay')
-    expect(run.result.steps[0]?.resolvedActions).toEqual([
-      { description: 'Open the basket', replay: { selector: '#basket' } },
-      { description: 'Confirm the item', replay: { selector: '#ok' } },
-    ])
-    expect(openSession).toHaveBeenCalledWith(
-      expect.objectContaining({ mode: 'replay', plan: approved }),
-    )
-    expect(candidates).toEqual([])
-  })
-
-  test('treats a stale or cross-profile plan as Adaptive', async () => {
-    const openSession = mock(async () => ({
       async executeStep() {
         return { state: 'passed' as const, resolvedActions: [] }
       },
       async close() {},
+      mode: input.mode,
     }))
-    const stale: ExecutionPlan = {
-      schemaVersion: 1,
-      scenarioId: 'purchase',
-      scenarioRevision: 'old-revision',
-      executionTargetProfileId: 'web',
-      planFormatVersion: 'web.1',
-      applicationRevision: 'app-1',
-      steps: [{ resolvedActions: [] }],
+    const adapter: ExecutionTargetAdapter = { openSession }
+    const input = {
+      specification,
+      scenario,
+      executionTargetProfile: { id: 'custom' },
+      adapter,
     }
 
-    await runScenario({
-      specification,
-      scenario: { ...scenario, id: 'purchase' },
-      executionTargetProfile: { id: 'android' },
-      adapter: { planFormatVersion: 'web.1', openSession },
-      applicationRevision: 'app-1',
-      plans: {
-        async findApproved() {
-          return stale
-        },
-        async saveCandidate() {},
-      },
-    })
+    const adaptive = await runScenario(input)
+    const cacheOnly = await runScenario({ ...input, cachePolicy: 'cache-only' })
 
+    expect(adaptive.result).toMatchObject({
+      state: 'passed',
+      executionMode: 'adaptive',
+    })
+    expect(cacheOnly.result).toMatchObject({
+      state: 'failed',
+      executionMode: 'replay',
+      failureKind: 'cache-miss',
+      inferenceCount: 0,
+    })
+    expect(openSession).toHaveBeenCalledTimes(1)
     expect(openSession).toHaveBeenCalledWith(
       expect.objectContaining({ mode: 'adaptive' }),
     )
-  })
-
-  test('records passed-with-adaptation and a candidate without changing the approved plan', async () => {
-    const approved: ExecutionPlan = {
-      schemaVersion: 1,
-      scenarioId: 'purchase',
-      scenarioRevision: scenarioRevision(scenario),
-      executionTargetProfileId: 'web',
-      planFormatVersion: 'web.1',
-      applicationRevision: 'app-1',
-      steps: [{ resolvedActions: [{ description: 'Old action' }] }],
-    }
-    const approvedCopy = structuredClone(approved)
-    const candidates: ExecutionPlan[] = []
-    const run = await runScenario({
-      specification,
-      scenario: { ...scenario, id: 'purchase' },
-      executionTargetProfile: { id: 'web' },
-      adapter: {
-        planFormatVersion: 'web.1',
-        async openSession() {
-          return {
-            async executeStep() {
-              return {
-                state: 'passed-with-adaptation' as const,
-                resolvedActions: [{ description: 'Adapted action' }],
-              }
-            },
-            async close() {},
-          }
-        },
-      },
-      applicationRevision: 'app-1',
-      plans: {
-        async findApproved() {
-          return approved
-        },
-        async saveCandidate(plan) {
-          candidates.push(plan)
-        },
-      },
-    })
-
-    expect(run.result.state).toBe('passed-with-adaptation')
-    expect(run.result.executionMode).toBe('replay')
-    expect(candidates[0]?.steps[0]?.resolvedActions).toEqual([
-      { description: 'Adapted action' },
-    ])
-    expect(approved).toEqual(approvedCopy)
-  })
-
-  test('refuses Replay in CI when the application revision is missing', async () => {
-    const openSession = mock(async () => {
-      throw new Error('must not open a logical session')
-    })
-    await expect(
-      runScenario({
-        specification,
-        scenario: { ...scenario, id: 'purchase' },
-        executionTargetProfile: { id: 'web' },
-        adapter: { planFormatVersion: 'web.1', openSession },
-        ci: true,
-        plans: {
-          async findApproved() {
-            return {
-              schemaVersion: 1,
-              scenarioId: 'purchase',
-              scenarioRevision: scenarioRevision(scenario),
-              executionTargetProfileId: 'web',
-              planFormatVersion: 'web.1',
-              steps: [{ resolvedActions: [] }],
-            }
-          },
-          async saveCandidate() {},
-        },
-      }),
-    ).rejects.toThrow('CI Replay requires applicationRevision')
-    expect(openSession).not.toHaveBeenCalled()
   })
 })

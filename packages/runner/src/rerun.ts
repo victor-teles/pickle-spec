@@ -3,7 +3,6 @@ import type { TestRunManifest } from './test-run-store'
 
 export interface RerunFilter {
   failures?: boolean
-  adaptations?: boolean
   scenarioIds?: readonly string[]
   scenarioNames?: readonly string[]
   profileIds?: readonly string[]
@@ -18,7 +17,7 @@ export function selectRerunResults(
   manifest: TestRunManifest,
   filter: RerunFilter,
 ): TestResult[] {
-  const hasStateFilter = Boolean(filter.failures || filter.adaptations)
+  const hasStateFilter = filter.failures === true
   const scenarioIds = filter.scenarioIds
     ? new Set(filter.scenarioIds)
     : undefined
@@ -29,11 +28,7 @@ export function selectRerunResults(
 
   return manifest.results.filter((result) => {
     if (hasStateFilter) {
-      const matchesFailure =
-        filter.failures === true && failureStates.has(result.state)
-      const matchesAdaptation =
-        filter.adaptations === true && result.state === 'passed-with-adaptation'
-      if (!matchesFailure && !matchesAdaptation) return false
+      if (!failureStates.has(result.state)) return false
     }
     if (
       scenarioIds &&

@@ -137,13 +137,6 @@ function replayPayload(handle: unknown): Record<string, unknown> | undefined {
   }
 }
 
-function plannedAction(action: ResolvedAction): WebObservedAction {
-  return {
-    description: action.description,
-    handle: action.replay ?? {},
-  }
-}
-
 function providerApiKeyEnvNames(modelName: string | undefined): string[] {
   const provider = (modelName ?? defaultModelName).split('/')[0]!
   return providerApiKeyEnvNamesByProvider[provider] ?? []
@@ -216,7 +209,6 @@ export function createWebAdapter(
 
   return {
     capabilities: ['web', 'screenshots'],
-    planFormatVersion: 'web.1',
     executionCache: {
       adapterKind: 'web',
       adapterCacheSchemaVersion: '1',
@@ -375,30 +367,6 @@ export function createWebAdapter(
         return { state: 'passed', resolvedActions }
       }
 
-      async function adapt(
-        prompt: string,
-        signal?: AbortSignal,
-      ): Promise<StepExecution> {
-        const adapted = await resolveByObservation(prompt, signal)
-        if (adapted.state !== 'passed') return adapted
-        return { ...adapted, state: 'passed-with-adaptation' }
-      }
-
-      async function replayOrAdapt(
-        prompt: string,
-        planned: readonly ResolvedAction[],
-        signal?: AbortSignal,
-      ): Promise<StepExecution> {
-        if (planned.length === 0) return adapt(prompt, signal)
-        const resolvedActions: ResolvedAction[] = []
-        for (const action of planned) {
-          const result = await automation.act(plannedAction(action), signal)
-          resolvedActions.push(action)
-          if (!result.success) return adapt(prompt, signal)
-        }
-        return { state: 'passed', resolvedActions }
-      }
-
       if (
         cacheReplay ||
         (executionMode === 'adaptive' && automation.executeInstruction)
@@ -455,16 +423,6 @@ export function createWebAdapter(
                 state: 'passed',
                 resolvedActions: [{ description: `Verify: ${prompt}` }],
               })
-            }
-
-            if (executionMode === 'replay') {
-              return finish(
-                await replayOrAdapt(
-                  prompt,
-                  input.plan?.steps[stepIndex - 1]?.resolvedActions ?? [],
-                  operationSignal,
-                ),
-              )
             }
 
             return finish(await resolveByObservation(prompt, operationSignal))

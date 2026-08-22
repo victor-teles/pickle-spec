@@ -3,7 +3,6 @@ import type { Scenario, Specification } from '@pickle-spec/spec'
 import type {
   ExecutionTargetAdapter,
   ExecutionTargetProfile,
-  ResolvedAction,
   RunEvent,
   TestResultState,
 } from './index'
@@ -16,7 +15,6 @@ export interface AdapterConformanceSuiteOptions {
   specification: Specification
   scenario: Scenario
   expectedCapabilities: readonly string[]
-  replayActions: readonly (readonly ResolvedAction[])[]
   expectedAdaptiveState?: TestResultState
 }
 
@@ -57,47 +55,6 @@ export function defineAdapterConformanceSuite(
           executionTargetProfile: options.executionTargetProfile,
         })
         expect(run.result.steps).toHaveLength(options.scenario.steps.length)
-      } finally {
-        await adapter.dispose?.()
-      }
-    })
-
-    test('produces common Replay run events and a test result', async () => {
-      const adapter = options.createAdapter()
-      try {
-        const run = await runScenario({
-          specification: options.specification,
-          scenario: options.scenario,
-          executionTargetProfile: options.executionTargetProfile,
-          adapter,
-          plans: {
-            async findApproved(query) {
-              return {
-                schemaVersion: 1,
-                ...query,
-                steps: options.replayActions.map((resolvedActions) => ({
-                  resolvedActions: [...resolvedActions],
-                })),
-              }
-            },
-            async saveCandidate() {
-              throw new Error('Replay must not save a candidate plan')
-            },
-          },
-        })
-
-        expect(run.events.map((event) => event.type)).toEqual(
-          expectedEventTypes(options.scenario.steps.length),
-        )
-        expect(run.result).toMatchObject({
-          schemaVersion: 1,
-          state: 'passed',
-          executionMode: 'replay',
-          executionTargetProfile: options.executionTargetProfile,
-        })
-        expect(run.result.steps.map((step) => step.resolvedActions)).toEqual(
-          options.replayActions.map((resolvedActions) => [...resolvedActions]),
-        )
       } finally {
         await adapter.dispose?.()
       }

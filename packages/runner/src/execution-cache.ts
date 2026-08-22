@@ -46,12 +46,7 @@ export type SerializedExecutionCacheEnvelope = {
 }
 
 export type ExecutionCacheTerminalOutcome = {
-  state:
-    | 'passed'
-    | 'passed-with-adaptation'
-    | 'failed'
-    | 'skipped'
-    | 'infrastructure-error'
+  state: 'passed' | 'failed' | 'skipped' | 'infrastructure-error'
   cacheOutcome: Exclude<CacheOutcome, 'hit'>
   cacheUncacheableReason?: ExecutionCacheUncacheableReason
   failureKind?: 'cache-miss'
@@ -205,13 +200,7 @@ const executionCacheEnvelopeSchema = z.strictObject({
 })
 
 const executionCacheTerminalOutcomeSchema = z.strictObject({
-  state: z.enum([
-    'passed',
-    'passed-with-adaptation',
-    'failed',
-    'skipped',
-    'infrastructure-error',
-  ]),
+  state: z.enum(['passed', 'failed', 'skipped', 'infrastructure-error']),
   cacheOutcome: z.enum(terminalCacheOutcomeValues),
   cacheUncacheableReason: z
     .enum(executionCacheUncacheableReasonValues)

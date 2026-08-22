@@ -43,11 +43,6 @@ test('formatHtml includes failure artifacts and Cache execution metadata by defa
   await withArtifact(async (failurePath) => {
     const passedPath = join(dirname(failurePath), 'passed.png')
     await Bun.write(passedPath, 'passed-bytes')
-    const legacyAdaptationPath = join(
-      dirname(failurePath),
-      'legacy-adaptation.png',
-    )
-    await Bun.write(legacyAdaptationPath, 'legacy-adaptation-bytes')
     const manifest: TestRunManifest = {
       schemaVersion: 1,
       id: 'run-html',
@@ -105,26 +100,6 @@ test('formatHtml includes failure artifacts and Cache execution metadata by defa
           cacheOutcome: 'fallback',
           inferenceCount: 2,
         }),
-        result('Legacy adapted purchase', 'passed-with-adaptation', {
-          steps: [
-            {
-              step: {
-                keyword: 'Then',
-                text: 'legacy succeeds',
-                type: 'outcome',
-              },
-              state: 'passed-with-adaptation',
-              resolvedActions: [],
-              artifacts: [
-                {
-                  kind: 'screenshot',
-                  path: legacyAdaptationPath,
-                  mediaType: 'image/png',
-                },
-              ],
-            },
-          ],
-        }),
       ],
     }
     const html = await formatHtml(manifest)
@@ -145,9 +120,6 @@ test('formatHtml includes failure artifacts and Cache execution metadata by defa
     expect(html).toContain('data:image/png;base64,')
     expect(html).toContain(Buffer.from('png-bytes').toString('base64'))
     expect(html).not.toContain(Buffer.from('passed-bytes').toString('base64'))
-    expect(html).not.toContain(
-      Buffer.from('legacy-adaptation-bytes').toString('base64'),
-    )
   })
 })
 

@@ -66,7 +66,6 @@ async function runCachedAttempts(
       ...input,
       mode,
       cacheEntry,
-      plans: undefined,
       retry: undefined,
       onEvent: async (event) => {
         if (event.type === 'scenario-finished') return
@@ -254,28 +253,28 @@ async function finalizeAdaptiveRun(
   ) {
     reason = 'bound-parameter-value'
   }
-  const candidate = run.completion?.cacheCandidate
-  if (!reason && !candidate) reason = 'non-deterministic-action'
-  if (!reason && candidate && !candidate.cacheable) {
-    reason = candidate.reason
+  const representation = run.completion?.replayRepresentation
+  if (!reason && !representation) reason = 'non-deterministic-action'
+  if (!reason && representation && !representation.cacheable) {
+    reason = representation.reason
   }
   if (
     !reason &&
-    candidate?.cacheable &&
-    !requiredVariablesAreValid(candidate.requiredVariables, input.scenario)
+    representation?.cacheable &&
+    !requiredVariablesAreValid(representation.requiredVariables, input.scenario)
   ) {
     reason = 'payload-validation-failed'
   }
 
-  if (!reason && cacheKey && candidate?.cacheable) {
+  if (!reason && cacheKey && representation?.cacheable) {
     let serialized: SerializedExecutionCacheEnvelope | undefined
     try {
       serialized = serializeExecutionCacheEnvelope(
         {
           schemaVersion: 1,
           key: cacheKey,
-          requiredVariables: [...candidate.requiredVariables],
-          adapterPayload: candidate.adapterPayload,
+          requiredVariables: [...representation.requiredVariables],
+          adapterPayload: representation.adapterPayload,
         },
         input.adapter.executionCache!,
       )

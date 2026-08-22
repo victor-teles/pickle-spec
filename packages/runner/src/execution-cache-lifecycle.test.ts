@@ -204,7 +204,7 @@ describe('Execution cache lifecycle', () => {
           async complete() {
             return {
               inferenceCount: input.mode === 'adaptive' ? 1 : 0,
-              cacheCandidate: {
+              replayRepresentation: {
                 cacheable: true as const,
                 adapterPayload: { operations: ['confirm', 'assert-receipt'] },
                 requiredVariables: [],
@@ -271,7 +271,7 @@ describe('Execution cache lifecycle', () => {
           async complete() {
             return {
               inferenceCount: 1,
-              cacheCandidate: {
+              replayRepresentation: {
                 cacheable: false as const,
                 reason: 'non-deterministic-action' as const,
               },
@@ -399,7 +399,7 @@ describe('Execution cache lifecycle', () => {
           async complete() {
             return {
               inferenceCount: 1,
-              cacheCandidate: {
+              replayRepresentation: {
                 cacheable: true as const,
                 adapterPayload: { operations: ['oversized-operation'] },
                 requiredVariables: [],
@@ -469,7 +469,7 @@ describe('Execution cache lifecycle', () => {
           async complete() {
             return {
               inferenceCount: input.mode === 'adaptive' ? 1 : 0,
-              cacheCandidate: {
+              replayRepresentation: {
                 cacheable: true as const,
                 adapterPayload: {
                   operations: ['same-deterministic-payload'],
@@ -584,7 +584,7 @@ describe('Execution cache lifecycle', () => {
           async complete() {
             return {
               inferenceCount: 1,
-              cacheCandidate: {
+              replayRepresentation: {
                 cacheable: true as const,
                 adapterPayload: { operations: ['must-be-discarded'] },
                 requiredVariables: [],
@@ -628,7 +628,7 @@ describe('Execution cache lifecycle', () => {
           return {
             inferenceCount: input.mode === 'replay' ? 0 : 2,
             evaluationModel: 'test-model',
-            cacheCandidate: {
+            replayRepresentation: {
               cacheable: true as const,
               adapterPayload: { operations: ['confirm', 'assert-receipt'] },
               requiredVariables: [],
@@ -695,7 +695,7 @@ describe('Execution cache lifecycle', () => {
           async complete() {
             return {
               inferenceCount: input.mode === 'adaptive' ? 1 : 0,
-              cacheCandidate: {
+              replayRepresentation: {
                 cacheable: true as const,
                 adapterPayload: { operations: [`revision-${adaptiveAttempt}`] },
                 requiredVariables: [],
@@ -795,7 +795,7 @@ describe('Execution cache lifecycle', () => {
             seed = false
             return {
               inferenceCount: 1,
-              cacheCandidate: {
+              replayRepresentation: {
                 cacheable: true as const,
                 adapterPayload: { operations: ['deterministic'] },
                 requiredVariables: [],
@@ -852,7 +852,7 @@ describe('Execution cache lifecycle', () => {
           async complete() {
             return {
               inferenceCount: input.mode === 'adaptive' ? 2 : 0,
-              cacheCandidate: {
+              replayRepresentation: {
                 cacheable: true as const,
                 adapterPayload: { operations: ['deterministic'] },
                 requiredVariables: [],
@@ -897,7 +897,7 @@ describe('Execution cache lifecycle', () => {
           async complete() {
             return {
               inferenceCount: 3,
-              cacheCandidate: {
+              replayRepresentation: {
                 cacheable: false as const,
                 reason: 'non-deterministic-assertion' as const,
               },
@@ -932,7 +932,7 @@ describe('Execution cache lifecycle', () => {
           async complete() {
             return {
               inferenceCount: 1,
-              cacheCandidate: {
+              replayRepresentation: {
                 cacheable: true as const,
                 adapterPayload: { operations: ['deterministic'] },
                 requiredVariables: [],
@@ -969,7 +969,7 @@ describe('Execution cache lifecycle', () => {
           async complete() {
             return {
               inferenceCount: 1,
-              cacheCandidate: {
+              replayRepresentation: {
                 cacheable: true as const,
                 adapterPayload: { operations: ['deterministic'] },
                 requiredVariables: [],
@@ -1016,7 +1016,7 @@ describe('Execution cache lifecycle', () => {
             order.push('complete')
             return {
               inferenceCount: 1,
-              cacheCandidate: {
+              replayRepresentation: {
                 cacheable: true as const,
                 adapterPayload: { operations: [...executedOperations] },
                 requiredVariables: [],
@@ -1047,7 +1047,7 @@ describe('Execution cache lifecycle', () => {
       async complete() {
         return {
           inferenceCount: 1,
-          cacheCandidate: {
+          replayRepresentation: {
             cacheable: true as const,
             adapterPayload: { operations: ['bound-value'] },
             requiredVariables: [],
@@ -1110,7 +1110,7 @@ describe('Execution cache lifecycle', () => {
           async complete() {
             return {
               inferenceCount: input.mode === 'adaptive' ? 2 : 0,
-              cacheCandidate: {
+              replayRepresentation: {
                 cacheable: true as const,
                 adapterPayload: {
                   operations: ['fill:<email>', 'assert:<role>'],
@@ -1217,7 +1217,7 @@ describe('Execution cache lifecycle', () => {
           async complete() {
             return {
               inferenceCount: 1,
-              cacheCandidate: {
+              replayRepresentation: {
                 cacheable: true as const,
                 adapterPayload: { operations: ['fill:<email>'] },
                 requiredVariables: ['email'],
@@ -1252,7 +1252,7 @@ describe('Execution cache lifecycle', () => {
   test('does not complete or cache an Adaptive Scenario after a failed step', async () => {
     const complete = mock(async () => ({
       inferenceCount: 1,
-      cacheCandidate: {
+      replayRepresentation: {
         cacheable: true as const,
         adapterPayload: { operations: ['should-not-exist'] },
         requiredVariables: [],
@@ -1302,7 +1302,7 @@ describe('Execution cache lifecycle', () => {
           async complete() {
             return {
               inferenceCount: 1,
-              cacheCandidate: {
+              replayRepresentation: {
                 cacheable: true as const,
                 adapterPayload: { operations: ['scenario-wide'] },
                 requiredVariables: [],
@@ -1339,7 +1339,7 @@ describe('Execution cache lifecycle', () => {
               inferenceCount: input.mode === 'replay' ? 1 : 2,
               ...(input.mode === 'adaptive'
                 ? {
-                    cacheCandidate: {
+                    replayRepresentation: {
                       cacheable: true as const,
                       adapterPayload: { operations: ['deterministic'] },
                       requiredVariables: [],
@@ -1401,7 +1401,7 @@ describe('Execution cache lifecycle', () => {
           async complete() {
             return {
               inferenceCount: input.mode === 'replay' ? 0 : 1,
-              cacheCandidate:
+              replayRepresentation:
                 adaptiveAttempt === 2
                   ? {
                       cacheable: false as const,
@@ -1459,7 +1459,7 @@ describe('Execution cache lifecycle', () => {
           async complete() {
             return {
               inferenceCount: 1,
-              cacheCandidate: {
+              replayRepresentation: {
                 cacheable: true as const,
                 adapterPayload: { operations: ['deterministic'] },
                 requiredVariables: ['kind', 'kind'],
@@ -1515,7 +1515,7 @@ describe('Execution cache lifecycle', () => {
           async complete() {
             return {
               inferenceCount: 1,
-              cacheCandidate: {
+              replayRepresentation: {
                 cacheable: true as const,
                 adapterPayload: { operations: ['fill:<email>'] },
                 requiredVariables: ['email'],
@@ -1568,62 +1568,6 @@ describe('Execution cache lifecycle', () => {
     expect(writes).toEqual([])
   })
 
-  test('normalizes Adaptive adaptation to passed and treats Replay adaptation as divergence', async () => {
-    const { store } = memoryStore()
-    const modes: string[] = []
-    const adapter: ExecutionTargetAdapter = {
-      executionCache,
-      async openSession(input) {
-        modes.push(input.mode ?? 'adaptive')
-        return {
-          async executeStep() {
-            return {
-              state: 'passed-with-adaptation' as const,
-              resolvedActions: [],
-            }
-          },
-          async complete() {
-            return {
-              inferenceCount: 1,
-              cacheCandidate: {
-                cacheable: true as const,
-                adapterPayload: { operations: ['deterministic'] },
-                requiredVariables: [],
-              },
-            }
-          },
-          async close() {},
-        }
-      },
-    }
-    const input = cacheRunInput({ adapter, store })
-
-    const adaptive = await runScenario(input)
-    const fallback = await runScenario({
-      ...input,
-      executionCache: { ...input.executionCache, sourceRunId: 'run-2' },
-    })
-    const cacheOnly = await runScenario({
-      ...input,
-      cachePolicy: 'cache-only',
-      executionCache: { ...input.executionCache, sourceRunId: 'run-3' },
-    })
-
-    expect(modes).toEqual(['adaptive', 'replay', 'adaptive', 'replay'])
-    expect(adaptive.result).toMatchObject({ state: 'passed' })
-    expect(adaptive.result.steps.every((step) => step.state === 'passed')).toBe(
-      true,
-    )
-    expect(fallback.result).toMatchObject({
-      state: 'passed',
-      cacheOutcome: 'fallback',
-    })
-    expect(cacheOnly.result).toMatchObject({
-      state: 'failed',
-      failureKind: 'cache-miss',
-    })
-  })
-
   test('preserves a divergent entry until Adaptive fallback can replace it', async () => {
     const { store, writes } = memoryStore()
     const modes: string[] = []
@@ -1653,7 +1597,7 @@ describe('Execution cache lifecycle', () => {
           async complete() {
             return {
               inferenceCount: 1,
-              cacheCandidate: {
+              replayRepresentation: {
                 cacheable: true as const,
                 adapterPayload: { operations: ['original'] },
                 requiredVariables: [],

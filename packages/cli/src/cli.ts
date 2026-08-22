@@ -37,7 +37,6 @@ import {
 } from './run-reporter'
 import { createStudioExecutionCacheGateway } from './studio-cache'
 import { createStudioHistoryGateway } from './studio-history'
-import { createStudioPlanGateway } from './studio-plans'
 import {
   loadStudioProject,
   patchStudioConfig,
@@ -68,7 +67,6 @@ interface RunArguments {
   ndjsonPath?: string
   rerunId?: string
   failures?: boolean
-  adaptations?: boolean
   fast?: boolean
   refreshCache?: boolean
   cacheOnly?: boolean
@@ -200,9 +198,6 @@ function parseRunArguments(argv: string[]): RunArguments {
       case '--failures':
         args.failures = true
         break
-      case '--adaptations':
-        args.adaptations = true
-        break
       case '--fast':
         args.fast = true
         break
@@ -279,12 +274,7 @@ async function run(argv: string[]): Promise<number> {
     reporter.finish(runs, performance.now() - startedAt)
     const states = runs.map(({ result }) => result.state)
     if (states.includes('cancelled')) return 130
-    if (
-      states.includes('failed') ||
-      states.includes('infrastructure-error') ||
-      (config.policy?.adaptedResults === 'reject' &&
-        states.includes('passed-with-adaptation'))
-    ) {
+    if (states.includes('failed') || states.includes('infrastructure-error')) {
       return 1
     }
     return 0
@@ -472,7 +462,6 @@ async function studio(argv: string[]): Promise<number> {
         return studioRunReadiness(context, request, current, specifications)
       },
     },
-    plans: createStudioPlanGateway(root, loadProject),
     executionCache: createStudioExecutionCacheGateway(root, async () => {
       const current = await loadConfig(args.configPath, root)
       return current.cache ?? {}
@@ -505,7 +494,6 @@ async function studio(argv: string[]): Promise<number> {
             rerunId: request?.rerunId,
             scenarioIds: request?.scenarioId ? [request.scenarioId] : undefined,
             failures: request?.failures,
-            adaptations: request?.adaptations,
             refreshCache: request?.refreshCache,
           },
           signal: runController.signal,

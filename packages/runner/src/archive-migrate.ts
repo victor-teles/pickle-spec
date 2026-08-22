@@ -19,9 +19,14 @@ function object<Shape extends z.ZodRawShape>(field: string, shape: Shape) {
   return z.object(shape, { error: `${field} must be an object` })
 }
 
+const archiveStateInput = z.enum(
+  ['passed', 'failed', 'skipped', 'cancelled', 'infrastructure-error'],
+  { error: 'archive state must be a current result state' },
+)
+
 const archiveStepInput = object('archive step', {
   step: z.unknown().optional(),
-  state: z.unknown().optional(),
+  state: archiveStateInput,
   resolvedActions: z.unknown().optional(),
   message: z.unknown().optional(),
   artifacts: z.unknown().optional(),
@@ -68,7 +73,7 @@ const archiveResultInput = object('archive result', {
   specification: z.unknown().optional(),
   scenario: z.unknown().optional(),
   executionTargetProfile: z.unknown().optional(),
-  state: z.unknown().optional(),
+  state: archiveStateInput,
   steps: z.unknown().optional(),
   executionMode: executionModeInput,
   cacheOutcome: cacheOutcomeInput,
@@ -89,7 +94,7 @@ const archiveManifestInput = object('archive manifest', {
   sourceRunId: z.unknown().optional(),
   suite: z.unknown().optional(),
   applicationRevision: z.unknown().optional(),
-  state: z.unknown().optional(),
+  state: archiveStateInput,
   results: z.unknown().optional(),
 })
 
@@ -117,7 +122,7 @@ function migrateStep(step: unknown): TestStepResult {
   const value = parsed(archiveStepInput, step)
   return {
     step: value.step as TestStepResult['step'],
-    state: value.state as TestStepResult['state'],
+    state: value.state,
     resolvedActions: Array.isArray(value.resolvedActions)
       ? value.resolvedActions.map(migrateResolvedAction)
       : [],
@@ -150,7 +155,7 @@ function migrateResult(result: unknown): TestResult {
     },
     executionTargetProfile:
       value.executionTargetProfile as TestResult['executionTargetProfile'],
-    state: value.state as TestResult['state'],
+    state: value.state,
     steps: Array.isArray(value.steps) ? value.steps.map(migrateStep) : [],
     executionMode: value.executionMode,
     cacheOutcome: value.cacheOutcome,
@@ -208,7 +213,7 @@ function migrateManifest(manifest: unknown): TestRunManifest {
       typeof value.applicationRevision === 'string'
         ? value.applicationRevision
         : undefined,
-    state: value.state as TestRunManifest['state'],
+    state: value.state,
     results: Array.isArray(value.results)
       ? value.results.map(migrateResult)
       : [],

@@ -65,12 +65,4 @@ defineAdapterConformanceSuite({
   specification,
   scenario,
   expectedCapabilities: ['web', 'screenshots'],
-  replayActions: [
-    [
-      {
-        description: 'Fill the search field',
-        replay: { selector: '#search' },
-      },
-    ],
-  ],
 })

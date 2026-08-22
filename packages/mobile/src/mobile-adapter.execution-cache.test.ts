@@ -94,7 +94,7 @@ test('runner stores Adaptive .ad then reuses it through public mobile Replay', a
               session.mode === 'adaptive'
                 ? {
                     inferenceCount: 0,
-                    cacheCandidate: {
+                    replayRepresentation: {
                       cacheable: true,
                       adapterPayload: payload,
                       requiredVariables: ['product'],

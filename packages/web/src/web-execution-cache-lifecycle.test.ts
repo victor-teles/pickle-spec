@@ -115,10 +115,10 @@ Feature: Status
     await adapter.dispose?.()
 
     expect(execution.state).toBe('passed')
-    expect(completion?.cacheCandidate?.cacheable).toBe(true)
+    expect(completion?.replayRepresentation?.cacheable).toBe(true)
     const payload = (
-      completion?.cacheCandidate?.cacheable
-        ? completion.cacheCandidate.adapterPayload
+      completion?.replayRepresentation?.cacheable
+        ? completion.replayRepresentation.adapterPayload
         : undefined
     ) as WebExecutionCachePayload
     expect(payload.steps[0]?.instructions).toEqual(

@@ -454,7 +454,7 @@ export class AgentDeviceGateway {
     if (session.compiled.uncacheableReason) {
       return {
         inferenceCount: 0,
-        cacheCandidate: {
+        replayRepresentation: {
           cacheable: false,
           reason: session.compiled.uncacheableReason,
         },
@@ -462,7 +462,7 @@ export class AgentDeviceGateway {
     }
     return {
       inferenceCount: 0,
-      cacheCandidate: {
+      replayRepresentation: {
         cacheable: true,
         adapterPayload: session.compiled.payload,
         requiredVariables: session.compiled.requiredVariables,

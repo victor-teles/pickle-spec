@@ -36,10 +36,6 @@ export interface ProjectExecutionTargetProfile {
   web?: WebAdapterOptions
 }
 
-export interface ProjectPolicy {
-  adaptedResults?: 'accept' | 'reject'
-}
-
 export interface ProjectRetention {
   days?: number
   maxBytes?: number
@@ -65,7 +61,6 @@ export interface PickleConfig {
   executionTargetProfiles?: Record<string, ProjectExecutionTargetProfile>
   executionTargetProfile?: ExecutionTargetProfile
   applicationRevision?: string
-  policy?: ProjectPolicy
   web?: WebAdapterOptions
   selection?: SelectionOptions
   execution?: ExecutionSettings
@@ -253,13 +248,6 @@ const pickleConfigSchema = strictObject('configuration', {
       error: 'applicationRevision must not be empty',
     })
     .optional(),
-  policy: strictObject('policy', {
-    adaptedResults: z
-      .enum(['accept', 'reject'], {
-        error: 'policy.adaptedResults must be accept or reject',
-      })
-      .optional(),
-  }).optional(),
   web: webAdapterOptionsSchema.optional(),
   selection: selectionOptionsSchema.optional(),
   execution: executionSettingsSchema.optional(),

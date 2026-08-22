@@ -1,6 +1,5 @@
 import { ignoreTag, type ScenarioVariableBinding } from '@pickle-spec/spec'
 import type { ExecutionCacheEnvelope } from './execution-cache'
-import type { ExecutionPlan } from './execution-plan'
 import type {
   ExecutionMode,
   ExecutionTimeouts,
@@ -110,7 +109,6 @@ function stepDeadline(
 
 export interface ScenarioAttemptInput extends RunScenarioInput {
   mode: ExecutionMode
-  plan?: ExecutionPlan
   cacheEntry?: ExecutionCacheEnvelope
 }
 
@@ -128,8 +126,7 @@ export function withAttemptMetadata(
   return {
     ...result,
     attempts: attempt,
-    flaky:
-      result.state === 'passed' || result.state === 'passed-with-adaptation',
+    flaky: result.state === 'passed',
   }
 }
 
@@ -365,7 +362,6 @@ export async function runScenarioAttempt(
       specification: input.specification,
       scenario: input.scenario,
       mode: input.mode,
-      plan: input.plan,
       executionCache: input.cacheEntry
         ? {
             adapterPayload: input.cacheEntry.adapterPayload,
@@ -406,14 +402,6 @@ export async function runScenarioAttempt(
   ): Promise<boolean> => {
     const templateStep = templateStepAt(input.scenario, stepIndex)
     const projected = publicStepExecution(execution, bindings)
-    const cacheAdapted =
-      input.adapter.executionCache !== undefined &&
-      projected.execution.state === 'passed-with-adaptation'
-    const publicState = cacheAdapted
-      ? input.mode === 'adaptive'
-        ? 'passed'
-        : 'failed'
-      : projected.execution.state
     progress.runtimeValueExposed ||= projected.runtimeValueExposed
     if (input.signal?.aborted) {
       progress.state = 'cancelled'
@@ -428,7 +416,7 @@ export async function runScenarioAttempt(
     }
     await recordStep({
       step: templateStep,
-      state: publicState,
+      state: projected.execution.state,
       resolvedActions: projected.execution.resolvedActions,
       message: projected.execution.message,
       artifacts: projected.execution.artifacts?.length
@@ -441,17 +429,6 @@ export async function runScenarioAttempt(
       progress.state = 'failed'
       progress.message = projected.execution.message
       return false
-    }
-    if (cacheAdapted && input.mode === 'replay') {
-      progress.replayDiverged = true
-      progress.state = 'failed'
-      progress.message ??=
-        'Replay adapted instead of executing deterministically'
-      return false
-    }
-    if (execution.state === 'passed-with-adaptation') {
-      progress.state = publicState
-      return true
     }
     if (execution.state !== 'passed') {
       progress.state = execution.state

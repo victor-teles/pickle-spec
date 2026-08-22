@@ -91,10 +91,9 @@ export const defaultRetention = {
 const stateRank: Record<TestResultState, number> = {
   skipped: 0,
   passed: 1,
-  'passed-with-adaptation': 2,
-  cancelled: 3,
-  failed: 4,
-  'infrastructure-error': 5,
+  cancelled: 2,
+  failed: 3,
+  'infrastructure-error': 4,
 }
 
 export function openTestRunStore(options: TestRunStoreOptions): TestRunStore {

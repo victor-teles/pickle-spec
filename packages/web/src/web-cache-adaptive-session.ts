@@ -241,7 +241,7 @@ export function createWebAdaptiveSession({
         return {
           inferenceCount,
           evaluationModel,
-          cacheCandidate: { cacheable: false, reason: uncacheableReason },
+          replayRepresentation: { cacheable: false, reason: uncacheableReason },
         }
       }
       if (
@@ -251,7 +251,7 @@ export function createWebAdaptiveSession({
         return {
           inferenceCount,
           evaluationModel,
-          cacheCandidate: {
+          replayRepresentation: {
             cacheable: false,
             reason: 'non-deterministic-action',
           },
@@ -260,7 +260,7 @@ export function createWebAdaptiveSession({
       return {
         inferenceCount,
         evaluationModel,
-        cacheCandidate: {
+        replayRepresentation: {
           cacheable: true,
           requiredVariables,
           adapterPayload: {

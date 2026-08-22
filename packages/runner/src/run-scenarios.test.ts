@@ -67,7 +67,7 @@ test('runs selected Scenarios concurrently while preserving stable test-result o
   expect(openSession).toHaveBeenCalledTimes(2)
 })
 
-test('plans Scenario results in declaration and configured profile order', () => {
+test('schedules Scenario results in declaration and configured profile order', () => {
   const schedule = scheduleScenarios({
     selections: [selections[0]!, selections[2]!],
     executionTargetProfiles: [{ id: 'web' }, { id: 'android' }],

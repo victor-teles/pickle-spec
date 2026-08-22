@@ -19,10 +19,6 @@ interface EventResultMappers {
 
 type StepResultProjection = (result: TestStepResult) => TestStepResult
 
-function publicState(state: TestResultState): TestResultState {
-  return state === 'passed-with-adaptation' ? 'passed' : state
-}
-
 function publicScenarioIdentity(identity: ScenarioIdentity): ScenarioIdentity {
   return {
     name: identity.name,
@@ -142,14 +138,11 @@ export function recordableTestResult(result: TestResult): TestResult {
 }
 
 function publicStepResult(result: TestStepResult): TestStepResult {
-  return {
-    ...withoutPrivateStepResultData(result),
-    state: publicState(result.state),
-  }
+  return withoutPrivateStepResultData(result)
 }
 
 export function publicTestResult(result: TestResult): TestResult {
-  return projectTestResult(result, publicState(result.state), publicStepResult)
+  return projectTestResult(result, result.state, publicStepResult)
 }
 
 function publicEventPayload(
@@ -241,8 +234,4 @@ export function publicRunEvent(event: RunEvent): RunEvent {
     schemaVersion: 1,
     sequence: event.sequence,
   } as RunEvent
-}
-
-export function publicTestRunState(state: TestResultState): TestResultState {
-  return publicState(state)
 }

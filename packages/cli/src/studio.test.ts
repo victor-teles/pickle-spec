@@ -82,6 +82,9 @@ Feature: Search
     try {
       await page.goto(url)
       expect(
+        await page.evaluate(async () => (await fetch('/api/plans')).status),
+      ).toBe(404)
+      expect(
         await page
           .getByRole('heading', { name: 'opened-project' })
           .textContent(),
@@ -95,7 +98,6 @@ Feature: Search
       expect(await page.getByRole('button', { name: 'History' }).count()).toBe(
         1,
       )
-      expect(await page.getByRole('button', { name: 'Plans' }).count()).toBe(0)
       expect(await page.getByRole('button', { name: 'Settings' }).count()).toBe(
         1,
       )
@@ -233,7 +235,7 @@ export default {
         async complete() {
           return {
             inferenceCount: input.mode === 'adaptive' ? 1 : 0,
-            cacheCandidate: {
+            replayRepresentation: {
               cacheable: true,
               adapterPayload: {
                 operations: [await Bun.file(${JSON.stringify(payloadVersion)}).text()],
@@ -479,14 +481,10 @@ export default {
       ).toBe(1)
       const attention = page.getByRole('list', { name: 'Needs attention' })
       const items = attention.getByRole('listitem')
-      expect(await items.count()).toBe(2)
+      expect(await items.count()).toBe(1)
       expect(await items.nth(0).textContent()).toContain('Pay for the order')
       expect(await items.nth(0).textContent()).toContain('failed')
       expect(await items.nth(0).textContent()).toContain('Open step timeline')
-      expect(await items.nth(1).textContent()).toContain('Adapt the purchase')
-      expect(await items.nth(1).textContent()).toContain(
-        'passed-with-adaptation',
-      )
       const timeline = page.getByRole('list', { name: 'Step timeline' })
       expect(await timeline.textContent()).toContain('Then payment is captured')
       expect(await timeline.textContent()).toContain('Payment was declined')
@@ -504,7 +502,7 @@ export default {
       ).toBe(1)
       expect(
         await scenarios
-          .getByRole('rowheader', { name: 'Adapt the purchase' })
+          .getByRole('rowheader', { name: 'Review the purchase' })
           .count(),
       ).toBe(1)
       expect(
@@ -627,20 +625,11 @@ Feature: Search
       expect(
         await results.getByRole('button', { name: 'Rerun target' }).count(),
       ).toBeGreaterThan(0)
-      expect(
-        await page.getByRole('button', { name: 'Rerun adaptations' }).count(),
-      ).toBe(1)
-
-      await page.getByRole('button', { name: 'Rerun adaptations' }).click()
-      await history.getByRole('row').nth(3).waitFor({ timeout: 20_000 })
-      expect(await history.getByRole('row').nth(1).textContent()).toContain(
-        '1 result',
-      )
       await results
         .getByRole('button', { name: 'Rerun Scenario' })
         .first()
         .click()
-      await history.getByRole('row').nth(4).waitFor({ timeout: 20_000 })
+      await history.getByRole('row').nth(3).waitFor({ timeout: 20_000 })
       await history.getByText('2 results').first().waitFor({ timeout: 20_000 })
       expect(await history.getByRole('row').nth(1).textContent()).toContain(
         '2 results',
@@ -649,7 +638,7 @@ Feature: Search
         .getByRole('button', { name: 'Rerun target' })
         .first()
         .click()
-      await history.getByRole('row').nth(5).waitFor({ timeout: 20_000 })
+      await history.getByRole('row').nth(4).waitFor({ timeout: 20_000 })
       await history.getByText('3 results').first().waitFor({ timeout: 20_000 })
       expect(await history.getByRole('row').nth(1).textContent()).toContain(
         '3 results',
@@ -819,7 +808,7 @@ Feature: Checkout
       const attention = page.getByRole('list', { name: 'Needs attention' })
       expect(await attention.getByRole('listitem').count()).toBe(1)
       expect(await attention.textContent()).toContain('Pay for the order')
-      expect(await attention.textContent()).not.toContain('Adapt the purchase')
+      expect(await attention.textContent()).not.toContain('Review the purchase')
       const scenarios = page.getByRole('table', { name: 'Scenarios' })
       expect(await scenarios.textContent()).toContain('pending')
     } finally {

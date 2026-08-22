@@ -18,8 +18,6 @@ const buttonVariants = cva(
         destructive:
           'border-destructive/20 bg-destructive/10 text-destructive hover:border-destructive/35 hover:bg-destructive/20 dark:bg-destructive/20 dark:hover:bg-destructive/30',
         link: 'text-primary underline-offset-4 hover:underline',
-        adaptation:
-          'border-adaptation/20 bg-adaptation/10 text-adaptation hover:border-adaptation/35 hover:bg-adaptation/20 dark:bg-adaptation/20 dark:hover:bg-adaptation/30',
         passed:
           'border-passed/20 bg-passed/10 text-passed hover:border-passed/35 hover:bg-passed/20 dark:bg-passed/20 dark:hover:bg-passed/30',
       },

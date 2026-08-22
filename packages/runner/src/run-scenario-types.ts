@@ -12,22 +12,15 @@ import type {
   ExecutionCacheStore,
   ExecutionCacheUncacheableReason,
 } from './execution-cache'
-import type { ExecutionPlan, ExecutionPlanStore } from './execution-plan'
-
 export type TestResultState =
   | 'passed'
-  | 'passed-with-adaptation'
   | 'failed'
   | 'skipped'
   | 'cancelled'
   | 'infrastructure-error'
 
 export function isEvidenceState(state: TestResultState): boolean {
-  return (
-    state === 'failed' ||
-    state === 'infrastructure-error' ||
-    state === 'passed-with-adaptation'
-  )
+  return state === 'failed' || state === 'infrastructure-error'
 }
 
 export type ExecutionMode = 'adaptive' | 'replay'
@@ -63,7 +56,7 @@ export interface StepExecutionContext {
   runtimeBindings: readonly ScenarioVariableBinding[]
 }
 
-export type TargetSessionCacheCandidate =
+export type TargetSessionReplayRepresentation =
   | {
       cacheable: true
       adapterPayload: unknown
@@ -77,7 +70,7 @@ export type TargetSessionCacheCandidate =
 export interface TargetSessionCompletion {
   inferenceCount: number
   evaluationModel?: string
-  cacheCandidate?: TargetSessionCacheCandidate
+  replayRepresentation?: TargetSessionReplayRepresentation
 }
 
 export interface ScenarioExecution {
@@ -116,7 +109,6 @@ export interface OpenSessionInput {
   specification: Specification
   scenario: Scenario
   mode?: ExecutionMode
-  plan?: ExecutionPlan
   executionCache?: ReplayCacheInput
   scenarioTemplate?: ScenarioTemplate
   runtimeBindings?: readonly ScenarioVariableBinding[]
@@ -132,7 +124,6 @@ export interface ExecutionTargetAdapter<
   Session extends TargetSession = TargetSession,
 > {
   capabilities?: readonly string[]
-  planFormatVersion?: string
   executionCache?: ExecutionCacheAdapter
   fidelityPolicy?: FidelityPolicy
   openSession(input: OpenSessionInput): Promise<Session>
@@ -260,11 +251,9 @@ export interface RunScenarioInput extends ExecutionPolicy {
   scenario: Scenario
   executionTargetProfile: ExecutionTargetProfile
   adapter: ExecutionTargetAdapter
-  plans?: ExecutionPlanStore
   executionCache?: ScenarioExecutionCache
   cachePolicy?: ExecutionCachePolicy
   applicationRevision?: string
-  ci?: boolean
   signal?: AbortSignal
   onEvent?: (event: RunEvent) => void | Promise<void>
 }

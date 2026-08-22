@@ -12,7 +12,6 @@ import type {
   TestRunManifest,
 } from '@pickle-spec/runner'
 import {
-  createFilePlanStore,
   latestHistoricalDurations,
   openLocalExecutionCache,
   openTestRunStore,
@@ -58,7 +57,6 @@ export interface ProjectRunOptions {
   rerunId?: string
   scenarioIds?: string[]
   failures?: boolean
-  adaptations?: boolean
   fast?: boolean
   refreshCache?: boolean
   cacheOnly?: boolean
@@ -374,7 +372,6 @@ export async function startProjectRun(
         )
         selectedResults = selectRerunResults(sourceManifest, {
           failures: args.failures,
-          adaptations: args.adaptations,
           ...(args.scenarioIds?.length
             ? { scenarioIds: args.scenarioIds }
             : args.selection?.scenarioName
@@ -479,9 +476,6 @@ export async function startProjectRun(
       for (const event of await testRun.events()) {
         await input.onEvent?.(event)
       }
-      const planStore = createFilePlanStore(root, {
-        candidateEvidence: { testRunId: testRun.id },
-      })
       const cacheCapable = resolvedConfiguration.targets.some(
         (target) => target.adapter.executionCache !== undefined,
       )
@@ -493,7 +487,6 @@ export async function startProjectRun(
           })
         : undefined
       const shared = {
-        plans: planStore,
         executionCache: executionCache
           ? {
               store: executionCache,
@@ -506,7 +499,6 @@ export async function startProjectRun(
           : args.refreshCache
             ? ('refresh' as const)
             : ('prefer-cache' as const),
-        ci: Boolean(process.env.CI),
         signal: input.signal,
         onEvent,
         onResult: input.onResult

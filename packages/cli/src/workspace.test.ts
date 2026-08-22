@@ -638,7 +638,7 @@ Feature: Checkout
   test('the deterministic adapter models every kernel outcome', async () => {
     const cases = [
       { outcome: 'passed', exitCode: 0 },
-      { outcome: 'passed-with-adaptation', exitCode: 0 },
+      { outcome: 'passed', exitCode: 0 },
       { outcome: 'failed', exitCode: 1 },
       { outcome: 'cancelled', exitCode: 130 },
       { outcome: 'infrastructure-error', exitCode: 1 },
@@ -880,7 +880,10 @@ export default {
         'ndjson',
       ],
       cwd: workspace,
-      env: { ...Bun.env },
+      env: {
+        ...Bun.env,
+        PICKLE_CACHE_ROOT: join(workspace, '.test-execution-cache'),
+      },
       stdout: 'pipe',
       stderr: 'pipe',
     })
@@ -1242,146 +1245,42 @@ export default { adapter: { async openSession() { throw new Error('no') } } }
     )
   })
 
-  test('runs Adaptive then Replay from reviewable plan files and rejects adapted results by policy', async () => {
+  test('ignores a poisoned legacy .pickle/plans file and runs the custom adapter Adaptively', async () => {
     const extensions = await Bun.file(
       join(workspace, 'pickle.extensions.ts'),
     ).text()
-    const project = await createCheckProject('execution-plans', {
+    const project = await createCheckProject('ignored-legacy-plan', {
       config: {
         schemaVersion: 1,
         specifications: 'features/**/*.feature',
         applicationRevision: 'app-1',
-        executionTargetProfiles: {
-          web: { adapter: 'custom' },
-          android: { adapter: 'custom' },
-        },
-        policy: { adaptedResults: 'accept' },
+        executionTargetProfiles: { web: { adapter: 'custom' } },
       },
-      specification: {
-        path: 'features/purchase.feature',
-        source: `@pickle:id:specpurchaseaaaaaa @pickle:state:active
-Feature: Purchase
-  @pickle:id:scnpurchasebbbbbb
-  Scenario: Complete a purchase
-    Given a product is in the basket
-    Then the purchase succeeds`,
-      },
+      specification: validSpecification,
       extensions,
     })
-    const approvedPath = join(
+    const poisonedPath = join(
       project,
       '.pickle',
       'plans',
       'web',
-      'scnpurchasebbbbbb.json',
+      'scnvalidbbbbbbbb.json',
     )
-    const candidatePath = join(
-      project,
-      '.pickle',
-      'candidates',
-      'web',
-      'scnpurchasebbbbbb.json',
-    )
+    await mkdir(dirname(poisonedPath), { recursive: true })
+    await Bun.write(poisonedPath, 'poisoned legacy data')
 
-    const first = Bun.spawnSync({
+    const run = Bun.spawnSync({
       cmd: [pickleCommand, 'run', '--profile', 'web', '--reporter', 'ndjson'],
       cwd: project,
       env: { ...Bun.env, PICKLE_TEST_OUTCOME: 'passed' },
     })
-    const firstResult = JSON.parse(
-      first.stdout.toString().trim().split('\n').at(-1) ?? '{}',
-    )
-    expect(first.exitCode).toBe(0)
-    expect(firstResult).toMatchObject({
-      kind: 'test-result',
-      result: { state: 'passed', executionMode: 'adaptive' },
-    })
-    expect(await Bun.file(candidatePath).exists()).toBe(true)
-    expect(await Bun.file(approvedPath).exists()).toBe(false)
 
-    const candidate = JSON.parse(await Bun.file(candidatePath).text())
-    expect(candidate).toMatchObject({
-      schemaVersion: 1,
-      scenarioId: 'scnpurchasebbbbbb',
-      executionTargetProfileId: 'web',
-      applicationRevision: 'app-1',
-    })
-    expect(candidate.steps[0].resolvedActions.length).toBeGreaterThanOrEqual(1)
-    await mkdir(dirname(approvedPath), { recursive: true })
-    await Bun.write(approvedPath, `${JSON.stringify(candidate, null, 2)}\n`)
-    const approved = await Bun.file(approvedPath).text()
-    await Bun.write(candidatePath, 'stale-candidate')
-
-    const replay = Bun.spawnSync({
-      cmd: [pickleCommand, 'run', '--profile', 'web', '--reporter', 'ndjson'],
-      cwd: project,
-      env: { ...Bun.env, PICKLE_TEST_OUTCOME: 'passed' },
-    })
-    expect(replay.exitCode).toBe(0)
-    expect(
-      JSON.parse(replay.stdout.toString().trim().split('\n').at(-1) ?? '{}'),
-    ).toMatchObject({
-      kind: 'test-result',
-      result: { state: 'passed', executionMode: 'replay' },
-    })
-    expect(await Bun.file(approvedPath).text()).toBe(approved)
-    expect(await Bun.file(candidatePath).text()).toBe('stale-candidate')
-
-    const otherProfile = Bun.spawnSync({
-      cmd: [
-        pickleCommand,
-        'run',
-        '--profile',
-        'android',
-        '--reporter',
-        'ndjson',
-      ],
-      cwd: project,
-      env: { ...Bun.env, PICKLE_TEST_OUTCOME: 'passed' },
-    })
-    expect(otherProfile.exitCode).toBe(0)
-    expect(
-      JSON.parse(
-        otherProfile.stdout.toString().trim().split('\n').at(-1) ?? '{}',
-      ),
-    ).toMatchObject({
-      kind: 'test-result',
-      result: {
-        state: 'passed',
-        executionMode: 'adaptive',
-        executionTargetProfile: { id: 'android' },
-      },
-    })
-    expect(await Bun.file(approvedPath).text()).toBe(approved)
-
-    await Bun.write(
-      join(project, 'pickle.config.jsonc'),
-      JSON.stringify({
-        schemaVersion: 1,
-        specifications: 'features/**/*.feature',
-        applicationRevision: 'app-1',
-        executionTargetProfiles: {
-          web: { adapter: 'custom' },
-        },
-        policy: { adaptedResults: 'reject' },
-      }),
-    )
-    const rejected = Bun.spawnSync({
-      cmd: [pickleCommand, 'run', '--profile', 'web', '--reporter', 'ndjson'],
-      cwd: project,
-      env: { ...Bun.env, PICKLE_TEST_OUTCOME: 'passed-with-adaptation' },
-    })
-    expect(rejected.exitCode).toBe(1)
-    expect(
-      JSON.parse(rejected.stdout.toString().trim().split('\n').at(-1) ?? '{}'),
-    ).toMatchObject({
-      kind: 'test-result',
-      result: { state: 'passed-with-adaptation' },
-    })
-    expect(await Bun.file(approvedPath).text()).toBe(approved)
+    expect(run.exitCode).toBe(0)
+    expect(run.stdout.toString()).toContain('"executionMode":"adaptive"')
+    expect(await Bun.file(poisonedPath).text()).toBe('poisoned legacy data')
   })
 
-  test('runs Adaptive, Replay, refresh, and cache-only through the local Execution cache', async () => {
+  test('runs Adaptive, Replay, refresh, and explicit CI cache-only through the local Execution cache', async () => {
     const project = await createCheckProject('execution-cache-lifecycle', {
       config: {
         schemaVersion: 1,
@@ -1432,7 +1331,7 @@ export default {
           return {
             inferenceCount: input.mode === 'adaptive' ? 1 : 0,
             evaluationModel: 'deterministic-fixture',
-            cacheCandidate:
+            replayRepresentation:
               behavior === 'uncacheable'
                 ? {
                     cacheable: false,
@@ -1463,6 +1362,7 @@ export default {
         cwd: project,
         env: {
           ...Bun.env,
+          CI: 'true',
           PICKLE_CACHE_ROOT: cacheRoot,
           PICKLE_CACHE_TEST_MARKER: marker,
           PICKLE_CACHE_TEST_BEHAVIOR: behavior,
@@ -1498,6 +1398,7 @@ export default {
     expect(refresh.stdout.toString()).toContain('"cacheOutcome":"refresh"')
     expect(refresh.stdout.toString()).toContain('"inferenceCount":1')
     expect(cold.stdout.toString()).toContain('"failureKind":"cache-miss"')
+    expect(cold.stdout.toString()).toContain('"inferenceCount":0')
     expect(fallback.stdout.toString()).toContain('"cacheOutcome":"fallback"')
     expect(uncacheable.stdout.toString()).toContain('"state":"passed"')
     expect(uncacheable.stdout.toString()).toContain(
@@ -1505,8 +1406,8 @@ export default {
     )
   })
 
-  test('check rejects an unknown adapted-result policy', async () => {
-    const project = await createCheckProject('invalid-adapted-policy', {
+  test('check rejects the removed policy field', async () => {
+    const project = await createCheckProject('removed-policy', {
       config: {
         ...defaultCheckConfig,
         policy: { adaptedResults: 'ignore' },
@@ -1517,12 +1418,20 @@ export default {
     const checked = runCheck(project)
 
     expect(checked.exitCode).toBe(2)
-    expect(checked.stderr.toString()).toContain(
-      'policy.adaptedResults must be accept or reject',
-    )
+    expect(checked.stderr.toString()).toContain('policy')
     expect(checked.stderr.toString()).toContain(
       'Correct the value and run pickle check again',
     )
+  })
+
+  test('run rejects the removed --adaptations option', async () => {
+    const run = Bun.spawnSync({
+      cmd: [pickleCommand, 'run', '--adaptations'],
+      cwd: workspace,
+    })
+
+    expect(run.exitCode).toBe(2)
+    expect(run.stderr.toString()).toContain('Unknown option: --adaptations')
   })
 
   test('pickle run persists an immutable test run and writes stable CI outputs', async () => {
@@ -1998,7 +1907,10 @@ export default {
         'ndjson',
       ],
       cwd: project,
-      env: { ...Bun.env },
+      env: {
+        ...Bun.env,
+        PICKLE_CACHE_ROOT: join(project, '.test-execution-cache'),
+      },
     })
 
     expect(run.stderr.toString()).toBe('')

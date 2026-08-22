@@ -99,15 +99,6 @@ function conformanceWorker(): MobileWorkerClient {
   }
 }
 
-const replayActions = scenario.steps.map((step) => [
-  {
-    description:
-      step.type === 'action'
-        ? `Act: ${step.text}`
-        : `Assert visible: ${step.text}`,
-  },
-])
-
 defineAdapterConformanceSuite({
   name: 'Android mobile',
   createAdapter: () => createMobileAdapter({ application }, conformanceWorker),
@@ -122,7 +113,6 @@ defineAdapterConformanceSuite({
     'recordings',
     'traces',
   ],
-  replayActions,
 })
 
 defineAdapterConformanceSuite({
@@ -143,5 +133,4 @@ defineAdapterConformanceSuite({
     'recordings',
     'traces',
   ],
-  replayActions,
 })

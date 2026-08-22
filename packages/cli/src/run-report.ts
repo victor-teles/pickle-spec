@@ -32,10 +32,6 @@ const resultPresentations: Record<TestResult['state'], ResultPresentation> = {
     color: 35,
     detail: 'infrastructure error',
   },
-  'passed-with-adaptation': {
-    mark: '✓',
-    color: 32,
-  },
   passed: { mark: '✓', color: 32 },
   skipped: {
     mark: '↓',
@@ -485,11 +481,7 @@ function testResultSummary(results: readonly TestResult[]): string {
       singular: 'infrastructure error',
       plural: 'infrastructure errors',
     },
-    {
-      states: ['passed', 'passed-with-adaptation'],
-      singular: 'passed',
-      plural: 'passed',
-    },
+    { states: ['passed'], singular: 'passed', plural: 'passed' },
     { states: ['skipped'], singular: 'skipped', plural: 'skipped' },
     { states: ['cancelled'], singular: 'cancelled', plural: 'cancelled' },
   ]

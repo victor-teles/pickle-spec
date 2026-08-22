@@ -53,7 +53,7 @@ test('compareTestRuns matches results by Scenario and execution target profile i
     id: 'run-candidate',
     results: [
       result('Complete a purchase', 'passed', { durationMs: 150, flaky: true }),
-      result('Pay for the order', 'passed-with-adaptation', {
+      result('Pay for the order', 'passed', {
         durationMs: 200,
         executionMode: 'adaptive',
         steps: [
@@ -63,7 +63,7 @@ test('compareTestRuns matches results by Scenario and execution target profile i
               text: 'the purchase succeeds',
               type: 'outcome',
             },
-            state: 'passed-with-adaptation',
+            state: 'passed',
             resolvedActions: [{ description: 'Click buy now' }],
             artifacts: [
               {

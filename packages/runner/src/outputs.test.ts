@@ -36,7 +36,7 @@ const manifest: TestRunManifest = {
   state: 'failed',
   results: [
     result('Complete a purchase', 'passed'),
-    result('Adapt the purchase', 'passed-with-adaptation'),
+    result('Review the purchase', 'passed'),
     result('Retry the purchase', 'passed', { attempts: 2, flaky: true }),
     result('Pay for the order', 'failed', { message: 'Payment was declined' }),
     result('Skip the purchase', 'skipped', {
@@ -79,12 +79,12 @@ test('formats versioned JSON from the materialized test-run schema', () => {
     finishedAt: '2026-08-15T12:01:00.000Z',
     state: 'failed',
     results: manifest.results.map((testResult) =>
-      testResult.state === 'passed-with-adaptation'
+      testResult.state === 'passed'
         ? { ...testResult, state: 'passed' }
         : testResult,
     ),
   })
-  expect(manifest.results[1]?.state).toBe('passed-with-adaptation')
+  expect(manifest.results[1]?.state).toBe('passed')
 })
 
 test('formats NDJSON from the versioned run-event schema', () => {
@@ -124,63 +124,6 @@ test('preserves Execution cache behavior in JSON and NDJSON', () => {
       },
     ]),
   ).toContain('"executionMode":"replay"')
-})
-
-test('normalizes the removed adaptation state at JSON and NDJSON boundaries', () => {
-  const adapted = result('Legacy adaptation', 'passed-with-adaptation', {
-    steps: [
-      {
-        step: { keyword: 'Then', text: 'checkout succeeds', type: 'outcome' },
-        state: 'passed-with-adaptation',
-        resolvedActions: [
-          {
-            description: 'Verify checkout success',
-            replay: { privateSelector: '#bound-account' },
-          },
-        ],
-      },
-    ],
-  })
-  const legacyManifest: TestRunManifest = {
-    ...manifest,
-    state: 'passed-with-adaptation',
-    results: [adapted],
-  }
-  const legacyEvents: RunEvent[] = [
-    {
-      schemaVersion: 1,
-      sequence: 1,
-      type: 'step-finished',
-      result: adapted.steps[0]!,
-    },
-    {
-      schemaVersion: 1,
-      sequence: 2,
-      type: 'scenario-finished',
-      result: adapted,
-    },
-  ]
-
-  const formattedManifest = JSON.parse(formatJson(legacyManifest))
-  const formattedEvents = formatNdjson(legacyEvents)
-    .trim()
-    .split('\n')
-    .map((line) => JSON.parse(line))
-
-  expect(formattedManifest.state).toBe('passed')
-  expect(formattedManifest.results[0].state).toBe('passed')
-  expect(formattedManifest.results[0].steps[0].state).toBe('passed')
-  expect(formattedEvents[0].result.state).toBe('passed')
-  expect(formattedEvents[1].result.state).toBe('passed')
-  expect(adapted.state).toBe('passed-with-adaptation')
-  const publicAdapted = publicTestResult(adapted)
-  expect(publicAdapted.state).toBe('passed')
-  expect(publicAdapted.steps[0]).toMatchObject({
-    state: 'passed',
-    resolvedActions: [{ description: 'Verify checkout success' }],
-  })
-  expect(JSON.stringify(publicAdapted)).not.toContain('privateSelector')
-  expect(publicRunEvent(legacyEvents[1]!).type).toBe('scenario-finished')
 })
 
 test('public output boundaries omit private replay data without mutating results', () => {
@@ -249,7 +192,7 @@ test('formats JUnit XML with cache metadata, stable states, flaky, and error cla
         cacheOutcome: 'hit',
         inferenceCount: 0,
       }),
-      result('Adapt the purchase', 'passed-with-adaptation', {
+      result('Adapt the purchase', 'passed', {
         executionMode: 'adaptive',
         cacheOutcome: 'fallback',
         inferenceCount: 3,

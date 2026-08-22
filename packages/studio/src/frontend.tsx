@@ -73,7 +73,6 @@ type StatusBadgeState = TestResultState | 'idle' | 'running'
 
 function badgeVariant(state: StatusBadgeState) {
   if (state === 'failed' || state === 'infrastructure-error') return 'failed'
-  if (state === 'passed-with-adaptation') return 'adaptation'
   if (state === 'passed') return 'passed'
   if (state === 'running') return 'running'
   return 'default'
@@ -99,7 +98,6 @@ function matrixCellVariant(state: MatrixCell['state']) {
   if (state === 'failed' || state === 'infrastructure-error') {
     return 'destructive'
   }
-  if (state === 'passed-with-adaptation') return 'adaptation'
   if (state === 'passed') return 'passed'
   return 'outline'
 }

@@ -61,19 +61,16 @@ export interface MobileExecutionTargetAdapter
 
 interface ExecutionTargetPolicy {
   capabilities: readonly string[]
-  planFormatVersion: string
   platform: MobilePlatform
 }
 
 const executionTargetPolicies = {
   'android-emulator': {
     capabilities: androidCapabilities,
-    planFormatVersion: 'mobile.android.1',
     platform: 'android',
   },
   'ios-simulator': {
     capabilities: iosCapabilities,
-    planFormatVersion: 'mobile.ios.1',
     platform: 'ios',
   },
 } as const satisfies Record<string, ExecutionTargetPolicy>
@@ -103,7 +100,6 @@ export function createMobileAdapter(
 
   return {
     capabilities: policy.capabilities,
-    planFormatVersion: policy.planFormatVersion,
     executionCache,
     async discoverTargets() {
       const response = await ensureWorker().request({

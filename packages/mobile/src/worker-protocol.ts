@@ -110,7 +110,7 @@ const workerScenarioExecutionSchema = z.strictObject({
   replayDiverged: z.boolean().optional(),
 })
 
-const workerCacheCandidateSchema = z.discriminatedUnion('cacheable', [
+const workerReplayRepresentationSchema = z.discriminatedUnion('cacheable', [
   z.strictObject({
     cacheable: z.literal(true),
     adapterPayload: mobileExecutionCachePayloadSchema,
@@ -132,7 +132,7 @@ const workerCacheCandidateSchema = z.discriminatedUnion('cacheable', [
 const workerSessionCompletionSchema = z.strictObject({
   inferenceCount: z.number().int().nonnegative(),
   evaluationModel: z.string().min(1).optional(),
-  cacheCandidate: workerCacheCandidateSchema.optional(),
+  replayRepresentation: workerReplayRepresentationSchema.optional(),
 })
 
 const workerReplayCacheSchema = z.strictObject({

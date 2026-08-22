@@ -1,15 +1,11 @@
-import {
-  publicRunEvent,
-  publicTestResult,
-  publicTestRunState,
-} from './public-results'
+import { publicRunEvent, publicTestResult } from './public-results'
 import type { RunEvent, TestResult, TestResultState } from './run-scenario'
 import type { TestRunManifest } from './test-run-store'
 
 export function formatJson(manifest: TestRunManifest): string {
   const output: TestRunManifest = {
     ...manifest,
-    state: publicTestRunState(manifest.state),
+    state: manifest.state,
     results: manifest.results.map(publicTestResult),
   }
   return `${JSON.stringify(output, null, 2)}\n`
