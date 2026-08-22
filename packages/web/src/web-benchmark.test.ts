@@ -120,7 +120,7 @@ describe('evaluateWebPerformanceGates', () => {
     }))
 
     expect(() => evaluateWebPerformanceGates(samples)).toThrow(
-      'Web benchmark ratios must be finite',
+      'Replay benchmark ratios must be finite',
     )
   })
 })

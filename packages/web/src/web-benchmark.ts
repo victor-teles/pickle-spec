@@ -1,31 +1,23 @@
-export type WebBenchmarkMode = 'adaptive' | 'replay'
+import type {
+  ReplayBenchmarkGate,
+  ReplayBenchmarkMode,
+  ReplayBenchmarkSample,
+  ReplayBenchmarkStatistics,
+  ReplayPerformanceBenchmarkResult,
+} from '@pickle-spec/runner'
+import {
+  evaluateReplayPerformanceBenchmark,
+  runReplayPerformanceBenchmark,
+} from '@pickle-spec/runner'
 
-export interface WebBenchmarkSample {
-  adaptiveMs: number
-  replayMs: number
-}
+export type WebBenchmarkMode = ReplayBenchmarkMode
+export type WebBenchmarkSample = ReplayBenchmarkSample
+export type WebBenchmarkStatistics = ReplayBenchmarkStatistics
+export type WebPerformanceGate = ReplayBenchmarkGate
 
-export interface WebBenchmarkStatistics {
-  p50Ms: number
-  p95Ms: number
-}
-
-export interface WebPerformanceGate {
-  ratio: number
-  limitRatio: number
-  passed: boolean
-}
-
-export interface WebPerformanceBenchmarkResult {
+export interface WebPerformanceBenchmarkResult
+  extends ReplayPerformanceBenchmarkResult {
   warmupPairsDiscarded: 3
-  samples: WebBenchmarkSample[]
-  adaptive: WebBenchmarkStatistics
-  replay: WebBenchmarkStatistics
-  gates: {
-    p50: WebPerformanceGate
-    p95: WebPerformanceGate
-  }
-  passed: boolean
 }
 
 export interface RunWebPerformanceBenchmarkInput {
@@ -33,106 +25,32 @@ export interface RunWebPerformanceBenchmarkInput {
   run(mode: WebBenchmarkMode): void | Promise<void>
 }
 
-const warmupPairs = 3
-const minimumSamplePairs = 20
-const p50LimitRatio = 0.5
-const p95LimitRatio = 0.65
-
-function percentile(values: readonly number[], ratio: number): number {
-  const sorted = [...values].sort((left, right) => left - right)
-  return sorted[Math.ceil(sorted.length * ratio) - 1]!
-}
-
-function statistics(values: readonly number[]): WebBenchmarkStatistics {
-  return {
-    p50Ms: percentile(values, 0.5),
-    p95Ms: percentile(values, 0.95),
-  }
-}
-
-function performanceRatio(replayMs: number, adaptiveMs: number): number {
-  return replayMs / adaptiveMs
-}
-
-function assertSample(sample: WebBenchmarkSample, index: number): void {
-  for (const [mode, duration] of [
-    ['Adaptive', sample.adaptiveMs],
-    ['Replay', sample.replayMs],
-  ] as const) {
-    if (!Number.isFinite(duration) || duration < 0) {
-      throw new Error(
-        `${mode} benchmark duration at pair ${index + 1} must be a non-negative finite number`,
-      )
-    }
-  }
-}
-
-function assertSampleCount(samplePairs: number): void {
-  if (!Number.isSafeInteger(samplePairs) || samplePairs < minimumSamplePairs) {
-    throw new Error(
-      `Web benchmark requires at least ${minimumSamplePairs} paired samples`,
-    )
-  }
+const webReplayBenchmarkBudgets = {
+  p50Ratio: 0.5,
+  p95Ratio: 0.65,
 }
 
 export function evaluateWebPerformanceGates(
   samples: readonly WebBenchmarkSample[],
 ): WebPerformanceBenchmarkResult {
-  assertSampleCount(samples.length)
-  samples.forEach(assertSample)
-  const adaptive = statistics(samples.map((sample) => sample.adaptiveMs))
-  const replay = statistics(samples.map((sample) => sample.replayMs))
-  if (adaptive.p50Ms <= 0 || adaptive.p95Ms <= 0) {
-    throw new Error('Adaptive benchmark percentiles must be greater than zero')
-  }
-  const p50Ratio = performanceRatio(replay.p50Ms, adaptive.p50Ms)
-  const p95Ratio = performanceRatio(replay.p95Ms, adaptive.p95Ms)
-  if (!Number.isFinite(p50Ratio) || !Number.isFinite(p95Ratio)) {
-    throw new Error('Web benchmark ratios must be finite')
-  }
-  const p50 = {
-    ratio: p50Ratio,
-    limitRatio: p50LimitRatio,
-    passed: p50Ratio <= p50LimitRatio,
-  }
-  const p95 = {
-    ratio: p95Ratio,
-    limitRatio: p95LimitRatio,
-    passed: p95Ratio <= p95LimitRatio,
-  }
-  return {
-    warmupPairsDiscarded: warmupPairs,
-    samples: samples.map((sample) => ({ ...sample })),
-    adaptive,
-    replay,
-    gates: { p50, p95 },
-    passed: p50.passed && p95.passed,
-  }
-}
-
-async function measure(
-  mode: WebBenchmarkMode,
-  run: RunWebPerformanceBenchmarkInput['run'],
-): Promise<number> {
-  const startedAt = performance.now()
-  await run(mode)
-  return performance.now() - startedAt
+  const result = evaluateReplayPerformanceBenchmark({
+    samples,
+    budgets: webReplayBenchmarkBudgets,
+  })
+  return result as WebPerformanceBenchmarkResult
 }
 
 export async function runWebPerformanceBenchmark(
   input: RunWebPerformanceBenchmarkInput,
 ): Promise<WebPerformanceBenchmarkResult> {
-  const samplePairs = input.samplePairs ?? minimumSamplePairs
-  assertSampleCount(samplePairs)
-
-  const samples: WebBenchmarkSample[] = []
-  for (let index = 0; index < warmupPairs + samplePairs; index++) {
-    const sample = {
-      adaptiveMs: await measure('adaptive', input.run),
-      replayMs: await measure('replay', input.run),
-    }
-    assertSample(sample, index)
-    if (index >= warmupPairs) samples.push(sample)
-  }
-  return evaluateWebPerformanceGates(samples)
+  const result = await runReplayPerformanceBenchmark({
+    samplePairs: input.samplePairs,
+    budgets: webReplayBenchmarkBudgets,
+    async measure(mode) {
+      const startedAt = performance.now()
+      await input.run(mode)
+      return performance.now() - startedAt
+    },
+  })
+  return result as WebPerformanceBenchmarkResult
 }

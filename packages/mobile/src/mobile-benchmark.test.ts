@@ -106,7 +106,7 @@ describe('evaluateMobilePerformanceGates', () => {
     }))
 
     expect(() => evaluateMobilePerformanceGates(samples)).toThrow(
-      'Mobile benchmark ratios must be finite',
+      'Replay benchmark ratios must be finite',
     )
   })
 })
