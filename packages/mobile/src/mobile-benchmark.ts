@@ -52,8 +52,7 @@ function statistics(values: readonly number[]): MobileBenchmarkStatistics {
 }
 
 function performanceRatio(replayMs: number, adaptiveMs: number): number {
-  if (adaptiveMs !== 0) return replayMs / adaptiveMs
-  return replayMs === 0 ? 0 : Number.POSITIVE_INFINITY
+  return replayMs / adaptiveMs
 }
 
 function assertSample(sample: MobileBenchmarkSample, index: number): void {
@@ -80,8 +79,14 @@ export function evaluateMobilePerformanceGates(
   samples.forEach(assertSample)
   const adaptive = statistics(samples.map((sample) => sample.adaptiveMs))
   const replay = statistics(samples.map((sample) => sample.replayMs))
+  if (adaptive.p50Ms <= 0 || adaptive.p95Ms <= 0) {
+    throw new Error('Adaptive benchmark percentiles must be greater than zero')
+  }
   const p50Ratio = performanceRatio(replay.p50Ms, adaptive.p50Ms)
   const p95Ratio = performanceRatio(replay.p95Ms, adaptive.p95Ms)
+  if (!Number.isFinite(p50Ratio) || !Number.isFinite(p95Ratio)) {
+    throw new Error('Mobile benchmark ratios must be finite')
+  }
   const p50 = {
     ratio: p50Ratio,
     limitRatio: p50LimitRatio,

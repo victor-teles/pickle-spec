@@ -3,7 +3,10 @@ import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { AppError } from 'agent-device'
-import type { AgentDeviceClientPort } from './agent-device-client'
+import {
+  type AgentDeviceClientPort,
+  observeAgentDeviceInferenceRoutes,
+} from './agent-device-client'
 import { AgentDeviceGateway } from './agent-device-gateway'
 
 const androidEmulator = {
@@ -48,7 +51,7 @@ const scenario = {
 function client(
   overrides: Partial<AgentDeviceClientPort> = {},
 ): AgentDeviceClientPort {
-  return {
+  const observed = observeAgentDeviceInferenceRoutes({
     devices: {
       async list() {
         return [androidEmulator, iosSimulator]
@@ -111,8 +114,8 @@ function client(
     sessions: {
       async close() {},
     },
-    ...overrides,
-  }
+  })
+  return { ...observed, ...overrides }
 }
 
 test('discovers only booted targets compatible with each mobile platform', async () => {

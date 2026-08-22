@@ -5,6 +5,13 @@ import { join } from 'node:path'
 
 const temporaryDirectories: string[] = []
 const cliPath = join(import.meta.dir, 'mobile-benchmark-cli.ts')
+const providerCredentialNames = [
+  'OPENAI_API_KEY',
+  'ANTHROPIC_API_KEY',
+  'GOOGLE_API_KEY',
+  'GEMINI_API_KEY',
+  'GOOGLE_GENERATIVE_AI_API_KEY',
+] as const
 
 afterEach(async () => {
   await Promise.all(
@@ -15,7 +22,10 @@ afterEach(async () => {
 })
 
 async function runCli(...args: string[]) {
+  const env = { ...Bun.env }
+  for (const name of providerCredentialNames) delete env[name]
   const process = Bun.spawn([Bun.which('bun')!, cliPath, ...args], {
+    env,
     stdout: 'pipe',
     stderr: 'pipe',
   })
@@ -76,5 +86,27 @@ describe('mobile benchmark executable', () => {
     expect(execution.exitCode).toBe(2)
     expect(execution.stdout).toBe('')
     expect(execution.stderr).toContain('at least 20 paired samples')
+  })
+
+  test('returns two instead of serializing a non-finite ratio', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'pickle-mobile-benchmark-'))
+    temporaryDirectories.push(directory)
+    const driverPath = join(directory, 'driver.ts')
+    await Bun.write(
+      driverPath,
+      `export function measureMobileBenchmark(mode: 'adaptive' | 'replay') {
+        return mode === 'adaptive' ? 0 : 1
+      }
+`,
+    )
+
+    const execution = await runCli('--driver', driverPath)
+
+    expect(execution.exitCode).toBe(2)
+    expect(execution.stdout).toBe('')
+    expect(execution.stderr).toContain(
+      'Adaptive benchmark percentiles must be greater than zero',
+    )
+    expect(execution.stderr).not.toContain('Infinity')
   })
 })

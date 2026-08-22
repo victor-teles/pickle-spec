@@ -84,7 +84,16 @@ export interface AgentDeviceClientPort {
   sessions: {
     close(): Promise<unknown>
   }
+  /** Counts semantic Agent Device routes invoked directly by Pickle code. */
+  inferenceAudit: {
+    count(): number
+  }
 }
+
+export type UnobservedAgentDeviceClientPort = Omit<
+  AgentDeviceClientPort,
+  'inferenceAudit'
+>
 
 export type AgentDeviceClientFactory = (
   config: AgentDeviceClientConfig,
@@ -182,6 +191,34 @@ export function agentDeviceReplayPlanStep(error: unknown): number | undefined {
     : undefined
 }
 
+export function observeAgentDeviceInferenceRoutes(
+  client: UnobservedAgentDeviceClientPort,
+): AgentDeviceClientPort {
+  // replay.run stays outside this counter: its official `healed` result is the
+  // native proof that Agent Device did not enter its internal repair route.
+  let inferenceCount = 0
+  return {
+    ...client,
+    command: {
+      ...client.command,
+      async wait(options) {
+        inferenceCount++
+        return client.command.wait(options)
+      },
+    },
+    interactions: {
+      ...client.interactions,
+      async find(options) {
+        inferenceCount++
+        return client.interactions.find(options)
+      },
+    },
+    inferenceAudit: {
+      count: () => inferenceCount,
+    },
+  }
+}
+
 export const defaultAgentDeviceClientFactory: AgentDeviceClientFactory = (
   config,
-) => createAgentDeviceClient(config)
+) => observeAgentDeviceInferenceRoutes(createAgentDeviceClient(config))

@@ -10,7 +10,6 @@ import type {
 const replayResultSchema = z.strictObject({
   replayed: z.number().int().nonnegative(),
   healed: z.number().int().nonnegative(),
-  inferenceCount: z.number().int().nonnegative().optional(),
   session: z.string(),
   sessionActive: z.boolean(),
   artifactPaths: z.array(z.string()),
@@ -39,6 +38,11 @@ export async function executePrivateAgentDeviceReplay(
       await file.close()
     }
     await chmod(path, 0o600)
+    if (input.client.inferenceAudit.count() !== 0) {
+      throw new Error(
+        'Agent Device Replay called a semantic inference route outside replay.run',
+      )
+    }
     const result = replayResultSchema.parse(
       await input.client.replay.run({
         ...input.selection,
@@ -49,8 +53,10 @@ export async function executePrivateAgentDeviceReplay(
     if (result.healed !== 0) {
       throw new Error('Agent Device Replay unexpectedly healed the Scenario')
     }
-    if ((result.inferenceCount ?? 0) !== 0) {
-      throw new Error('Agent Device Replay unexpectedly reported inference')
+    if (input.client.inferenceAudit.count() !== 0) {
+      throw new Error(
+        'Agent Device Replay called a semantic inference route outside replay.run',
+      )
     }
     return result
   } finally {

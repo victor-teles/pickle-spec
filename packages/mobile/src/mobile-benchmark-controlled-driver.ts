@@ -1,147 +1,241 @@
 import { createHash } from 'node:crypto'
-import { readFile } from 'node:fs/promises'
-import { z } from 'zod'
-import type { AgentDeviceClientPort } from './agent-device-client'
-import { executePrivateAgentDeviceReplay } from './agent-device-replay'
+import { mkdtemp, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { openLocalExecutionCache, runScenario } from '@pickle-spec/runner'
 import { compileMobileScenario } from './mobile-ad-script'
+import { createMobileAdapter } from './mobile-adapter'
 import type { MobileBenchmarkMode } from './mobile-benchmark'
-import {
-  createMobileExecutionCache,
-  mobileExecutionCachePayloadSchema,
-  mobileReplayVariableName,
-} from './mobile-execution-cache'
+import type { MobileWorkerClient } from './worker-client'
+import type { MobileWorkerRequest } from './worker-protocol'
+
+export interface ControlledMobileBenchmarkEvidence {
+  cacheEntries: number
+  modes: Array<'adaptive' | 'replay'>
+  scriptsMatched: boolean
+}
+
+export interface ControlledMobileBenchmarkDriver {
+  measure(mode: MobileBenchmarkMode): Promise<number>
+  evidence(): Promise<ControlledMobileBenchmarkEvidence>
+  dispose(): Promise<void>
+}
 
 const applicationId = 'com.pickle-spec.benchmark'
 const runtimeProduct = 'Pickles'
-const productVariable = mobileReplayVariableName('product')
-const productPlaceholder = ['$', `{${productVariable}}`].join('')
 const templateSteps = Array.from({ length: 300 }, (_, index) =>
   index % 2 === 0
-    ? { type: 'action' as const, text: `Buy <product> item ${index}` }
+    ? {
+        keyword: 'When',
+        type: 'action' as const,
+        text: `Buy <product> item ${index}`,
+      }
     : {
+        keyword: 'Then',
         type: 'outcome' as const,
         text: `visible: id="receipt-${index}"`,
       },
 )
-const scenario = {
-  steps: templateSteps.map((step) => ({
-    ...step,
-    text: step.text.replace('<product>', runtimeProduct),
-  })),
-  templateSteps,
-  runtimeBindings: [{ name: 'product', value: runtimeProduct }],
+const steps = templateSteps.map((step) => ({
+  ...step,
+  text: step.text.replace('<product>', runtimeProduct),
+}))
+const runtimeBindings = [{ name: 'product', value: runtimeProduct }]
+const specification = {
+  id: 'spec-mobile-benchmark',
+  name: 'Mobile benchmark',
+  source: { uri: 'benchmark/mobile.feature', language: 'en' },
+  tags: [],
+  scenarios: [],
 }
-const executionCache = createMobileExecutionCache({
-  platform: 'android',
-  executionTarget: 'android-emulator',
-  applicationId,
-})
-const benchmarkEnvelopeSchema = z.strictObject({
-  adapterPayload: mobileExecutionCachePayloadSchema,
-  requiredVariables: z.array(z.string().min(1)),
-})
-const controlledClient: AgentDeviceClientPort = {
-  devices: {
-    async list() {},
-    async capabilities() {},
+const scenario = {
+  id: 'scenario-mobile-benchmark',
+  name: 'Replay a complete mobile flow',
+  tags: [],
+  steps,
+  template: {
+    name: 'Replay a complete mobile flow',
+    variableNames: ['product'],
+    steps: templateSteps,
   },
-  apps: {
-    async reinstall() {},
-    async open() {},
-  },
-  command: {
-    async appState() {},
-    async wait() {},
-  },
-  interactions: {
-    async find() {},
-  },
-  replay: {
-    async run(options) {
-      const script = await readFile(options.path, 'utf8')
-      const runtimeValue = options.env
-        ?.find((binding) => binding.startsWith(`${productVariable}=`))
-        ?.slice(productVariable.length + 1)
-      if (!runtimeValue) throw new Error('Controlled Replay binding is absent')
-      const materializedScript = script.replaceAll(
-        productPlaceholder,
-        runtimeValue,
-      )
-      const consumed = createHash('sha256')
-        .update(materializedScript)
-        .digest('hex')
-      if (!consumed || materializedScript.includes(productPlaceholder)) {
-        throw new Error(
-          'Controlled Replay did not consume the full .ad Scenario',
-        )
-      }
-      return {
-        replayed: templateSteps.length,
-        healed: 0,
-        inferenceCount: 0,
-        session: 'controlled-mobile-benchmark',
-        sessionActive: true,
-        artifactPaths: [],
-        message: 'Controlled Replay completed',
+  runtimeBindings,
+}
+
+export async function createControlledMobileBenchmarkDriver(): Promise<ControlledMobileBenchmarkDriver> {
+  const projectRoot = await mkdtemp(join(tmpdir(), 'pickle-mobile-benchmark-'))
+  const cacheRoot = await mkdtemp(
+    join(tmpdir(), 'pickle-mobile-benchmark-cache-'),
+  )
+  const opened = new Map<
+    string,
+    Extract<MobileWorkerRequest, { type: 'open-session' }>
+  >()
+  const executedAdaptive = new Map<
+    string,
+    ReturnType<typeof compileMobileScenario>
+  >()
+  const modes: Array<'adaptive' | 'replay'> = []
+  let scriptsMatched = true
+  let adaptiveScriptDigest: string | undefined
+  let sourceRun = 0
+  const worker: MobileWorkerClient = {
+    async request(request) {
+      switch (request.type) {
+        case 'discover-targets':
+          return { version: 3, type: 'targets-discovered', targets: [] }
+        case 'open-session':
+          opened.set(request.sessionId, request)
+          modes.push(request.mode)
+          return {
+            version: 3,
+            type: 'session-opened',
+            sessionId: request.sessionId,
+            targetId: 'controlled-emulator',
+          }
+        case 'execute-scenario': {
+          const session = opened.get(request.sessionId)
+          if (!session) throw new Error('Controlled mobile session is absent')
+          const adaptive =
+            session.mode === 'adaptive'
+              ? compileMobileScenario({
+                  platform: 'android',
+                  applicationId,
+                  scenario: session.scenario,
+                })
+              : undefined
+          if (adaptive) executedAdaptive.set(request.sessionId, adaptive)
+          const script =
+            adaptive?.payload.script ??
+            session.executionCache?.adapterPayload.script
+          const digest =
+            typeof script === 'string'
+              ? createHash('sha256').update(script).digest('hex')
+              : undefined
+          if (session.mode === 'adaptive') adaptiveScriptDigest = digest
+          else scriptsMatched &&= digest === adaptiveScriptDigest
+          if (!scriptsMatched) {
+            throw new Error('Controlled modes did not execute the same .ad')
+          }
+          return {
+            version: 3,
+            type: 'scenario-executed',
+            sessionId: request.sessionId,
+            execution: {
+              stepExecutions: templateSteps.map((step) => ({
+                state: 'passed' as const,
+                resolvedActions: [{ description: step.text }],
+              })),
+            },
+          }
+        }
+        case 'complete-session': {
+          const session = opened.get(request.sessionId)
+          if (!session) throw new Error('Controlled mobile session is absent')
+          const adaptive = executedAdaptive.get(request.sessionId)
+          if (session.mode === 'adaptive' && !adaptive) {
+            throw new Error('Controlled Adaptive representation is absent')
+          }
+          return {
+            version: 3,
+            type: 'session-completed',
+            sessionId: request.sessionId,
+            completion:
+              session.mode === 'adaptive'
+                ? {
+                    inferenceCount: 0,
+                    replayRepresentation: {
+                      cacheable: true as const,
+                      adapterPayload: adaptive!.payload,
+                      requiredVariables: adaptive!.requiredVariables,
+                    },
+                  }
+                : { inferenceCount: 0 },
+          }
+        }
+        case 'close-session':
+          opened.delete(request.sessionId)
+          executedAdaptive.delete(request.sessionId)
+          return {
+            version: 3,
+            type: 'session-closed',
+            sessionId: request.sessionId,
+          }
+        case 'cancel-session':
+          opened.delete(request.sessionId)
+          executedAdaptive.delete(request.sessionId)
+          return {
+            version: 3,
+            type: 'session-cancelled',
+            sessionId: request.sessionId,
+          }
       }
     },
-  },
-  capture: {
-    async screenshot() {},
-  },
-  observability: {
-    async logs() {},
-  },
-  recording: {
-    async record() {},
-    async trace() {},
-  },
-  sessions: {
-    async close() {},
-  },
-}
-
-function compileReplayRepresentation(): string {
-  const compiled = compileMobileScenario({
-    platform: 'android',
-    applicationId,
-    scenario,
-  })
-  const validated = executionCache.parse(
-    compiled.payload,
-    compiled.requiredVariables,
-  )
-  if (!validated) throw new Error('Controlled Adaptive payload was rejected')
-  return JSON.stringify({
-    adapterPayload: validated,
-    requiredVariables: compiled.requiredVariables,
-  })
-}
-
-async function executeReplayRepresentation(serialized: string): Promise<void> {
-  const envelope = benchmarkEnvelopeSchema.parse(JSON.parse(serialized))
-  const payload = executionCache.parse(
-    envelope.adapterPayload,
-    envelope.requiredVariables,
-  )
-  if (!payload) throw new Error('Controlled Replay payload was rejected')
-  await executePrivateAgentDeviceReplay({
-    client: controlledClient,
-    selection: { platform: 'android', serial: 'controlled-emulator' },
-    script: payload.script,
-    runtimeEnv: [`${productVariable}=${runtimeProduct}`],
-  })
-}
-
-let serializedReplayRepresentation = compileReplayRepresentation()
-
-export async function measureControlledMobileBenchmark(
-  mode: MobileBenchmarkMode,
-): Promise<number> {
-  const startedAt = performance.now()
-  if (mode === 'adaptive') {
-    serializedReplayRepresentation = compileReplayRepresentation()
+    async dispose() {},
   }
-  await executeReplayRepresentation(serializedReplayRepresentation)
-  return performance.now() - startedAt
+  const adapter = createMobileAdapter(
+    {
+      application: {
+        id: applicationId,
+        binaryPath: '/controlled/mobile-benchmark.apk',
+      },
+      targetId: 'controlled-emulator',
+    },
+    () => worker,
+  )
+  const cache = await openLocalExecutionCache({ projectRoot, cacheRoot })
+
+  return {
+    async measure(mode) {
+      const startedAt = performance.now()
+      const run = await runScenario({
+        specification,
+        scenario,
+        executionTargetProfile: { id: 'controlled-android' },
+        adapter,
+        applicationRevision: 'controlled-app-1',
+        cachePolicy: mode === 'adaptive' ? 'refresh' : 'cache-only',
+        executionCache: {
+          store: cache,
+          projectKey: cache.projectKey,
+          sourceRunId: `mobile-benchmark-${++sourceRun}`,
+        },
+      })
+      const expected =
+        mode === 'adaptive'
+          ? { executionMode: 'adaptive', cacheOutcome: 'refresh' }
+          : {
+              executionMode: 'replay',
+              cacheOutcome: 'hit',
+              inferenceCount: 0,
+            }
+      if (run.result.state !== 'passed') {
+        throw new Error(
+          `Controlled ${mode} run failed: ${run.result.message ?? run.result.state}`,
+        )
+      }
+      for (const [field, value] of Object.entries(expected)) {
+        if (run.result[field as keyof typeof run.result] !== value) {
+          throw new Error(`Controlled ${mode} run reported invalid ${field}`)
+        }
+      }
+      return performance.now() - startedAt
+    },
+    async evidence() {
+      return {
+        cacheEntries: (await cache.inspect()).length,
+        modes: [...modes],
+        scriptsMatched,
+      }
+    },
+    async dispose() {
+      try {
+        await adapter.dispose?.()
+      } finally {
+        await Promise.all([
+          rm(projectRoot, { recursive: true, force: true }),
+          rm(cacheRoot, { recursive: true, force: true }),
+        ])
+      }
+    },
+  }
 }

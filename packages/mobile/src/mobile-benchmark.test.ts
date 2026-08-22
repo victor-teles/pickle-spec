@@ -3,6 +3,7 @@ import {
   evaluateMobilePerformanceGates,
   runMobilePerformanceBenchmark,
 } from '../index'
+import { createControlledMobileBenchmarkDriver } from './mobile-benchmark-controlled-driver'
 
 describe('runMobilePerformanceBenchmark', () => {
   test('discards three warmup pairs and reports at least twenty paired samples', async () => {
@@ -86,4 +87,41 @@ describe('evaluateMobilePerformanceGates', () => {
       passed: false,
     })
   })
+
+  test('rejects a zero Adaptive baseline instead of producing a non-finite ratio', () => {
+    const samples = Array.from({ length: 20 }, () => ({
+      adaptiveMs: 0,
+      replayMs: 1,
+    }))
+
+    expect(() => evaluateMobilePerformanceGates(samples)).toThrow(
+      'Adaptive benchmark percentiles must be greater than zero',
+    )
+  })
+
+  test('rejects a ratio overflow instead of serializing Infinity as null', () => {
+    const samples = Array.from({ length: 20 }, () => ({
+      adaptiveMs: Number.MIN_VALUE,
+      replayMs: 1,
+    }))
+
+    expect(() => evaluateMobilePerformanceGates(samples)).toThrow(
+      'Mobile benchmark ratios must be finite',
+    )
+  })
+})
+
+test('controlled driver measures refresh and cache-only through the public SQLite lifecycle', async () => {
+  const driver = await createControlledMobileBenchmarkDriver()
+  try {
+    expect(await driver.measure('adaptive')).toBeGreaterThan(0)
+    expect(await driver.measure('replay')).toBeGreaterThan(0)
+    expect(await driver.evidence()).toEqual({
+      cacheEntries: 1,
+      modes: ['adaptive', 'replay'],
+      scriptsMatched: true,
+    })
+  } finally {
+    await driver.dispose()
+  }
 })

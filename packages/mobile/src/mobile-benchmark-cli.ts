@@ -4,7 +4,7 @@ import {
   type MobileBenchmarkMode,
   runMobilePerformanceBenchmark,
 } from './mobile-benchmark'
-import { measureControlledMobileBenchmark } from './mobile-benchmark-controlled-driver'
+import { createControlledMobileBenchmarkDriver } from './mobile-benchmark-controlled-driver'
 
 interface MobileBenchmarkDriverModule {
   measureMobileBenchmark?: (
@@ -60,11 +60,19 @@ function errorMessage(error: unknown): string {
 export async function runMobileBenchmarkCli(
   args: readonly string[] = process.argv.slice(2),
 ): Promise<number> {
+  let dispose: (() => Promise<void>) | undefined
   try {
     const options = parseArguments(args)
-    const measure = options.driverPath
-      ? await loadModuleDriver(options.driverPath)
-      : measureControlledMobileBenchmark
+    let measure: NonNullable<
+      MobileBenchmarkDriverModule['measureMobileBenchmark']
+    >
+    if (options.driverPath) {
+      measure = await loadModuleDriver(options.driverPath)
+    } else {
+      const controlled = await createControlledMobileBenchmarkDriver()
+      measure = controlled.measure
+      dispose = controlled.dispose
+    }
     const result = await runMobilePerformanceBenchmark({
       samplePairs: options.samplePairs,
       measure,
@@ -80,6 +88,8 @@ export async function runMobileBenchmarkCli(
   } catch (error) {
     process.stderr.write(`${errorMessage(error)}\n`)
     return 2
+  } finally {
+    await dispose?.()
   }
 }
 

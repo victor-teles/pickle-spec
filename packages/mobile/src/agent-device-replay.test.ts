@@ -1,7 +1,10 @@
 import { expect, mock, test } from 'bun:test'
 import { access, readFile, stat } from 'node:fs/promises'
 import { dirname } from 'node:path'
-import type { AgentDeviceClientPort } from './agent-device-client'
+import {
+  type AgentDeviceClientPort,
+  observeAgentDeviceInferenceRoutes,
+} from './agent-device-client'
 import { AgentDeviceGateway } from './agent-device-gateway'
 import { mobileReplayVariableName } from './mobile-execution-cache'
 
@@ -35,7 +38,7 @@ function client(
     find?: AgentDeviceClientPort['interactions']['find']
   } = {},
 ): AgentDeviceClientPort {
-  return {
+  return observeAgentDeviceInferenceRoutes({
     devices: {
       async list() {
         return [androidEmulator]
@@ -77,7 +80,7 @@ function client(
     sessions: {
       async close() {},
     },
-  }
+  })
 }
 
 test('Adaptive executes the exact private full-Scenario .ad before returning it', async () => {
@@ -234,22 +237,34 @@ test('Replay rejects Agent Device healing', async () => {
   )
 })
 
-test('Replay rejects an Agent Device inference report', async () => {
-  const gateway = new AgentDeviceGateway(() =>
-    client(async () => ({
+test('Replay rejects a semantic inference route observed by the production wrapper', async () => {
+  let observedClient: AgentDeviceClientPort
+  observedClient = client(async () => {
+    await observedClient.command.wait({
+      platform: 'android',
+      serial: 'emulator-5554',
+      text: 'model-selected target',
+    })
+    await observedClient.interactions.find({
+      platform: 'android',
+      serial: 'emulator-5554',
+      query: 'model-selected target',
+      action: 'click',
+    })
+    return {
       replayed: 3,
       healed: 0,
-      inferenceCount: 1,
       session: 'session-1',
       sessionActive: true,
       artifactPaths: [],
-      message: 'Replay completed with inference',
-    })),
-  )
+      message: 'Replay completed after a semantic fallback',
+    }
+  })
+  const gateway = new AgentDeviceGateway(() => observedClient)
 
   await openCachedReplay(gateway)
   await expect(gateway.executeScenario('session-1')).rejects.toThrow(
-    'unexpectedly reported inference',
+    'semantic inference route',
   )
 })
 
