@@ -411,6 +411,76 @@ describe('createWebAdapter', () => {
     })
   })
 
+  test('does not pass model credentials into a cache Replay session', async () => {
+    const automation = stubAutomation({
+      async executeInstruction() {
+        return { success: true }
+      },
+    })
+    const launch = mock(async () => ({
+      openContext: mock(async () => automation),
+      close: mock(async () => {}),
+    }))
+    const replayScenario: Scenario = {
+      name: 'Open account',
+      tags: ['@web'],
+      steps: [
+        { keyword: 'Given', text: 'I navigate to /account', type: 'context' },
+      ],
+    }
+    const replaySpecification: Specification = {
+      name: 'Account',
+      source: { uri: 'features/account.feature', language: 'en' },
+      tags: ['@web'],
+      scenarios: [replayScenario],
+    }
+    const adapter = createWebAdapter(
+      {
+        baseUrl: 'https://example.test',
+        browser: { modelApiKey: 'must-not-cross-replay-boundary' },
+      },
+      { launch },
+    )
+
+    const session = await adapter.openSession({
+      executionTargetProfile: { id: 'web' },
+      specification: replaySpecification,
+      scenario: replayScenario,
+      mode: 'replay',
+      executionCache: {
+        requiredVariables: [],
+        adapterPayload: {
+          schemaVersion: 1,
+          steps: [
+            {
+              instructions: [
+                {
+                  kind: 'navigate',
+                  url: {
+                    segments: [{ literal: 'https://example.test/account' }],
+                  },
+                },
+              ],
+            },
+          ],
+        },
+      },
+    })
+    await session.executeStep(replayScenario.steps[0]!, undefined, {
+      stepIndex: 0,
+      templateStep: replayScenario.steps[0]!,
+      runtimeBindings: [],
+    })
+    await session.close()
+    await adapter.dispose?.()
+
+    expect(launch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        browser: expect.objectContaining({ modelApiKey: undefined }),
+      }),
+    )
+  })
+
   test('replays multiple planned actions without model action resolution', async () => {
     const observe = mock(async () => [
       { description: 'Must not resolve', handle: { selector: '#new' } },

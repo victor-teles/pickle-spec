@@ -8,10 +8,17 @@ import {
   slug,
   type TestArtifact,
 } from '@pickle-spec/runner'
-import type { ScenarioStep } from '@pickle-spec/spec'
+import type { ScenarioStep, ScenarioVariableBinding } from '@pickle-spec/spec'
 import { abortError } from './abort'
 import { type ResolvedFidelity, resolveFidelityPolicy } from './fidelity'
 import { stagehandFactory } from './stagehand-factory'
+import { createWebCacheSession } from './web-cache-session'
+import {
+  parseWebExecutionCachePayload,
+  type WebAssertionDraft,
+  type WebInstruction,
+  webTargetConfigurationFingerprint,
+} from './web-execution-cache'
 import {
   type BrowserOptions,
   defaultModelName,
@@ -58,8 +65,15 @@ export interface WebScreenshotCapture {
 
 export interface WebClientContext {
   browser: BrowserOptions
+  mode?: 'adaptive' | 'replay'
   fidelity?: ResolvedFidelity
   signal?: AbortSignal
+}
+
+export interface WebDirectExecutionResult {
+  success: boolean
+  actualState?: string
+  message?: string
 }
 
 export interface WebAutomation {
@@ -67,6 +81,15 @@ export interface WebAutomation {
   observe(prompt: string, signal?: AbortSignal): Promise<WebObservedAction[]>
   act(action: WebObservedAction, signal?: AbortSignal): Promise<WebActResult>
   verify(prompt: string, signal?: AbortSignal): Promise<WebVerificationResult>
+  compileAssertion?(
+    prompt: string,
+    signal?: AbortSignal,
+  ): Promise<WebAssertionDraft>
+  executeInstruction?(
+    instruction: WebInstruction,
+    bindings: readonly ScenarioVariableBinding[],
+    signal?: AbortSignal,
+  ): Promise<WebDirectExecutionResult>
   screenshot(options: WebScreenshotCapture): Promise<Uint8Array>
   readIsolationState(): Promise<WebIsolationState>
   close(): Promise<void>
@@ -104,6 +127,7 @@ const providerApiKeyEnvNamesByProvider: Record<string, string[]> = {
 type BrowserLaunchConfig = {
   browser: BrowserOptions | undefined
   requireProviderApiKey: boolean
+  requiresInference: boolean
 }
 
 function promptFor(step: ScenarioStep): string {
@@ -165,14 +189,18 @@ function resolveModelApiKey(
 function resolveBrowserLaunchOptions({
   browser,
   requireProviderApiKey,
+  requiresInference,
 }: BrowserLaunchConfig): BrowserOptions {
-  const modelApiKey = resolveModelApiKey(browser)
+  const modelApiKey = requiresInference
+    ? resolveModelApiKey(browser)
+    : undefined
   const next = {
     ...browser,
     modelApiKey,
   }
   if (
     requireProviderApiKey &&
+    requiresInference &&
     next.environment !== 'browserbase' &&
     !next.modelApiKey
   ) {
@@ -215,6 +243,16 @@ export function createWebAdapter(
   return {
     capabilities: ['web', 'screenshots'],
     planFormatVersion: 'web.1',
+    executionCache: {
+      adapterKind: 'web',
+      adapterCacheSchemaVersion: '1',
+      targetConfigurationFingerprint: webTargetConfigurationFingerprint({
+        options,
+        behavior,
+        fidelity,
+      }),
+      parse: parseWebExecutionCachePayload,
+    },
     fidelityPolicy: {
       profile: fidelity.profile,
       tradeOffs: fidelity.tradeOffs,
@@ -223,7 +261,9 @@ export function createWebAdapter(
       await pool.dispose()
     },
     async openSession(input) {
-      let executionMode = input.mode ?? 'adaptive'
+      const executionMode = input.mode ?? 'adaptive'
+      const cacheReplay =
+        executionMode === 'replay' && input.executionCache !== undefined
       const browserOptions = resolveBrowserLaunchOptions({
         browser: {
           ...options.browser,
@@ -233,11 +273,13 @@ export function createWebAdapter(
               : (options.browser?.selfHeal ?? true),
         },
         requireProviderApiKey,
+        requiresInference: !cacheReplay,
       })
       const logicalSession = await pool.openLogicalSession(
         browserOptions,
         input.signal,
         fidelity,
+        executionMode,
       )
       const automation = logicalSession.automation
       let closePromise: Promise<void> | undefined
@@ -258,7 +300,11 @@ export function createWebAdapter(
       }
       input.signal?.addEventListener('abort', onAbort, { once: true })
 
-      if (behavior.navigationPolicy === 'eager') {
+      if (
+        behavior.navigationPolicy === 'eager' &&
+        !cacheReplay &&
+        !automation.executeInstruction
+      ) {
         await automation.navigate(options.baseUrl, input.signal)
         navigated = true
       }
@@ -353,7 +399,6 @@ export function createWebAdapter(
       ): Promise<StepExecution> {
         const adapted = await resolveByObservation(prompt, signal)
         if (adapted.state !== 'passed') return adapted
-        executionMode = 'adaptive'
         return { ...adapted, state: 'passed-with-adaptation' }
       }
 
@@ -370,6 +415,26 @@ export function createWebAdapter(
           if (!result.success) return adapt(prompt, signal)
         }
         return { state: 'passed', resolvedActions }
+      }
+
+      if (
+        cacheReplay ||
+        (executionMode === 'adaptive' && automation.executeInstruction)
+      ) {
+        const cacheSession = createWebCacheSession({
+          input,
+          options,
+          automation,
+          finish,
+        })
+        return {
+          ...cacheSession,
+          async executeStep(step, signal, context) {
+            stepIndex++
+            return cacheSession.executeStep(step, signal, context)
+          },
+          close,
+        }
       }
 
       return {

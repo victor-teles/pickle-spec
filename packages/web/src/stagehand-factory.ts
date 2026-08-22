@@ -1,12 +1,15 @@
 import {
+  type BrowserContext,
   browserbase,
   localBrowser,
   type ModelConfig,
   Stagehand,
+  type StagehandBrowser,
   type StagehandCreateOptions,
 } from '@browserbasehq/stagehand'
 import { z } from 'zod'
 import { abortError } from './abort'
+import { createDirectBrowser } from './direct-browser'
 import {
   type BlockedResourceType,
   blockedResourceTypes,
@@ -19,17 +22,51 @@ import type {
   WebIsolationState,
   WebScreenshotCapture,
 } from './web-adapter'
+import {
+  defaultWebActionTimeoutMs,
+  defaultWebNavigationTimeoutMs,
+  type WebAssertionDraft,
+} from './web-execution-cache'
 import { defaultModelName } from './web-options'
 
 const defaultDomSettleTimeoutMs = 3_000
-const defaultNavigationTimeoutMs = 15_000
 const defaultObserveTimeoutMs = 10_000
-const defaultActTimeoutMs = 15_000
 
 const verificationSchema = z.object({
   meetsExpectation: z.boolean(),
   actualState: z.string(),
 })
+
+const assertionLocatorShape = {
+  selector: z.string().min(1),
+  nth: z.number().int().nonnegative().optional(),
+}
+const assertionDraftSchema = z.discriminatedUnion('kind', [
+  z.strictObject({ kind: z.literal('exists'), ...assertionLocatorShape }),
+  z.strictObject({ kind: z.literal('visible'), ...assertionLocatorShape }),
+  z.strictObject({ kind: z.literal('hidden'), ...assertionLocatorShape }),
+  z.strictObject({
+    kind: z.literal('text-equals'),
+    ...assertionLocatorShape,
+    expected: z.string(),
+  }),
+  z.strictObject({
+    kind: z.literal('text-contains'),
+    ...assertionLocatorShape,
+    expected: z.string(),
+  }),
+  z.strictObject({
+    kind: z.literal('value-equals'),
+    ...assertionLocatorShape,
+    expected: z.string(),
+  }),
+  z.strictObject({
+    kind: z.literal('count-equals'),
+    ...assertionLocatorShape,
+    expected: z.union([z.number().int().nonnegative(), z.string()]),
+  }),
+  z.strictObject({ kind: z.literal('url-equals'), expected: z.string() }),
+])
 
 type StagehandTimeouts = {
   navigationTimeoutMs: number
@@ -80,16 +117,15 @@ function withAbort<T>(operation: Promise<T>, signal?: AbortSignal): Promise<T> {
   })
 }
 
-async function activePage(stagehand: Stagehand) {
-  const page = await stagehand.browser.context.activePage()
+async function activePage(context: BrowserContext) {
+  const page = await context.activePage()
   if (!page) throw new Error('No active browser page')
   return page
 }
 
 async function readStagehandIsolation(
-  stagehand: Stagehand,
+  context: BrowserContext,
 ): Promise<WebIsolationState> {
-  const context = stagehand.browser.context
   const cookieCount = (await context.cookies()).length
   const page = await context.activePage()
   let storageKeyCount = 0
@@ -102,10 +138,10 @@ async function readStagehandIsolation(
 }
 
 async function applyFidelity(
-  stagehand: Stagehand,
+  browserContext: BrowserContext,
   fidelity?: ResolvedFidelity,
 ): Promise<void> {
-  const context = stagehand.browser.context as FidelityBrowserContext
+  const context = browserContext as FidelityBrowserContext
 
   if (!fidelity || fidelity.profile === 'default') {
     if (context.unroute) await context.unroute('**/*')
@@ -139,23 +175,18 @@ async function applyFidelity(
 }
 
 function createStagehandAutomation(
-  stagehand: Stagehand,
+  browser: StagehandBrowser,
+  ensureStagehand: () => Promise<Stagehand>,
   timeouts: StagehandTimeouts,
 ): WebAutomation {
+  const direct = createDirectBrowser(browser.context, {
+    actionTimeoutMs: timeouts.actTimeoutMs,
+    navigationTimeoutMs: timeouts.navigationTimeoutMs,
+  })
   return {
-    async navigate(url, signal) {
-      const page = await activePage(stagehand)
-      await withAbort(
-        page
-          .goto(url, {
-            waitUntil: 'domcontentloaded',
-            timeout: timeouts.navigationTimeoutMs,
-          })
-          .then(() => undefined),
-        signal,
-      )
-    },
+    navigate: direct.navigate,
     async observe(prompt, signal) {
+      const stagehand = await ensureStagehand()
       const result = await withAbort(
         stagehand.observe(prompt, {
           timeout: timeouts.observeTimeoutMs,
@@ -168,6 +199,7 @@ function createStagehandAutomation(
       }))
     },
     async act(action, signal) {
+      const stagehand = await ensureStagehand()
       const result = await withAbort(
         stagehand.act(action.handle as Parameters<Stagehand['act']>[0], {
           timeout: timeouts.actTimeoutMs,
@@ -180,6 +212,7 @@ function createStagehandAutomation(
       }
     },
     async verify(prompt, signal) {
+      const stagehand = await ensureStagehand()
       const result = await withAbort(
         stagehand.extract(
           `Verify the following condition on the current page: "${prompt}". ` +
@@ -190,8 +223,22 @@ function createStagehandAutomation(
       )
       return result.data
     },
+    async compileAssertion(prompt, signal) {
+      const stagehand = await ensureStagehand()
+      const result = await withAbort(
+        stagehand.extract(
+          'Compile the following Scenario outcome into exactly one deterministic ' +
+            'browser assertion. Use only the requested expectation, never the ' +
+            `current page value as the expected value: "${prompt}"`,
+          assertionDraftSchema,
+        ),
+        signal,
+      )
+      return result.data as WebAssertionDraft
+    },
+    executeInstruction: direct.execute,
     async screenshot(options: WebScreenshotCapture) {
-      const page = await activePage(stagehand)
+      const page = await activePage(browser.context)
       return new Uint8Array(
         await page.screenshot({
           type: options.format,
@@ -199,7 +246,7 @@ function createStagehandAutomation(
         }),
       )
     },
-    readIsolationState: () => readStagehandIsolation(stagehand),
+    readIsolationState: () => readStagehandIsolation(browser.context),
     async close() {},
   }
 }
@@ -254,22 +301,25 @@ export const stagehandFactory: WebAutomationFactory = {
     return {
       async openContext(context) {
         if (context.signal?.aborted) throw abortError()
-        const activeStagehand = await ensureStagehand(context)
-        await applyFidelity(activeStagehand, context.fidelity)
-        return createStagehandAutomation(activeStagehand, {
-          navigationTimeoutMs:
-            context.browser.navigationTimeoutMs ??
-            options.navigationTimeoutMs ??
-            defaultNavigationTimeoutMs,
-          observeTimeoutMs:
-            context.browser.observeTimeoutMs ??
-            options.observeTimeoutMs ??
-            defaultObserveTimeoutMs,
-          actTimeoutMs:
-            context.browser.actTimeoutMs ??
-            options.actTimeoutMs ??
-            defaultActTimeoutMs,
-        })
+        await applyFidelity(browser.context, context.fidelity)
+        return createStagehandAutomation(
+          browser,
+          () => ensureStagehand(context),
+          {
+            navigationTimeoutMs:
+              context.browser.navigationTimeoutMs ??
+              options.navigationTimeoutMs ??
+              defaultWebNavigationTimeoutMs,
+            observeTimeoutMs:
+              context.browser.observeTimeoutMs ??
+              options.observeTimeoutMs ??
+              defaultObserveTimeoutMs,
+            actTimeoutMs:
+              context.browser.actTimeoutMs ??
+              options.actTimeoutMs ??
+              defaultWebActionTimeoutMs,
+          },
+        )
       },
       async close() {
         try {

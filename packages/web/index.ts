@@ -11,6 +11,7 @@ export type {
   WebAutomation,
   WebAutomationFactory,
   WebBrowserProcess,
+  WebDirectExecutionResult,
   WebIsolationState,
   WebObservedAction,
 } from './src/web-adapter'
@@ -33,6 +34,13 @@ export {
   evaluatePerformanceGates,
   runWebPerformanceBenchmark,
 } from './src/web-benchmark'
+export type {
+  WebExecutionCachePayload,
+  WebInstruction,
+  WebLocator,
+  WebTemplate,
+} from './src/web-execution-cache'
+export { parseWebExecutionCachePayload } from './src/web-execution-cache'
 export { defaultModelName, webProfiles } from './src/web-options'
 export type { WebLogicalSession } from './src/web-pool'
 export { IsolationVerificationError, WebProcessPool } from './src/web-pool'
