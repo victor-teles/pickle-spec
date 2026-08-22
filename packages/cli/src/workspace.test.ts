@@ -638,7 +638,6 @@ Feature: Checkout
   test('the deterministic adapter models every kernel outcome', async () => {
     const cases = [
       { outcome: 'passed', exitCode: 0 },
-      { outcome: 'passed', exitCode: 0 },
       { outcome: 'failed', exitCode: 1 },
       { outcome: 'cancelled', exitCode: 130 },
       { outcome: 'infrastructure-error', exitCode: 1 },
@@ -1418,7 +1417,9 @@ export default {
     const checked = runCheck(project)
 
     expect(checked.exitCode).toBe(2)
-    expect(checked.stderr.toString()).toContain('policy')
+    expect(checked.stderr.toString()).toContain(
+      'configuration.policy is not supported',
+    )
     expect(checked.stderr.toString()).toContain(
       'Correct the value and run pickle check again',
     )
