@@ -479,9 +479,101 @@ export default {}
     })
 
     expect(run.exitCode).toBe(2)
+    expect(run.stderr.toString()).toStartWith('ERROR ')
     expect(run.stderr.toString()).toContain('Parser errors')
+    expect(run.stderr.toString()).not.toContain('\n    at ')
+    expect(run.stdout.toString()).not.toContain('Test results    ')
     expect(await Bun.file(marker).exists()).toBe(false)
     expect(await Bun.file(extensionMarker).exists()).toBe(false)
+  })
+
+  test('run reports invalid configuration as a concise command error', async () => {
+    const project = await createCheckProject('run-invalid-configuration', {
+      config: { schemaVersion: 99 },
+      specification: validSpecification,
+    })
+
+    const run = runProject(project)
+    const stderr = run.stderr.toString()
+
+    expect(run.exitCode).toBe(2)
+    expect(stderr).toStartWith('ERROR Invalid configuration')
+    expect(stderr).toContain('Unsupported configuration schemaVersion: 99')
+    expect(stderr).not.toContain('\n    at ')
+    expect(run.stdout.toString()).toBe('')
+  })
+
+  test('run reports missing Specifications without a Test result summary', async () => {
+    const project = await createCheckProject('run-missing-specifications', {
+      config: {
+        ...deterministicRunConfig,
+        specifications: 'features/**/*.feature',
+      },
+      extensions: await Bun.file(
+        join(workspace, 'pickle.extensions.ts'),
+      ).text(),
+    })
+
+    const run = runProject(project)
+    const stderr = run.stderr.toString()
+    const stdout = run.stdout.toString()
+
+    expect(run.exitCode).toBe(2)
+    expect(stderr).toStartWith('ERROR No specifications found matching:')
+    expect(stderr).not.toContain('\n    at ')
+    expect(stdout).not.toContain('Specifications  ')
+    expect(stdout).not.toContain('Test results    ')
+  })
+
+  test('run treats an empty Scenario selection as a command error', async () => {
+    const project = await createCheckProject('run-empty-selection', {
+      config: deterministicRunConfig,
+      specification: validSpecification,
+      extensions: await Bun.file(
+        join(workspace, 'pickle.extensions.ts'),
+      ).text(),
+    })
+
+    const run = Bun.spawnSync({
+      cmd: [pickleCommand, 'run', '--scenario', 'Missing Scenario'],
+      cwd: project,
+      env: { ...Bun.env },
+    })
+    const stderr = run.stderr.toString()
+    const stdout = run.stdout.toString()
+
+    expect(run.exitCode).toBe(2)
+    expect(stderr).toBe('ERROR No Scenarios match the current selection\n')
+    expect(stdout).not.toContain('Specifications  ')
+    expect(stdout).not.toContain('Test results    ')
+  })
+
+  test('run reports an application server startup failure as a command error', async () => {
+    const project = await createCheckProject('run-server-start-failure', {
+      config: {
+        ...deterministicRunConfig,
+        server: {
+          command: 'exit 9',
+          url: 'http://127.0.0.1:1',
+          startupTimeoutMs: 20,
+          pollIntervalMs: 5,
+        },
+      },
+      specification: validSpecification,
+      extensions: await Bun.file(
+        join(workspace, 'pickle.extensions.ts'),
+      ).text(),
+    })
+
+    const run = runProject(project)
+    const stderr = run.stderr.toString()
+    const stdout = run.stdout.toString()
+
+    expect(run.exitCode).toBe(2)
+    expect(stderr).toStartWith('ERROR Server failed to start within 20ms')
+    expect(stderr).not.toContain('\n    at ')
+    expect(stdout).not.toContain('Specifications  ')
+    expect(stdout).not.toContain('Test results    ')
   })
 
   test('check rejects an empty Specification path set', async () => {
@@ -836,6 +928,9 @@ Feature: Ignored
       '↓ features/ignored.feature > Ignore this Scenario',
     )
     expect(skippedOutput).toContain('(skipped: Scenario is tagged @ignore)')
+    expect(skippedOutput).toContain(' Specifications  1')
+    expect(skippedOutput).toContain(' Scenarios       1')
+    expect(skippedOutput).toContain(' Test results    1 skipped (1)')
     expect(skippedOutput).not.toContain(' Failures')
     expect(skippedOutput).not.toContain(' Infrastructure errors')
 
@@ -1354,9 +1449,14 @@ export default {
     })
 
     expect(run.exitCode).toBe(2)
+    expect(run.stderr.toString()).toStartWith(
+      'ERROR Execution target profile "web"',
+    )
     expect(run.stderr.toString()).toContain(
       'Execution target profile "web" lacks required capabilities for Scenario "Show stores near the customer": geolocation',
     )
+    expect(run.stderr.toString()).not.toContain('\n    at ')
+    expect(run.stdout.toString()).not.toContain('Test results    ')
     expect(await Bun.file(marker).exists()).toBe(false)
   })
 

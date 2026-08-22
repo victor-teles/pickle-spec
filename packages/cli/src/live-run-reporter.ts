@@ -3,10 +3,12 @@ import type {
   ScheduledTestResult,
   TestResult,
 } from '@pickle-spec/runner'
+import { withRecoveryFailure } from './command-error'
 import {
   clockLabel,
   diagnosticLines,
   groupResults,
+  interruptionLines,
   policyLines,
   renderTestResult,
   renderTestStepResult,
@@ -262,8 +264,8 @@ export function createLiveRunReporter(
     })
     const summary = summaryLines(specifications, results, startTime, durationMs)
     summary.splice(1, 0, ...summaryNotice)
-    terminal.finish([...diagnostics, ...resultPolicyLines, ...summary])
     finished = true
+    terminal.finish([...diagnostics, ...resultPolicyLines, ...summary])
   }
 
   function finishFailure(
@@ -285,12 +287,24 @@ export function createLiveRunReporter(
     )
   }
 
+  function finishWithoutOutput(): void {
+    if (finished) return
+    setPagedRefresh(false)
+    finished = true
+    terminal.finish([])
+  }
+
   function finishTestRun(
     results: readonly TestResult[],
     durationMs: number,
     exitStatus: TestRunExitStatus,
   ): void {
-    finishOutput(results, durationMs, [], policyLines(exitStatus, columns()))
+    finishOutput(
+      results,
+      durationMs,
+      interruptionLines(exitStatus, columns()),
+      policyLines(exitStatus, columns()),
+    )
   }
 
   function complete(result: TestResult): void {
@@ -365,7 +379,24 @@ export function createLiveRunReporter(
       const results = completedResults.flatMap((result) =>
         result ? [result] : [],
       )
-      finishFailure(results, durationMs, error)
+      if (results.length === 0) {
+        finishWithoutOutput()
+        return
+      }
+      try {
+        finishFailure(results, durationMs, error)
+      } catch (renderError) {
+        try {
+          finishWithoutOutput()
+        } catch (restoreError) {
+          throw withRecoveryFailure(
+            renderError,
+            'Failed to restore terminal output',
+            restoreError,
+          )
+        }
+        throw renderError
+      }
     },
     refresh: updateDynamicRegion,
     finish(runs, durationMs, exitStatus) {

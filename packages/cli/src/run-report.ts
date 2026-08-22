@@ -534,6 +534,22 @@ export function policyLines(
   ]
 }
 
+export function interruptionLines(
+  exitStatus: TestRunExitStatus,
+  columns?: number,
+): string[] {
+  if (!exitStatus.interrupted) return []
+  return [
+    ...wrappedLines(' ! ', 'Run interrupted', '   ', columns),
+    ...wrappedLines(
+      '   ',
+      'Partial summary: every Test result materialized before interruption is included.',
+      '   ',
+      columns,
+    ),
+  ]
+}
+
 function testResultSummary(results: readonly TestResult[]): string {
   const entries = Object.entries(
     resultPresentations,

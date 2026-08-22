@@ -30,7 +30,9 @@ type CapturedTerminalStream = {
 }
 
 const clearLine = '\r\u001b[2K'
+const hideCursor = '\u001b[?25l'
 const moveUp = '\u001b[1A'
+const restoreTerminal = '\u001b[0m\u001b[?25h'
 const reservedTerminalRows = 2
 
 export function availableTerminalRows(rows: number | undefined): number {
@@ -176,6 +178,7 @@ export function createProcessTerminalSurface(
     activate() {
       if (active) return
       active = true
+      outputStream.write(hideCursor)
       for (const captured of capturedStreams) {
         captured.stream.write = interceptedWrite(captured)
       }
@@ -188,10 +191,14 @@ export function createProcessTerminalSurface(
       surface.commit(lines)
     },
     finish(lines) {
-      finishExternalLine()
-      dynamicLines = []
-      surface.finish(lines)
-      restoreWrite()
+      try {
+        finishExternalLine()
+        dynamicLines = []
+        surface.finish(lines)
+      } finally {
+        restoreWrite()
+        outputStream.write(restoreTerminal)
+      }
     },
     update(lines) {
       dynamicLines = [...lines]
