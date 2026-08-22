@@ -132,7 +132,12 @@ test('normalizes the removed adaptation state at JSON and NDJSON boundaries', ()
       {
         step: { keyword: 'Then', text: 'checkout succeeds', type: 'outcome' },
         state: 'passed-with-adaptation',
-        resolvedActions: [],
+        resolvedActions: [
+          {
+            description: 'Verify checkout success',
+            replay: { privateSelector: '#bound-account' },
+          },
+        ],
       },
     ],
   })
@@ -168,7 +173,13 @@ test('normalizes the removed adaptation state at JSON and NDJSON boundaries', ()
   expect(formattedEvents[0].result.state).toBe('passed')
   expect(formattedEvents[1].result.state).toBe('passed')
   expect(adapted.state).toBe('passed-with-adaptation')
-  expect(publicTestResult(adapted).state).toBe('passed')
+  const publicAdapted = publicTestResult(adapted)
+  expect(publicAdapted.state).toBe('passed')
+  expect(publicAdapted.steps[0]).toMatchObject({
+    state: 'passed',
+    resolvedActions: [{ description: 'Verify checkout success' }],
+  })
+  expect(JSON.stringify(publicAdapted)).not.toContain('privateSelector')
   expect(publicRunEvent(legacyEvents[1]!).type).toBe('scenario-finished')
 })
 

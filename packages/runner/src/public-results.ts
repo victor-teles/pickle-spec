@@ -17,6 +17,8 @@ interface EventResultMappers {
   scenario(result: TestResult): TestResult
 }
 
+type StepResultProjection = (result: TestStepResult) => TestStepResult
+
 function publicState(state: TestResultState): TestResultState {
   return state === 'passed-with-adaptation' ? 'passed' : state
 }
@@ -96,7 +98,11 @@ export function withoutPrivateStepResultData(
   }
 }
 
-export function withoutPrivateTestResultData(result: TestResult): TestResult {
+function projectTestResult(
+  result: TestResult,
+  state: TestResultState,
+  projectStep: StepResultProjection,
+): TestResult {
   return {
     schemaVersion: 1,
     specification: {
@@ -107,8 +113,8 @@ export function withoutPrivateTestResultData(result: TestResult): TestResult {
     executionTargetProfile: publicExecutionTargetProfile(
       result.executionTargetProfile,
     ),
-    state: result.state,
-    steps: result.steps.map(withoutPrivateStepResultData),
+    state,
+    steps: result.steps.map(projectStep),
     executionMode: result.executionMode,
     cacheOutcome: result.cacheOutcome,
     inferenceCount: result.inferenceCount,
@@ -120,6 +126,10 @@ export function withoutPrivateTestResultData(result: TestResult): TestResult {
     durationMs: result.durationMs,
     fidelityPolicy: publicFidelityPolicy(result.fidelityPolicy),
   }
+}
+
+export function withoutPrivateTestResultData(result: TestResult): TestResult {
+  return projectTestResult(result, result.state, withoutPrivateStepResultData)
 }
 
 export function recordableTestResult(result: TestResult): TestResult {
@@ -139,11 +149,7 @@ function publicStepResult(result: TestStepResult): TestStepResult {
 }
 
 export function publicTestResult(result: TestResult): TestResult {
-  return {
-    ...withoutPrivateTestResultData(result),
-    state: publicState(result.state),
-    steps: result.steps.map(publicStepResult),
-  }
+  return projectTestResult(result, publicState(result.state), publicStepResult)
 }
 
 function publicEventPayload(
