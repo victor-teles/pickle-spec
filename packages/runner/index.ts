@@ -32,6 +32,25 @@ export {
   validateRunConfiguration,
 } from './src/configuration'
 export type {
+  CacheOutcome,
+  DeserializeExecutionCacheEnvelopeInput,
+  ExecutionCacheEntryMetadata,
+  ExecutionCacheEnvelope,
+  ExecutionCacheKey,
+  ExecutionCacheKeyInput,
+  ExecutionCachePayloadValidator,
+  ExecutionCacheStore,
+  ExecutionCacheUncacheableReason,
+  ExecutionCacheWriteMetadata,
+  ExecutionCacheWriteResult,
+  SerializedExecutionCacheEnvelope,
+} from './src/execution-cache'
+export {
+  deserializeExecutionCacheEnvelope,
+  resolveExecutionCacheKey,
+  serializeExecutionCacheEnvelope,
+} from './src/execution-cache'
+export type {
   CandidateExecutionPlan,
   CandidatePlanEvidence,
   ExecutionPlan,

@@ -6,6 +6,12 @@ import {
   type Specification,
   scenarioRevision,
 } from '@pickle-spec/spec'
+import type {
+  CacheOutcome,
+  ExecutionCacheKey,
+  ExecutionCachePayloadValidator,
+  ExecutionCacheUncacheableReason,
+} from './execution-cache'
 import {
   type ExecutionPlan,
   type ExecutionPlanStore,
@@ -77,6 +83,7 @@ export interface FidelityPolicy {
 export interface ExecutionTargetAdapter {
   capabilities?: readonly string[]
   planFormatVersion?: string
+  executionCachePayloadValidator?: ExecutionCachePayloadValidator
   fidelityPolicy?: FidelityPolicy
   openSession(input: OpenSessionInput): Promise<TargetSession>
   dispose?(): Promise<void>
@@ -104,6 +111,9 @@ export interface TestResult {
   state: TestResultState
   steps: TestStepResult[]
   executionMode?: ExecutionMode
+  cacheOutcome?: CacheOutcome
+  inferenceCount?: number
+  cacheUncacheableReason?: ExecutionCacheUncacheableReason
   message?: string
   attempts?: number
   flaky?: boolean
@@ -144,6 +154,17 @@ export type RunEventPayload =
       scenario?: TestResult['scenario']
       executionTargetProfile?: ExecutionTargetProfile
     }
+  | { type: 'cache-hit'; cacheKey: ExecutionCacheKey }
+  | { type: 'cache-miss'; cacheKey: ExecutionCacheKey }
+  | { type: 'cache-refresh'; cacheKey: ExecutionCacheKey }
+  | { type: 'replay-diverged'; cacheKey: ExecutionCacheKey }
+  | { type: 'adaptive-fallback-started'; cacheKey: ExecutionCacheKey }
+  | { type: 'cache-written'; cacheKey: ExecutionCacheKey }
+  | {
+      type: 'cache-uncacheable'
+      reason: ExecutionCacheUncacheableReason
+    }
+  | { type: 'inference-count-updated'; inferenceCount: number }
   | { type: 'scenario-finished'; result: TestResult; scheduleIndex?: number }
 
 export type RunEvent = RunEventEnvelope & RunEventPayload
