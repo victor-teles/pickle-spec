@@ -174,6 +174,9 @@ pickle cache clear
 
 Each checkout stores its cache outside the repository under `~/.pickle/cache/projects/<project-key>/execution-cache.sqlite`. SQLite is the only cache tier. The cache retains multiple Scenario and application revisions without a fixed TTL. Its default configurable limit is 100 MiB, with least-recently-used eviction by `lastUsedAt`. Studio shows cache behavior with results, offers Cache refresh beside Run, and keeps cache inspection and clearing under Settings.
 
+See [Replay performance gate](docs/replay-performance.md) for the controlled
+web/mobile benchmark, budgets, and rerun protocol.
+
 ## Persist, rerun, compare, and export test runs
 
 Every `pickle run` writes an immutable test run under `.pickle/runs/`.
