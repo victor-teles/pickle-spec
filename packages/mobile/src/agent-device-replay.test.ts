@@ -22,6 +22,11 @@ const application = {
 }
 const productVariable = mobileReplayVariableName('product')
 const productPlaceholder = ['$', `{${productVariable}}`].join('')
+const cachedScript =
+  'context platform=android\n' +
+  'open "com.example.checkout" --relaunch\n' +
+  `find "Buy ${productPlaceholder}" click\n` +
+  'is visible "text=\\"Receipt\\""\n'
 
 function client(
   replayRun: AgentDeviceClientPort['replay']['run'],
@@ -171,12 +176,6 @@ test('Replay executes only the cached .ad and reports zero inference', async () 
   const gateway = new AgentDeviceGateway(() =>
     client(replayRun, { wait, find }),
   )
-  const cachedScript =
-    'context platform=android\n' +
-    'open "com.example.checkout" --relaunch\n' +
-    `find "Buy ${productPlaceholder}" click\n` +
-    'is visible "text=\\"Receipt\\""\n'
-
   await gateway.openSession({
     sessionId: 'session-1',
     platform: 'android',
@@ -216,3 +215,71 @@ test('Replay executes only the cached .ad and reports zero inference', async () 
   expect(wait).not.toHaveBeenCalled()
   expect(find).not.toHaveBeenCalled()
 })
+
+test('Replay rejects Agent Device healing', async () => {
+  const gateway = new AgentDeviceGateway(() =>
+    client(async () => ({
+      replayed: 2,
+      healed: 1,
+      session: 'session-1',
+      sessionActive: true,
+      artifactPaths: [],
+      message: 'Replay healed one step',
+    })),
+  )
+
+  await openCachedReplay(gateway)
+  await expect(gateway.executeScenario('session-1')).rejects.toThrow(
+    'unexpectedly healed',
+  )
+})
+
+test('Replay rejects an Agent Device inference report', async () => {
+  const gateway = new AgentDeviceGateway(() =>
+    client(async () => ({
+      replayed: 3,
+      healed: 0,
+      inferenceCount: 1,
+      session: 'session-1',
+      sessionActive: true,
+      artifactPaths: [],
+      message: 'Replay completed with inference',
+    })),
+  )
+
+  await openCachedReplay(gateway)
+  await expect(gateway.executeScenario('session-1')).rejects.toThrow(
+    'unexpectedly reported inference',
+  )
+})
+
+async function openCachedReplay(gateway: AgentDeviceGateway): Promise<void> {
+  await gateway.openSession({
+    sessionId: 'session-1',
+    platform: 'android',
+    application,
+    mode: 'replay',
+    scenario: {
+      steps: [
+        { type: 'action', text: 'Buy Pickles' },
+        { type: 'outcome', text: 'Receipt' },
+      ],
+      templateSteps: [
+        { type: 'action', text: 'Buy <product>' },
+        { type: 'outcome', text: 'Receipt' },
+      ],
+      runtimeBindings: [{ name: 'product', value: 'Pickles' }],
+    },
+    executionCache: {
+      adapterPayload: {
+        format: 'agent-device-ad',
+        script: cachedScript,
+        stepRanges: [
+          { from: 2, to: 2 },
+          { from: 3, to: 3 },
+        ],
+      },
+      requiredVariables: ['product'],
+    },
+  })
+}

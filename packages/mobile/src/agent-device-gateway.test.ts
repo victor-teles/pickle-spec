@@ -1,5 +1,5 @@
 import { expect, mock, test } from 'bun:test'
-import { mkdtemp, rm } from 'node:fs/promises'
+import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { AppError } from 'agent-device'
@@ -352,4 +352,56 @@ test('rejects an invalid cached .ad before opening Agent Device', async () => {
     }),
   ).rejects.toThrow('Mobile Replay cache payload is invalid')
   expect(createClient).not.toHaveBeenCalled()
+})
+
+test('redacts runtime binding values from text evidence', async () => {
+  const artifactDirectory = await mkdtemp(join(tmpdir(), 'pickle-evidence-'))
+  const sourceLog = join(artifactDirectory, 'device.log')
+  const privateValue = 'account-4111111111111111'
+  await Bun.write(sourceLog, `Checkout account: ${privateValue}`)
+  const gateway = new AgentDeviceGateway(() =>
+    client({
+      observability: {
+        async logs(options) {
+          return options.action === 'path' ? { path: sourceLog } : undefined
+        },
+      },
+    }),
+  )
+
+  try {
+    await gateway.openSession({
+      sessionId: 'session-redaction',
+      application,
+      artifactDirectory,
+      artifacts: ['device-log'],
+      mode: 'adaptive',
+      scenario: {
+        steps: [
+          { type: 'action', text: `Pay ${privateValue}` },
+          { type: 'outcome', text: 'Receipt' },
+        ],
+        templateSteps: [
+          { type: 'action', text: 'Pay <account>' },
+          { type: 'outcome', text: 'Receipt' },
+        ],
+        runtimeBindings: [{ name: 'account', value: privateValue }],
+      },
+    })
+
+    const execution = await gateway.executeScenario('session-redaction')
+    const artifactPath = execution.stepExecutions.at(-1)?.artifacts?.[0]?.path
+
+    expect(artifactPath).toBeDefined()
+    expect(await readFile(artifactPath!, 'utf8')).toBe(
+      'Checkout account: [REDACTED]',
+    )
+    expect(JSON.stringify(execution)).not.toContain(privateValue)
+    expect(
+      JSON.stringify(await gateway.completeSession('session-redaction')),
+    ).not.toContain(privateValue)
+  } finally {
+    await gateway.dispose()
+    await rm(artifactDirectory, { recursive: true, force: true })
+  }
 })

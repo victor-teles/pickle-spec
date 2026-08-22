@@ -10,6 +10,7 @@ import type {
 const replayResultSchema = z.strictObject({
   replayed: z.number().int().nonnegative(),
   healed: z.number().int().nonnegative(),
+  inferenceCount: z.number().int().nonnegative().optional(),
   session: z.string(),
   sessionActive: z.boolean(),
   artifactPaths: z.array(z.string()),
@@ -47,6 +48,9 @@ export async function executePrivateAgentDeviceReplay(
     )
     if (result.healed !== 0) {
       throw new Error('Agent Device Replay unexpectedly healed the Scenario')
+    }
+    if ((result.inferenceCount ?? 0) !== 0) {
+      throw new Error('Agent Device Replay unexpectedly reported inference')
     }
     return result
   } finally {

@@ -11,6 +11,7 @@
     "!src/*.test.ts"
   ],
   "scripts": {
+    "benchmark:replay": "bun src/mobile-benchmark-cli.ts",
     "typecheck": "tsc --noEmit",
     "test": "bun test"
   },

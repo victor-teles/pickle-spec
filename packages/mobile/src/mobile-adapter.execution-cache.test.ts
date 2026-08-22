@@ -1,5 +1,8 @@
 import { expect, test } from 'bun:test'
-import { type ExecutionCacheStore, runScenario } from '@pickle-spec/runner'
+import { mkdtemp, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { openLocalExecutionCache, runScenario } from '@pickle-spec/runner'
 import { createMobileAdapter } from '../index'
 import { mobileReplayVariableName } from './mobile-execution-cache'
 import type { MobileWorkerClient } from './worker-client'
@@ -23,34 +26,12 @@ const payload = {
   ],
 }
 
-function memoryCache() {
-  const entries = new Map<string, string>()
-  const writes: string[] = []
-  const store: ExecutionCacheStore = {
-    async read(key) {
-      return entries.get(JSON.stringify(key))
-    },
-    async write(serialized) {
-      entries.set(JSON.stringify(serialized.key), serialized.source)
-      writes.push(serialized.source)
-      return { stored: true, evictedEntries: 0 }
-    },
-    async delete(key) {
-      entries.delete(JSON.stringify(key))
-    },
-    async inspect() {
-      return []
-    },
-    async clear() {
-      entries.clear()
-    },
-  }
-  return { store, writes }
-}
-
-test('runner stores Adaptive .ad then reuses it through public mobile Replay', async () => {
+test('public cache-only replays SQLite .ad with zero inference and rejects inference', async () => {
+  const projectRoot = await mkdtemp(join(tmpdir(), 'pickle-mobile-project-'))
+  const cacheRoot = await mkdtemp(join(tmpdir(), 'pickle-mobile-cache-'))
   const opened: Array<Extract<MobileWorkerRequest, { type: 'open-session' }>> =
     []
+  let replayInferenceCount = 0
   const worker: MobileWorkerClient = {
     async request(request) {
       switch (request.type) {
@@ -100,7 +81,7 @@ test('runner stores Adaptive .ad then reuses it through public mobile Replay', a
                       requiredVariables: ['product'],
                     },
                   }
-                : { inferenceCount: 0 },
+                : { inferenceCount: replayInferenceCount },
           }
         }
         case 'close-session':
@@ -154,7 +135,7 @@ test('runner stores Adaptive .ad then reuses it through public mobile Replay', a
     },
     runtimeBindings: [{ name: 'product', value: 'Pickles' }],
   }
-  const cache = memoryCache()
+  const cache = await openLocalExecutionCache({ projectRoot, cacheRoot })
   const commonInput = {
     specification,
     scenario,
@@ -162,35 +143,63 @@ test('runner stores Adaptive .ad then reuses it through public mobile Replay', a
     adapter,
     applicationRevision: 'checkout-v1',
     executionCache: {
-      store: cache.store,
-      projectKey: 'project-1',
+      store: cache,
+      projectKey: cache.projectKey,
       sourceRunId: 'run-1',
     },
   }
 
-  const adaptive = await runScenario(commonInput)
-  const replay = await runScenario({
-    ...commonInput,
-    executionCache: { ...commonInput.executionCache, sourceRunId: 'run-2' },
-  })
+  try {
+    const adaptive = await runScenario(commonInput)
+    const replay = await runScenario({
+      ...commonInput,
+      cachePolicy: 'cache-only',
+      executionCache: { ...commonInput.executionCache, sourceRunId: 'run-2' },
+    })
+    replayInferenceCount = 1
+    const inferredReplay = await runScenario({
+      ...commonInput,
+      cachePolicy: 'cache-only',
+      executionCache: { ...commonInput.executionCache, sourceRunId: 'run-3' },
+    })
 
-  expect(adaptive.result).toMatchObject({
-    state: 'passed',
-    executionMode: 'adaptive',
-    cacheOutcome: 'miss',
-  })
-  expect(replay.result).toMatchObject({
-    state: 'passed',
-    executionMode: 'replay',
-    cacheOutcome: 'hit',
-    inferenceCount: 0,
-  })
-  expect(opened.map((request) => request.mode)).toEqual(['adaptive', 'replay'])
-  expect(opened[1]?.executionCache).toEqual({
-    adapterPayload: payload,
-    requiredVariables: ['product'],
-  })
-  expect(cache.writes).toHaveLength(1)
-  expect(cache.writes[0]).toContain(productPlaceholder)
-  expect(cache.writes[0]).not.toContain('Pickles')
+    expect(adaptive.result).toMatchObject({
+      state: 'passed',
+      executionMode: 'adaptive',
+      cacheOutcome: 'miss',
+    })
+    expect(replay.result).toMatchObject({
+      state: 'passed',
+      executionMode: 'replay',
+      cacheOutcome: 'hit',
+      inferenceCount: 0,
+    })
+    expect(inferredReplay.result).toMatchObject({
+      state: 'failed',
+      executionMode: 'replay',
+      cacheOutcome: 'hit',
+      inferenceCount: 1,
+    })
+    expect(inferredReplay.result.message).toContain('zero evaluation inference')
+    expect(opened.map((request) => request.mode)).toEqual([
+      'adaptive',
+      'replay',
+      'replay',
+    ])
+    expect(opened[1]?.executionCache).toEqual({
+      adapterPayload: payload,
+      requiredVariables: ['product'],
+    })
+    const [entry] = await cache.inspect()
+    expect(entry?.hitCount).toBe(2)
+    expect(JSON.stringify(entry)).not.toContain('Pickles')
+    const database = await Bun.file(
+      join(cacheRoot, cache.projectKey, 'execution-cache.sqlite'),
+    ).bytes()
+    expect(Buffer.from(database).includes(Buffer.from('Pickles'))).toBe(false)
+  } finally {
+    await adapter.dispose?.()
+    await rm(projectRoot, { recursive: true, force: true })
+    await rm(cacheRoot, { recursive: true, force: true })
+  }
 })

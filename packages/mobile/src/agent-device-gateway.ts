@@ -117,6 +117,21 @@ function validateArtifactRedactions(input: OpenGatewaySessionInput): void {
   }
 }
 
+function evidenceRedactions(
+  input: OpenGatewaySessionInput,
+): MobileTextRedaction[] {
+  const redactions = [...(input.redactions ?? [])]
+  const configuredValues = new Set(
+    redactions.map((redaction) => redaction.match),
+  )
+  for (const binding of input.scenario.runtimeBindings) {
+    if (!binding.value || configuredValues.has(binding.value)) continue
+    configuredValues.add(binding.value)
+    redactions.push({ match: binding.value })
+  }
+  return redactions
+}
+
 function normalizedCapabilities(
   platform: MobilePlatform,
   commands: readonly string[],
@@ -273,7 +288,7 @@ export class AgentDeviceGateway {
             }),
       logsStarted: false,
       mode: input.mode,
-      redactions: input.redactions ?? [],
+      redactions: evidenceRedactions(input),
     }
     this.sessions.set(input.sessionId, session)
     const ensureSessionOwned = () => {
