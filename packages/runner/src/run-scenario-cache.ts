@@ -398,6 +398,7 @@ async function reuseTerminalOutcome(
   input: RunScenarioInput,
   events: RunEvent[],
   serialized: SerializedExecutionCacheTerminalOutcome,
+  inferenceOffset: number,
 ): Promise<ScenarioRun | undefined> {
   const outcome = deserializeExecutionCacheTerminalOutcome(serialized)
   if (!outcome) return undefined
@@ -414,7 +415,7 @@ async function reuseTerminalOutcome(
           : undefined,
     ),
     cacheOutcome: outcome.cacheOutcome,
-    inferenceCount: 0,
+    inferenceCount: inferenceOffset,
     cacheUncacheableReason: outcome.cacheUncacheableReason,
     failureKind: outcome.failureKind,
   }
@@ -431,7 +432,7 @@ async function reuseTerminalOutcome(
   }
   await appendEvent(events, input, {
     type: 'inference-count-updated',
-    inferenceCount: 0,
+    inferenceCount: inferenceOffset,
   })
   return finishRun(input, events, result)
 }
@@ -467,7 +468,8 @@ async function runCoordinatedAdaptive(
     observedRevision: options.observedRevision,
     replayPublished: () =>
       replayPublishedEntry(input, events, cacheKey, inferenceOffset),
-    reuseTerminal: (outcome) => reuseTerminalOutcome(input, events, outcome),
+    reuseTerminal: (outcome) =>
+      reuseTerminalOutcome(input, events, outcome, inferenceOffset),
     waitEnded: (status) =>
       finishLeaseWait(input, events, cacheOutcome, status, inferenceOffset),
     evaluate: () => runCachedAttempts(input, 'adaptive', events),

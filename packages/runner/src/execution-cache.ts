@@ -131,20 +131,26 @@ export interface ExecutionCacheStore {
   coordination?: ExecutionCacheCoordination
 }
 
-export type CacheOutcome =
-  | 'hit'
-  | 'miss'
-  | 'refresh'
-  | 'fallback'
-  | 'uncacheable'
+const terminalCacheOutcomeValues = [
+  'miss',
+  'refresh',
+  'fallback',
+  'uncacheable',
+] as const
+
+export type CacheOutcome = 'hit' | (typeof terminalCacheOutcomeValues)[number]
+
+const executionCacheUncacheableReasonValues = [
+  'application-revision-missing',
+  'bound-parameter-value',
+  'non-deterministic-action',
+  'non-deterministic-assertion',
+  'payload-validation-failed',
+  'entry-too-large',
+] as const
 
 export type ExecutionCacheUncacheableReason =
-  | 'application-revision-missing'
-  | 'bound-parameter-value'
-  | 'non-deterministic-action'
-  | 'non-deterministic-assertion'
-  | 'payload-validation-failed'
-  | 'entry-too-large'
+  (typeof executionCacheUncacheableReasonValues)[number]
 
 export interface ExecutionCacheWriteMetadata {
   sourceRunId: string
@@ -206,16 +212,9 @@ const executionCacheTerminalOutcomeSchema = z.strictObject({
     'skipped',
     'infrastructure-error',
   ]),
-  cacheOutcome: z.enum(['miss', 'refresh', 'fallback', 'uncacheable']),
+  cacheOutcome: z.enum(terminalCacheOutcomeValues),
   cacheUncacheableReason: z
-    .enum([
-      'application-revision-missing',
-      'bound-parameter-value',
-      'non-deterministic-action',
-      'non-deterministic-assertion',
-      'payload-validation-failed',
-      'entry-too-large',
-    ])
+    .enum(executionCacheUncacheableReasonValues)
     .optional(),
   failureKind: z.literal('cache-miss').optional(),
 })

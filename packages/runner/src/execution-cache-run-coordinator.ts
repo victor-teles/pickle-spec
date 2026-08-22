@@ -3,6 +3,7 @@ import type {
   ExecutionCacheKey,
   ExecutionCacheLease,
   ExecutionCacheLeaseWaitResult,
+  SerializedExecutionCacheTerminalOutcome,
 } from './execution-cache'
 
 interface CoordinateExecutionCacheRunInput<Evaluation, Result> {
@@ -12,12 +13,7 @@ interface CoordinateExecutionCacheRunInput<Evaluation, Result> {
   observedRevision?: number
   replayPublished(): Promise<Result | undefined>
   reuseTerminal(
-    outcome: NonNullable<
-      Extract<
-        ExecutionCacheLeaseWaitResult,
-        { status: 'released' }
-      >['terminalOutcome']
-    >,
+    outcome: SerializedExecutionCacheTerminalOutcome,
   ): Promise<Result | undefined>
   waitEnded(
     status: Extract<
