@@ -8,22 +8,27 @@ import {
 } from './web-execution-cache'
 import { errorMessage } from './web-step'
 
-export function instructionDescription(instruction: WebInstruction): string {
+type InstructionOrigin = 'cached' | 'resolved'
+
+export function instructionDescription(
+  instruction: WebInstruction,
+  origin: InstructionOrigin,
+): string {
   switch (instruction.kind) {
     case 'navigate':
-      return 'Navigate to the cached URL'
+      return `Navigate to the ${origin} URL`
     case 'click':
-      return 'Click the cached locator'
+      return `Click the ${origin} locator`
     case 'fill':
-      return 'Fill the cached locator'
+      return `Fill the ${origin} locator`
     case 'type':
-      return 'Type into the cached locator'
+      return `Type into the ${origin} locator`
     case 'hover':
-      return 'Hover the cached locator'
+      return `Hover the ${origin} locator`
     case 'select-option':
-      return 'Select cached option values'
+      return `Select ${origin} option values`
     case 'wait-for':
-      return `Wait for cached locator to be ${instruction.state}`
+      return `Wait for ${origin} locator to be ${instruction.state}`
     default:
       return `Assert ${instruction.kind}`
   }
@@ -31,9 +36,10 @@ export function instructionDescription(instruction: WebInstruction): string {
 
 export function resolvedInstructions(
   instructions: readonly WebInstruction[],
+  origin: InstructionOrigin,
 ): ResolvedAction[] {
   return instructions.map((instruction) => ({
-    description: instructionDescription(instruction),
+    description: instructionDescription(instruction, origin),
   }))
 }
 
@@ -76,6 +82,7 @@ export function createWebInstructionExecutor({
   replay,
 }: CreateInstructionExecutorInput) {
   let navigated = false
+  const instructionOrigin = replay ? 'cached' : 'resolved'
 
   function failure(
     instruction: WebInstruction,
@@ -83,7 +90,9 @@ export function createWebInstructionExecutor({
   ): StepExecution {
     const execution: StepExecution = {
       state: 'failed',
-      resolvedActions: [{ description: instructionDescription(instruction) }],
+      resolvedActions: [
+        { description: instructionDescription(instruction, instructionOrigin) },
+      ],
       message,
     }
     if (replay) execution.replayDiverged = true
@@ -132,7 +141,10 @@ export function createWebInstructionExecutor({
     instructions: readonly WebInstruction[],
     signal: AbortSignal | undefined,
   ): Promise<StepExecution> {
-    const resolvedActions = resolvedInstructions(instructions)
+    const resolvedActions = resolvedInstructions(
+      instructions,
+      instructionOrigin,
+    )
     for (const instruction of instructions) {
       const failed = await executeDirect(instruction, signal)
       if (failed) return { ...failed, resolvedActions }

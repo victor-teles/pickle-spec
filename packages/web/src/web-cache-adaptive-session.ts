@@ -129,7 +129,10 @@ export function createWebAdaptiveSession({
       instructions.push(assertion)
       const result = await executor.executeSequence([assertion], signal)
       if (result.state === 'passed') compiledSteps[index] = { instructions }
-      return { ...result, resolvedActions: resolvedInstructions(instructions) }
+      return {
+        ...result,
+        resolvedActions: resolvedInstructions(instructions, 'resolved'),
+      }
     }
     uncacheableReason = draft
       ? 'bound-parameter-value'
@@ -180,7 +183,10 @@ export function createWebAdaptiveSession({
       instructions.push(...compiled)
       const result = await executor.executeSequence(compiled, signal)
       if (result.state === 'passed') compiledSteps[index] = { instructions }
-      return { ...result, resolvedActions: resolvedInstructions(instructions) }
+      return {
+        ...result,
+        resolvedActions: resolvedInstructions(instructions, 'resolved'),
+      }
     }
     uncacheableReason = 'non-deterministic-action'
     const resolvedActions: ResolvedAction[] = []

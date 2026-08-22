@@ -141,7 +141,7 @@ export function createDirectBrowser(
       const locator = locatorFor(page, instruction.locator, bindings)
       switch (instruction.kind) {
         case 'click':
-          await withAbort(locator.click(), signal)
+          await withAbort(locator.sendClickEvent(), signal)
           return { success: true }
         case 'fill':
           await withAbort(

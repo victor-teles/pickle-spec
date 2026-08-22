@@ -189,6 +189,16 @@ describe('public web Replay proof', () => {
         cacheOutcome: 'hit',
         inferenceCount: 0,
       })
+      expect(
+        adaptive.result.steps[0]?.resolvedActions.map(
+          ({ description }) => description,
+        ),
+      ).toEqual(['Navigate to the resolved URL', 'Click the resolved locator'])
+      expect(
+        replay.result.steps[0]?.resolvedActions.map(
+          ({ description }) => description,
+        ),
+      ).toEqual(['Navigate to the cached URL', 'Click the cached locator'])
       expect(evidence.modelCalls.adaptive).toEqual({
         act: 0,
         compileAssertion: 1,
