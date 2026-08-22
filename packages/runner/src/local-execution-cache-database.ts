@@ -92,7 +92,7 @@ function openDatabase(
   path: string,
   options: DatabaseOpenOptions = {},
 ): Database {
-  const db = new Database(path, { create: true })
+  const db = new Database(path, { create: true, strict: true })
   try {
     db.run('PRAGMA busy_timeout = 5000')
     if (options.verifyIntegrity) {

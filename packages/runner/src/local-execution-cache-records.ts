@@ -20,6 +20,8 @@ interface RetainedEntryRow {
   retained: number
 }
 
+type SqliteNamedBindingValue = string | number | null
+
 type ExecutionCacheKeyValues = readonly [
   projectKey: string,
   scenarioId: string,
@@ -36,6 +38,7 @@ export type ExecutionCacheEntryWriteMode =
   | { kind: 'compare-and-swap'; expectedRevision?: number }
 
 interface EntryWriteFields {
+  [name: string]: SqliteNamedBindingValue
   serializedEnvelope: string
   payloadDigest: string
   sourceRunId: string
@@ -176,25 +179,22 @@ export function writeExecutionCacheEntry(
       timestamp,
       mode.expectedRevision,
     )
-    const result = db.run(
-      `UPDATE entries SET
-         serialized_envelope = ?, payload_digest = ?, source_run_id = ?,
-         evaluation_model = ?, evaluation_inference_count = ?, created_at = ?,
-         last_used_at = ?, hit_count = 0, size_bytes = ?, revision = revision + 1
-       WHERE key_digest = ? AND revision = ?`,
-      [
-        bindings.serializedEnvelope,
-        bindings.payloadDigest,
-        bindings.sourceRunId,
-        bindings.evaluationModel,
-        bindings.evaluationInferenceCount,
-        bindings.createdAt,
-        bindings.lastUsedAt,
-        bindings.sizeBytes,
-        bindings.keyDigest,
-        bindings.expectedRevision,
-      ],
-    )
+    const result = db
+      .query<unknown, CompareAndSwapEntryBindings>(
+        `UPDATE entries SET
+         serialized_envelope = $serializedEnvelope,
+         payload_digest = $payloadDigest,
+         source_run_id = $sourceRunId,
+         evaluation_model = $evaluationModel,
+         evaluation_inference_count = $evaluationInferenceCount,
+         created_at = $createdAt,
+         last_used_at = $lastUsedAt,
+         hit_count = 0,
+         size_bytes = $sizeBytes,
+         revision = revision + 1
+       WHERE key_digest = $keyDigest AND revision = $expectedRevision`,
+      )
+      .run(bindings)
     return result.changes === 1
   }
   const conflictClause =
@@ -212,36 +212,25 @@ export function writeExecutionCacheEntry(
            revision = entries.revision + 1`
       : 'ON CONFLICT(key_digest) DO NOTHING'
   const bindings = insertEntryBindings(serialized, metadata, timestamp)
-  const result = db.run(
-    `INSERT INTO entries (
+  const result = db
+    .query<unknown, InsertEntryBindings>(
+      `INSERT INTO entries (
        serialized_envelope, payload_digest, source_run_id, evaluation_model,
        evaluation_inference_count, created_at, last_used_at, hit_count,
        size_bytes, key_digest, project_key, scenario_id, scenario_revision,
        execution_target_profile_id, target_configuration_fingerprint,
        application_revision, adapter_kind, adapter_cache_schema_version,
        revision
-     ) VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
+     ) VALUES (
+       $serializedEnvelope, $payloadDigest, $sourceRunId, $evaluationModel,
+       $evaluationInferenceCount, $createdAt, $lastUsedAt, 0, $sizeBytes,
+       $keyDigest, $projectKey, $scenarioId, $scenarioRevision,
+       $executionTargetProfileId, $targetConfigurationFingerprint,
+       $applicationRevision, $adapterKind, $adapterCacheSchemaVersion, 1
+     )
      ${conflictClause}`,
-    [
-      bindings.serializedEnvelope,
-      bindings.payloadDigest,
-      bindings.sourceRunId,
-      bindings.evaluationModel,
-      bindings.evaluationInferenceCount,
-      bindings.createdAt,
-      bindings.lastUsedAt,
-      bindings.sizeBytes,
-      bindings.keyDigest,
-      bindings.projectKey,
-      bindings.scenarioId,
-      bindings.scenarioRevision,
-      bindings.executionTargetProfileId,
-      bindings.targetConfigurationFingerprint,
-      bindings.applicationRevision,
-      bindings.adapterKind,
-      bindings.adapterCacheSchemaVersion,
-    ],
-  )
+    )
+    .run(bindings)
   return result.changes === 1
 }
 
