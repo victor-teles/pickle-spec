@@ -1,11 +1,24 @@
-# Automation Exercise example
+# SauceDemo example
 
-This project models the 26 scenarios in the public
-[Automation Exercise test-case catalog](https://automationexercise.com/test_cases).
-The Specifications are grouped by customer accounts, engagement, catalog,
-cart, and checkout.
+This project exercises the public [SauceDemo](https://www.saucedemo.com/)
+practice storefront through one focused customer journey:
 
-## Run the read-only example
+```text
+Login → Products → Add backpack → Cart → Checkout
+      → Customer information → Order confirmation
+```
+
+The example is split into two independent Specifications:
+
+- Customer authentication verifies that the standard customer reaches Products.
+- Backpack checkout covers the complete journey through order confirmation.
+
+SauceDemo publishes its practice credentials on the login page. The
+Specifications use `standard_user` with `secret_sauce` and submit only dummy
+customer information. Each Scenario starts in an isolated browser session, so
+cart and checkout state do not leak between runs.
+
+## Run the example
 
 Set `GOOGLE_GENERATIVE_AI_API_KEY` in `apps/example/.env`, then run from the
 repository root:
@@ -14,27 +27,9 @@ repository root:
 bun run run:example
 ```
 
-The default command selects only scenarios tagged `@smoke`. These scenarios
-navigate, search, and inspect the public catalog without submitting forms or
-creating public data.
-
-## Run the complete catalog
+To run the complete journey directly from this project:
 
 ```sh
 cd apps/example
-bun run run:catalog
+bun run run:journey
 ```
-
-The complete catalog is intentionally not the default. Scenarios tagged
-`@external-write` may register or delete accounts, submit contact details,
-subscribe email addresses, publish reviews, or place practice orders on the
-public service. Use disposable data and run them individually when their
-preconditions are available.
-
-Additional tags document required setup:
-
-- `@automation-exercise:<number>` links a Scenario to its source catalog entry.
-- `@requires-account` needs a disposable, pre-registered customer account.
-- `@requires-upload` needs a harmless local file for the contact form.
-- `@payment` uses the practice checkout flow; never enter real payment data.
-- `@downloads-file` writes an invoice to the browser download directory.

@@ -7,18 +7,15 @@
       "states": ["active"]
     }
   },
-  "links": {
-    "automation-exercise": "https://automationexercise.com/test_cases#collapse{id}"
-  },
   "executionTargetProfile": {
     "id": "web"
   },
   "web": {
-    "baseUrl": "https://automationexercise.com",
+    "baseUrl": "https://www.saucedemo.com",
     "browser": {
       "environment": "local",
       "modelName": "google/gemini-3.6-flash",
-      "headless": true
+      "headless": false
     }
   },
   "execution": {
