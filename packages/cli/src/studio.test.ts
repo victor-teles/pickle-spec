@@ -183,6 +183,7 @@ Feature: Search
     try {
       await page.goto(url)
       const refresh = page.getByRole('button', { name: 'Refresh cache' })
+      await refresh.waitFor({ timeout: 20_000 })
       expect(await refresh.count()).toBe(1)
       const requestPromise = page.waitForRequest(
         (request) =>
