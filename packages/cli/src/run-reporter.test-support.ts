@@ -46,10 +46,14 @@ type PassedRunInput = {
 }
 
 export function passedRun(input: PassedRunInput): ScenarioRun {
+  const startedAt = '2026-08-20T14:32:07.000Z'
+  const finishedAt = new Date(
+    Date.parse(startedAt) + input.durationMs,
+  ).toISOString()
   return {
     events: [],
     result: {
-      schemaVersion: 1,
+      schemaVersion: 2,
       specification: {
         uri: input.specificationUri,
         name: input.specificationName,
@@ -57,8 +61,26 @@ export function passedRun(input: PassedRunInput): ScenarioRun {
       scenario: { id: input.scenarioId, name: input.scenarioName },
       executionTargetProfile: { id: input.profileId },
       state: 'passed',
-      steps: [],
+      startedAt,
+      finishedAt,
       durationMs: input.durationMs,
+      attempts: [
+        {
+          attempt: 1,
+          startedAt,
+          finishedAt,
+          durationMs: input.durationMs,
+          state: 'passed',
+          steps: [],
+          evidenceAvailability: [
+            { kind: 'screenshot', state: 'not-supported' },
+            { kind: 'trace', state: 'not-supported' },
+            { kind: 'recording', state: 'not-supported' },
+            { kind: 'device-log', state: 'not-supported' },
+            { kind: 'diagnostics', state: 'not-supported' },
+          ],
+        },
+      ],
     },
   }
 }

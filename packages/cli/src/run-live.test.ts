@@ -283,7 +283,7 @@ Feature: Interrupt safely
   expect(
     exportedEvents
       .filter((event) => event.type === 'scenario-finished')
-      .map((event) => event.result.state),
+      .map((event) => event.attempt.state),
   ).toEqual(['passed', 'cancelled'])
 }, 15_000)
 
@@ -411,7 +411,7 @@ Feature: Reporter failure
   expect(
     exportedEvents
       .filter((event) => event.type === 'scenario-finished')
-      .map((event) => event.result.state),
+      .map((event) => event.attempt.state),
   ).toEqual(['passed', 'passed'])
 }, 15_000)
 

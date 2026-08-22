@@ -6,6 +6,16 @@ import {
   runScenario,
 } from '../index'
 
+type TimedRunScenarioInput = Parameters<typeof runScenario>[0] & {
+  now: () => Date
+}
+
+type ScenarioRunResult = Awaited<ReturnType<typeof runScenario>>['result']
+
+function finalAttempt(result: ScenarioRunResult) {
+  return result.attempts.at(-1)!
+}
+
 const scenario: Scenario = {
   name: 'Complete a purchase',
   tags: [],
@@ -23,6 +33,161 @@ const specification: Specification = {
 }
 
 describe('runScenario', () => {
+  test('records one canonical Scenario attempt with deterministic evidence timing and durable scope', async () => {
+    const timestamps = [
+      '2026-08-22T12:00:00.000Z',
+      '2026-08-22T12:00:01.000Z',
+      '2026-08-22T12:00:02.000Z',
+      '2026-08-22T12:00:03.000Z',
+      '2026-08-22T12:00:04.000Z',
+      '2026-08-22T12:00:05.000Z',
+    ]
+    let timestampIndex = 0
+    const outlinedScenario: Scenario = {
+      ...scenario,
+      id: 'scn-checkout-payment',
+      examplesId: 'examples-payment-method',
+      examplesRowId: 'row-credit-card',
+    }
+    const input: TimedRunScenarioInput = {
+      specification,
+      scenario: outlinedScenario,
+      executionTargetProfile: {
+        id: 'chrome',
+        adapter: 'web',
+        capabilities: ['screenshots'],
+      },
+      adapter: {
+        async openSession() {
+          return {
+            async executeStep(step) {
+              return {
+                state: 'passed',
+                resolvedActions: [{ description: `Performed: ${step.text}` }],
+              }
+            },
+            async close() {},
+          }
+        },
+      },
+      now: () => new Date(timestamps[timestampIndex++]!),
+    }
+
+    const run = await runScenario(input)
+    const scope = {
+      scenarioId: 'scn-checkout-payment',
+      examplesRowId: 'row-credit-card',
+      executionTargetProfileId: 'chrome',
+      attempt: 1,
+    }
+
+    expect(run.events).toMatchObject([
+      {
+        schemaVersion: 2,
+        sequence: 1,
+        type: 'scenario-started',
+        occurredAt: timestamps[0],
+        scope,
+      },
+      {
+        schemaVersion: 2,
+        sequence: 2,
+        type: 'step-started',
+        occurredAt: timestamps[1],
+        scope: { ...scope, stepIndex: 0 },
+      },
+      {
+        schemaVersion: 2,
+        sequence: 3,
+        type: 'step-finished',
+        occurredAt: timestamps[2],
+        scope: { ...scope, stepIndex: 0 },
+      },
+      {
+        schemaVersion: 2,
+        sequence: 4,
+        type: 'step-started',
+        occurredAt: timestamps[3],
+        scope: { ...scope, stepIndex: 1 },
+      },
+      {
+        schemaVersion: 2,
+        sequence: 5,
+        type: 'step-finished',
+        occurredAt: timestamps[4],
+        scope: { ...scope, stepIndex: 1 },
+      },
+      {
+        schemaVersion: 2,
+        sequence: 6,
+        type: 'scenario-finished',
+        occurredAt: timestamps[5],
+        scope,
+        attempt: {
+          attempt: 1,
+          startedAt: timestamps[0],
+          finishedAt: timestamps[5],
+          durationMs: 5_000,
+          state: 'passed',
+        },
+      },
+    ])
+    expect(run.result).toMatchObject({
+      schemaVersion: 2,
+      specification: {
+        name: 'Checkout',
+        uri: 'features/checkout.feature',
+      },
+      scenario: {
+        id: 'scn-checkout-payment',
+        name: 'Complete a purchase',
+        examplesId: 'examples-payment-method',
+        examplesRowId: 'row-credit-card',
+      },
+      executionTargetProfile: {
+        id: 'chrome',
+        adapter: 'web',
+        capabilities: ['screenshots'],
+      },
+      state: 'passed',
+      startedAt: timestamps[0],
+      finishedAt: timestamps[5],
+      durationMs: 5_000,
+      attempts: [
+        {
+          attempt: 1,
+          startedAt: timestamps[0],
+          finishedAt: timestamps[5],
+          durationMs: 5_000,
+          state: 'passed',
+          executionMode: 'adaptive',
+          steps: [
+            {
+              index: 0,
+              startedAt: timestamps[1],
+              finishedAt: timestamps[2],
+              durationMs: 1_000,
+              state: 'passed',
+              resolvedActions: [
+                { description: 'Performed: a product is in the basket' },
+              ],
+            },
+            {
+              index: 1,
+              startedAt: timestamps[3],
+              finishedAt: timestamps[4],
+              durationMs: 1_000,
+              state: 'passed',
+              resolvedActions: [
+                { description: 'Performed: the purchase succeeds' },
+              ],
+            },
+          ],
+        },
+      ],
+    })
+  })
+
   test('emits versioned events and materializes a passed test result', async () => {
     const close = mock(async () => {})
     const adapter: ExecutionTargetAdapter = {
@@ -53,15 +218,15 @@ describe('runScenario', () => {
         event.type,
       ]),
     ).toEqual([
-      [1, 1, 'scenario-started'],
-      [1, 2, 'step-started'],
-      [1, 3, 'step-finished'],
-      [1, 4, 'step-started'],
-      [1, 5, 'step-finished'],
-      [1, 6, 'scenario-finished'],
+      [2, 1, 'scenario-started'],
+      [2, 2, 'step-started'],
+      [2, 3, 'step-finished'],
+      [2, 4, 'step-started'],
+      [2, 5, 'step-finished'],
+      [2, 6, 'scenario-finished'],
     ])
     expect(run.result).toMatchObject({
-      schemaVersion: 1,
+      schemaVersion: 2,
       specification: {
         name: 'Checkout',
         uri: 'features/checkout.feature',
@@ -69,28 +234,32 @@ describe('runScenario', () => {
       scenario: { name: 'Complete a purchase' },
       executionTargetProfile: { id: 'deterministic' },
       state: 'passed',
-      executionMode: 'adaptive',
-      steps: [
+      attempts: [
         {
-          step: {
-            keyword: 'Given',
-            text: 'a product is in the basket',
-            type: 'context',
-          },
-          state: 'passed',
-          resolvedActions: [
-            { description: 'Performed: a product is in the basket' },
-          ],
-        },
-        {
-          step: {
-            keyword: 'Then',
-            text: 'the purchase succeeds',
-            type: 'outcome',
-          },
-          state: 'passed',
-          resolvedActions: [
-            { description: 'Performed: the purchase succeeds' },
+          executionMode: 'adaptive',
+          steps: [
+            {
+              step: {
+                keyword: 'Given',
+                text: 'a product is in the basket',
+                type: 'context',
+              },
+              state: 'passed',
+              resolvedActions: [
+                { description: 'Performed: a product is in the basket' },
+              ],
+            },
+            {
+              step: {
+                keyword: 'Then',
+                text: 'the purchase succeeds',
+                type: 'outcome',
+              },
+              state: 'passed',
+              resolvedActions: [
+                { description: 'Performed: the purchase succeeds' },
+              ],
+            },
           ],
         },
       ],
@@ -98,6 +267,44 @@ describe('runScenario', () => {
     expect(run.result.scenario.id).toBeString()
     expect(run.result.durationMs).toBeGreaterThanOrEqual(0)
     expect(close).toHaveBeenCalledTimes(1)
+  })
+
+  test('preserves adapter-reported evidence capture failures on the attempt', async () => {
+    const run = await runScenario({
+      specification,
+      scenario,
+      executionTargetProfile: {
+        id: 'chrome',
+        adapter: 'web',
+        capabilities: ['screenshots'],
+      },
+      adapter: {
+        async openSession() {
+          return {
+            async executeStep() {
+              return {
+                state: 'passed',
+                resolvedActions: [],
+                evidenceAvailability: [
+                  {
+                    kind: 'screenshot',
+                    state: 'capture-failed',
+                    message: 'Screenshot capture failed',
+                  },
+                ],
+              }
+            },
+            async close() {},
+          }
+        },
+      },
+    })
+
+    expect(finalAttempt(run.result).evidenceAvailability).toContainEqual({
+      kind: 'screenshot',
+      state: 'capture-failed',
+      message: 'Screenshot capture failed',
+    })
   })
 
   test('copies adapter fidelityPolicy onto the test result', async () => {
@@ -126,7 +333,7 @@ describe('runScenario', () => {
       adapter,
     })
 
-    expect(run.result.fidelityPolicy).toEqual({
+    expect(finalAttempt(run.result).fidelityPolicy).toEqual({
       profile: 'fast',
       tradeOffs: ['block-image', 'disable-animations'],
     })
@@ -152,12 +359,12 @@ describe('runScenario', () => {
     })
 
     expect(run.result.state).toBe('failed')
-    expect(run.result.message).toBe('The basket was empty')
-    expect(run.result.steps).toHaveLength(1)
+    expect(finalAttempt(run.result).message).toBe('The basket was empty')
+    expect(finalAttempt(run.result).steps).toHaveLength(1)
     expect(run.events.at(-1)).toMatchObject({
-      schemaVersion: 1,
+      schemaVersion: 2,
       type: 'scenario-finished',
-      result: { state: 'failed' },
+      attempt: { state: 'failed' },
     })
     expect(executeStep).toHaveBeenCalledTimes(1)
   })
@@ -178,10 +385,14 @@ describe('runScenario', () => {
     })
 
     expect(run.result).toMatchObject({
-      schemaVersion: 1,
+      schemaVersion: 2,
       state: 'cancelled',
-      steps: [],
-      message: 'Scenario cancelled before the logical session started',
+      attempts: [
+        {
+          steps: [],
+          message: 'Scenario cancelled before the logical session started',
+        },
+      ],
     })
     expect(run.events.map((event) => event.type)).toEqual([
       'scenario-started',
@@ -219,8 +430,12 @@ describe('runScenario', () => {
 
     expect(run.result).toMatchObject({
       state: 'cancelled',
-      message: 'Scenario cancelled during step execution',
-      steps: [{ state: 'cancelled' }],
+      attempts: [
+        {
+          message: 'Scenario cancelled during step execution',
+          steps: [{ state: 'cancelled' }],
+        },
+      ],
     })
     expect(run.events.map((event) => event.type)).toEqual([
       'scenario-started',
@@ -244,11 +459,15 @@ describe('runScenario', () => {
     })
 
     expect(run.result).toMatchObject({
-      schemaVersion: 1,
+      schemaVersion: 2,
       executionTargetProfile: { id: 'unavailable-target' },
       state: 'infrastructure-error',
-      steps: [],
-      message: 'Execution target is unavailable',
+      attempts: [
+        {
+          steps: [],
+          message: 'Execution target is unavailable',
+        },
+      ],
     })
     expect(run.events.map((event) => event.type)).toEqual([
       'scenario-started',
@@ -271,7 +490,7 @@ describe('runScenario', () => {
 
     expect(run.result).toMatchObject({
       state: 'infrastructure-error',
-      message: 'Logical session isolation verification failed',
+      attempts: [{ message: 'Logical session isolation verification failed' }],
     })
   })
 
@@ -295,11 +514,15 @@ describe('runScenario', () => {
 
     expect(run.result).toMatchObject({
       state: 'infrastructure-error',
-      message: 'Target connection was lost',
-      steps: [
+      attempts: [
         {
-          state: 'infrastructure-error',
           message: 'Target connection was lost',
+          steps: [
+            {
+              state: 'infrastructure-error',
+              message: 'Target connection was lost',
+            },
+          ],
         },
       ],
     })
@@ -333,11 +556,11 @@ describe('runScenario', () => {
 
     expect(run.result).toMatchObject({
       state: 'infrastructure-error',
-      message: 'Could not release the logical session',
+      attempts: [{ message: 'Could not release the logical session' }],
     })
     expect(run.events.at(-1)).toMatchObject({
       type: 'scenario-finished',
-      result: { state: 'infrastructure-error' },
+      attempt: { state: 'infrastructure-error' },
     })
   })
 
@@ -365,7 +588,10 @@ describe('runScenario', () => {
 
     expect(run.result).toMatchObject({
       state: 'passed',
-      attempts: 2,
+      attempts: [
+        { attempt: 1, state: 'infrastructure-error' },
+        { attempt: 2, state: 'passed' },
+      ],
       flaky: true,
     })
     expect(openSession).toHaveBeenCalledTimes(2)
@@ -415,7 +641,10 @@ describe('runScenario', () => {
     })
     expect(withPolicy.result).toMatchObject({
       state: 'passed',
-      attempts: 2,
+      attempts: [
+        { attempt: 1, state: 'failed' },
+        { attempt: 2, state: 'passed' },
+      ],
       flaky: true,
     })
     expect(openSession).toHaveBeenCalledTimes(2)
@@ -452,7 +681,7 @@ describe('runScenario', () => {
 
     expect(run.result).toMatchObject({
       state: 'infrastructure-error',
-      message: 'Step exceeded its 5ms deadline',
+      attempts: [{ message: 'Step exceeded its 5ms deadline' }],
     })
     expect(close).toHaveBeenCalledTimes(1)
   })
@@ -478,13 +707,17 @@ describe('runScenario', () => {
 
     expect(adaptive.result).toMatchObject({
       state: 'passed',
-      executionMode: 'adaptive',
+      attempts: [{ executionMode: 'adaptive' }],
     })
     expect(cacheOnly.result).toMatchObject({
       state: 'failed',
-      executionMode: 'replay',
-      failureKind: 'cache-miss',
-      inferenceCount: 0,
+      attempts: [
+        {
+          executionMode: 'replay',
+          failureKind: 'cache-miss',
+          inferenceCount: 0,
+        },
+      ],
     })
     expect(openSession).toHaveBeenCalledTimes(1)
     expect(openSession).toHaveBeenCalledWith(

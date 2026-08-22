@@ -3,7 +3,11 @@ import { afterEach, expect, test } from 'bun:test'
 import { mkdir, mkdtemp, readdir, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
-import { resolveLocalProjectStorage } from '@pickle-spec/runner'
+import {
+  finalScenarioAttempt,
+  resolveLocalProjectStorage,
+  type TestResult,
+} from '@pickle-spec/runner'
 import { providerCredentialEnvironmentNames } from '@pickle-spec/runner/benchmarking'
 
 const roots: string[] = []
@@ -96,7 +100,7 @@ async function inspectCache(cacheRoot: string): Promise<CacheInspection> {
 
 type ReporterRecord = {
   kind?: string
-  result?: unknown
+  result?: TestResult
 }
 
 function outputText(output: Uint8Array): string {
@@ -109,6 +113,14 @@ function reporterRecords(output: Uint8Array): ReporterRecord[] {
     .split('\n')
     .filter(Boolean)
     .map((line) => JSON.parse(line) as ReporterRecord)
+}
+
+function reporterResult(output: Uint8Array): TestResult {
+  const result = reporterRecords(output).find(
+    (record) => record.kind === 'test-result',
+  )?.result
+  if (!result) throw new Error('Reporter Test result is missing')
+  return result
 }
 
 interface PickleRunOptions {
@@ -328,21 +340,27 @@ export default {
     runtimeSentinel: runtimeSentinelB,
     cacheOnly: true,
   })
-  const adaptiveResult = reporterRecords(adaptive.stdout).find(
-    (record) => record.kind === 'test-result',
-  )?.result
-  const cacheOnlyResult = reporterRecords(cacheOnly.stdout).find(
-    (record) => record.kind === 'test-result',
-  )?.result
+  const adaptiveResult = reporterResult(adaptive.stdout)
+  const cacheOnlyResult = reporterResult(cacheOnly.stdout)
 
   expect(cacheOnly.exitCode).toBe(0)
   expect(adaptiveResult).toMatchObject({
+    schemaVersion: 2,
+    state: 'passed',
+  })
+  expect(adaptiveResult.attempts).toHaveLength(1)
+  expect(finalScenarioAttempt(adaptiveResult)).toMatchObject({
     state: 'passed',
     executionMode: 'adaptive',
     cacheOutcome: 'miss',
     inferenceCount: 1,
   })
   expect(cacheOnlyResult).toMatchObject({
+    schemaVersion: 2,
+    state: 'passed',
+  })
+  expect(cacheOnlyResult.attempts).toHaveLength(1)
+  expect(finalScenarioAttempt(cacheOnlyResult)).toMatchObject({
     state: 'passed',
     executionMode: 'replay',
     cacheOutcome: 'hit',
@@ -375,11 +393,8 @@ export default {
     runPickle(concurrentOptions),
     runPickle(concurrentOptions),
   ])
-  const concurrentResults = concurrentRuns.map(
-    (execution) =>
-      reporterRecords(execution.stdout).find(
-        (record) => record.kind === 'test-result',
-      )?.result,
+  const concurrentResults = concurrentRuns.map((execution) =>
+    reporterResult(execution.stdout),
   )
 
   expect(
@@ -387,7 +402,17 @@ export default {
   ).toEqual(['', ''])
   expect(concurrentRuns.map((execution) => execution.exitCode)).toEqual([0, 0])
   expect(concurrentResults).toHaveLength(2)
-  expect(concurrentResults).toEqual(
+  expect(
+    concurrentResults.map(({ schemaVersion, state, attempts }) => ({
+      schemaVersion,
+      state,
+      attempts: attempts.length,
+    })),
+  ).toEqual([
+    { schemaVersion: 2, state: 'passed', attempts: 1 },
+    { schemaVersion: 2, state: 'passed', attempts: 1 },
+  ])
+  expect(concurrentResults.map(finalScenarioAttempt)).toEqual(
     expect.arrayContaining([
       expect.objectContaining({
         state: 'passed',
@@ -484,4 +509,4 @@ export default {
       }
     }
   }
-}, 15_000)
+}, 30_000)

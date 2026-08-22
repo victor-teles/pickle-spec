@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
   type ExecutionCacheStore,
+  finalScenarioAttempt,
   runScenario,
   type SerializedExecutionCacheEnvelope,
 } from '@pickle-spec/runner'
@@ -200,7 +201,7 @@ Feature: Sign in
 
     const adaptive = await runScenario(input)
 
-    expect(adaptive.result).toMatchObject({
+    expect(finalScenarioAttempt(adaptive.result)).toMatchObject({
       state: 'passed',
       executionMode: 'adaptive',
       cacheOutcome: 'uncacheable',
@@ -278,20 +279,22 @@ Feature: Account
       const replay = await runScenario({ ...input, cachePolicy: 'cache-only' })
       await adapter.dispose?.()
 
-      expect(adaptive.result).toMatchObject({
+      const adaptiveAttempt = finalScenarioAttempt(adaptive.result)
+      const replayAttempt = finalScenarioAttempt(replay.result)
+      expect(adaptiveAttempt).toMatchObject({
         state: 'passed',
         executionMode: 'adaptive',
         cacheOutcome: 'miss',
       })
-      expect(replay.result).toMatchObject({
+      expect(replayAttempt).toMatchObject({
         state: 'passed',
         executionMode: 'replay',
         cacheOutcome: 'hit',
       })
-      const adaptivePath = adaptive.result.steps[0]?.artifacts?.[0]?.path
-      const replayPath = replay.result.steps[0]?.artifacts?.[0]?.path
+      const adaptivePath = adaptiveAttempt.steps[0]?.artifacts?.[0]?.path
+      const replayPath = replayAttempt.steps[0]?.artifacts?.[0]?.path
       expect(adaptivePath).toMatch(
-        /specification-[a-f0-9]{16}\/scenario-[a-f0-9]{16}\/step-01-passed\.png$/,
+        /specification-[a-f0-9]{16}\/scenario-[a-f0-9]{16}\/examples-row-[a-f0-9]{16}\/step-01-passed\.png$/,
       )
       expect(replayPath).toBe(adaptivePath)
       expect(cache.writes).toHaveLength(1)
@@ -365,7 +368,7 @@ Feature: Unsafe operation
       applicationRevision: 'app-1',
     })
 
-    expect(run.result).toMatchObject({
+    expect(finalScenarioAttempt(run.result)).toMatchObject({
       state: 'passed',
       cacheOutcome: 'uncacheable',
       cacheUncacheableReason: 'non-deterministic-action',
@@ -440,7 +443,7 @@ Feature: Submit
     divergeNext = true
     const strict = await runScenario({ ...input, cachePolicy: 'cache-only' })
 
-    expect(fallback.result).toMatchObject({
+    expect(finalScenarioAttempt(fallback.result)).toMatchObject({
       state: 'passed',
       cacheOutcome: 'fallback',
       executionMode: 'adaptive',
@@ -448,7 +451,7 @@ Feature: Submit
     expect(fallback.events.map((event) => event.type)).toContain(
       'adaptive-fallback-started',
     )
-    expect(strict.result).toMatchObject({
+    expect(finalScenarioAttempt(strict.result)).toMatchObject({
       state: 'failed',
       executionMode: 'replay',
       cacheOutcome: 'hit',

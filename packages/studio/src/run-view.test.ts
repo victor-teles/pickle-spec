@@ -24,9 +24,9 @@ function finished(
 ): ClientEvent {
   return {
     type: 'scenario-finished',
-    result: {
-      scenario: { name, id },
-      executionTargetProfile: { id: profileId },
+    scenario: { name, id },
+    executionTargetProfile: { id: profileId },
+    attempt: {
       state,
       steps: [],
     },

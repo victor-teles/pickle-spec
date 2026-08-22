@@ -2,6 +2,7 @@ import type {
   CacheOutcome,
   ExecutionCacheUncacheableReason,
   ExecutionMode,
+  ScenarioAttempt,
 } from '@pickle-spec/runner'
 
 export type TestResultState =
@@ -52,7 +53,21 @@ export type ClientEvent =
       scenario?: ScenarioRef
       executionTargetProfile?: { id: string }
     }
-  | { type: 'scenario-finished'; result: TestResult }
+  | {
+      type: 'scenario-finished'
+      scenario: ScenarioRef
+      executionTargetProfile: { id: string }
+      attempt: Pick<
+        ScenarioAttempt,
+        | 'state'
+        | 'steps'
+        | 'executionMode'
+        | 'cacheOutcome'
+        | 'cacheUncacheableReason'
+        | 'inferenceCount'
+        | 'message'
+      >
+    }
   | { type: 'run-finished'; run: { id: string } }
 
 export type MatrixCell = {
@@ -312,14 +327,25 @@ function applyScenarioFinished(
   view: RunView,
   event: Extract<ClientEvent, { type: 'scenario-finished' }>,
 ): RunView {
+  const result: TestResult = {
+    scenario: event.scenario,
+    executionTargetProfile: event.executionTargetProfile,
+    state: event.attempt.state,
+    steps: event.attempt.steps,
+    executionMode: event.attempt.executionMode,
+    cacheOutcome: event.attempt.cacheOutcome,
+    cacheUncacheableReason: event.attempt.cacheUncacheableReason,
+    inferenceCount: event.attempt.inferenceCount,
+    message: event.attempt.message,
+  }
   const cell: MatrixCell = {
-    scenarioId: scenarioIdOf(event.result.scenario),
-    scenarioName: event.result.scenario.name,
-    profileId: event.result.executionTargetProfile.id,
-    state: event.result.state,
-    result: event.result,
+    scenarioId: scenarioIdOf(event.scenario),
+    scenarioName: event.scenario.name,
+    profileId: event.executionTargetProfile.id,
+    state: event.attempt.state,
+    result,
   }
   return withCells(view, replaceCell(view.cells, cell), {
-    activity: rememberActivity(view.activity, event.result.scenario.name),
+    activity: rememberActivity(view.activity, event.scenario.name),
   })
 }

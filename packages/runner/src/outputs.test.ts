@@ -6,30 +6,108 @@ import {
   publicRunEvent,
   publicTestResult,
 } from '../index'
-import type { RunEvent, TestResult } from './run-scenario'
+import type {
+  RunEvent,
+  ScenarioAttempt,
+  TestResult,
+  TestStepResult,
+} from './run-scenario'
 import type { TestRunManifest } from './test-run-store'
 
-function result(
-  name: string,
-  state: TestResult['state'],
-  extras: Partial<TestResult> = {},
-): TestResult {
+const startedAt = '2026-08-15T12:00:01.000Z'
+const finishedAt = '2026-08-15T12:00:02.000Z'
+
+interface ResultExtras {
+  attempt?: Partial<ScenarioAttempt>
+  attempts?: ScenarioAttempt[]
+  flaky?: boolean
+}
+
+function step(
+  index: number,
+  state: TestStepResult['state'],
+  extras: Partial<TestStepResult> = {},
+): TestStepResult {
   return {
-    schemaVersion: 1,
-    specification: {
-      name: 'Checkout',
-      uri: 'features/checkout.feature',
-    },
-    scenario: { name },
-    executionTargetProfile: { id: 'deterministic' },
+    index,
+    startedAt,
+    finishedAt,
+    durationMs: 1_000,
+    step: { keyword: 'Then', text: 'the outcome is visible', type: 'outcome' },
     state,
-    steps: [],
+    resolvedActions: [],
     ...extras,
   }
 }
 
+function attempt(
+  state: ScenarioAttempt['state'],
+  extras: Partial<ScenarioAttempt> = {},
+  attemptNumber = 1,
+): ScenarioAttempt {
+  return {
+    attempt: attemptNumber,
+    startedAt,
+    finishedAt,
+    durationMs: 1_000,
+    state,
+    steps: [],
+    evidenceAvailability: [
+      { kind: 'screenshot', state: 'not-supported' },
+      { kind: 'trace', state: 'not-supported' },
+      { kind: 'recording', state: 'not-supported' },
+      { kind: 'device-log', state: 'not-supported' },
+      { kind: 'diagnostics', state: 'not-supported' },
+    ],
+    ...extras,
+  }
+}
+
+function result(
+  name: string,
+  state: TestResult['state'],
+  extras: ResultExtras = {},
+): TestResult {
+  const attempts = extras.attempts ?? [attempt(state, extras.attempt)]
+  return {
+    schemaVersion: 2,
+    specification: {
+      name: 'Checkout',
+      uri: 'features/checkout.feature',
+    },
+    scenario: { name, id: 'scncheckout00000' },
+    executionTargetProfile: { id: 'deterministic' },
+    state,
+    startedAt: attempts[0]!.startedAt,
+    finishedAt: attempts.at(-1)!.finishedAt,
+    durationMs: 1_000,
+    attempts,
+    flaky: extras.flaky,
+  }
+}
+
+function scenarioFinishedEvent(testResult: TestResult): RunEvent {
+  const scenarioAttempt = testResult.attempts.at(-1)!
+  return {
+    schemaVersion: 2,
+    sequence: 2,
+    occurredAt: scenarioAttempt.finishedAt,
+    type: 'scenario-finished',
+    specification: testResult.specification,
+    scenario: testResult.scenario,
+    executionTargetProfile: testResult.executionTargetProfile,
+    scope: {
+      scenarioId: testResult.scenario.id!,
+      examplesRowId: testResult.scenario.examplesRowId,
+      executionTargetProfileId: testResult.executionTargetProfile.id,
+      attempt: scenarioAttempt.attempt,
+    },
+    attempt: scenarioAttempt,
+  }
+}
+
 const manifest: TestRunManifest = {
-  schemaVersion: 1,
+  schemaVersion: 2,
   id: 'run-ci',
   startedAt: '2026-08-15T12:00:00.000Z',
   finishedAt: '2026-08-15T12:01:00.000Z',
@@ -37,53 +115,161 @@ const manifest: TestRunManifest = {
   results: [
     result('Complete a purchase', 'passed'),
     result('Review the purchase', 'passed'),
-    result('Retry the purchase', 'passed', { attempts: 2, flaky: true }),
-    result('Pay for the order', 'failed', { message: 'Payment was declined' }),
+    result('Retry the purchase', 'passed', {
+      attempts: [
+        attempt('failed', { message: 'First attempt failed' }, 1),
+        attempt('passed', {}, 2),
+      ],
+      flaky: true,
+    }),
+    result('Pay for the order', 'failed', {
+      attempt: { message: 'Payment was declined' },
+    }),
     result('Skip the purchase', 'skipped', {
-      message: 'Scenario is tagged @ignore',
+      attempt: { message: 'Scenario is tagged @ignore' },
     }),
     result('Cancel the purchase', 'cancelled', {
-      message: 'Scenario cancelled',
+      attempt: { message: 'Scenario cancelled' },
     }),
     result('Open the storefront', 'infrastructure-error', {
-      message: 'Browser process exited',
+      attempt: { message: 'Browser process exited' },
     }),
   ],
 }
 
+const cachedResult = result('Complete a purchase', 'passed', {
+  attempt: {
+    executionMode: 'replay',
+    cacheOutcome: 'hit',
+    inferenceCount: 0,
+  },
+})
 const events: RunEvent[] = [
   {
-    schemaVersion: 1,
+    schemaVersion: 2,
     sequence: 1,
+    occurredAt: '2026-08-15T12:00:00.000Z',
     type: 'run-started',
     run: { id: 'run-ci', startedAt: '2026-08-15T12:00:00.000Z' },
   },
-  {
-    schemaVersion: 1,
-    sequence: 2,
-    type: 'scenario-finished',
-    result: result('Complete a purchase', 'passed', {
-      executionMode: 'replay',
-      cacheOutcome: 'hit',
-      inferenceCount: 0,
-    }),
-  },
+  scenarioFinishedEvent(cachedResult),
 ]
 
+const canonicalAttempt = {
+  attempt: 1,
+  startedAt: '2026-08-15T12:00:01.000Z',
+  finishedAt: '2026-08-15T12:00:03.500Z',
+  durationMs: 2_500,
+  state: 'failed',
+  steps: [
+    {
+      index: 0,
+      startedAt: '2026-08-15T12:00:01.000Z',
+      finishedAt: '2026-08-15T12:00:02.000Z',
+      durationMs: 1_000,
+      step: { keyword: 'When', text: 'I click pay', type: 'action' },
+      state: 'passed',
+      resolvedActions: [{ description: 'Click pay on chrome' }],
+    },
+    {
+      index: 1,
+      startedAt: '2026-08-15T12:00:02.000Z',
+      finishedAt: '2026-08-15T12:00:03.500Z',
+      durationMs: 1_500,
+      step: {
+        keyword: 'Then',
+        text: 'payment is captured',
+        type: 'outcome',
+      },
+      state: 'failed',
+      resolvedActions: [],
+      message: 'Payment was declined',
+      artifacts: [
+        {
+          kind: 'screenshot',
+          path: '/pickle-home/projects/checkout/runs/run-evidence/artifacts/attempt-1/step-2.png',
+          mediaType: 'image/png',
+        },
+      ],
+    },
+  ],
+  executionMode: 'adaptive',
+  cacheOutcome: 'uncacheable',
+  inferenceCount: 0,
+  message: 'Payment was declined',
+  evidenceAvailability: [
+    { kind: 'screenshot', state: 'available' },
+    { kind: 'trace', state: 'not-supported' },
+    { kind: 'recording', state: 'not-supported' },
+    { kind: 'device-log', state: 'not-supported' },
+    { kind: 'diagnostics', state: 'not-supported' },
+  ],
+} as const
+
+const canonicalResult = {
+  schemaVersion: 2,
+  specification: {
+    name: 'Checkout',
+    uri: 'features/checkout.feature',
+  },
+  scenario: {
+    name: 'Pay for the order',
+    id: 'scnpaybbbbbbbbbb',
+    examplesId: 'exspayccccccccbb',
+    examplesRowId: 'rowpayddddddddbb',
+  },
+  executionTargetProfile: {
+    id: 'chrome',
+    adapter: 'web',
+    capabilities: ['web', 'screenshots'],
+  },
+  state: 'failed',
+  startedAt: canonicalAttempt.startedAt,
+  finishedAt: canonicalAttempt.finishedAt,
+  durationMs: canonicalAttempt.durationMs,
+  attempts: [canonicalAttempt],
+} as const
+
+const canonicalManifest = {
+  schemaVersion: 2,
+  id: 'run-evidence',
+  startedAt: '2026-08-15T12:00:00.000Z',
+  finishedAt: '2026-08-15T12:00:04.000Z',
+  state: 'failed',
+  results: [canonicalResult],
+} as const
+
+const canonicalEvents = [
+  {
+    schemaVersion: 2,
+    sequence: 1,
+    occurredAt: '2026-08-15T12:00:00.000Z',
+    type: 'run-started',
+    run: {
+      id: 'run-evidence',
+      startedAt: '2026-08-15T12:00:00.000Z',
+    },
+  },
+  {
+    schemaVersion: 2,
+    sequence: 8,
+    occurredAt: '2026-08-15T12:00:03.500Z',
+    type: 'scenario-finished',
+    scope: {
+      scenarioId: 'scnpaybbbbbbbbbb',
+      examplesRowId: 'rowpayddddddddbb',
+      executionTargetProfileId: 'chrome',
+      attempt: 1,
+    },
+    specification: canonicalResult.specification,
+    scenario: canonicalResult.scenario,
+    executionTargetProfile: canonicalResult.executionTargetProfile,
+    attempt: canonicalAttempt,
+  },
+] as const
+
 test('formats versioned JSON from the materialized test-run schema', () => {
-  const formatted = JSON.parse(formatJson(manifest))
-  expect(formatted).toEqual({
-    schemaVersion: 1,
-    id: 'run-ci',
-    startedAt: '2026-08-15T12:00:00.000Z',
-    finishedAt: '2026-08-15T12:01:00.000Z',
-    state: 'failed',
-    results: manifest.results.map((testResult) =>
-      testResult.state === 'passed'
-        ? { ...testResult, state: 'passed' }
-        : testResult,
-    ),
-  })
+  expect(JSON.parse(formatJson(manifest))).toEqual(manifest)
   expect(manifest.results[1]?.state).toBe('passed')
 })
 
@@ -96,17 +282,36 @@ test('formats NDJSON from the versioned run-event schema', () => {
   ).toEqual(events)
 })
 
+test('projects canonical schema-v2 Test evidence to exact JSON', () => {
+  expect(
+    JSON.parse(formatJson(canonicalManifest as unknown as TestRunManifest)),
+  ).toEqual(canonicalManifest)
+})
+
+test('projects canonical schema-v2 Run events to exact NDJSON', () => {
+  expect(
+    formatNdjson(canonicalEvents as unknown as RunEvent[])
+      .trim()
+      .split('\n')
+      .map((line) => JSON.parse(line)),
+  ).toEqual([...canonicalEvents])
+})
+
 test('preserves Execution cache behavior in JSON and NDJSON', () => {
   const cached = result('Replay checkout', 'passed', {
-    executionMode: 'replay',
-    cacheOutcome: 'hit',
-    inferenceCount: 0,
+    attempt: {
+      executionMode: 'replay',
+      cacheOutcome: 'hit',
+      inferenceCount: 0,
+    },
   })
   const uncacheable = result('Adaptive checkout', 'passed', {
-    executionMode: 'adaptive',
-    cacheOutcome: 'uncacheable',
-    cacheUncacheableReason: 'non-deterministic-assertion',
-    inferenceCount: 2,
+    attempt: {
+      executionMode: 'adaptive',
+      cacheOutcome: 'uncacheable',
+      cacheUncacheableReason: 'non-deterministic-assertion',
+      inferenceCount: 2,
+    },
   })
   const structuredManifest = { ...manifest, results: [cached, uncacheable] }
 
@@ -114,59 +319,48 @@ test('preserves Execution cache behavior in JSON and NDJSON', () => {
     cached,
     uncacheable,
   ])
-  expect(
-    formatNdjson([
-      {
-        schemaVersion: 1,
-        sequence: 1,
-        type: 'scenario-finished',
-        result: cached,
-      },
-    ]),
-  ).toContain('"executionMode":"replay"')
+  expect(formatNdjson([scenarioFinishedEvent(cached)])).toContain(
+    '"executionMode":"replay"',
+  )
 })
 
 test('public output boundaries omit private replay data without mutating results', () => {
-  const privateResult = result('Private cache payload', 'passed', {
-    executionMode: 'replay',
-    cacheOutcome: 'hit',
-    inferenceCount: 0,
-    steps: [
+  const privateStep = step(0, 'passed', {
+    step: { keyword: 'When', text: 'I submit', type: 'action' },
+    resolvedActions: [
       {
-        step: { keyword: 'When', text: 'I submit', type: 'action' },
-        state: 'passed',
-        resolvedActions: [
-          {
-            description: 'Submit the form',
-            replay: { raw: 'private-replay-payload' },
-          },
-        ],
+        description: 'Submit the form',
+        replay: { raw: 'private-replay-payload' },
       },
     ],
   })
-  const privateEvent: RunEvent = {
-    schemaVersion: 1,
-    sequence: 1,
-    type: 'scenario-finished',
-    result: privateResult,
-  }
+  const privateResult = result('Private cache payload', 'passed', {
+    attempt: {
+      executionMode: 'replay',
+      cacheOutcome: 'hit',
+      inferenceCount: 0,
+      steps: [privateStep],
+    },
+  })
+  const privateEvent = scenarioFinishedEvent(privateResult)
 
   expect(formatJson({ ...manifest, results: [privateResult] })).not.toContain(
     'private-replay-payload',
   )
   expect(formatNdjson([privateEvent])).not.toContain('private-replay-payload')
-  expect(publicTestResult(privateResult).steps[0]?.resolvedActions).toEqual([
-    { description: 'Submit the form' },
-  ])
-  expect(privateResult.steps[0]?.resolvedActions[0]?.replay).toEqual({
+  expect(
+    publicTestResult(privateResult).attempts[0]?.steps[0]?.resolvedActions,
+  ).toEqual([{ description: 'Submit the form' }])
+  expect(privateStep.resolvedActions[0]?.replay).toEqual({
     raw: 'private-replay-payload',
   })
 })
 
 test('public event boundaries whitelist non-result event fields', () => {
   const malicious = {
-    schemaVersion: 1,
+    schemaVersion: 2,
     sequence: 1,
+    occurredAt: '2026-08-15T12:00:00.000Z',
     type: 'run-started',
     prompt: 'private-system-prompt',
     adapterPayload: { secret: 'private-adapter-payload' },
@@ -179,7 +373,7 @@ test('public event boundaries whitelist non-result event fields', () => {
 
   const source = JSON.stringify(publicRunEvent(malicious))
   expect(source).toBe(
-    '{"type":"run-started","run":{"id":"run-public","startedAt":"2026-08-15T12:00:00.000Z"},"schemaVersion":1,"sequence":1}',
+    '{"type":"run-started","run":{"id":"run-public","startedAt":"2026-08-15T12:00:00.000Z"},"schemaVersion":2,"sequence":1,"occurredAt":"2026-08-15T12:00:00.000Z"}',
   )
 })
 
@@ -188,14 +382,18 @@ test('formats JUnit XML with cache metadata, stable states, flaky, and error cla
     ...manifest,
     results: [
       result('Complete a purchase', 'passed', {
-        executionMode: 'replay',
-        cacheOutcome: 'hit',
-        inferenceCount: 0,
+        attempt: {
+          executionMode: 'replay',
+          cacheOutcome: 'hit',
+          inferenceCount: 0,
+        },
       }),
       result('Adapt the purchase', 'passed', {
-        executionMode: 'adaptive',
-        cacheOutcome: 'fallback',
-        inferenceCount: 3,
+        attempt: {
+          executionMode: 'adaptive',
+          cacheOutcome: 'fallback',
+          inferenceCount: 3,
+        },
       }),
       ...manifest.results.slice(2),
     ],
@@ -243,16 +441,20 @@ test('formats JUnit XML with cache metadata, stable states, flaky, and error cla
 
 test('exposes uncacheable and cache-only failure metadata in JUnit properties', () => {
   const uncacheable = result('Adaptive checkout', 'passed', {
-    executionMode: 'adaptive',
-    cacheOutcome: 'uncacheable',
-    cacheUncacheableReason: 'non-deterministic-action',
-    inferenceCount: 2,
+    attempt: {
+      executionMode: 'adaptive',
+      cacheOutcome: 'uncacheable',
+      cacheUncacheableReason: 'non-deterministic-action',
+      inferenceCount: 2,
+    },
   })
   const cacheMiss = result('Replay checkout', 'failed', {
-    executionMode: 'replay',
-    cacheOutcome: 'miss',
-    failureKind: 'cache-miss',
-    inferenceCount: 0,
+    attempt: {
+      executionMode: 'replay',
+      cacheOutcome: 'miss',
+      failureKind: 'cache-miss',
+      inferenceCount: 0,
+    },
   })
   const xml = formatJunit({ ...manifest, results: [uncacheable, cacheMiss] })
 

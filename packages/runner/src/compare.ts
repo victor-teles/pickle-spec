@@ -1,4 +1,4 @@
-import type { TestResult } from './run-scenario'
+import { finalScenarioAttempt, type TestResult } from './run-scenario'
 import type { TestRunManifest } from './test-run-store'
 
 export type ResultChangeKind =
@@ -40,7 +40,7 @@ function scenarioIdOf(result: TestResult): string {
 
 function artifactSignature(result: TestResult): string {
   return JSON.stringify(
-    result.steps.flatMap((step) =>
+    finalScenarioAttempt(result).steps.flatMap((step) =>
       (step.artifacts ?? []).map((artifact) => ({
         kind: artifact.kind,
         path: artifact.path,
@@ -50,7 +50,9 @@ function artifactSignature(result: TestResult): string {
 }
 
 function resolvedActionsSignature(result: TestResult): string {
-  return JSON.stringify(result.steps.map((step) => step.resolvedActions))
+  return JSON.stringify(
+    finalScenarioAttempt(result).steps.map((step) => step.resolvedActions),
+  )
 }
 
 function changesBetween(
@@ -58,24 +60,22 @@ function changesBetween(
   candidate: TestResult,
 ): ResultChangeKind[] {
   const changes: ResultChangeKind[] = []
+  const baselineAttempt = finalScenarioAttempt(baseline)
+  const candidateAttempt = finalScenarioAttempt(candidate)
   if (baseline.state !== candidate.state) changes.push('state')
-  if (
-    baseline.durationMs !== undefined &&
-    candidate.durationMs !== undefined &&
-    baseline.durationMs !== candidate.durationMs
-  ) {
+  if (baseline.durationMs !== candidate.durationMs) {
     changes.push('duration')
   }
   if (Boolean(baseline.flaky) !== Boolean(candidate.flaky)) {
     changes.push('flaky')
   }
-  if (baseline.executionMode !== candidate.executionMode) {
+  if (baselineAttempt.executionMode !== candidateAttempt.executionMode) {
     changes.push('execution-mode')
   }
-  if (baseline.cacheOutcome !== candidate.cacheOutcome) {
+  if (baselineAttempt.cacheOutcome !== candidateAttempt.cacheOutcome) {
     changes.push('cache-outcome')
   }
-  if (baseline.inferenceCount !== candidate.inferenceCount) {
+  if (baselineAttempt.inferenceCount !== candidateAttempt.inferenceCount) {
     changes.push('inference-count')
   }
   if (

@@ -1,5 +1,6 @@
 import { publicRunEvent, publicTestResult } from './public-results'
 import type { RunEvent, TestResult, TestResultState } from './run-scenario'
+import { finalScenarioAttempt } from './run-scenario'
 import type { TestRunManifest } from './test-run-store'
 
 export function formatJson(manifest: TestRunManifest): string {
@@ -48,18 +49,20 @@ async function embedArtifacts(
 ): Promise<string> {
   if (!shouldEmbedArtifacts(result.state, mode)) return ''
   const parts: string[] = []
-  for (const step of result.steps) {
-    for (const artifact of step.artifacts ?? []) {
-      if (!(await Bun.file(artifact.path).exists())) continue
-      const bytes = Buffer.from(await Bun.file(artifact.path).arrayBuffer())
-      const mediaType = artifact.mediaType ?? 'application/octet-stream'
-      const href = `data:${mediaType};base64,${bytes.toString('base64')}`
-      if (mediaType.startsWith('image/')) {
-        parts.push(
-          `<figure><img alt="${escapeXml(artifact.kind)}" src="${href}"/></figure>`,
-        )
-      } else {
-        parts.push(`<p><a href="${href}">${escapeXml(artifact.kind)}</a></p>`)
+  for (const attempt of result.attempts) {
+    for (const step of attempt.steps) {
+      for (const artifact of step.artifacts ?? []) {
+        if (!(await Bun.file(artifact.path).exists())) continue
+        const bytes = Buffer.from(await Bun.file(artifact.path).arrayBuffer())
+        const mediaType = artifact.mediaType ?? 'application/octet-stream'
+        const href = `data:${mediaType};base64,${bytes.toString('base64')}`
+        if (mediaType.startsWith('image/')) {
+          parts.push(
+            `<figure><img alt="${escapeXml(artifact.kind)}" src="${href}"/></figure>`,
+          )
+        } else {
+          parts.push(`<p><a href="${href}">${escapeXml(artifact.kind)}</a></p>`)
+        }
       }
     }
   }
@@ -79,6 +82,7 @@ export async function formatHtml(
   const sections = await Promise.all(
     results.map(async (result) => {
       const artifacts = await embedArtifacts(result, mode)
+      const attempt = finalScenarioAttempt(result)
       const highlight = priorityStates.has(result.state)
         ? ' class="priority"'
         : ''
@@ -86,10 +90,10 @@ export async function formatHtml(
   <h2>${escapeXml(result.scenario.name)}</h2>
   <p>State: ${escapeXml(result.state)}</p>
   <p>Profile: ${escapeXml(result.executionTargetProfile.id)}</p>
-  ${result.executionMode ? `<p>Execution mode: ${escapeXml(result.executionMode)}</p>` : ''}
-  ${result.cacheOutcome ? `<p>Cache outcome: ${escapeXml(result.cacheOutcome)}</p>` : ''}
-  ${result.inferenceCount !== undefined ? `<p>Inference count: ${result.inferenceCount}</p>` : ''}
-  ${result.message ? `<p>${escapeXml(result.message)}</p>` : ''}
+  ${attempt.executionMode ? `<p>Execution mode: ${escapeXml(attempt.executionMode)}</p>` : ''}
+  ${attempt.cacheOutcome ? `<p>Cache outcome: ${escapeXml(attempt.cacheOutcome)}</p>` : ''}
+  ${attempt.inferenceCount !== undefined ? `<p>Inference count: ${attempt.inferenceCount}</p>` : ''}
+  ${attempt.message ? `<p>${escapeXml(attempt.message)}</p>` : ''}
   ${artifacts}
 </section>`
     }),
@@ -166,23 +170,24 @@ function caseChildren(result: TestResult): string[] {
 }
 
 function caseProperties(result: TestResult): string[] {
+  const attempt = finalScenarioAttempt(result)
   const properties: string[] = []
-  if (result.executionMode) {
-    properties.push(junitProperty('execution-mode', result.executionMode))
+  if (attempt.executionMode) {
+    properties.push(junitProperty('execution-mode', attempt.executionMode))
   }
-  if (result.cacheOutcome) {
-    properties.push(junitProperty('cache-outcome', result.cacheOutcome))
+  if (attempt.cacheOutcome) {
+    properties.push(junitProperty('cache-outcome', attempt.cacheOutcome))
   }
-  if (result.inferenceCount !== undefined) {
-    properties.push(junitProperty('inference-count', result.inferenceCount))
+  if (attempt.inferenceCount !== undefined) {
+    properties.push(junitProperty('inference-count', attempt.inferenceCount))
   }
-  if (result.cacheUncacheableReason) {
+  if (attempt.cacheUncacheableReason) {
     properties.push(
-      junitProperty('cache-uncacheable-reason', result.cacheUncacheableReason),
+      junitProperty('cache-uncacheable-reason', attempt.cacheUncacheableReason),
     )
   }
-  if (result.failureKind) {
-    properties.push(junitProperty('failure-kind', result.failureKind))
+  if (attempt.failureKind) {
+    properties.push(junitProperty('failure-kind', attempt.failureKind))
   }
   if (result.flaky) {
     properties.push(junitProperty('flaky', true))
@@ -195,7 +200,7 @@ function junitProperty(name: string, value: string | number | boolean): string {
 }
 
 function outcomeElement(result: TestResult): string | undefined {
-  const message = escapeXml(result.message ?? '')
+  const message = escapeXml(finalScenarioAttempt(result).message ?? '')
   const outcomes: Partial<Record<TestResultState, string>> = {
     failed: `      <failure message="${message}"/>`,
     skipped: `      <skipped message="${message}"/>`,

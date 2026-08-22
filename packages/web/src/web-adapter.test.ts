@@ -164,6 +164,94 @@ describe('createWebAdapter', () => {
     expect(close).toHaveBeenCalledTimes(1)
   })
 
+  test('reports a requested screenshot that could not be captured', async () => {
+    const adapter = createWebAdapter(
+      {
+        baseUrl: 'https://example.test',
+        screenshots: { mode: 'on-step' },
+      },
+      factoryFor(
+        stubAutomation({
+          async screenshot() {
+            throw new Error('browser page closed')
+          },
+        }),
+      ),
+    )
+    const session = await adapter.openSession({
+      executionTargetProfile: { id: 'web' },
+      specification,
+      scenario,
+    })
+
+    const result = await session.executeStep(scenario.steps[0]!)
+    await session.close()
+
+    expect(result.artifacts).toBeUndefined()
+    expect(result.evidenceAvailability).toContainEqual({
+      kind: 'screenshot',
+      state: 'capture-failed',
+      message: 'Screenshot capture failed',
+    })
+  })
+
+  test('isolates screenshot paths for concurrent Scenario Outline rows', async () => {
+    const artifactDirectory = await mkdtemp(
+      join(tmpdir(), 'pickle-web-outline-artifacts-'),
+    )
+    artifactDirectories.push(artifactDirectory)
+    let screenshotIndex = 0
+    const adapter = createWebAdapter(
+      {
+        baseUrl: 'https://example.test',
+        screenshots: { mode: 'on-step', outputDir: artifactDirectory },
+      },
+      factoryFor(
+        stubAutomation({
+          async screenshot() {
+            const currentScreenshot = ++screenshotIndex
+            await Bun.sleep(5)
+            return new TextEncoder().encode(`row-${currentScreenshot}`)
+          },
+        }),
+      ),
+    )
+    const outlineRow = (examplesRowId: string): Scenario => ({
+      ...scenario,
+      id: 'shared-outline-scenario',
+      examplesId: 'search-examples',
+      examplesRowId,
+    })
+    const first = await adapter.openSession({
+      executionTargetProfile: { id: 'web' },
+      specification,
+      scenario: outlineRow('row-one'),
+    })
+    const second = await adapter.openSession({
+      executionTargetProfile: { id: 'web' },
+      specification,
+      scenario: outlineRow('row-two'),
+    })
+
+    const [firstResult, secondResult] = await Promise.all([
+      first.executeStep(scenario.steps[0]!),
+      second.executeStep(scenario.steps[0]!),
+    ])
+    await Promise.all([first.close(), second.close()])
+    await adapter.dispose?.()
+
+    const firstPath = firstResult.artifacts?.[0]?.path
+    const secondPath = secondResult.artifacts?.[0]?.path
+    expect(firstPath).toBeDefined()
+    expect(secondPath).toBeDefined()
+    expect(firstPath).not.toBe(secondPath)
+    expect(firstPath).toMatch(/examples-row-[a-f0-9]{16}/)
+    expect(secondPath).toMatch(/examples-row-[a-f0-9]{16}/)
+    expect(await Bun.file(firstPath!).text()).not.toBe(
+      await Bun.file(secondPath!).text(),
+    )
+  })
+
   test('gives explicit navigation precedence for an action step', async () => {
     const navigate = mock(async () => {})
     const observe = mock(async () => [])

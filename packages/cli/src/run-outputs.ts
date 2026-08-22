@@ -3,8 +3,10 @@ import {
   formatJunit,
   formatNdjson,
   openTestRunStore,
+  type RunEvent,
   type TestRunManifest,
 } from '@pickle-spec/runner'
+import { loadPersistedRun } from './execute-run'
 
 export interface RunOutputOptions {
   junitPath?: string
@@ -16,20 +18,35 @@ type FinalizeEvidenceOptions = {
   includeEmptyRun?: boolean
 }
 
+interface MaterializedRunEvidence {
+  manifest: TestRunManifest
+  events: RunEvent[]
+}
+
+async function writeMaterializedRunOutputs(
+  options: RunOutputOptions,
+  evidence: MaterializedRunEvidence,
+): Promise<void> {
+  if (options.junitPath) {
+    await Bun.write(options.junitPath, formatJunit(evidence.manifest))
+  }
+  if (options.jsonPath) {
+    await Bun.write(options.jsonPath, formatJson(evidence.manifest))
+  }
+  if (options.ndjsonPath) {
+    await Bun.write(options.ndjsonPath, formatNdjson(evidence.events))
+  }
+}
+
 export async function writeRunOutputs(
   options: RunOutputOptions,
   root: string,
   runId: string,
-  manifest: TestRunManifest,
 ): Promise<void> {
-  if (options.junitPath) {
-    await Bun.write(options.junitPath, formatJunit(manifest))
-  }
-  if (options.jsonPath) await Bun.write(options.jsonPath, formatJson(manifest))
-  if (options.ndjsonPath) {
-    const persisted = await openTestRunStore({ root }).open(runId)
-    await Bun.write(options.ndjsonPath, formatNdjson(await persisted.events()))
-  }
+  await writeMaterializedRunOutputs(
+    options,
+    await loadPersistedRun(root, runId),
+  )
 }
 
 export async function finalizeMaterializedEvidence(
@@ -47,5 +64,5 @@ export async function finalizeMaterializedEvidence(
     return
   }
   const manifest = await persisted.materialize()
-  await writeRunOutputs(options, root, runId, manifest)
+  await writeMaterializedRunOutputs(options, { manifest, events })
 }

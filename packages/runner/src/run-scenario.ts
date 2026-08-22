@@ -1,11 +1,14 @@
 import { ignoreTag, type ScenarioVariableBinding } from '@pickle-spec/spec'
 import type { ExecutionCacheEnvelope } from './execution-cache'
 import type {
+  EvidenceAvailability,
   ExecutionMode,
   ExecutionTimeouts,
   RunEvent,
   RunEventPayload,
+  RunEventScope,
   RunScenarioInput,
+  ScenarioAttempt,
   ScenarioRun,
   ScenarioTargetSession,
   StepExecution,
@@ -16,6 +19,7 @@ import type {
   TestResultState,
   TestStepResult,
 } from './run-scenario-types'
+import { evidenceKinds, testRunSchemaVersion } from './run-scenario-types'
 import {
   nonemptyBindings,
   publicStepExecution,
@@ -109,62 +113,168 @@ function stepDeadline(
 
 export interface ScenarioAttemptInput extends RunScenarioInput {
   mode: ExecutionMode
+  attempt: number
   cacheEntry?: ExecutionCacheEnvelope
 }
 
 export interface AttemptScenarioRun extends ScenarioRun {
+  attempt: ScenarioAttempt
   completion?: TargetSessionCompletion
   replayDiverged: boolean
   runtimeValueExposed: boolean
 }
 
-export function withAttemptMetadata(
-  result: TestResult,
-  attempt: number,
-): TestResult {
-  if (attempt === 1) return result
-  return {
-    ...result,
-    attempts: attempt,
-    flaky: result.state === 'passed',
-  }
+const evidenceCapabilities = {
+  screenshot: 'screenshots',
+  trace: 'traces',
+  recording: 'recordings',
+  'device-log': 'device-logs',
+  diagnostics: 'diagnostics',
+} as const
+
+function attemptEvidence(
+  input: ScenarioAttemptInput,
+  steps: readonly TestStepResult[],
+  reported: readonly EvidenceAvailability[] = [],
+): EvidenceAvailability[] {
+  const available = new Set(
+    steps.flatMap((step) => (step.artifacts ?? []).map((item) => item.kind)),
+  )
+  const capabilities = new Set(
+    input.executionTargetProfile.capabilities ?? input.adapter.capabilities,
+  )
+  return evidenceKinds.map((kind) => {
+    if (kind !== 'diagnostics' && available.has(kind)) {
+      return { kind, state: 'available' }
+    }
+    const adapterAvailability = reported.findLast(
+      (availability) => availability.kind === kind,
+    )
+    return (
+      adapterAvailability ?? {
+        kind,
+        state: capabilities.has(evidenceCapabilities[kind])
+          ? 'not-requested'
+          : 'not-supported',
+      }
+    )
+  })
 }
 
 export function createTestResult(
   input: ScenarioAttemptInput,
-  state: TestResultState,
-  steps: TestStepResult[],
-  durationMs: number,
-  message?: string,
+  attempts: ScenarioAttempt[],
 ): TestResult {
+  const first = attempts[0]
+  const final = attempts.at(-1)
+  if (!first || !final) {
+    throw new Error('A Test result requires at least one Scenario attempt')
+  }
   const scenarioId = scenarioDefinitionId(input.specification, input.scenario)
   return {
-    schemaVersion: 1,
+    schemaVersion: testRunSchemaVersion,
     specification: {
       name: input.specification.name,
       uri: input.specification.source.uri,
     },
     scenario: { ...scenarioIdentity(input.scenario), id: scenarioId },
     executionTargetProfile: input.executionTargetProfile,
+    state: final.state,
+    startedAt: first.startedAt,
+    finishedAt: final.finishedAt,
+    durationMs: durationMs(first.startedAt, final.finishedAt),
+    attempts,
+    ...(attempts.length > 1 && final.state === 'passed' ? { flaky: true } : {}),
+  }
+}
+
+export function createSyntheticTestResult(
+  input: RunScenarioInput,
+  mode: ExecutionMode,
+  state: TestResultState,
+  message?: string,
+): TestResult {
+  const occurredAt = (input.now ?? (() => new Date()))().toISOString()
+  const attemptInput: ScenarioAttemptInput = {
+    ...input,
+    mode,
+    attempt: 1,
+  }
+  const attempt: ScenarioAttempt = {
+    attempt: 1,
+    startedAt: occurredAt,
+    finishedAt: occurredAt,
+    durationMs: 0,
     state,
-    steps,
-    executionMode: input.mode,
-    durationMs,
+    steps: [],
+    executionMode: mode,
+    inferenceCount: 0,
     ...(input.adapter.fidelityPolicy
       ? { fidelityPolicy: input.adapter.fidelityPolicy }
       : {}),
     ...(message !== undefined ? { message } : {}),
+    evidenceAvailability: attemptEvidence(attemptInput, []),
+  }
+  return createTestResult(attemptInput, [attempt])
+}
+
+export function withFinalAttempt(
+  result: TestResult,
+  update: Partial<ScenarioAttempt>,
+): TestResult {
+  const attempts = result.attempts.map((attempt, index) =>
+    index === result.attempts.length - 1 ? { ...attempt, ...update } : attempt,
+  )
+  const final = attempts.at(-1)!
+  return {
+    ...result,
+    state: final.state,
+    finishedAt: final.finishedAt,
+    durationMs: durationMs(result.startedAt, final.finishedAt),
+    attempts,
+    flaky: attempts.length > 1 && final.state === 'passed' ? true : undefined,
   }
 }
 
-function attemptIdentity(input: ScenarioAttemptInput) {
+export function scenarioFinishedPayload(result: TestResult): RunEventPayload {
+  const attempt = result.attempts.at(-1)
+  if (!attempt) throw new Error('A Test result requires a Scenario attempt')
   return {
-    scenario: {
-      ...scenarioIdentity(input.scenario),
-      id: scenarioDefinitionId(input.specification, input.scenario),
+    type: 'scenario-finished',
+    specification: result.specification,
+    scenario: result.scenario,
+    executionTargetProfile: result.executionTargetProfile,
+    scope: {
+      scenarioId: result.scenario.id!,
+      examplesRowId: result.scenario.examplesRowId,
+      executionTargetProfileId: result.executionTargetProfile.id,
+      attempt: attempt.attempt,
     },
-    executionTargetProfile: input.executionTargetProfile,
+    attempt,
   }
+}
+
+function attemptIdentity(input: ScenarioAttemptInput, stepIndex?: number) {
+  const scenario = {
+    ...scenarioIdentity(input.scenario),
+    id: scenarioDefinitionId(input.specification, input.scenario),
+  }
+  const scope: RunEventScope = {
+    scenarioId: scenario.id,
+    examplesRowId: scenario.examplesRowId,
+    executionTargetProfileId: input.executionTargetProfile.id,
+    attempt: input.attempt,
+    stepIndex,
+  }
+  return {
+    scenario,
+    executionTargetProfile: input.executionTargetProfile,
+    scope,
+  }
+}
+
+function durationMs(startedAt: string, finishedAt: string): number {
+  return Math.max(0, Date.parse(finishedAt) - Date.parse(startedAt))
 }
 
 interface AttemptProgress {
@@ -172,14 +282,27 @@ interface AttemptProgress {
   message?: string
   replayDiverged: boolean
   runtimeValueExposed: boolean
+  evidenceAvailability: EvidenceAvailability[]
 }
 
-type EmitAttemptEvent = (event: RunEventPayload) => Promise<void>
+type EmitAttemptEvent = (
+  event: RunEventPayload,
+  occurredAt?: string,
+) => Promise<RunEvent>
 type RecordExecution = (
   stepIndex: number,
+  startedAt: string,
   execution: StepExecution,
 ) => Promise<boolean>
-type RecordStep = (result: TestStepResult) => Promise<void>
+type UntimedTestStepResult = Omit<
+  TestStepResult,
+  'index' | 'startedAt' | 'finishedAt' | 'durationMs'
+>
+type RecordStep = (
+  stepIndex: number,
+  startedAt: string,
+  result: UntimedTestStepResult,
+) => Promise<void>
 
 interface SessionExecutionContext {
   input: ScenarioAttemptInput
@@ -229,12 +352,13 @@ async function executeScenarioSession(
       stepIndex,
       execution,
     ] of scenarioExecution.stepExecutions.entries()) {
-      await emit({
+      const started = await emit({
         type: 'step-started',
         step: templateStepAt(input.scenario, stepIndex),
-        ...attemptIdentity(input),
+        ...attemptIdentity(input, stepIndex),
       })
-      if (!(await recordExecution(stepIndex, execution))) break
+      if (!(await recordExecution(stepIndex, started.occurredAt, execution)))
+        break
     }
     if (scenarioExecution.replayDiverged) {
       progress.replayDiverged = true
@@ -261,10 +385,10 @@ async function executeStepSession(
     }
 
     const templateStep = templateStepAt(input.scenario, stepIndex)
-    await emit({
+    const started = await emit({
       type: 'step-started',
       step: templateStep,
-      ...attemptIdentity(input),
+      ...attemptIdentity(input, stepIndex),
     })
     let execution: StepExecution
     try {
@@ -282,7 +406,7 @@ async function executeStepSession(
       )
     } catch (error) {
       recordExecutionError(progress, error, bindings, input.signal)
-      await recordStep({
+      await recordStep(stepIndex, started.occurredAt, {
         step: templateStep,
         state: progress.state,
         resolvedActions: [],
@@ -290,24 +414,31 @@ async function executeStepSession(
       })
       break
     }
-    if (!(await recordExecution(stepIndex, execution))) break
+    if (!(await recordExecution(stepIndex, started.occurredAt, execution)))
+      break
   }
 }
 
 export async function runScenarioAttempt(
   input: ScenarioAttemptInput,
 ): Promise<AttemptScenarioRun> {
-  const scenarioStartedAt = Date.now()
+  const now = input.now ?? (() => new Date())
+  const scenarioWallStartedAt = Date.now()
   const events: RunEvent[] = []
   let sequence = 0
-  const emit = async (event: RunEventPayload): Promise<void> => {
+  const emit = async (
+    event: RunEventPayload,
+    occurredAt = now().toISOString(),
+  ): Promise<RunEvent> => {
     const versionedEvent = {
       ...event,
-      schemaVersion: 1 as const,
+      schemaVersion: testRunSchemaVersion,
       sequence: ++sequence,
+      occurredAt,
     } as RunEvent
     events.push(versionedEvent)
     await input.onEvent?.(versionedEvent)
+    return versionedEvent
   }
 
   let completion: TargetSessionCompletion | undefined
@@ -315,33 +446,50 @@ export async function runScenarioAttempt(
     state: 'passed',
     replayDiverged: false,
     runtimeValueExposed: false,
+    evidenceAvailability: [],
   }
+  const started = await emit({
+    type: 'scenario-started',
+    ...attemptIdentity(input),
+  })
+  const scenarioStartedAt = started.occurredAt
+
   const finish = async (
     state: TestResultState,
     steps: TestStepResult[],
     message?: string,
   ): Promise<AttemptScenarioRun> => {
-    const result = createTestResult(
-      input,
+    const finishedAt = now().toISOString()
+    const attempt: ScenarioAttempt = {
+      attempt: input.attempt,
+      startedAt: scenarioStartedAt,
+      finishedAt,
+      durationMs: durationMs(scenarioStartedAt, finishedAt),
       state,
       steps,
-      Math.max(0, Date.now() - scenarioStartedAt),
-      message,
-    )
-    await emit({ type: 'scenario-finished', result })
+      executionMode: input.mode,
+      inferenceCount: completion?.inferenceCount ?? 0,
+      ...(input.adapter.fidelityPolicy
+        ? { fidelityPolicy: input.adapter.fidelityPolicy }
+        : {}),
+      ...(message !== undefined ? { message } : {}),
+      evidenceAvailability: attemptEvidence(
+        input,
+        steps,
+        progress.evidenceAvailability,
+      ),
+    }
+    const result = createTestResult(input, [attempt])
+    await emit(scenarioFinishedPayload(result), finishedAt)
     return {
       events,
       result,
+      attempt,
       completion,
       replayDiverged: progress.replayDiverged,
       runtimeValueExposed: progress.runtimeValueExposed,
     }
   }
-
-  await emit({
-    type: 'scenario-started',
-    ...attemptIdentity(input),
-  })
 
   if (input.scenario.tags.includes(ignoreTag)) {
     return finish('skipped', [], 'Scenario is tagged @ignore')
@@ -386,9 +534,24 @@ export async function runScenarioAttempt(
   }
 
   const steps: TestStepResult[] = []
-  const recordStep = async (result: TestStepResult): Promise<void> => {
-    steps.push(result)
-    await emit({ type: 'step-finished', result, ...attemptIdentity(input) })
+  const recordStep: RecordStep = async (stepIndex, startedAt, result) => {
+    const finishedAt = now().toISOString()
+    const timedResult: TestStepResult = {
+      ...result,
+      index: stepIndex,
+      startedAt,
+      finishedAt,
+      durationMs: durationMs(startedAt, finishedAt),
+    }
+    steps.push(timedResult)
+    await emit(
+      {
+        type: 'step-finished',
+        result: timedResult,
+        ...attemptIdentity(input, stepIndex),
+      },
+      finishedAt,
+    )
   }
   progress.state = input.signal?.aborted ? 'cancelled' : 'passed'
   progress.message = input.signal?.aborted
@@ -398,15 +561,19 @@ export async function runScenarioAttempt(
 
   const recordExecution = async (
     stepIndex: number,
+    startedAt: string,
     execution: StepExecution,
   ): Promise<boolean> => {
     const templateStep = templateStepAt(input.scenario, stepIndex)
     const projected = publicStepExecution(execution, bindings)
     progress.runtimeValueExposed ||= projected.runtimeValueExposed
+    progress.evidenceAvailability.push(
+      ...(projected.execution.evidenceAvailability ?? []),
+    )
     if (input.signal?.aborted) {
       progress.state = 'cancelled'
       progress.message = 'Scenario cancelled during step execution'
-      await recordStep({
+      await recordStep(stepIndex, startedAt, {
         step: templateStep,
         state: progress.state,
         resolvedActions: projected.execution.resolvedActions,
@@ -414,7 +581,7 @@ export async function runScenarioAttempt(
       })
       return false
     }
-    await recordStep({
+    await recordStep(stepIndex, startedAt, {
       step: templateStep,
       state: projected.execution.state,
       resolvedActions: projected.execution.resolvedActions,
@@ -455,7 +622,7 @@ export async function runScenarioAttempt(
     } else if (session.executeScenario) {
       await executeScenarioSession(session, executionContext)
     } else {
-      await executeStepSession(session, scenarioStartedAt, executionContext)
+      await executeStepSession(session, scenarioWallStartedAt, executionContext)
     }
     if (
       progress.state === 'passed' &&

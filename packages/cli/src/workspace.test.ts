@@ -1,8 +1,12 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
 import { mkdir, mkdtemp, realpath, rm, symlink } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { dirname, join, resolve } from 'node:path'
-import { resolveLocalProjectStorage } from '@pickle-spec/runner'
+import { dirname, join, resolve, sep } from 'node:path'
+import {
+  openTestRunStore,
+  resolveLocalProjectStorage,
+  type TestRunManifest,
+} from '@pickle-spec/runner'
 
 describe('public CLI workspace seam', () => {
   let workspace: string
@@ -336,11 +340,36 @@ Feature: Release acceptance
     })
     expect(archive.stderr.toString()).toBe('')
     expect(archive.exitCode).toBe(0)
-    expect(await Bun.file(archivePath).json()).toMatchObject({
-      schemaVersion: 1,
+    const exportedArchive = (await Bun.file(archivePath).json()) as {
+      schemaVersion: number
+      kind: string
+      manifest: { schemaVersion: number; id: string; state: string }
+      events: Array<{
+        schemaVersion: number
+        sequence: number
+        type: string
+        run?: { id: string }
+      }>
+    }
+    expect(exportedArchive).toMatchObject({
+      schemaVersion: 2,
       kind: 'run-archive',
-      manifest: { id: runId, state: 'passed' },
+      manifest: { schemaVersion: 2, id: runId, state: 'passed' },
     })
+    expect(exportedArchive.events[0]).toMatchObject({
+      schemaVersion: 2,
+      sequence: 1,
+      type: 'run-started',
+      run: { id: runId },
+    })
+    expect(
+      exportedArchive.events.every((event) => event.schemaVersion === 2),
+    ).toBe(true)
+    expect(
+      exportedArchive.events.some(
+        (event) => event.type === 'scenario-finished',
+      ),
+    ).toBe(true)
 
     const htmlPath = join(project, 'release-run.html')
     const html = Bun.spawnSync({
@@ -895,7 +924,7 @@ Feature: Checkout
       expect(records.at(-1)).toMatchObject({
         kind: 'test-result',
         result: {
-          schemaVersion: 1,
+          schemaVersion: 2,
           state: expected.outcome,
         },
       })
@@ -925,7 +954,9 @@ Feature: Checkout
     expect(flakyOutput).toContain(
       '✓↻ features/example.feature > Validate project',
     )
-    expect(flakyOutput).toContain('(passed; flaky, 2 attempts; mode Adaptive)')
+    expect(flakyOutput).toContain(
+      '(passed; flaky, 2 attempts; mode Adaptive; 0 inferences)',
+    )
     expect(flakyOutput).toContain(' Test results    1 passed (1)')
     expect(flakyOutput).toContain(' Flaky results   1')
 
@@ -951,7 +982,7 @@ Feature: Ignored
       '↓ features/ignored.feature > Ignore this Scenario',
     )
     expect(skippedOutput).toContain(
-      '(skipped: Scenario is tagged @ignore; mode Adaptive)',
+      '(skipped: Scenario is tagged @ignore; mode Adaptive; 0 inferences)',
     )
     expect(skippedOutput).toContain(' Specifications  1')
     expect(skippedOutput).toContain(' Scenarios       1')
@@ -978,7 +1009,9 @@ Feature: Ignored
     expect(cancelledOutput).toContain(
       '○ features/example.feature > Validate project',
     )
-    expect(cancelledOutput).toContain('(cancelled; mode Adaptive)')
+    expect(cancelledOutput).toContain(
+      '(cancelled; mode Adaptive; 0 inferences)',
+    )
     expect(cancelledOutput).not.toContain(' Failures')
     expect(cancelledOutput).not.toContain(' Infrastructure errors')
   })
@@ -1201,15 +1234,19 @@ export default {
     expect(records.at(-1)).toMatchObject({
       kind: 'test-result',
       result: {
-        schemaVersion: 1,
+        schemaVersion: 2,
         specification: { name: 'Web search' },
         scenario: { name: 'Search from the application' },
         executionTargetProfile: { id: 'web' },
         state: 'passed',
-        steps: [
-          { artifacts: [{ kind: 'screenshot', mediaType: 'image/png' }] },
-          { resolvedActions: [{ description: 'Search for pickles' }] },
-          { state: 'passed' },
+        attempts: [
+          {
+            steps: [
+              { artifacts: [{ kind: 'screenshot', mediaType: 'image/png' }] },
+              { resolvedActions: [{ description: 'Search for pickles' }] },
+              { state: 'passed' },
+            ],
+          },
         ],
       },
     })
@@ -1219,6 +1256,195 @@ export default {
     expect([...screenshots]).toHaveLength(3)
     expect(stdout).not.toContain('Stagehand')
     expect(stdout).not.toContain('gherkinDocument')
+  })
+
+  test('persists and exports canonical evidence for a failing Web Scenario Outline', async () => {
+    const project = await createCheckProject('web-evidence', {
+      config: {
+        schemaVersion: 1,
+        specifications: 'features/**/*.feature',
+        executionTargetProfile: { id: 'chrome' },
+        artifacts: { capture: 'on-failure' },
+        web: {
+          baseUrl:
+            'data:text/html,<button id="pay">Pay</button><div id="status"></div>',
+          screenshots: { mode: 'on-failure' },
+        },
+      },
+      specification: {
+        path: 'features/checkout.feature',
+        source: `@pickle:id:speccheckaaaaaaaa @pickle:state:active
+Feature: Checkout
+  @pickle:id:scnpaybbbbbbbbbb
+  Scenario Outline: Pay for the order
+    When I click pay with <method>
+    Then payment is captured
+
+    @pickle:id:exspaycccccccccc
+    Examples:
+      | pickle_id        | method |
+      | rowpaydddddddddd | card   |`,
+      },
+      extensions: `
+export default {
+  webAutomationFactory: {
+    async launch() {
+      return {
+        async openContext() {
+          return {
+            async navigate() {},
+            async observe() {
+              return [{ description: 'Click pay on chrome', handle: 'pay' }]
+            },
+            async act() { return { success: true } },
+            async verify() {
+              return {
+                meetsExpectation: false,
+                actualState: 'Payment was declined',
+              }
+            },
+            async readIsolationState() {
+              return { cookieCount: 0, storageKeyCount: 0 }
+            },
+            async screenshot() {
+              return new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10])
+            },
+            async close() {},
+          }
+        },
+        async close() {},
+      }
+    },
+  },
+}
+`,
+    })
+    const pickleHome = join(workspace, 'web-evidence-pickle-home')
+    const jsonPath = join(project, 'result.json')
+    const ndjsonPath = join(project, 'events.ndjson')
+
+    const child = Bun.spawn({
+      cmd: [
+        pickleCommand,
+        'run',
+        '--json',
+        jsonPath,
+        '--ndjson',
+        ndjsonPath,
+        '--reporter',
+        'ndjson',
+      ],
+      cwd: project,
+      env: { ...Bun.env, PICKLE_HOME: pickleHome },
+      stdout: 'pipe',
+      stderr: 'pipe',
+    })
+    const [exitCode, stdout, stderr] = await Promise.all([
+      child.exited,
+      new Response(child.stdout).text(),
+      new Response(child.stderr).text(),
+    ])
+
+    expect(stderr).toBe('')
+    expect(exitCode).toBe(1)
+    expect(stdout).toContain('Payment was declined')
+
+    const storage = resolveLocalProjectStorage(project, pickleHome)
+    const manifestPaths = [
+      ...new Bun.Glob('*/manifest.json').scanSync({
+        cwd: storage.runsDirectory,
+      }),
+    ]
+    expect(manifestPaths).toHaveLength(1)
+    const runId = dirname(manifestPaths[0]!)
+    const runDirectory = join(storage.runsDirectory, runId)
+    const manifest = (await Bun.file(
+      join(runDirectory, 'manifest.json'),
+    ).json()) as TestRunManifest
+
+    expect(manifest.schemaVersion).toBe(2)
+    expect(manifest.id).toBe(runId)
+    expect(manifest.state).toBe('failed')
+    expect(manifest.results).toHaveLength(1)
+    const result = manifest.results[0]!
+    expect(result.schemaVersion).toBe(2)
+    expect(result.specification).toEqual({
+      name: 'Checkout',
+      uri: 'features/checkout.feature',
+    })
+    expect(result.scenario).toEqual({
+      name: 'Pay for the order',
+      id: 'scnpaybbbbbbbbbb',
+      examplesId: 'exspaycccccccccc',
+      examplesRowId: 'rowpaydddddddddd',
+    })
+    expect(result.executionTargetProfile.id).toBe('chrome')
+    expect(result.state).toBe('failed')
+    expect(result.attempts).toHaveLength(1)
+    const attempt = result.attempts[0]!
+    expect(attempt.attempt).toBe(1)
+    expect(attempt.state).toBe('failed')
+    expect(attempt.steps).toHaveLength(2)
+    const actionStep = attempt.steps[0]!
+    expect(actionStep.index).toBe(0)
+    expect(actionStep.state).toBe('passed')
+    expect(actionStep.resolvedActions).toEqual([
+      { description: 'Click pay on chrome' },
+    ])
+    const outcomeStep = attempt.steps[1]!
+    expect(outcomeStep.index).toBe(1)
+    expect(outcomeStep.state).toBe('failed')
+    expect(outcomeStep.resolvedActions).toEqual([
+      { description: 'Verify: payment is captured' },
+    ])
+    expect(outcomeStep.message).toBe(
+      'Expected: "payment is captured" | Actual: Payment was declined',
+    )
+    expect(outcomeStep.artifacts).toHaveLength(1)
+    expect(outcomeStep.artifacts?.[0]).toEqual({
+      kind: 'screenshot',
+      path: expect.any(String),
+      mediaType: 'image/png',
+    })
+    expect(attempt.evidenceAvailability).toContainEqual({
+      kind: 'screenshot',
+      state: 'available',
+    })
+    expect(Date.parse(result.startedAt)).not.toBeNaN()
+    expect(Date.parse(result.finishedAt)).not.toBeNaN()
+    expect(result.durationMs).toBeGreaterThanOrEqual(0)
+    expect(Date.parse(attempt.startedAt)).not.toBeNaN()
+    expect(Date.parse(attempt.finishedAt)).not.toBeNaN()
+    expect(attempt.durationMs).toBeGreaterThanOrEqual(0)
+    for (const step of attempt.steps) {
+      expect(Date.parse(step.startedAt)).not.toBeNaN()
+      expect(Date.parse(step.finishedAt)).not.toBeNaN()
+      expect(step.durationMs).toBeGreaterThanOrEqual(0)
+    }
+
+    const screenshot = attempt.steps
+      .flatMap((step) => step.artifacts ?? [])
+      .find((artifact) => artifact.kind === 'screenshot')
+    expect(screenshot).toBeDefined()
+    expect(
+      resolve(screenshot!.path).startsWith(
+        `${resolve(join(runDirectory, 'artifacts'))}${sep}`,
+      ),
+    ).toBe(true)
+    expect(await Bun.file(screenshot!.path).exists()).toBe(true)
+
+    const reopened = await openTestRunStore({ root: project, pickleHome }).open(
+      runId,
+    )
+    expect(await reopened.materialize()).toEqual(manifest)
+    expect(await Bun.file(jsonPath).json()).toEqual(manifest)
+    expect(
+      (await Bun.file(ndjsonPath).text())
+        .trim()
+        .split('\n')
+        .map((line) => JSON.parse(line)),
+    ).toEqual(await reopened.events())
+    expect(await Bun.file(join(project, '.pickle')).exists()).toBe(false)
   })
 
   test('selects a named test suite by path, tag, state, and name query', async () => {
@@ -1418,8 +1644,8 @@ export default {
     ])
     expect(
       rerunFinishedEvents.map((record) => [
-        record.event.result.scenario.name,
-        record.event.result.executionTargetProfile.id,
+        record.event.scenario.name,
+        record.event.executionTargetProfile.id,
         record.event.scheduleIndex,
       ]),
     ).toEqual([
@@ -1870,7 +2096,7 @@ Feature: Purchase
       results: Array<{ state: string; scenario: { name: string } }>
     }
     expect(manifest).toMatchObject({
-      schemaVersion: 1,
+      schemaVersion: 2,
       state: 'passed',
       results: [{ state: 'passed', scenario: { name: 'Complete a purchase' } }],
     })
@@ -1883,13 +2109,13 @@ Feature: Purchase
       .split('\n')
       .map((line) => JSON.parse(line))
     expect(events[0]).toMatchObject({
-      schemaVersion: 1,
+      schemaVersion: 2,
       sequence: 1,
       type: 'run-started',
       run: { id: manifest.id },
     })
     expect(JSON.parse(await Bun.file(jsonPath).text())).toMatchObject({
-      schemaVersion: 1,
+      schemaVersion: 2,
       id: manifest.id,
       state: 'passed',
     })
@@ -1925,40 +2151,45 @@ Feature: Purchase
       ).text(),
     })
     const expiredDirectory = join(runsDirectory(project), 'run-expired')
+    const expiredStartedAt = '2026-07-01T00:00:00.000Z'
+    const expiredFinishedAt = '2026-07-01T00:00:01.000Z'
     await mkdir(expiredDirectory, { recursive: true })
     await Bun.write(
       join(expiredDirectory, 'events.ndjson'),
       `${JSON.stringify({
-        schemaVersion: 1,
+        schemaVersion: 2,
         sequence: 1,
+        occurredAt: expiredStartedAt,
         type: 'run-started',
-        run: { id: 'run-expired' },
+        run: { id: 'run-expired', startedAt: expiredStartedAt },
       })}\n`,
     )
     await Bun.write(
       join(expiredDirectory, 'manifest.json'),
       JSON.stringify({
-        schemaVersion: 1,
+        schemaVersion: 2,
         id: 'run-expired',
-        startedAt: '2026-07-01T00:00:00.000Z',
-        finishedAt: '2026-07-01T00:00:01.000Z',
+        startedAt: expiredStartedAt,
+        finishedAt: expiredFinishedAt,
         state: 'passed',
         results: [],
       }),
     )
     const retainedDirectory = join(runsDirectory(project), 'run-retained')
+    const retainedAt = new Date().toISOString()
     await mkdir(retainedDirectory, { recursive: true })
     const retainedEvents = `${JSON.stringify({
-      schemaVersion: 1,
+      schemaVersion: 2,
       sequence: 1,
+      occurredAt: retainedAt,
       type: 'run-started',
-      run: { id: 'run-retained' },
+      run: { id: 'run-retained', startedAt: retainedAt },
     })}\n`
     const retainedManifest = `${JSON.stringify({
-      schemaVersion: 1,
+      schemaVersion: 2,
       id: 'run-retained',
-      startedAt: new Date().toISOString(),
-      finishedAt: new Date().toISOString(),
+      startedAt: retainedAt,
+      finishedAt: retainedAt,
       state: 'passed',
       results: [],
     })}\n`
@@ -2285,15 +2516,19 @@ export default {
     expect(result).toMatchObject({
       kind: 'test-result',
       result: {
-        fidelityPolicy: {
-          profile: 'fast',
-          tradeOffs: [
-            'block-image',
-            'block-media',
-            'block-font',
-            'disable-animations',
-          ],
-        },
+        attempts: [
+          {
+            fidelityPolicy: {
+              profile: 'fast',
+              tradeOffs: [
+                'block-image',
+                'block-media',
+                'block-font',
+                'disable-animations',
+              ],
+            },
+          },
+        ],
       },
     })
   })
@@ -2351,19 +2586,43 @@ Feature: Slow checkout
       ['scnmediumbbbbbbbb', 'Medium checkout', 400],
       ['scnslowbbbbbbbbbb', 'Slow checkout', 900],
     ] as const) {
+      const startedAt = '2026-08-15T12:00:00.000Z'
+      const finishedAt = new Date(
+        Date.parse(startedAt) + durationMs,
+      ).toISOString()
+      const specification = {
+        name: `${name} spec`,
+        uri: 'features/example.feature',
+      }
+      const scenario = { name, id: scenarioId }
+      const executionTargetProfile = { id: 'deterministic' }
       await priorRun.append({
         type: 'scenario-finished',
-        result: {
-          schemaVersion: 1,
-          specification: {
-            name: `${name} spec`,
-            uri: 'features/example.feature',
-          },
-          scenario: { name, id: scenarioId },
-          executionTargetProfile: { id: 'deterministic' },
+        specification,
+        scenario,
+        executionTargetProfile,
+        scope: {
+          scenarioId,
+          executionTargetProfileId: executionTargetProfile.id,
+          attempt: 1,
+        },
+        attempt: {
+          attempt: 1,
+          startedAt,
+          finishedAt,
+          durationMs,
           state: 'passed',
           steps: [],
-          durationMs,
+          executionMode: 'adaptive',
+          cacheOutcome: 'uncacheable',
+          inferenceCount: 0,
+          evidenceAvailability: [
+            { kind: 'screenshot', state: 'not-supported' },
+            { kind: 'trace', state: 'not-supported' },
+            { kind: 'recording', state: 'not-supported' },
+            { kind: 'device-log', state: 'not-supported' },
+            { kind: 'diagnostics', state: 'not-supported' },
+          ],
         },
       })
     }

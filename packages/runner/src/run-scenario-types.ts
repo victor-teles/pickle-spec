@@ -25,6 +25,8 @@ export function isEvidenceState(state: TestResultState): boolean {
 
 export type ExecutionMode = 'adaptive' | 'replay'
 
+export const testRunSchemaVersion = 2 as const
+
 export interface ExecutionTargetProfile {
   id: string
   adapter?: string
@@ -42,12 +44,37 @@ export interface TestArtifact {
   mediaType?: string
 }
 
+export const evidenceKinds = [
+  'screenshot',
+  'trace',
+  'recording',
+  'device-log',
+  'diagnostics',
+] as const
+
+export type EvidenceKind = (typeof evidenceKinds)[number]
+
+export type EvidenceAvailabilityState =
+  | 'available'
+  | 'not-requested'
+  | 'not-supported'
+  | 'not-retained'
+  | 'capture-failed'
+  | 'missing'
+
+export interface EvidenceAvailability {
+  kind: EvidenceKind
+  state: EvidenceAvailabilityState
+  message?: string
+}
+
 export interface StepExecution {
   state: TestResultState
   resolvedActions: ResolvedAction[]
   replayDiverged?: boolean
   message?: string
   artifacts?: TestArtifact[]
+  evidenceAvailability?: EvidenceAvailability[]
 }
 
 export interface StepExecutionContext {
@@ -141,6 +168,10 @@ export interface ScenarioIdentity {
 }
 
 export interface TestStepResult {
+  index: number
+  startedAt: string
+  finishedAt: string
+  durationMs: number
   step: ScenarioStep
   state: TestResultState
   resolvedActions: ResolvedAction[]
@@ -148,14 +179,11 @@ export interface TestStepResult {
   artifacts?: TestArtifact[]
 }
 
-export interface TestResult {
-  schemaVersion: 1
-  specification: {
-    name: string
-    uri: string
-  }
-  scenario: ScenarioIdentity
-  executionTargetProfile: ExecutionTargetProfile
+export interface ScenarioAttempt {
+  attempt: number
+  startedAt: string
+  finishedAt: string
+  durationMs: number
   state: TestResultState
   steps: TestStepResult[]
   executionMode?: ExecutionMode
@@ -164,15 +192,46 @@ export interface TestResult {
   cacheUncacheableReason?: ExecutionCacheUncacheableReason
   failureKind?: 'cache-miss'
   message?: string
-  attempts?: number
-  flaky?: boolean
-  durationMs?: number
   fidelityPolicy?: FidelityPolicy
+  evidenceAvailability: EvidenceAvailability[]
+}
+
+export interface TestResult {
+  schemaVersion: typeof testRunSchemaVersion
+  specification: {
+    name: string
+    uri: string
+  }
+  scenario: ScenarioIdentity
+  executionTargetProfile: ExecutionTargetProfile
+  state: TestResultState
+  startedAt: string
+  finishedAt: string
+  durationMs: number
+  attempts: ScenarioAttempt[]
+  flaky?: boolean
+}
+
+export function finalScenarioAttempt(result: TestResult): ScenarioAttempt {
+  const attempt = result.attempts.at(-1)
+  if (!attempt) {
+    throw new Error('A Test result requires at least one Scenario attempt')
+  }
+  return attempt
 }
 
 interface RunEventEnvelope {
-  schemaVersion: 1
+  schemaVersion: typeof testRunSchemaVersion
   sequence: number
+  occurredAt: string
+}
+
+export interface RunEventScope {
+  scenarioId: string
+  examplesRowId?: string
+  executionTargetProfileId: string
+  attempt: number
+  stepIndex?: number
 }
 
 export type RunEventPayload =
@@ -189,32 +248,56 @@ export type RunEventPayload =
   | {
       type: 'scenario-started'
       scenario: TestResult['scenario']
-      executionTargetProfile?: ExecutionTargetProfile
+      executionTargetProfile: ExecutionTargetProfile
+      scope: RunEventScope
     }
   | {
       type: 'step-started'
       step: ScenarioStep
-      scenario?: TestResult['scenario']
-      executionTargetProfile?: ExecutionTargetProfile
+      scenario: TestResult['scenario']
+      executionTargetProfile: ExecutionTargetProfile
+      scope: RunEventScope
     }
   | {
       type: 'step-finished'
       result: TestStepResult
-      scenario?: TestResult['scenario']
-      executionTargetProfile?: ExecutionTargetProfile
+      scenario: TestResult['scenario']
+      executionTargetProfile: ExecutionTargetProfile
+      scope: RunEventScope
     }
-  | { type: 'cache-hit'; cacheKey: ExecutionCacheKey }
-  | { type: 'cache-miss'; cacheKey: ExecutionCacheKey }
-  | { type: 'cache-refresh'; cacheKey: ExecutionCacheKey }
-  | { type: 'replay-diverged'; cacheKey: ExecutionCacheKey }
-  | { type: 'adaptive-fallback-started'; cacheKey: ExecutionCacheKey }
-  | { type: 'cache-written'; cacheKey: ExecutionCacheKey }
+  | { type: 'cache-hit'; cacheKey: ExecutionCacheKey; scope: RunEventScope }
+  | { type: 'cache-miss'; cacheKey: ExecutionCacheKey; scope: RunEventScope }
+  | { type: 'cache-refresh'; cacheKey: ExecutionCacheKey; scope: RunEventScope }
+  | {
+      type: 'replay-diverged'
+      cacheKey: ExecutionCacheKey
+      scope: RunEventScope
+    }
+  | {
+      type: 'adaptive-fallback-started'
+      cacheKey: ExecutionCacheKey
+      scope: RunEventScope
+    }
+  | { type: 'cache-written'; cacheKey: ExecutionCacheKey; scope: RunEventScope }
   | {
       type: 'cache-uncacheable'
       reason: ExecutionCacheUncacheableReason
+      scope: RunEventScope
     }
-  | { type: 'inference-count-updated'; inferenceCount: number }
-  | { type: 'scenario-finished'; result: TestResult; scheduleIndex?: number }
+  | {
+      type: 'inference-count-updated'
+      inferenceCount: number
+      scope: RunEventScope
+    }
+  | {
+      type: 'scenario-finished'
+      specification: TestResult['specification']
+      scenario: TestResult['scenario']
+      executionTargetProfile: ExecutionTargetProfile
+      scope: RunEventScope
+      attempt: ScenarioAttempt
+      scheduleIndex?: number
+    }
 
 export type RunEvent = RunEventEnvelope & RunEventPayload
 
@@ -254,6 +337,7 @@ export interface RunScenarioInput extends ExecutionPolicy {
   executionCache?: ScenarioExecutionCache
   cachePolicy?: ExecutionCachePolicy
   applicationRevision?: string
+  now?: () => Date
   signal?: AbortSignal
   onEvent?: (event: RunEvent) => void | Promise<void>
 }

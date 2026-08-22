@@ -264,6 +264,9 @@ export function createWebAdapter(
             ? 'parameterized'
             : input.scenario.name),
       )
+      const examplesRowArtifactId = input.scenario.examplesRowId
+        ? screenshotIdentity('examples-row', input.scenario.examplesRowId)
+        : undefined
 
       const close = async () => {
         if (closePromise) return closePromise
@@ -288,12 +291,17 @@ export function createWebAdapter(
         navigated = true
       }
 
-      async function screenshot(
-        state: StepExecution['state'],
-      ): Promise<TestArtifact | undefined> {
+      async function screenshot(state: StepExecution['state']): Promise<{
+        artifact?: TestArtifact
+        availability: NonNullable<StepExecution['evidenceAvailability']>[number]
+      }> {
         const screenshotOptions = options.screenshots
         const mode = screenshotOptions?.mode ?? 'off'
-        if (!shouldCaptureScreenshot(mode, state)) return undefined
+        if (!shouldCaptureScreenshot(mode, state)) {
+          return {
+            availability: { kind: 'screenshot', state: 'not-requested' },
+          }
+        }
 
         try {
           const format = screenshotOptions?.format ?? 'png'
@@ -305,6 +313,7 @@ export function createWebAdapter(
             screenshotOptions?.outputDir ?? defaultOutputDirectory,
             specificationArtifactId,
             scenarioArtifactId,
+            ...(examplesRowArtifactId ? [examplesRowArtifactId] : []),
           )
           await mkdir(directory, { recursive: true })
           const path = join(
@@ -319,18 +328,36 @@ export function createWebAdapter(
             }),
           )
           return {
-            kind: 'screenshot',
-            path,
-            mediaType: `image/${format}`,
+            artifact: {
+              kind: 'screenshot',
+              path,
+              mediaType: `image/${format}`,
+            },
+            availability: { kind: 'screenshot', state: 'available' },
           }
         } catch {
-          return undefined
+          return {
+            availability: {
+              kind: 'screenshot',
+              state: 'capture-failed',
+              message: 'Screenshot capture failed',
+            },
+          }
         }
       }
 
       async function finish(result: StepExecution): Promise<StepExecution> {
-        const artifact = await screenshot(result.state)
-        return artifact ? { ...result, artifacts: [artifact] } : result
+        const capture = await screenshot(result.state)
+        return {
+          ...result,
+          artifacts: capture.artifact
+            ? [...(result.artifacts ?? []), capture.artifact]
+            : result.artifacts,
+          evidenceAvailability: [
+            ...(result.evidenceAvailability ?? []),
+            capture.availability,
+          ],
+        }
       }
 
       async function ensureNavigation(signal?: AbortSignal): Promise<void> {

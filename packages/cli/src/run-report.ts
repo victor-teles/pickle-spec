@@ -1,7 +1,9 @@
 import { realpathSync } from 'node:fs'
 import { isAbsolute, relative, resolve, sep } from 'node:path'
-import type { TestResult } from '@pickle-spec/runner'
+import { finalScenarioAttempt, type TestResult } from '@pickle-spec/runner'
 import type { TestRunExitStatus } from './test-run-exit-status'
+
+type TestStepResult = ReturnType<typeof finalScenarioAttempt>['steps'][number]
 
 export type WriteLine = (line: string) => void
 
@@ -190,28 +192,29 @@ export function writeWrapped(
 
 function resultSuffix(result: TestResult): string {
   const details: string[] = []
+  const attempt = finalScenarioAttempt(result)
   const skipReason =
     result.state === 'skipped'
-      ? result.message?.split(/\r?\n/, 1)[0]?.trim()
+      ? attempt.message?.split(/\r?\n/, 1)[0]?.trim()
       : undefined
   const stateDetail = skipReason
     ? `skipped: ${skipReason}`
     : resultPresentations[result.state].detail
   if (stateDetail) details.push(stateDetail)
-  if (result.flaky) details.push(`flaky, ${result.attempts ?? 2} attempts`)
-  if (result.executionMode) {
-    const mode = result.executionMode === 'replay' ? 'Replay' : 'Adaptive'
+  if (result.flaky) details.push(`flaky, ${result.attempts.length} attempts`)
+  if (attempt.executionMode) {
+    const mode = attempt.executionMode === 'replay' ? 'Replay' : 'Adaptive'
     details.push(`mode ${mode}`)
   }
-  if (result.cacheOutcome) {
-    const reason = result.cacheUncacheableReason
-      ? `: ${result.cacheUncacheableReason}`
+  if (attempt.cacheOutcome) {
+    const reason = attempt.cacheUncacheableReason
+      ? `: ${attempt.cacheUncacheableReason}`
       : ''
-    details.push(`cache ${result.cacheOutcome}${reason}`)
+    details.push(`cache ${attempt.cacheOutcome}${reason}`)
   }
-  if (result.inferenceCount !== undefined) {
-    const noun = result.inferenceCount === 1 ? 'inference' : 'inferences'
-    details.push(`${result.inferenceCount} ${noun}`)
+  if (attempt.inferenceCount !== undefined) {
+    const noun = attempt.inferenceCount === 1 ? 'inference' : 'inferences'
+    details.push(`${attempt.inferenceCount} ${noun}`)
   }
   return details.length > 0 ? ` (${details.join('; ')})` : ''
 }
@@ -286,7 +289,7 @@ function writeResult(
   writeWrapped(
     options.write,
     styledPrefix,
-    `${scenarioName} [${durationLabel(result.durationMs ?? 0)}]${resultSuffix(result)}`,
+    `${scenarioName} [${durationLabel(result.durationMs)}]${resultSuffix(result)}`,
     ' '.repeat(plainPrefix.length),
     options.columns,
     plainPrefix.length,
@@ -320,7 +323,7 @@ export function renderTestResult(
 }
 
 export function renderTestStepResult(
-  result: TestResult['steps'][number],
+  result: TestStepResult,
   options: Pick<SpecificationWriterOptions, 'color' | 'columns'>,
 ): string[] {
   const lines: string[] = []
@@ -408,7 +411,7 @@ function displayArtifactPath(path: string, projectRoot: string): string {
 }
 
 function writeArtifacts(
-  stepResult: TestResult['steps'][number],
+  stepResult: TestStepResult,
   options: DiagnosticWriterOptions,
 ): void {
   if (!stepResult.artifacts?.length) return
@@ -431,6 +434,7 @@ function writeDiagnostic(
   if (result.state !== 'failed' && result.state !== 'infrastructure-error') {
     return
   }
+  const attempt = finalScenarioAttempt(result)
   const heading = diagnosticHeadings[result.state]
   options.write('')
   options.write(` ${stateMark(result.state, options.color)} ${heading.label}`)
@@ -457,9 +461,9 @@ function writeDiagnostic(
       options.columns,
     )
   }
-  if (result.steps.length > 0) {
+  if (attempt.steps.length > 0) {
     options.write('   Steps')
-    for (const step of result.steps) {
+    for (const step of attempt.steps) {
       for (const line of renderTestStepResult(step, options)) {
         options.write(line)
       }
@@ -467,12 +471,12 @@ function writeDiagnostic(
       writeArtifacts(step, options)
     }
   }
-  const messageBelongsToStep = result.steps.some(
-    (step) => step.state === result.state && step.message === result.message,
+  const messageBelongsToStep = attempt.steps.some(
+    (step) => step.state === result.state && step.message === attempt.message,
   )
-  if (result.message && !messageBelongsToStep) {
+  if (attempt.message && !messageBelongsToStep) {
     options.write('   Message')
-    writeMessage(result.message, options, '     ')
+    writeMessage(attempt.message, options, '     ')
   }
 }
 

@@ -1,7 +1,7 @@
 import { expect, test } from 'bun:test'
 import { join } from 'node:path'
 import AxeBuilder from '@axe-core/playwright'
-import { openTestRunStore } from '@pickle-spec/runner'
+import { openTestRunStore, type RunEventPayload } from '@pickle-spec/runner'
 import type { Browser, Page } from 'playwright'
 import {
   collectStream,
@@ -414,36 +414,57 @@ async function createLargeHistory(project: string) {
 
   for (let index = 0; index < historySize; index++) {
     const run = await store.create({ suite: 'large-history' })
-    await run.append({
-      type: 'scenario-finished',
-      result: largeResult(index),
-    })
+    await run.append(largeScenarioFinished(index))
     await run.materialize()
   }
 
   const largeRun = await store.create({ suite: 'large-results' })
   for (let index = 0; index < 250; index++) {
     await largeRun.append({
-      type: 'scenario-finished',
-      result: largeResult(index),
+      ...largeScenarioFinished(index),
       scheduleIndex: index,
     })
   }
   await largeRun.materialize()
 }
 
-function largeResult(index: number) {
+function largeScenarioFinished(index: number) {
   const suffix = String(index).padStart(3, '0')
+  const scenario = { id: `scenario-${suffix}`, name: `Scenario ${suffix}` }
+  const executionTargetProfile = { id: 'chrome', adapter: 'custom' }
+  const startedAt = '2026-01-01T00:00:00.000Z'
+  const durationMs = index + 1
+  const finishedAt = new Date(Date.parse(startedAt) + durationMs).toISOString()
   return {
-    schemaVersion: 1 as const,
+    type: 'scenario-finished' as const,
     specification: {
       name: 'Checkout',
       uri: 'features/checkout.feature',
     },
-    scenario: { id: `scenario-${suffix}`, name: `Scenario ${suffix}` },
-    executionTargetProfile: { id: 'chrome', adapter: 'custom' },
-    state: 'passed' as const,
-    steps: [],
-    durationMs: index + 1,
-  }
+    scenario,
+    executionTargetProfile,
+    scope: {
+      scenarioId: scenario.id,
+      executionTargetProfileId: executionTargetProfile.id,
+      attempt: 1,
+    },
+    attempt: {
+      attempt: 1,
+      startedAt,
+      finishedAt,
+      durationMs,
+      state: 'passed' as const,
+      steps: [],
+      executionMode: 'adaptive' as const,
+      cacheOutcome: 'uncacheable' as const,
+      inferenceCount: 0,
+      evidenceAvailability: [
+        { kind: 'screenshot', state: 'not-supported' },
+        { kind: 'trace', state: 'not-supported' },
+        { kind: 'recording', state: 'not-supported' },
+        { kind: 'device-log', state: 'not-supported' },
+        { kind: 'diagnostics', state: 'not-supported' },
+      ],
+    },
+  } satisfies RunEventPayload
 }

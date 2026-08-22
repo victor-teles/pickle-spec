@@ -457,63 +457,71 @@ export function HistoryPanel(props: HistoryPanelProps) {
               </TableHeader>
               <TableBody>
                 <VirtualTableSpacer height={resultWindow.before} colSpan={9} />
-                {visibleResults.map((result) => (
-                  <TableRow
-                    key={`${result.scenario.id ?? result.scenario.name}:${result.executionTargetProfile.id}`}
-                    style={{ height: resultRowHeight }}
-                  >
-                    <TableCell>{result.scenario.name}</TableCell>
-                    <TableCell>{result.executionTargetProfile.id}</TableCell>
-                    <TableCell>{result.state}</TableCell>
-                    <TableCell>
-                      {result.executionMode ?? 'Not recorded'}
-                    </TableCell>
-                    <TableCell>
-                      {result.cacheOutcome ?? 'Not recorded'}
-                    </TableCell>
-                    <TableCell>
-                      {result.cacheUncacheableReason ?? 'Not recorded'}
-                    </TableCell>
-                    <TableCell>
-                      {inferenceCountLabel(result.inferenceCount)}
-                    </TableCell>
-                    <TableCell>{durationLabel(result.durationMs)}</TableCell>
-                    <TableCell>
-                      <div className="flex gap-2">
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="outline"
-                          disabled={props.runPhase === 'running'}
-                          onClick={() =>
-                            void props.onRerun({
-                              rerunId: reviewed.id,
-                              ...(result.scenario.id
-                                ? { scenarioId: result.scenario.id }
-                                : { scenarioName: result.scenario.name }),
-                            })
-                          }
-                        >
-                          Rerun Scenario
-                        </Button>
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="outline"
-                          disabled={props.runPhase === 'running'}
-                          onClick={() =>
-                            void props.onRerun({
-                              rerunId: reviewed.id,
-                              profiles: [result.executionTargetProfile.id],
-                            })
-                          }
-                        >
-                          Rerun target
-                        </Button>
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                ))}
+                {visibleResults.map((result) => {
+                  const attempt = result.attempts.at(-1)
+                  if (!attempt) {
+                    throw new Error(
+                      'A Test result requires at least one Scenario attempt',
+                    )
+                  }
+                  return (
+                    <TableRow
+                      key={`${result.scenario.id ?? result.scenario.name}:${result.executionTargetProfile.id}`}
+                      style={{ height: resultRowHeight }}
+                    >
+                      <TableCell>{result.scenario.name}</TableCell>
+                      <TableCell>{result.executionTargetProfile.id}</TableCell>
+                      <TableCell>{result.state}</TableCell>
+                      <TableCell>
+                        {attempt.executionMode ?? 'Not recorded'}
+                      </TableCell>
+                      <TableCell>
+                        {attempt.cacheOutcome ?? 'Not recorded'}
+                      </TableCell>
+                      <TableCell>
+                        {attempt.cacheUncacheableReason ?? 'Not recorded'}
+                      </TableCell>
+                      <TableCell>
+                        {inferenceCountLabel(attempt.inferenceCount)}
+                      </TableCell>
+                      <TableCell>{durationLabel(result.durationMs)}</TableCell>
+                      <TableCell>
+                        <div className="flex gap-2">
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            disabled={props.runPhase === 'running'}
+                            onClick={() =>
+                              void props.onRerun({
+                                rerunId: reviewed.id,
+                                ...(result.scenario.id
+                                  ? { scenarioId: result.scenario.id }
+                                  : { scenarioName: result.scenario.name }),
+                              })
+                            }
+                          >
+                            Rerun Scenario
+                          </Button>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            disabled={props.runPhase === 'running'}
+                            onClick={() =>
+                              void props.onRerun({
+                                rerunId: reviewed.id,
+                                profiles: [result.executionTargetProfile.id],
+                              })
+                            }
+                          >
+                            Rerun target
+                          </Button>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  )
+                })}
                 <VirtualTableSpacer height={resultWindow.after} colSpan={9} />
               </TableBody>
             </Table>

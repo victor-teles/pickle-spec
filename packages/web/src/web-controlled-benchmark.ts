@@ -1,7 +1,11 @@
 import { mkdir, mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { openLocalExecutionCache, runScenario } from '@pickle-spec/runner'
+import {
+  finalScenarioAttempt,
+  openLocalExecutionCache,
+  runScenario,
+} from '@pickle-spec/runner'
 import { assertNoProviderCredentials } from '@pickle-spec/runner/benchmarking'
 import { parseSpecification } from '@pickle-spec/spec'
 import {
@@ -227,7 +231,7 @@ export async function runControlledWebPerformanceBenchmark(
         const expectedMode = mode === 'adaptive' ? 'adaptive' : 'replay'
         if (
           run.result.state !== 'passed' ||
-          run.result.executionMode !== expectedMode
+          finalScenarioAttempt(run.result).executionMode !== expectedMode
         ) {
           throw new Error(`Controlled ${mode} benchmark run failed`)
         }

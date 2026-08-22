@@ -9,8 +9,8 @@ import {
   type RunEventPayload,
   resolveExecutionCacheKey,
   serializeExecutionCacheEnvelope,
-  type TestResult,
 } from '../index'
+import type { ScenarioAttempt } from './run-scenario'
 
 const keyInput = {
   projectKey: 'project-fingerprint',
@@ -29,6 +29,12 @@ const payloadSchema = z.strictObject({
 })
 
 type TestPayload = z.infer<typeof payloadSchema>
+
+const eventScope = {
+  scenarioId: 'checkout-purchase',
+  executionTargetProfileId: 'chromium',
+  attempt: 1,
+}
 
 const payloadValidator: ExecutionCachePayloadValidator<TestPayload> = {
   adapterKind: 'contract-test',
@@ -247,20 +253,29 @@ describe('Execution cache contract', () => {
 
   test('represents cache behavior independently from the functional result', () => {
     const cacheEvents: RunEventPayload[] = [
-      { type: 'cache-hit', cacheKey: envelope().key },
-      { type: 'cache-miss', cacheKey: envelope().key },
-      { type: 'cache-refresh', cacheKey: envelope().key },
-      { type: 'replay-diverged', cacheKey: envelope().key },
-      { type: 'adaptive-fallback-started', cacheKey: envelope().key },
-      { type: 'cache-written', cacheKey: envelope().key },
+      { type: 'cache-hit', cacheKey: envelope().key, scope: eventScope },
+      { type: 'cache-miss', cacheKey: envelope().key, scope: eventScope },
+      { type: 'cache-refresh', cacheKey: envelope().key, scope: eventScope },
+      { type: 'replay-diverged', cacheKey: envelope().key, scope: eventScope },
+      {
+        type: 'adaptive-fallback-started',
+        cacheKey: envelope().key,
+        scope: { ...eventScope, attempt: 2 },
+      },
+      { type: 'cache-written', cacheKey: envelope().key, scope: eventScope },
       {
         type: 'cache-uncacheable',
         reason: 'bound-parameter-value',
+        scope: eventScope,
       },
-      { type: 'inference-count-updated', inferenceCount: 2 },
+      {
+        type: 'inference-count-updated',
+        inferenceCount: 2,
+        scope: eventScope,
+      },
     ]
     const resultMetadata: Pick<
-      TestResult,
+      ScenarioAttempt,
       'state' | 'executionMode' | 'cacheOutcome' | 'inferenceCount'
     > = {
       state: 'passed',

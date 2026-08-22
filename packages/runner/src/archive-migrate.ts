@@ -1,235 +1,55 @@
 import { z } from 'zod'
 import type { RunArchive, RunArchiveArtifact } from './archive'
 import { publicRunEvent, recordableTestResult } from './public-results'
-import type {
-  FidelityPolicy,
-  RunEvent,
-  TestResult,
-  TestStepResult,
-} from './run-scenario'
-import type { TestRunManifest } from './test-run-store'
+import { testRunSchemaVersion } from './run-scenario'
+import { parseRunEvent, parseTestRunManifest } from './test-run-schema'
 
-function parsed<T>(schema: z.ZodType<T>, value: unknown): T {
+const archiveArtifactSchema: z.ZodType<RunArchiveArtifact> = z.object({
+  path: z.string(),
+  content: z.string(),
+  mediaType: z.string().optional(),
+})
+
+const archiveEnvelopeSchema = z.object({
+  schemaVersion: z.unknown(),
+  kind: z.literal('run-archive'),
+  manifest: z.unknown(),
+  events: z.array(z.unknown()),
+  artifacts: z.array(archiveArtifactSchema),
+})
+
+function parsed<T>(schema: z.ZodType<T>, value: unknown, label: string): T {
   const result = schema.safeParse(value)
   if (result.success) return result.data
-  throw new Error(result.error.issues[0]?.message ?? 'Invalid run archive')
+  throw new Error(result.error.issues[0]?.message ?? `Invalid ${label}`)
 }
 
-function object<Shape extends z.ZodRawShape>(field: string, shape: Shape) {
-  return z.object(shape, { error: `${field} must be an object` })
+function incompatibleArchiveSchema(version: unknown): never {
+  throw new Error(
+    `Run archive schema version ${String(version)} is unsupported. ` +
+      'The archive was not changed; export it again with this Pickle version.',
+  )
 }
 
-const archiveStateInput = z.enum(
-  ['passed', 'failed', 'skipped', 'cancelled', 'infrastructure-error'],
-  { error: 'archive state must be a current result state' },
-)
-
-const archiveStepInput = object('archive step', {
-  step: z.unknown().optional(),
-  state: archiveStateInput,
-  resolvedActions: z.unknown().optional(),
-  message: z.unknown().optional(),
-  artifacts: z.unknown().optional(),
-})
-
-const archiveScenarioInput = object('archive result.scenario', {
-  name: z.unknown().optional(),
-  id: z.unknown().optional(),
-})
-
-const executionModeInput = z
-  .enum(['adaptive', 'replay'])
-  .optional()
-  .catch(undefined)
-
-const cacheOutcomeInput = z
-  .enum(['hit', 'miss', 'refresh', 'fallback', 'uncacheable'])
-  .optional()
-  .catch(undefined)
-
-const inferenceCountInput = z
-  .number()
-  .int()
-  .nonnegative()
-  .safe()
-  .optional()
-  .catch(undefined)
-
-const cacheUncacheableReasonInput = z
-  .enum([
-    'application-revision-missing',
-    'bound-parameter-value',
-    'non-deterministic-action',
-    'non-deterministic-assertion',
-    'payload-validation-failed',
-    'entry-too-large',
-  ])
-  .optional()
-  .catch(undefined)
-
-const failureKindInput = z.literal('cache-miss').optional().catch(undefined)
-
-const archiveResultInput = object('archive result', {
-  specification: z.unknown().optional(),
-  scenario: z.unknown().optional(),
-  executionTargetProfile: z.unknown().optional(),
-  state: archiveStateInput,
-  steps: z.unknown().optional(),
-  executionMode: executionModeInput,
-  cacheOutcome: cacheOutcomeInput,
-  inferenceCount: inferenceCountInput,
-  cacheUncacheableReason: cacheUncacheableReasonInput,
-  failureKind: failureKindInput,
-  message: z.unknown().optional(),
-  attempts: z.unknown().optional(),
-  flaky: z.unknown().optional(),
-  durationMs: z.unknown().optional(),
-  fidelityPolicy: z.unknown().optional(),
-})
-
-const archiveManifestInput = object('archive manifest', {
-  id: z.unknown().optional(),
-  startedAt: z.unknown().optional(),
-  finishedAt: z.unknown().optional(),
-  sourceRunId: z.unknown().optional(),
-  suite: z.unknown().optional(),
-  applicationRevision: z.unknown().optional(),
-  state: archiveStateInput,
-  results: z.unknown().optional(),
-})
-
-const runArchiveInput = object('run archive', {
-  manifest: z.unknown().optional(),
-  events: z.unknown().optional(),
-  artifacts: z.unknown().optional(),
-})
-
-const archiveEventInput = z.record(z.string(), z.unknown(), {
-  error: 'archive event must be an object',
-})
-
-function migrateFidelityPolicy(value: unknown): FidelityPolicy | undefined {
-  if (value === null || typeof value !== 'object') return undefined
-  const profile = 'profile' in value ? value.profile : undefined
-  const tradeOffs = 'tradeOffs' in value ? value.tradeOffs : undefined
+export function parseRunArchive(value: unknown): RunArchive {
+  const archive = parsed(archiveEnvelopeSchema, value, 'Run archive')
+  if (archive.schemaVersion !== testRunSchemaVersion) {
+    incompatibleArchiveSchema(archive.schemaVersion)
+  }
+  const manifest = parseTestRunManifest(
+    archive.manifest,
+    incompatibleArchiveSchema,
+  )
   return {
-    profile: profile === 'fast' ? 'fast' : 'default',
-    tradeOffs: Array.isArray(tradeOffs) ? tradeOffs.map(String) : [],
-  }
-}
-
-function migrateStep(step: unknown): TestStepResult {
-  const value = parsed(archiveStepInput, step)
-  return {
-    step: value.step as TestStepResult['step'],
-    state: value.state,
-    resolvedActions: Array.isArray(value.resolvedActions)
-      ? value.resolvedActions.map(migrateResolvedAction)
-      : [],
-    message: typeof value.message === 'string' ? value.message : undefined,
-    artifacts: Array.isArray(value.artifacts)
-      ? (value.artifacts as TestStepResult['artifacts'])
-      : undefined,
-  }
-}
-
-function migrateResolvedAction(
-  action: unknown,
-): TestStepResult['resolvedActions'][number] {
-  if (action === null || typeof action !== 'object') {
-    return { description: String(action ?? '') }
-  }
-  const description = 'description' in action ? action.description : ''
-  return { description: String(description ?? '') }
-}
-
-function migrateResult(result: unknown): TestResult {
-  const value = parsed(archiveResultInput, result)
-  const scenario = parsed(archiveScenarioInput, value.scenario)
-  return recordableTestResult({
-    schemaVersion: 1,
-    specification: value.specification as TestResult['specification'],
-    scenario: {
-      name: String(scenario.name ?? ''),
-      id: typeof scenario.id === 'string' ? scenario.id : undefined,
-    },
-    executionTargetProfile:
-      value.executionTargetProfile as TestResult['executionTargetProfile'],
-    state: value.state,
-    steps: Array.isArray(value.steps) ? value.steps.map(migrateStep) : [],
-    executionMode: value.executionMode,
-    cacheOutcome: value.cacheOutcome,
-    inferenceCount: value.inferenceCount,
-    cacheUncacheableReason: value.cacheUncacheableReason,
-    failureKind: value.failureKind,
-    message: typeof value.message === 'string' ? value.message : undefined,
-    attempts: typeof value.attempts === 'number' ? value.attempts : undefined,
-    flaky: typeof value.flaky === 'boolean' ? value.flaky : undefined,
-    durationMs:
-      typeof value.durationMs === 'number' ? value.durationMs : undefined,
-    fidelityPolicy: migrateFidelityPolicy(value.fidelityPolicy),
-  })
-}
-
-function migrateEvent(event: unknown, index: number): RunEvent {
-  const value = parsed(archiveEventInput, event)
-  const base = {
-    schemaVersion: 1 as const,
-    sequence: typeof value.sequence === 'number' ? value.sequence : index + 1,
-  }
-  if (value.type === 'scenario-finished') {
-    return publicRunEvent({
-      ...base,
-      type: 'scenario-finished',
-      result: migrateResult(value.result),
-      scheduleIndex:
-        typeof value.scheduleIndex === 'number'
-          ? value.scheduleIndex
-          : undefined,
-    })
-  }
-  if (value.type === 'step-finished') {
-    return publicRunEvent({
-      ...base,
-      type: 'step-finished',
-      result: migrateStep(value.result),
-    })
-  }
-  return publicRunEvent({ ...value, ...base } as RunEvent)
-}
-
-function migrateManifest(manifest: unknown): TestRunManifest {
-  const value = parsed(archiveManifestInput, manifest)
-  return {
-    schemaVersion: 1,
-    id: String(value.id ?? ''),
-    startedAt: String(value.startedAt ?? ''),
-    finishedAt:
-      typeof value.finishedAt === 'string' ? value.finishedAt : undefined,
-    sourceRunId:
-      typeof value.sourceRunId === 'string' ? value.sourceRunId : undefined,
-    suite: typeof value.suite === 'string' ? value.suite : undefined,
-    applicationRevision:
-      typeof value.applicationRevision === 'string'
-        ? value.applicationRevision
-        : undefined,
-    state: value.state,
-    results: Array.isArray(value.results)
-      ? value.results.map(migrateResult)
-      : [],
-  }
-}
-
-export function migrateRunArchive(value: unknown): RunArchive {
-  const archive = parsed(runArchiveInput, value)
-  const events = Array.isArray(archive.events) ? archive.events : []
-  return {
-    schemaVersion: 1,
+    schemaVersion: testRunSchemaVersion,
     kind: 'run-archive',
-    manifest: migrateManifest(archive.manifest),
-    events: events.map(migrateEvent),
-    artifacts: Array.isArray(archive.artifacts)
-      ? (archive.artifacts as RunArchiveArtifact[])
-      : [],
+    manifest: {
+      ...manifest,
+      results: manifest.results.map(recordableTestResult),
+    },
+    events: archive.events.map((event) =>
+      publicRunEvent(parseRunEvent(event, incompatibleArchiveSchema)),
+    ),
+    artifacts: archive.artifacts,
   }
 }

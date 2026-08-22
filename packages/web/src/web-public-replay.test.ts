@@ -2,7 +2,11 @@ import { describe, expect, test } from 'bun:test'
 import { mkdir, mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { openLocalExecutionCache, runScenario } from '@pickle-spec/runner'
+import {
+  finalScenarioAttempt,
+  openLocalExecutionCache,
+  runScenario,
+} from '@pickle-spec/runner'
 import { parseSpecification } from '@pickle-spec/spec'
 import {
   createWebAdapter,
@@ -178,24 +182,26 @@ describe('public web Replay proof', () => {
         },
       })
 
-      expect(adaptive.result).toMatchObject({
+      const adaptiveAttempt = finalScenarioAttempt(adaptive.result)
+      const replayAttempt = finalScenarioAttempt(replay.result)
+      expect(adaptiveAttempt).toMatchObject({
         state: 'passed',
         executionMode: 'adaptive',
         cacheOutcome: 'miss',
       })
-      expect(replay.result).toMatchObject({
+      expect(replayAttempt).toMatchObject({
         state: 'passed',
         executionMode: 'replay',
         cacheOutcome: 'hit',
         inferenceCount: 0,
       })
       expect(
-        adaptive.result.steps[0]?.resolvedActions.map(
+        adaptiveAttempt.steps[0]?.resolvedActions.map(
           ({ description }) => description,
         ),
       ).toEqual(['Navigate to the resolved URL', 'Click the resolved locator'])
       expect(
-        replay.result.steps[0]?.resolvedActions.map(
+        replayAttempt.steps[0]?.resolvedActions.map(
           ({ description }) => description,
         ),
       ).toEqual(['Navigate to the cached URL', 'Click the cached locator'])
@@ -253,12 +259,12 @@ describe('public web Replay proof', () => {
       const entries = await cache.inspect()
       const serialized = await cache.read(entries[0]!.key)
 
-      expect(adaptive.result).toMatchObject({
+      expect(finalScenarioAttempt(adaptive.result)).toMatchObject({
         state: 'passed',
         executionMode: 'adaptive',
         cacheOutcome: 'miss',
       })
-      expect(replay.result).toMatchObject({
+      expect(finalScenarioAttempt(replay.result)).toMatchObject({
         state: 'passed',
         executionMode: 'replay',
         cacheOutcome: 'hit',
@@ -350,10 +356,14 @@ describe('public web Replay proof', () => {
         'passed',
       ])
       expect(
-        results.filter((result) => result.executionMode === 'adaptive'),
+        results.filter(
+          (result) => finalScenarioAttempt(result).executionMode === 'adaptive',
+        ),
       ).toHaveLength(1)
       expect(
-        results.filter((result) => result.executionMode === 'replay'),
+        results.filter(
+          (result) => finalScenarioAttempt(result).executionMode === 'replay',
+        ),
       ).toHaveLength(1)
       expect(
         firstEvidence.modelCalls.adaptive.observe +

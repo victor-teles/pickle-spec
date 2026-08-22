@@ -133,6 +133,7 @@ export function publicStepExecution(
       resolvedActions: execution.resolvedActions,
       message: execution.message,
       artifacts: execution.artifacts,
+      evidenceAvailability: execution.evidenceAvailability,
     },
     bindings,
   )
@@ -153,6 +154,14 @@ export function publicStepExecution(
         ? redactString(execution.message, bindings)
         : undefined,
       artifacts: publicArtifacts(execution.artifacts, bindings),
+      evidenceAvailability: execution.evidenceAvailability?.map(
+        (availability) => ({
+          ...availability,
+          message: availability.message
+            ? redactString(availability.message, bindings)
+            : undefined,
+        }),
+      ),
     },
   }
 }
