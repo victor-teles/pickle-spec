@@ -1,3 +1,4 @@
+import { z } from 'zod'
 import type { WebPerformanceBenchmarkResult } from './web-benchmark'
 import { removeWebBenchmarkProviderCredentials } from './web-benchmark-credentials'
 import {
@@ -6,27 +7,19 @@ import {
 } from './web-controlled-benchmark'
 
 const defaultOptions: ControlledWebBenchmarkOptions = { samplePairs: 20 }
-
-function numericArgument(
-  argv: readonly string[],
-  name: string,
-): number | undefined {
-  const index = argv.indexOf(name)
-  if (index === -1) return undefined
-  const value = Number(argv[index + 1])
-  if (!Number.isFinite(value) || value < 0) {
-    throw new Error(`${name} requires a non-negative number`)
-  }
-  return value
-}
+const benchmarkArgumentsSchema = z.union([
+  z.tuple([]),
+  z.tuple([
+    z.literal('--sample-pairs'),
+    z.coerce.number().int().min(defaultOptions.samplePairs),
+  ]),
+])
 
 function benchmarkOptions(
   argv: readonly string[],
 ): ControlledWebBenchmarkOptions {
-  return {
-    samplePairs:
-      numericArgument(argv, '--sample-pairs') ?? defaultOptions.samplePairs,
-  }
+  const parsed = benchmarkArgumentsSchema.parse(argv)
+  return { samplePairs: parsed[1] ?? defaultOptions.samplePairs }
 }
 
 export function webPerformanceBenchmarkExitCode(

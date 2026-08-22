@@ -13,6 +13,12 @@ interface CliResult {
   output: WebPerformanceBenchmarkResult
 }
 
+interface CliExecution {
+  exitCode: number
+  stderr: string
+  stdout: string
+}
+
 const providerCredentialEnvironmentNames = [
   'AI_GATEWAY_API_KEY',
   'ANTHROPIC_API_KEY',
@@ -49,15 +55,7 @@ function providerFreeEnvironment(): Record<string, string | undefined> {
 async function runCli(
   environment?: Record<string, string | undefined>,
 ): Promise<CliResult> {
-  const child = Bun.spawn(
-    [process.execPath, `${import.meta.dir}/web-benchmark-cli.ts`],
-    { env: environment, stdout: 'pipe', stderr: 'pipe' },
-  )
-  const [exitCode, stdout, stderr] = await Promise.all([
-    child.exited,
-    new Response(child.stdout).text(),
-    new Response(child.stderr).text(),
-  ])
+  const { exitCode, stdout, stderr } = await executeCli([], environment)
   if (!stdout.trim()) throw new Error(stderr || 'Benchmark produced no JSON')
   return {
     exitCode,
@@ -65,7 +63,46 @@ async function runCli(
   }
 }
 
+async function executeCli(
+  args: readonly string[],
+  environment: Record<string, string | undefined> = providerFreeEnvironment(),
+): Promise<CliExecution> {
+  const child = Bun.spawn(
+    [process.execPath, `${import.meta.dir}/web-benchmark-cli.ts`, ...args],
+    { env: environment, stdout: 'pipe', stderr: 'pipe' },
+  )
+  const [exitCode, stdout, stderr] = await Promise.all([
+    child.exited,
+    new Response(child.stdout).text(),
+    new Response(child.stderr).text(),
+  ])
+  return { exitCode, stdout, stderr }
+}
+
 describe('web Replay benchmark entrypoint', () => {
+  test('rejects an unknown argument without printing JSON', async () => {
+    const execution = await executeCli(['--unknown'])
+
+    expect(execution.exitCode).toBe(2)
+    expect(execution.stdout).toBe('')
+  })
+
+  test('rejects trailing, missing, fractional, and insufficient sample arguments', async () => {
+    const invalidArguments = [
+      ['--sample-pairs', '20', 'trailing'],
+      ['--sample-pairs'],
+      ['--sample-pairs', '20.5'],
+      ['--sample-pairs', '19'],
+    ]
+
+    for (const args of invalidArguments) {
+      const execution = await executeCli(args)
+      expect(execution.exitCode).toBe(2)
+      expect(execution.stdout).toBe('')
+      expect(execution.stderr).not.toBe('')
+    }
+  })
+
   test('controlled fixture rejects inherited provider credentials', async () => {
     const controlledBenchmarkUrl = new URL(
       './web-controlled-benchmark.ts',
