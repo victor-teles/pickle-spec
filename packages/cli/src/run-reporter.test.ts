@@ -393,7 +393,7 @@ test('counts Test result states as mutually exclusive summary outcomes', () => {
   reporter.finish(runs, 150)
 
   expect(lines).toContain(
-    ' Test results    1 failed | 1 infrastructure error | 1 adapted | 1 passed | 1 skipped | 1 cancelled (6)',
+    ' Test results    1 failed | 1 infrastructure error | 2 passed | 1 skipped | 1 cancelled (6)',
   )
   expect(lines.join('\n')).toContain(
     '× src/google.feature > Scenario 2 [150ms] (failed)',
@@ -407,6 +407,67 @@ test('counts Test result states as mutually exclusive summary outcomes', () => {
   expect(lines.join('\n')).toContain(
     '○ src/google.feature > Scenario 5 [150ms] (cancelled)',
   )
+})
+
+test('renders execution mode, Cache outcome, and inference count independently from state', () => {
+  const lines: string[] = []
+  const reporter = createRunReporter('default', {
+    write: (line) => lines.push(line),
+    projectRoot: '/workspace/project',
+    version: '1.0.2',
+    color: false,
+    columns: 180,
+    now: () => new Date(2026, 7, 20, 14, 32, 7),
+  })
+  const replay = passedRun({
+    specificationUri: 'features/checkout.feature',
+    specificationName: 'Checkout',
+    scenarioId: 'scenario-replay',
+    scenarioName: 'Replay checkout',
+    profileId: 'web',
+    durationMs: 12,
+  })
+  replay.result.executionMode = 'replay'
+  replay.result.cacheOutcome = 'hit'
+  replay.result.inferenceCount = 0
+  const fallback = passedRun({
+    specificationUri: 'features/checkout.feature',
+    specificationName: 'Checkout',
+    scenarioId: 'scenario-fallback',
+    scenarioName: 'Recover checkout',
+    profileId: 'web',
+    durationMs: 25,
+  })
+  fallback.result.executionMode = 'adaptive'
+  fallback.result.cacheOutcome = 'fallback'
+  fallback.result.inferenceCount = 2
+  const uncacheable = passedRun({
+    specificationUri: 'features/checkout.feature',
+    specificationName: 'Checkout',
+    scenarioId: 'scenario-uncacheable',
+    scenarioName: 'Inspect checkout',
+    profileId: 'web',
+    durationMs: 30,
+  })
+  uncacheable.result.executionMode = 'adaptive'
+  uncacheable.result.cacheOutcome = 'uncacheable'
+  uncacheable.result.cacheUncacheableReason = 'non-deterministic-assertion'
+  uncacheable.result.inferenceCount = 3
+
+  reporter.start()
+  reporter.finish([replay, fallback, uncacheable], 67)
+
+  const output = lines.join('\n')
+  expect(output).toContain(
+    'Replay checkout [12ms] (mode Replay; cache hit; 0 inferences)',
+  )
+  expect(output).toContain(
+    'Recover checkout [25ms] (mode Adaptive; cache fallback; 2 inferences)',
+  )
+  expect(output).toContain(
+    'Inspect checkout [30ms] (mode Adaptive; cache uncacheable: non-deterministic-assertion; 3 inferences)',
+  )
+  expect(output).toContain(' Test results    3 passed (3)')
 })
 
 test('enables color only for a TTY when NO_COLOR is absent', () => {

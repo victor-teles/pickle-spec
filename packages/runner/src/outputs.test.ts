@@ -56,7 +56,11 @@ const events: RunEvent[] = [
     schemaVersion: 1,
     sequence: 2,
     type: 'scenario-finished',
-    result: result('Complete a purchase', 'passed'),
+    result: result('Complete a purchase', 'passed', {
+      executionMode: 'replay',
+      cacheOutcome: 'hit',
+      inferenceCount: 0,
+    }),
   },
 ]
 
@@ -80,14 +84,62 @@ test('formats NDJSON from the versioned run-event schema', () => {
   ).toEqual(events)
 })
 
-test('formats JUnit XML with stable states, flaky, and error classes', () => {
+test('preserves Execution cache behavior in JSON and NDJSON', () => {
+  const cached = result('Replay checkout', 'passed', {
+    executionMode: 'replay',
+    cacheOutcome: 'hit',
+    inferenceCount: 0,
+  })
+  const uncacheable = result('Adaptive checkout', 'passed', {
+    executionMode: 'adaptive',
+    cacheOutcome: 'uncacheable',
+    cacheUncacheableReason: 'non-deterministic-assertion',
+    inferenceCount: 2,
+  })
+  const structuredManifest = { ...manifest, results: [cached, uncacheable] }
+
+  expect(JSON.parse(formatJson(structuredManifest)).results).toEqual([
+    cached,
+    uncacheable,
+  ])
+  expect(
+    formatNdjson([
+      {
+        schemaVersion: 1,
+        sequence: 1,
+        type: 'scenario-finished',
+        result: cached,
+      },
+    ]),
+  ).toContain('"executionMode":"replay"')
+})
+
+test('formats JUnit XML with cache metadata, stable states, flaky, and error classes', () => {
+  manifest.results[0] = result('Complete a purchase', 'passed', {
+    executionMode: 'replay',
+    cacheOutcome: 'hit',
+    inferenceCount: 0,
+  })
+  manifest.results[1] = result('Adapt the purchase', 'passed-with-adaptation', {
+    executionMode: 'adaptive',
+    cacheOutcome: 'fallback',
+    inferenceCount: 3,
+  })
   expect(formatJunit(manifest)).toBe(`<?xml version="1.0" encoding="UTF-8"?>
 <testsuites id="run-ci" name="run-ci" tests="7" failures="1" errors="2" skipped="1">
   <testsuite name="Checkout" tests="7" failures="1" errors="2" skipped="1">
-    <testcase name="Complete a purchase" classname="features/checkout.feature"/>
+    <testcase name="Complete a purchase" classname="features/checkout.feature">
+      <properties>
+        <property name="execution-mode" value="replay"/>
+        <property name="cache-outcome" value="hit"/>
+        <property name="inference-count" value="0"/>
+      </properties>
+    </testcase>
     <testcase name="Adapt the purchase" classname="features/checkout.feature">
       <properties>
-        <property name="state" value="passed-with-adaptation"/>
+        <property name="execution-mode" value="adaptive"/>
+        <property name="cache-outcome" value="fallback"/>
+        <property name="inference-count" value="3"/>
       </properties>
     </testcase>
     <testcase name="Retry the purchase" classname="features/checkout.feature">
@@ -110,4 +162,26 @@ test('formats JUnit XML with stable states, flaky, and error classes', () => {
   </testsuite>
 </testsuites>
 `)
+})
+
+test('exposes uncacheable and cache-only failure metadata in JUnit properties', () => {
+  const uncacheable = result('Adaptive checkout', 'passed', {
+    executionMode: 'adaptive',
+    cacheOutcome: 'uncacheable',
+    cacheUncacheableReason: 'non-deterministic-action',
+    inferenceCount: 2,
+  })
+  const cacheMiss = result('Replay checkout', 'failed', {
+    executionMode: 'replay',
+    cacheOutcome: 'miss',
+    failureKind: 'cache-miss',
+    inferenceCount: 0,
+  })
+  const xml = formatJunit({ ...manifest, results: [uncacheable, cacheMiss] })
+
+  expect(xml).toContain(
+    '<property name="cache-uncacheable-reason" value="non-deterministic-action"/>',
+  )
+  expect(xml).toContain('<property name="failure-kind" value="cache-miss"/>')
+  expect(xml).toContain('<property name="inference-count" value="0"/>')
 })

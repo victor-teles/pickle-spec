@@ -40,10 +40,9 @@ const resultPresentations: Record<TestResult['state'], ResultPresentation> = {
   },
   'passed-with-adaptation': {
     mark: '✓',
-    color: 33,
-    detail: 'adapted',
-    singular: 'adapted',
-    plural: 'adapted',
+    color: 32,
+    singular: 'passed',
+    plural: 'passed',
   },
   passed: { mark: '✓', color: 32, singular: 'passed', plural: 'passed' },
   skipped: {
@@ -66,8 +65,6 @@ type TextUnit = {
   value: string
   width: number
 }
-
-type ResultPresentationEntry = [TestResult['state'], ResultPresentation]
 
 type SpecificationWriterOptions = {
   write: WriteLine
@@ -189,10 +186,24 @@ export function writeWrapped(
 }
 
 function resultSuffix(result: TestResult): string {
-  const details = []
+  const details: string[] = []
   const stateDetail = resultPresentations[result.state].detail
   if (stateDetail) details.push(stateDetail)
   if (result.flaky) details.push(`flaky, ${result.attempts ?? 2} attempts`)
+  if (result.executionMode) {
+    const mode = result.executionMode === 'replay' ? 'Replay' : 'Adaptive'
+    details.push(`mode ${mode}`)
+  }
+  if (result.cacheOutcome) {
+    const reason = result.cacheUncacheableReason
+      ? `: ${result.cacheUncacheableReason}`
+      : ''
+    details.push(`cache ${result.cacheOutcome}${reason}`)
+  }
+  if (result.inferenceCount !== undefined) {
+    const noun = result.inferenceCount === 1 ? 'inference' : 'inferences'
+    details.push(`${result.inferenceCount} ${noun}`)
+  }
   return details.length > 0 ? ` (${details.join('; ')})` : ''
 }
 
@@ -473,11 +484,29 @@ export function diagnosticLines(
 }
 
 function testResultSummary(results: readonly TestResult[]): string {
-  const entries = Object.entries(
-    resultPresentations,
-  ) as ResultPresentationEntry[]
-  const labels = entries.flatMap(([state, { singular, plural }]) => {
-    const count = results.filter((result) => result.state === state).length
+  const entries: Array<{
+    states: readonly TestResult['state'][]
+    singular: string
+    plural: string
+  }> = [
+    { states: ['failed'], singular: 'failed', plural: 'failed' },
+    {
+      states: ['infrastructure-error'],
+      singular: 'infrastructure error',
+      plural: 'infrastructure errors',
+    },
+    {
+      states: ['passed', 'passed-with-adaptation'],
+      singular: 'passed',
+      plural: 'passed',
+    },
+    { states: ['skipped'], singular: 'skipped', plural: 'skipped' },
+    { states: ['cancelled'], singular: 'cancelled', plural: 'cancelled' },
+  ]
+  const labels = entries.flatMap(({ states, singular, plural }) => {
+    const count = results.filter((result) =>
+      states.includes(result.state),
+    ).length
     if (count === 0) return []
     return [`${count} ${count === 1 ? singular : plural}`]
   })

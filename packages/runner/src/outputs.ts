@@ -161,15 +161,31 @@ function caseChildren(result: TestResult): string[] {
 
 function caseProperties(result: TestResult): string[] {
   const properties: string[] = []
-  if (result.state === 'passed-with-adaptation') {
+  if (result.executionMode) {
+    properties.push(junitProperty('execution-mode', result.executionMode))
+  }
+  if (result.cacheOutcome) {
+    properties.push(junitProperty('cache-outcome', result.cacheOutcome))
+  }
+  if (result.inferenceCount !== undefined) {
+    properties.push(junitProperty('inference-count', result.inferenceCount))
+  }
+  if (result.cacheUncacheableReason) {
     properties.push(
-      '        <property name="state" value="passed-with-adaptation"/>',
+      junitProperty('cache-uncacheable-reason', result.cacheUncacheableReason),
     )
   }
+  if (result.failureKind) {
+    properties.push(junitProperty('failure-kind', result.failureKind))
+  }
   if (result.flaky) {
-    properties.push('        <property name="flaky" value="true"/>')
+    properties.push(junitProperty('flaky', true))
   }
   return properties
+}
+
+function junitProperty(name: string, value: string | number | boolean): string {
+  return `        <property name="${escapeXml(name)}" value="${escapeXml(String(value))}"/>`
 }
 
 function outcomeElement(result: TestResult): string | undefined {
