@@ -101,4 +101,26 @@ describe('evaluateWebPerformanceGates', () => {
       ),
     ).toThrow('non-negative finite number')
   })
+
+  test('rejects a zero Adaptive baseline', () => {
+    const samples = Array.from({ length: 20 }, () => ({
+      adaptiveMs: 0,
+      replayMs: 0,
+    }))
+
+    expect(() => evaluateWebPerformanceGates(samples)).toThrow(
+      'Adaptive benchmark percentiles must be greater than zero',
+    )
+  })
+
+  test('rejects a ratio overflow', () => {
+    const samples = Array.from({ length: 20 }, () => ({
+      adaptiveMs: Number.MIN_VALUE,
+      replayMs: 1,
+    }))
+
+    expect(() => evaluateWebPerformanceGates(samples)).toThrow(
+      'Web benchmark ratios must be finite',
+    )
+  })
 })

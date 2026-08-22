@@ -1,4 +1,7 @@
 import { describe, expect, test } from 'bun:test'
+import { mkdtemp, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import {
   evaluateWebPerformanceGates,
   type WebPerformanceBenchmarkResult,
@@ -10,10 +13,45 @@ interface CliResult {
   output: WebPerformanceBenchmarkResult
 }
 
-async function runCli(...args: string[]): Promise<CliResult> {
+const providerCredentialEnvironmentNames = [
+  'AI_GATEWAY_API_KEY',
+  'ANTHROPIC_API_KEY',
+  'AWS_ACCESS_KEY_ID',
+  'AWS_SECRET_ACCESS_KEY',
+  'AWS_SESSION_TOKEN',
+  'AZURE_OPENAI_API_KEY',
+  'CEREBRAS_API_KEY',
+  'COHERE_API_KEY',
+  'DEEPSEEK_API_KEY',
+  'FIREWORKS_API_KEY',
+  'GEMINI_API_KEY',
+  'GOOGLE_API_KEY',
+  'GOOGLE_GENERATIVE_AI_API_KEY',
+  'GOOGLE_APPLICATION_CREDENTIALS',
+  'GROQ_API_KEY',
+  'MISTRAL_API_KEY',
+  'OPENAI_API_KEY',
+  'OPENROUTER_API_KEY',
+  'PERPLEXITY_API_KEY',
+  'TOGETHER_AI_API_KEY',
+  'VERCEL_AI_GATEWAY_API_KEY',
+  'XAI_API_KEY',
+] as const
+
+function providerFreeEnvironment(): Record<string, string | undefined> {
+  const environment = { ...Bun.env }
+  for (const name of providerCredentialEnvironmentNames) {
+    delete environment[name]
+  }
+  return environment
+}
+
+async function runCli(
+  environment?: Record<string, string | undefined>,
+): Promise<CliResult> {
   const child = Bun.spawn(
-    [process.execPath, `${import.meta.dir}/web-benchmark-cli.ts`, ...args],
-    { stdout: 'pipe', stderr: 'pipe' },
+    [process.execPath, `${import.meta.dir}/web-benchmark-cli.ts`],
+    { env: environment, stdout: 'pipe', stderr: 'pipe' },
   )
   const [exitCode, stdout, stderr] = await Promise.all([
     child.exited,
@@ -28,6 +66,46 @@ async function runCli(...args: string[]): Promise<CliResult> {
 }
 
 describe('web Replay benchmark entrypoint', () => {
+  test('controlled fixture rejects inherited provider credentials', async () => {
+    const controlledBenchmarkUrl = new URL(
+      './web-controlled-benchmark.ts',
+      import.meta.url,
+    ).href
+    const child = Bun.spawn(
+      [
+        process.execPath,
+        '-e',
+        `import { runControlledWebPerformanceBenchmark } from ${JSON.stringify(controlledBenchmarkUrl)}; await runControlledWebPerformanceBenchmark()`,
+      ],
+      {
+        env: {
+          ...providerFreeEnvironment(),
+          AWS_SECRET_ACCESS_KEY: 'must-not-reach-fixture',
+        },
+        stdout: 'pipe',
+        stderr: 'pipe',
+      },
+    )
+    const [exitCode, stderr] = await Promise.all([
+      child.exited,
+      new Response(child.stderr).text(),
+    ])
+
+    expect(exitCode).not.toBe(0)
+    expect(stderr).toContain('provider credentials')
+  })
+
+  test('removes provider credentials before the controlled fixture starts', async () => {
+    const result = await runCli({
+      ...providerFreeEnvironment(),
+      ANTHROPIC_API_KEY: 'must-not-reach-fixture',
+      OPENAI_API_KEY: 'must-not-reach-fixture',
+    })
+
+    expect(result.exitCode).toBe(0)
+    expect(result.output.passed).toBe(true)
+  })
+
   test('prints passing controlled JSON without credentials or an external browser', async () => {
     const result = await runCli()
 
@@ -52,5 +130,42 @@ describe('web Replay benchmark entrypoint', () => {
     )
 
     expect(webPerformanceBenchmarkExitCode(failed)).toBe(1)
+  })
+
+  test('returns two without JSON when the measured baseline is invalid', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'pickle-web-benchmark-'))
+    const preloadPath = join(directory, 'constant-clock.ts')
+    await Bun.write(
+      preloadPath,
+      `Object.defineProperty(performance, 'now', { value: () => 1 })\n`,
+    )
+    try {
+      const child = Bun.spawn(
+        [
+          process.execPath,
+          '--preload',
+          preloadPath,
+          `${import.meta.dir}/web-benchmark-cli.ts`,
+        ],
+        {
+          env: providerFreeEnvironment(),
+          stdout: 'pipe',
+          stderr: 'pipe',
+        },
+      )
+      const [exitCode, stdout, stderr] = await Promise.all([
+        child.exited,
+        new Response(child.stdout).text(),
+        new Response(child.stderr).text(),
+      ])
+
+      expect(exitCode).toBe(2)
+      expect(stdout).toBe('')
+      expect(stderr).toContain(
+        'Adaptive benchmark percentiles must be greater than zero',
+      )
+    } finally {
+      await rm(directory, { recursive: true, force: true })
+    }
   })
 })

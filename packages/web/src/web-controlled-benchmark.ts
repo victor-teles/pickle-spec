@@ -13,6 +13,7 @@ import {
   runWebPerformanceBenchmark,
   type WebPerformanceBenchmarkResult,
 } from './web-benchmark'
+import { assertNoWebBenchmarkProviderCredentials } from './web-benchmark-credentials'
 import {
   bindWebTemplate,
   type WebAssertionDraft,
@@ -179,6 +180,7 @@ Feature: Controlled web benchmark
 export async function runControlledWebPerformanceBenchmark(
   options: ControlledWebBenchmarkOptions = defaultOptions,
 ): Promise<WebPerformanceBenchmarkResult> {
+  assertNoWebBenchmarkProviderCredentials(process.env)
   const workspace = await mkdtemp(join(tmpdir(), 'pickle-web-benchmark-'))
   const projectRoot = join(workspace, 'project')
   await mkdir(projectRoot)

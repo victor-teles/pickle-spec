@@ -1,4 +1,5 @@
 import type { WebPerformanceBenchmarkResult } from './web-benchmark'
+import { removeWebBenchmarkProviderCredentials } from './web-benchmark-credentials'
 import {
   type ControlledWebBenchmarkOptions,
   runControlledWebPerformanceBenchmark,
@@ -38,6 +39,7 @@ export async function webBenchmarkMain(
   argv: readonly string[] = process.argv.slice(2),
 ): Promise<number> {
   try {
+    removeWebBenchmarkProviderCredentials(process.env)
     const result = await runControlledWebPerformanceBenchmark(
       benchmarkOptions(argv),
     )
