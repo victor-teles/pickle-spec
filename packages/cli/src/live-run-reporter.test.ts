@@ -1,10 +1,26 @@
 import { expect, test } from 'bun:test'
+import { finalScenarioAttempt } from '@pickle-spec/runner'
 import { createRunReporter } from './run-reporter'
 import {
   finishReporter,
   passedRun,
   recordingTerminal,
 } from './run-reporter.test-support'
+
+const occurredAt = '2026-08-20T14:32:07.000Z'
+
+function eventScope(
+  scenarioId: string,
+  executionTargetProfileId: string,
+  stepIndex?: number,
+) {
+  return {
+    scenarioId,
+    executionTargetProfileId,
+    attempt: 1,
+    ...(stepIndex === undefined ? {} : { stepIndex }),
+  }
+}
 
 test('shows completed and running Gherkin steps beneath an active Scenario', () => {
   const run = passedRun({
@@ -42,39 +58,51 @@ test('shows completed and running Gherkin steps beneath an active Scenario', () 
     },
   ])
   reporter.event({
-    schemaVersion: 1,
+    schemaVersion: 2,
     sequence: 1,
+    occurredAt,
     type: 'scenario-started',
     scenario: run.result.scenario,
     executionTargetProfile: run.result.executionTargetProfile,
+    scope: eventScope('scenario-search', 'web'),
   })
   reporter.event({
-    schemaVersion: 1,
+    schemaVersion: 2,
     sequence: 2,
+    occurredAt,
     type: 'step-started',
     step: contextStep,
     scenario: run.result.scenario,
     executionTargetProfile: run.result.executionTargetProfile,
+    scope: eventScope('scenario-search', 'web', 0),
   })
   reporter.event({
-    schemaVersion: 1,
+    schemaVersion: 2,
     sequence: 3,
+    occurredAt,
     type: 'step-finished',
     result: {
+      index: 0,
+      startedAt: occurredAt,
+      finishedAt: occurredAt,
+      durationMs: 0,
       step: contextStep,
       state: 'passed',
       resolvedActions: [],
     },
     scenario: run.result.scenario,
     executionTargetProfile: run.result.executionTargetProfile,
+    scope: eventScope('scenario-search', 'web', 0),
   })
   reporter.event({
-    schemaVersion: 1,
+    schemaVersion: 2,
     sequence: 4,
+    occurredAt,
     type: 'step-started',
     step: actionStep,
     scenario: run.result.scenario,
     executionTargetProfile: run.result.executionTargetProfile,
+    scope: eventScope('scenario-search', 'web', 1),
   })
 
   const frame = terminal.operations.at(-1)
@@ -194,11 +222,13 @@ test('updates active Specifications and commits each completed result once', () 
   reporter.start()
   reporter.prepare?.(schedule)
   reporter.event({
-    schemaVersion: 1,
+    schemaVersion: 2,
     sequence: 1,
+    occurredAt,
     type: 'scenario-started',
     scenario: runs[0]!.result.scenario,
     executionTargetProfile: runs[0]!.result.executionTargetProfile,
+    scope: eventScope('scenario-a-one', 'web'),
   })
 
   const initialFrame = terminal.operations.at(-1)
@@ -210,11 +240,13 @@ test('updates active Specifications and commits each completed result once', () 
 
   reporter.complete?.(runs[0]!.result)
   reporter.event({
-    schemaVersion: 1,
+    schemaVersion: 2,
     sequence: 2,
+    occurredAt,
     type: 'scenario-started',
     scenario: runs[4]!.result.scenario,
     executionTargetProfile: runs[4]!.result.executionTargetProfile,
+    scope: eventScope('scenario-b', 'web'),
   })
 
   const concurrentFrame = terminal.operations.at(-1)
@@ -275,9 +307,15 @@ test('finishes live progress with actionable diagnostics and a compact result tr
     durationMs: 10,
   })
   run.result.state = 'failed'
-  run.result.message = 'Expected confirmation\nbut the page remained empty'
-  run.result.steps = [
+  const attempt = finalScenarioAttempt(run.result)
+  attempt.state = 'failed'
+  attempt.message = 'Expected confirmation\nbut the page remained empty'
+  attempt.steps = [
     {
+      index: 0,
+      startedAt: occurredAt,
+      finishedAt: occurredAt,
+      durationMs: 0,
       step: {
         keyword: 'Then',
         text: 'the purchase succeeds',
@@ -359,19 +397,23 @@ test('rewraps active progress and preserves a committed result on resize', () =>
     },
   ])
   reporter.event({
-    schemaVersion: 1,
+    schemaVersion: 2,
     sequence: 1,
+    occurredAt,
     type: 'scenario-started',
     scenario: run.result.scenario,
     executionTargetProfile: run.result.executionTargetProfile,
+    scope: eventScope('scenario-live', 'web'),
   })
   reporter.complete?.(run.result)
   reporter.event({
-    schemaVersion: 1,
+    schemaVersion: 2,
     sequence: 2,
+    occurredAt,
     type: 'scenario-started',
     scenario: { id: 'scenario-pending', name: 'Still pending' },
     executionTargetProfile: run.result.executionTargetProfile,
+    scope: eventScope('scenario-pending', 'web'),
   })
 
   columns = 28
@@ -429,11 +471,13 @@ test('clears live progress and preserves completed results when a run fails', ()
     },
   ])
   reporter.event({
-    schemaVersion: 1,
+    schemaVersion: 2,
     sequence: 1,
+    occurredAt,
     type: 'scenario-started',
     scenario: completed.result.scenario,
     executionTargetProfile: completed.result.executionTargetProfile,
+    scope: eventScope('scenario-complete', 'web'),
   })
   reporter.complete?.(completed.result)
 
@@ -495,23 +539,27 @@ test('keeps every active Specification visible within the terminal bounds', () =
         result.specification.uri === `features/${specificationId}.feature`,
     )
     reporter.event({
-      schemaVersion: 1,
+      schemaVersion: 2,
       sequence: 1,
+      occurredAt,
       type: 'scenario-started',
       scenario: specificationRuns[0]!.result.scenario,
       executionTargetProfile:
         specificationRuns[0]!.result.executionTargetProfile,
+      scope: eventScope(`scenario-${specificationId}-0`, 'web'),
     })
     for (const run of specificationRuns.slice(0, 5)) {
       reporter.complete?.(run.result)
     }
     reporter.event({
-      schemaVersion: 1,
+      schemaVersion: 2,
       sequence: 2,
+      occurredAt,
       type: 'scenario-started',
       scenario: specificationRuns[5]!.result.scenario,
       executionTargetProfile:
         specificationRuns[5]!.result.executionTargetProfile,
+      scope: eventScope(`scenario-${specificationId}-5`, 'web'),
     })
   }
 
@@ -563,11 +611,13 @@ test('pages active Specification headers when their wrapped rows exceed the term
   )
   runs.forEach((run, index) => {
     reporter.event({
-      schemaVersion: 1,
+      schemaVersion: 2,
       sequence: index + 1,
+      occurredAt,
       type: 'scenario-started',
       scenario: run.result.scenario,
       executionTargetProfile: run.result.executionTargetProfile,
+      scope: eventScope(run.result.scenario.id!, 'web'),
     })
   })
   const operationStart = terminal.operations.length

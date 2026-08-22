@@ -7,6 +7,7 @@ import type {
   TestResultState,
 } from './index'
 import { runScenario } from './index'
+import { finalScenarioAttempt } from './src/run-scenario-types'
 
 export interface AdapterConformanceSuiteOptions {
   name: string
@@ -47,14 +48,15 @@ export function defineAdapterConformanceSuite(
         )
         expect(
           run.events.map((event) => [event.schemaVersion, event.sequence]),
-        ).toEqual(run.events.map((_, index) => [1, index + 1]))
+        ).toEqual(run.events.map((_, index) => [2, index + 1]))
         expect(run.result).toMatchObject({
-          schemaVersion: 1,
+          schemaVersion: 2,
           state: options.expectedAdaptiveState ?? 'passed',
-          executionMode: 'adaptive',
           executionTargetProfile: options.executionTargetProfile,
         })
-        expect(run.result.steps).toHaveLength(options.scenario.steps.length)
+        const attempt = finalScenarioAttempt(run.result)
+        expect(attempt.executionMode).toBe('adaptive')
+        expect(attempt.steps).toHaveLength(options.scenario.steps.length)
       } finally {
         await adapter.dispose?.()
       }

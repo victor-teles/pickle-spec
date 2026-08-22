@@ -1,16 +1,29 @@
 import { mkdir, open, rm, stat } from 'node:fs/promises'
-import { basename, dirname, join, relative, resolve, sep } from 'node:path'
-import { migrateRunArchive } from './archive-migrate'
+import { dirname, join, relative, resolve, sep } from 'node:path'
+import { parseRunArchive } from './archive-migrate'
 import { resolveLocalProjectStorage } from './local-project-storage'
 import {
   publicRunEvent,
   recordableTestResult,
   withoutPrivateStepResultData,
 } from './public-results'
-import type { RunEvent, TestResult, TestStepResult } from './run-scenario'
-import { openTestRunStore, type TestRunManifest } from './test-run-store'
+import type {
+  RunEvent,
+  ScenarioAttempt,
+  TestArtifact,
+  TestResult,
+  TestStepResult,
+} from './run-scenario'
+import { testRunSchemaVersion } from './run-scenario'
+import { parseTestRunManifest } from './test-run-schema'
+import {
+  aggregateTestResultState,
+  materializeTestResults,
+  openTestRunStore,
+  type TestRunManifest,
+} from './test-run-store'
 
-export { migrateRunArchive }
+export { parseRunArchive }
 
 export interface RunArchiveArtifact {
   path: string
@@ -19,7 +32,7 @@ export interface RunArchiveArtifact {
 }
 
 export interface RunArchive {
-  schemaVersion: 1
+  schemaVersion: typeof testRunSchemaVersion
   kind: 'run-archive'
   manifest: TestRunManifest
   events: RunEvent[]
@@ -56,26 +69,55 @@ type MapArtifactPath = (path: string) => string
 type NodeError = Error & { code?: string }
 
 function collectArtifacts(
-  results: readonly TestResult[],
+  manifest: TestRunManifest,
+  events: readonly RunEvent[],
   runDirectory: string,
 ): CollectedArtifact[] {
   const byAbsolute = new Map<string, CollectedArtifact>()
-  for (const result of results) {
-    for (const step of result.steps) {
-      for (const artifact of step.artifacts ?? []) {
-        if (byAbsolute.has(artifact.path)) continue
-        const archivePath = relative(runDirectory, artifact.path)
-        byAbsolute.set(artifact.path, {
-          absolutePath: artifact.path,
-          archivePath: archivePath.startsWith('..')
-            ? join('artifacts', basename(artifact.path))
-            : archivePath,
-          mediaType: artifact.mediaType,
-        })
-      }
-    }
+  for (const artifact of artifactReferences(manifest, events)) {
+    const absolutePath = resolve(artifact.path)
+    if (byAbsolute.has(absolutePath)) continue
+    byAbsolute.set(absolutePath, {
+      absolutePath,
+      archivePath: containedArtifactPath(runDirectory, absolutePath),
+      mediaType: artifact.mediaType,
+    })
   }
   return [...byAbsolute.values()]
+}
+
+function archiveArtifactReferences(archive: RunArchive): TestArtifact[] {
+  return artifactReferences(archive.manifest, archive.events)
+}
+
+function artifactReferences(
+  manifest: TestRunManifest,
+  events: readonly RunEvent[],
+): TestArtifact[] {
+  const artifacts: TestArtifact[] = []
+  const collectSteps = (steps: readonly TestStepResult[]) => {
+    for (const step of steps) {
+      artifacts.push(...(step.artifacts ?? []))
+    }
+  }
+  for (const result of manifest.results) {
+    for (const attempt of result.attempts) collectSteps(attempt.steps)
+  }
+  for (const event of events) {
+    if (event.type === 'scenario-finished') collectSteps(event.attempt.steps)
+    if (event.type === 'step-finished') collectSteps([event.result])
+  }
+  return artifacts
+}
+
+function mapAttemptArtifacts(
+  attempt: ScenarioAttempt,
+  mapPath: MapArtifactPath,
+): ScenarioAttempt {
+  return {
+    ...attempt,
+    steps: attempt.steps.map((step) => mapStepArtifacts(step, mapPath)),
+  }
 }
 
 function mapStepArtifacts(
@@ -100,7 +142,9 @@ function mapResultArtifacts(
   const recordable = recordableTestResult(result)
   return {
     ...recordable,
-    steps: recordable.steps.map((step) => mapStepArtifacts(step, mapPath)),
+    attempts: recordable.attempts.map((attempt) =>
+      mapAttemptArtifacts(attempt, mapPath),
+    ),
   }
 }
 
@@ -111,7 +155,7 @@ function mapEventArtifacts(
   if (event.type === 'scenario-finished') {
     return publicRunEvent({
       ...event,
-      result: mapResultArtifacts(event.result, mapPath),
+      attempt: mapAttemptArtifacts(event.attempt, mapPath),
     })
   }
   if (event.type === 'step-finished') {
@@ -142,10 +186,19 @@ async function loadRunFiles(
     resolveLocalProjectStorage(root, pickleHome).runsDirectory,
     runId,
   )
-  const manifestFile = Bun.file(join(runDirectory, 'manifest.json'))
-  const manifest = (await manifestFile.exists())
-    ? ((await manifestFile.json()) as TestRunManifest)
-    : await run.materialize({ finished: false })
+  const manifestPath = join(runDirectory, 'manifest.json')
+  if (!(await Bun.file(manifestPath).exists())) {
+    throw new Error(`Test run "${runId}" must be finalized before export`)
+  }
+  const manifest = parseTestRunManifest(
+    await Bun.file(manifestPath).json(),
+    (version): never => {
+      throw new Error(
+        `Test run storage schema version ${String(version)} is unsupported`,
+      )
+    },
+  )
+  assertFinalizedManifest(manifest)
   return { runDirectory, manifest, events }
 }
 
@@ -157,15 +210,18 @@ export async function writeRunArchive(
     input.runId,
     input.pickleHome,
   )
-  const collected = collectArtifacts(manifest.results, runDirectory)
+  const collected = collectArtifacts(manifest, events, runDirectory)
   const pathMap = new Map(
-    collected.map((item) => [item.absolutePath, item.archivePath]),
+    collected.map((item) => [resolve(item.absolutePath), item.archivePath]),
   )
-  const mapPath: MapArtifactPath = (path) => pathMap.get(path) ?? path
+  const mapPath: MapArtifactPath = (path) =>
+    pathMap.get(resolve(path)) ?? containedArtifactPath(runDirectory, path)
   const artifacts: RunArchiveArtifact[] = []
   for (const item of collected) {
     const file = Bun.file(item.absolutePath)
-    if (!(await file.exists())) continue
+    if (!(await file.exists())) {
+      throw new Error(`Artifact source file is missing: ${item.absolutePath}`)
+    }
     artifacts.push({
       path: item.archivePath,
       content: Buffer.from(await file.arrayBuffer()).toString('base64'),
@@ -174,7 +230,7 @@ export async function writeRunArchive(
   }
 
   const archive: RunArchive = {
-    schemaVersion: 1,
+    schemaVersion: testRunSchemaVersion,
     kind: 'run-archive',
     manifest: {
       ...manifest,
@@ -185,6 +241,7 @@ export async function writeRunArchive(
     events: events.map((event) => mapEventArtifacts(event, mapPath)),
     artifacts,
   }
+  assertArchiveArtifactPayloads(archive)
   await mkdir(dirname(input.outputPath), { recursive: true })
   await Bun.write(input.outputPath, `${JSON.stringify(archive, null, 2)}\n`)
   return archive
@@ -192,7 +249,10 @@ export async function writeRunArchive(
 
 export async function readRunArchive(path: string): Promise<RunArchive> {
   const parsed: unknown = JSON.parse(await Bun.file(path).text())
-  return migrateRunArchive(parsed)
+  const archive = parseRunArchive(parsed)
+  assertConsistentRunArchive(archive)
+  assertArchiveArtifactPayloads(archive)
+  return archive
 }
 
 export async function importRunArchive(
@@ -201,10 +261,11 @@ export async function importRunArchive(
   const originalBytes = new Uint8Array(
     await Bun.file(input.archivePath).arrayBuffer(),
   )
-  const archive = migrateRunArchive(
+  const archive = parseRunArchive(
     JSON.parse(new TextDecoder().decode(originalBytes)),
   )
   validateRunId(archive.manifest.id)
+  assertConsistentRunArchive(archive)
   const storage = resolveLocalProjectStorage(input.root, input.pickleHome)
   const archivesDirectory = storage.archivesDirectory
   const runDirectory = join(storage.runsDirectory, archive.manifest.id)
@@ -222,6 +283,12 @@ export async function importRunArchive(
     ...artifact,
     target: importedArtifactPath(runDirectory, artifact.path),
   }))
+  const artifactPaths = artifacts.map((artifact) => artifact.path)
+  if (new Set(artifactPaths).size !== artifactPaths.length) {
+    throw new Error('Run archive contains duplicate artifact paths')
+  }
+  validateArchiveArtifactReferences(archive, runDirectory)
+  assertArchiveArtifactPayloads(archive)
   await mkdir(archivesDirectory, { recursive: true })
   await mkdir(dirname(runDirectory), { recursive: true })
   try {
@@ -247,11 +314,14 @@ export async function importRunArchive(
     const pathMap = new Map<string, string>()
     for (const artifact of artifacts) {
       await mkdir(dirname(artifact.target), { recursive: true })
-      await Bun.write(artifact.target, Buffer.from(artifact.content, 'base64'))
+      await Bun.write(
+        artifact.target,
+        decodeBase64(artifact.content, artifact.path),
+      )
       pathMap.set(artifact.path, artifact.target)
     }
     const mapPath: MapArtifactPath = (path) =>
-      pathMap.get(path) ?? join(runDirectory, path)
+      pathMap.get(path) ?? importedArtifactPath(runDirectory, path)
     const events = archive.events.map((event) =>
       mapEventArtifacts(event, mapPath),
     )
@@ -286,6 +356,89 @@ export async function importRunArchive(
   }
 }
 
+function assertConsistentRunArchive(archive: RunArchive): void {
+  assertFinalizedManifest(archive.manifest)
+  const startedEvents = archive.events.filter(
+    (event) => event.type === 'run-started',
+  )
+  if (startedEvents.length !== 1) {
+    throw new Error('Run archive requires exactly one run-started event')
+  }
+  const started = startedEvents[0]!
+  if (
+    started.run.id !== archive.manifest.id ||
+    started.run.startedAt !== archive.manifest.startedAt ||
+    started.run.sourceRunId !== archive.manifest.sourceRunId ||
+    started.run.suite !== archive.manifest.suite ||
+    started.run.applicationRevision !== archive.manifest.applicationRevision
+  ) {
+    throw new Error('Run archive manifest must match its run-started event')
+  }
+
+  const eventResults = materializeTestResults(archive.events).map(
+    recordableTestResult,
+  )
+  const manifestResults = archive.manifest.results.map(recordableTestResult)
+  if (JSON.stringify(eventResults) !== JSON.stringify(manifestResults)) {
+    throw new Error('Run archive manifest results must match its Run events')
+  }
+  if (
+    manifestResults.length > 0 &&
+    archive.manifest.state !== aggregateTestResultState(manifestResults)
+  ) {
+    throw new Error('Run archive manifest state must match its Test results')
+  }
+}
+
+function assertFinalizedManifest(manifest: TestRunManifest): void {
+  if (!manifest.finishedAt) {
+    throw new Error(
+      `Test run "${manifest.id}" must be finalized before it can be archived`,
+    )
+  }
+}
+
+function assertArchiveArtifactPayloads(archive: RunArchive): void {
+  const references = new Set(
+    archiveArtifactReferences(archive).map((artifact) => artifact.path),
+  )
+  const payloadCounts = new Map<string, number>()
+  for (const artifact of archive.artifacts) {
+    payloadCounts.set(
+      artifact.path,
+      (payloadCounts.get(artifact.path) ?? 0) + 1,
+    )
+  }
+  for (const path of references) {
+    if (payloadCounts.get(path) !== 1) {
+      throw new Error(
+        `Artifact reference "${path}" requires exactly one embedded payload`,
+      )
+    }
+  }
+  for (const artifact of archive.artifacts) {
+    if (!references.has(artifact.path)) {
+      throw new Error(
+        `Embedded artifact payload "${artifact.path}" has no manifest or event reference`,
+      )
+    }
+    decodeBase64(artifact.content, artifact.path)
+  }
+}
+
+function decodeBase64(content: string, path: string): Uint8Array {
+  const base64Pattern =
+    /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/
+  if (content.length % 4 !== 0 || !base64Pattern.test(content)) {
+    throw new Error(`Artifact payload "${path}" must be valid base64`)
+  }
+  const decoded = Buffer.from(content, 'base64')
+  if (decoded.toString('base64') !== content) {
+    throw new Error(`Artifact payload "${path}" must be valid base64`)
+  }
+  return decoded
+}
+
 async function pathExists(path: string): Promise<boolean> {
   try {
     await stat(path)
@@ -318,4 +471,34 @@ function importedArtifactPath(runDirectory: string, path: string): string {
     throw new Error('Artifact path must stay inside the imported test run')
   }
   return target
+}
+
+function containedArtifactPath(runDirectory: string, path: string): string {
+  const absoluteRunDirectory = resolve(runDirectory)
+  const artifactsDirectory = resolve(runDirectory, 'artifacts')
+  const target = resolve(path)
+  if (!target.startsWith(`${artifactsDirectory}${sep}`)) {
+    throw new Error('Artifact path must stay inside its owning test run')
+  }
+  return relative(absoluteRunDirectory, target)
+}
+
+function validateArchiveArtifactReferences(
+  archive: RunArchive,
+  runDirectory: string,
+): void {
+  const validateSteps = (steps: readonly TestStepResult[]) => {
+    for (const step of steps) {
+      for (const artifact of step.artifacts ?? []) {
+        importedArtifactPath(runDirectory, artifact.path)
+      }
+    }
+  }
+  for (const result of archive.manifest.results) {
+    for (const attempt of result.attempts) validateSteps(attempt.steps)
+  }
+  for (const event of archive.events) {
+    if (event.type === 'scenario-finished') validateSteps(event.attempt.steps)
+    if (event.type === 'step-finished') validateSteps([event.result])
+  }
 }

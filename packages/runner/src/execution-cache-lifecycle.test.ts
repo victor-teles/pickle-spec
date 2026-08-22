@@ -15,7 +15,12 @@ import type {
   ExecutionTargetAdapter,
   TargetSession,
 } from '../index'
-import { openLocalExecutionCache, runScenario } from '../index'
+import {
+  openLocalExecutionCache,
+  openTestRunStore,
+  runScenario,
+} from '../index'
+import { finalScenarioAttempt } from './run-scenario'
 
 type RunScenarioInput = Parameters<typeof runScenario>[0]
 type CacheRunInput = RunScenarioInput & {
@@ -233,12 +238,12 @@ describe('Execution cache lifecycle', () => {
 
     expect(adaptiveExecutions).toBe(1)
     expect(modes).toEqual(['adaptive', 'replay'])
-    expect(owner.result).toMatchObject({
+    expect(finalScenarioAttempt(owner.result)).toMatchObject({
       state: 'passed',
       executionMode: 'adaptive',
       cacheOutcome: 'miss',
     })
-    expect(waiter.result).toMatchObject({
+    expect(finalScenarioAttempt(waiter.result)).toMatchObject({
       state: 'passed',
       executionMode: 'replay',
       cacheOutcome: 'hit',
@@ -297,13 +302,13 @@ describe('Execution cache lifecycle', () => {
     releaseEvaluation?.()
     const [owner, waiter] = await Promise.all([ownerRun, waiterRun])
 
-    expect(owner.result).toMatchObject({
+    expect(finalScenarioAttempt(owner.result)).toMatchObject({
       state: 'passed',
       cacheOutcome: 'uncacheable',
       cacheUncacheableReason: 'non-deterministic-action',
     })
     expect(adaptiveExecutions).toBe(1)
-    expect(waiter.result).toMatchObject({
+    expect(finalScenarioAttempt(waiter.result)).toMatchObject({
       state: 'passed',
       cacheOutcome: 'uncacheable',
       cacheUncacheableReason: 'non-deterministic-action',
@@ -361,17 +366,19 @@ describe('Execution cache lifecycle', () => {
     const [owner, waiter] = await Promise.all([ownerRun, waiterRun])
 
     expect(adaptiveExecutions).toBe(1)
-    expect(owner.result).toMatchObject({
+    expect(finalScenarioAttempt(owner.result)).toMatchObject({
       state: 'failed',
       cacheOutcome: 'miss',
       message: 'Receipt was not shown',
     })
-    expect(waiter.result).toMatchObject({
+    expect(finalScenarioAttempt(waiter.result)).toMatchObject({
       state: 'failed',
       cacheOutcome: 'miss',
       inferenceCount: 0,
     })
-    expect(waiter.result.message).not.toContain('Receipt was not shown')
+    expect(finalScenarioAttempt(waiter.result).message).not.toContain(
+      'Receipt was not shown',
+    )
   })
 
   test('shares a concurrent oversized outcome without duplicate Adaptive inference', async () => {
@@ -427,12 +434,12 @@ describe('Execution cache lifecycle', () => {
     const [owner, waiter] = await Promise.all([ownerRun, waiterRun])
 
     expect(adaptiveExecutions).toBe(1)
-    expect(owner.result).toMatchObject({
+    expect(finalScenarioAttempt(owner.result)).toMatchObject({
       state: 'passed',
       cacheOutcome: 'uncacheable',
       cacheUncacheableReason: 'entry-too-large',
     })
-    expect(waiter.result).toMatchObject({
+    expect(finalScenarioAttempt(waiter.result)).toMatchObject({
       state: 'passed',
       cacheOutcome: 'uncacheable',
       cacheUncacheableReason: 'entry-too-large',
@@ -505,12 +512,12 @@ describe('Execution cache lifecycle', () => {
     const [owner, waiter] = await Promise.all([ownerRun, waiterRun])
 
     expect(adaptiveExecutions).toBe(2)
-    expect(owner.result).toMatchObject({
+    expect(finalScenarioAttempt(owner.result)).toMatchObject({
       state: 'passed',
       executionMode: 'adaptive',
       cacheOutcome: 'refresh',
     })
-    expect(waiter.result).toMatchObject({
+    expect(finalScenarioAttempt(waiter.result)).toMatchObject({
       state: 'passed',
       executionMode: 'replay',
       cacheOutcome: 'hit',
@@ -550,13 +557,13 @@ describe('Execution cache lifecycle', () => {
     )
 
     expect(openSession).not.toHaveBeenCalled()
-    expect(run.result).toMatchObject({
+    expect(finalScenarioAttempt(run.result)).toMatchObject({
       state: 'infrastructure-error',
       cacheOutcome: 'miss',
       inferenceCount: 0,
       message: 'Execution cache lease wait timed out',
     })
-    expect(run.result.attempts).toBeUndefined()
+    expect(run.result.attempts).toHaveLength(1)
     await cache.coordination.release(lease.lease)
   })
 
@@ -606,13 +613,13 @@ describe('Execution cache lifecycle', () => {
     )
 
     expect(adaptiveExecutions).toBe(1)
-    expect(run.result).toMatchObject({
+    expect(finalScenarioAttempt(run.result)).toMatchObject({
       state: 'infrastructure-error',
       cacheOutcome: 'miss',
       inferenceCount: 1,
       message: 'Execution cache lease ownership was lost during evaluation',
     })
-    expect(run.result.attempts).toBeUndefined()
+    expect(run.result.attempts).toHaveLength(1)
     expect(await cache.inspect()).toEqual([])
   })
 
@@ -652,13 +659,13 @@ describe('Execution cache lifecycle', () => {
     })
 
     expect(modes).toEqual(['adaptive', 'replay'])
-    expect(adaptive.result).toMatchObject({
+    expect(finalScenarioAttempt(adaptive.result)).toMatchObject({
       state: 'passed',
       executionMode: 'adaptive',
       cacheOutcome: 'miss',
       inferenceCount: 2,
     })
-    expect(replay.result).toMatchObject({
+    expect(finalScenarioAttempt(replay.result)).toMatchObject({
       state: 'passed',
       executionMode: 'replay',
       cacheOutcome: 'hit',
@@ -731,19 +738,36 @@ describe('Execution cache lifecycle', () => {
       throw new Error('must not open')
     })
     const { store } = memoryStore()
+    const timestamps = ['2026-08-22T16:00:00.000Z', '2026-08-22T16:00:01.000Z']
+    let timestampIndex = 0
 
     const adapter: ExecutionTargetAdapter = { executionCache, openSession }
-    const run = await runScenario(
-      cacheRunInput({ adapter, store, cachePolicy: 'cache-only' }),
-    )
+    const run = await runScenario({
+      ...cacheRunInput({ adapter, store, cachePolicy: 'cache-only' }),
+      now: () => new Date(timestamps[timestampIndex++]!),
+    })
 
     expect(openSession).not.toHaveBeenCalled()
-    expect(run.result).toMatchObject({
+    expect(finalScenarioAttempt(run.result)).toMatchObject({
       state: 'failed',
       failureKind: 'cache-miss',
       cacheOutcome: 'miss',
       inferenceCount: 0,
     })
+    const attempt = finalScenarioAttempt(run.result)
+    const scenarioEvents = run.events.filter(
+      (event) =>
+        event.type === 'scenario-started' || event.type === 'scenario-finished',
+    )
+    expect(attempt).toMatchObject({
+      startedAt: timestamps[0],
+      finishedAt: timestamps[0],
+      durationMs: 0,
+    })
+    expect(scenarioEvents.map((event) => event.occurredAt)).toEqual([
+      attempt.startedAt,
+      attempt.finishedAt,
+    ])
   })
 
   test('explicit cache policies fail without a runtime cache store', async () => {
@@ -762,7 +786,7 @@ describe('Execution cache lifecycle', () => {
         cachePolicy,
       })
 
-      expect(run.result).toMatchObject({
+      expect(finalScenarioAttempt(run.result)).toMatchObject({
         state: 'failed',
         failureKind: 'cache-miss',
         cacheOutcome: 'miss',
@@ -818,7 +842,7 @@ describe('Execution cache lifecycle', () => {
     })
 
     expect(modes).toEqual(['adaptive', 'replay'])
-    expect(replay.result).toMatchObject({
+    expect(finalScenarioAttempt(replay.result)).toMatchObject({
       state: 'failed',
       executionMode: 'replay',
       inferenceCount: 0,
@@ -877,12 +901,220 @@ describe('Execution cache lifecycle', () => {
       'adaptive:the order is confirmed',
       'adaptive:the receipt is shown',
     ])
-    expect(fallback.result).toMatchObject({
+    expect(finalScenarioAttempt(fallback.result)).toMatchObject({
       state: 'passed',
       executionMode: 'adaptive',
       cacheOutcome: 'fallback',
       inferenceCount: 2,
     })
+  })
+
+  test('preserves globally ordered Replay and Adaptive attempts through fallback materialization', async () => {
+    const { store } = memoryStore()
+    let replayShouldDiverge = false
+    const outlineScenario: Scenario = {
+      ...scenario,
+      examplesId: 'examples-checkout',
+      examplesRowId: 'row-checkout-1',
+      template: {
+        name: scenario.name,
+        steps: scenario.steps,
+        variableNames: [],
+      },
+      runtimeBindings: [],
+    }
+    const adapter: ExecutionTargetAdapter = {
+      executionCache,
+      async openSession(input) {
+        return {
+          async executeStep() {
+            if (input.mode === 'replay' && replayShouldDiverge) {
+              replayShouldDiverge = false
+              return {
+                state: 'failed' as const,
+                replayDiverged: true,
+                resolvedActions: [],
+              }
+            }
+            return { state: 'passed' as const, resolvedActions: [] }
+          },
+          async complete() {
+            return {
+              inferenceCount: input.mode === 'adaptive' ? 2 : 0,
+              replayRepresentation: {
+                cacheable: true as const,
+                adapterPayload: { operations: ['deterministic'] },
+                requiredVariables: [],
+              },
+            }
+          },
+          async close() {},
+        }
+      },
+    }
+    const input = cacheRunInput({
+      adapter,
+      store,
+      selectedScenario: outlineScenario,
+    })
+    await runScenario(input)
+    replayShouldDiverge = true
+    const timestamps = Array.from({ length: 20 }, (_, index) =>
+      new Date(Date.UTC(2026, 7, 22, 15, 0, index)).toISOString(),
+    )
+    let timestampIndex = 0
+
+    const fallback = await runScenario({
+      ...input,
+      now: () => new Date(timestamps[timestampIndex++]!),
+      executionCache: { ...input.executionCache, sourceRunId: 'run-2' },
+    })
+
+    expect(fallback.result).toMatchObject({
+      state: 'passed',
+      flaky: true,
+      startedAt: timestamps[1],
+      finishedAt: timestamps[12],
+      durationMs: 11_000,
+      attempts: [
+        {
+          attempt: 1,
+          executionMode: 'replay',
+          state: 'failed',
+          startedAt: timestamps[1],
+          finishedAt: timestamps[4],
+          durationMs: 3_000,
+        },
+        {
+          attempt: 2,
+          executionMode: 'adaptive',
+          state: 'passed',
+          cacheOutcome: 'fallback',
+          startedAt: timestamps[7],
+          finishedAt: timestamps[12],
+          durationMs: 5_000,
+        },
+      ],
+    })
+    const started = fallback.events.filter(
+      (event) => event.type === 'scenario-started',
+    )
+    const finished = fallback.events.filter(
+      (event) => event.type === 'scenario-finished',
+    )
+    expect(started.map((event) => event.scope)).toEqual([
+      {
+        scenarioId: scenario.id!,
+        examplesRowId: 'row-checkout-1',
+        executionTargetProfileId: 'test',
+        attempt: 1,
+      },
+      {
+        scenarioId: scenario.id!,
+        examplesRowId: 'row-checkout-1',
+        executionTargetProfileId: 'test',
+        attempt: 2,
+      },
+    ])
+    expect(finished).toHaveLength(2)
+    expect(
+      finished.map((event) => ({
+        attempt: event.attempt.attempt,
+        scopeAttempt: event.scope.attempt,
+        occurredAt: event.occurredAt,
+        finishedAt: event.attempt.finishedAt,
+      })),
+    ).toEqual([
+      {
+        attempt: 1,
+        scopeAttempt: 1,
+        occurredAt: timestamps[4]!,
+        finishedAt: timestamps[4]!,
+      },
+      {
+        attempt: 2,
+        scopeAttempt: 2,
+        occurredAt: timestamps[12]!,
+        finishedAt: timestamps[12]!,
+      },
+    ])
+    expect(
+      fallback.events.flatMap((event) => {
+        switch (event.type) {
+          case 'cache-hit':
+          case 'replay-diverged':
+          case 'adaptive-fallback-started':
+          case 'inference-count-updated':
+          case 'cache-written':
+            return [{ type: event.type, scope: event.scope }]
+          default:
+            return []
+        }
+      }),
+    ).toEqual([
+      {
+        type: 'cache-hit',
+        scope: {
+          scenarioId: scenario.id!,
+          examplesRowId: 'row-checkout-1',
+          executionTargetProfileId: 'test',
+          attempt: 1,
+        },
+      },
+      {
+        type: 'replay-diverged',
+        scope: {
+          scenarioId: scenario.id!,
+          examplesRowId: 'row-checkout-1',
+          executionTargetProfileId: 'test',
+          attempt: 1,
+        },
+      },
+      {
+        type: 'adaptive-fallback-started',
+        scope: {
+          scenarioId: scenario.id!,
+          examplesRowId: 'row-checkout-1',
+          executionTargetProfileId: 'test',
+          attempt: 2,
+        },
+      },
+      {
+        type: 'inference-count-updated',
+        scope: {
+          scenarioId: scenario.id!,
+          examplesRowId: 'row-checkout-1',
+          executionTargetProfileId: 'test',
+          attempt: 2,
+        },
+      },
+      {
+        type: 'cache-written',
+        scope: {
+          scenarioId: scenario.id!,
+          examplesRowId: 'row-checkout-1',
+          executionTargetProfileId: 'test',
+          attempt: 2,
+        },
+      },
+    ])
+
+    const root = await mkdtemp(join(tmpdir(), 'pickle-fallback-attempts-'))
+    cacheRoots.push(root)
+    const testRuns = openTestRunStore({
+      root,
+      pickleHome: join(root, '.pickle-home'),
+    })
+    const persisted = await testRuns.create()
+    for (const event of finished) await persisted.append(event)
+    const materialized = await persisted.materialize()
+    expect(materialized.results).toHaveLength(1)
+    expect(
+      materialized.results[0]?.attempts.map((item) => item.attempt),
+    ).toEqual([1, 2])
+    expect(
+      materialized.results[0]?.attempts.map((item) => item.executionMode),
+    ).toEqual(['replay', 'adaptive'])
   })
 
   test('keeps a passed but non-deterministic Scenario uncacheable', async () => {
@@ -909,7 +1141,7 @@ describe('Execution cache lifecycle', () => {
     }
     const run = await runScenario(cacheRunInput({ adapter, store }))
 
-    expect(run.result).toMatchObject({
+    expect(finalScenarioAttempt(run.result)).toMatchObject({
       state: 'passed',
       cacheOutcome: 'uncacheable',
       cacheUncacheableReason: 'non-deterministic-assertion',
@@ -947,7 +1179,7 @@ describe('Execution cache lifecycle', () => {
       cacheRunInput({ adapter, store, applicationRevision: null }),
     )
 
-    expect(run.result).toMatchObject({
+    expect(finalScenarioAttempt(run.result)).toMatchObject({
       state: 'passed',
       executionMode: 'adaptive',
       cacheOutcome: 'uncacheable',
@@ -1063,7 +1295,7 @@ describe('Execution cache lifecycle', () => {
     )
 
     expect(openSession).toHaveBeenCalledTimes(1)
-    expect(run.result).toMatchObject({
+    expect(finalScenarioAttempt(run.result)).toMatchObject({
       state: 'passed',
       cacheOutcome: 'uncacheable',
       cacheUncacheableReason: 'bound-parameter-value',
@@ -1152,7 +1384,7 @@ describe('Execution cache lifecycle', () => {
     expect(first.result.scenario.examplesRowId).not.toBe(
       second.result.scenario.examplesRowId,
     )
-    expect(second.result.cacheOutcome).toBe('hit')
+    expect(finalScenarioAttempt(second.result).cacheOutcome).toBe('hit')
     expect(writes).toHaveLength(1)
     const publicSources = JSON.stringify([first, second, writes])
     expect(publicSources).not.toContain('first-secret@example.com')
@@ -1232,14 +1464,14 @@ describe('Execution cache lifecycle', () => {
       cacheRunInput({ adapter, store, selectedScenario: boundScenario }),
     )
 
-    expect(run.result).toMatchObject({
+    expect(finalScenarioAttempt(run.result)).toMatchObject({
       state: 'passed',
       cacheOutcome: 'uncacheable',
       cacheUncacheableReason: 'bound-parameter-value',
     })
     expect(JSON.stringify(run)).not.toContain('secret@example.com')
     expect(JSON.stringify(run)).toContain('<email>')
-    expect(run.result.steps[0]?.artifacts).toEqual([
+    expect(finalScenarioAttempt(run.result).steps[0]?.artifacts).toEqual([
       {
         kind: 'trace',
         path: '/tmp/<email>.trace',
@@ -1316,10 +1548,9 @@ describe('Execution cache lifecycle', () => {
     const run = await runScenario(cacheRunInput({ adapter, store }))
 
     expect(executeScenario).toHaveBeenCalledTimes(1)
-    expect(run.result.steps.map((step) => step.step.text)).toEqual([
-      'the order is confirmed',
-      'the receipt is shown',
-    ])
+    expect(
+      finalScenarioAttempt(run.result).steps.map((step) => step.step.text),
+    ).toEqual(['the order is confirmed', 'the receipt is shown'])
     expect(run.result.state).toBe('passed')
   })
 
@@ -1366,12 +1597,12 @@ describe('Execution cache lifecycle', () => {
     })
 
     expect(modes).toEqual(['adaptive', 'replay', 'adaptive', 'replay'])
-    expect(fallback.result).toMatchObject({
+    expect(finalScenarioAttempt(fallback.result)).toMatchObject({
       state: 'passed',
       cacheOutcome: 'fallback',
       inferenceCount: 3,
     })
-    expect(cacheOnly.result).toMatchObject({
+    expect(finalScenarioAttempt(cacheOnly.result)).toMatchObject({
       state: 'failed',
       executionMode: 'replay',
       inferenceCount: 1,
@@ -1432,7 +1663,9 @@ describe('Execution cache lifecycle', () => {
       executionCache: { ...input.executionCache, sourceRunId: 'run-3' },
     })
 
-    expect(refresh.result.cacheOutcome).toBe('uncacheable')
+    expect(finalScenarioAttempt(refresh.result).cacheOutcome).toBe(
+      'uncacheable',
+    )
     expect(writes).toHaveLength(1)
     expect(replayedPayloads).toEqual([{ operations: ['original'] }])
   })
@@ -1478,7 +1711,7 @@ describe('Execution cache lifecycle', () => {
       }),
     )
 
-    expect(run.result).toMatchObject({
+    expect(finalScenarioAttempt(run.result)).toMatchObject({
       state: 'passed',
       cacheOutcome: 'uncacheable',
       cacheUncacheableReason: 'payload-validation-failed',
@@ -1535,12 +1768,12 @@ describe('Execution cache lifecycle', () => {
       }),
     )
 
-    expect(run.result).toMatchObject({
+    expect(finalScenarioAttempt(run.result)).toMatchObject({
       state: 'passed',
-      attempts: 2,
       cacheOutcome: 'uncacheable',
       cacheUncacheableReason: 'bound-parameter-value',
     })
+    expect(run.result.attempts).toHaveLength(2)
     expect(JSON.stringify(run)).not.toContain(secret)
     expect(JSON.stringify(run)).toContain('<email>')
     expect(writes).toEqual([])
@@ -1560,7 +1793,7 @@ describe('Execution cache lifecycle', () => {
     }
     const run = await runScenario(cacheRunInput({ adapter, store }))
 
-    expect(run.result).toMatchObject({
+    expect(finalScenarioAttempt(run.result)).toMatchObject({
       state: 'infrastructure-error',
       message:
         'Target session must provide exactly one of executeStep or executeScenario',
@@ -1622,7 +1855,7 @@ describe('Execution cache lifecycle', () => {
     })
 
     expect(failedFallback.result.state).toBe('failed')
-    expect(cacheOnly.result).toMatchObject({
+    expect(finalScenarioAttempt(cacheOnly.result)).toMatchObject({
       state: 'failed',
       cacheOutcome: 'hit',
       failureKind: 'cache-miss',
@@ -1651,7 +1884,7 @@ describe('Execution cache lifecycle', () => {
     }
     const run = await runScenario(cacheRunInput({ adapter, store }))
 
-    expect(run.result).toMatchObject({
+    expect(finalScenarioAttempt(run.result)).toMatchObject({
       state: 'infrastructure-error',
       message:
         'Target session must provide exactly one of executeStep or executeScenario',

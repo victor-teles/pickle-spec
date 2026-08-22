@@ -3,8 +3,11 @@ import { mkdir, mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { formatHtml } from '../index'
-import type { TestResult } from './run-scenario'
+import type { ScenarioAttempt, TestResult } from './run-scenario'
 import type { TestRunManifest } from './test-run-store'
+
+const startedAt = '2026-08-15T12:00:01.000Z'
+const finishedAt = '2026-08-15T12:00:02.000Z'
 
 async function withArtifact(
   use: (path: string) => Promise<void>,
@@ -23,10 +26,26 @@ async function withArtifact(
 function result(
   name: string,
   state: TestResult['state'],
-  extras: Partial<TestResult> = {},
+  attemptExtras: Partial<ScenarioAttempt> = {},
 ): TestResult {
+  const attempt: ScenarioAttempt = {
+    attempt: 1,
+    startedAt,
+    finishedAt,
+    durationMs: 1_000,
+    state,
+    steps: [],
+    evidenceAvailability: [
+      { kind: 'screenshot', state: 'not-supported' },
+      { kind: 'trace', state: 'not-supported' },
+      { kind: 'recording', state: 'not-supported' },
+      { kind: 'device-log', state: 'not-supported' },
+      { kind: 'diagnostics', state: 'not-supported' },
+    ],
+    ...attemptExtras,
+  }
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     specification: {
       name: 'Checkout',
       uri: 'features/checkout.feature',
@@ -34,8 +53,10 @@ function result(
     scenario: { name, id: `scn-${name}` },
     executionTargetProfile: { id: 'web' },
     state,
-    steps: [],
-    ...extras,
+    startedAt,
+    finishedAt,
+    durationMs: 1_000,
+    attempts: [attempt],
   }
 }
 
@@ -44,7 +65,7 @@ test('formatHtml includes failure artifacts and Cache execution metadata by defa
     const passedPath = join(dirname(failurePath), 'passed.png')
     await Bun.write(passedPath, 'passed-bytes')
     const manifest: TestRunManifest = {
-      schemaVersion: 1,
+      schemaVersion: 2,
       id: 'run-html',
       startedAt: '2026-08-15T12:00:00.000Z',
       finishedAt: '2026-08-15T12:01:00.000Z',
@@ -53,6 +74,10 @@ test('formatHtml includes failure artifacts and Cache execution metadata by defa
         result('Complete a purchase', 'passed', {
           steps: [
             {
+              index: 0,
+              startedAt,
+              finishedAt,
+              durationMs: 1_000,
               step: {
                 keyword: 'Then',
                 text: 'ok',
@@ -73,6 +98,10 @@ test('formatHtml includes failure artifacts and Cache execution metadata by defa
         result('Pay for the order', 'failed', {
           steps: [
             {
+              index: 0,
+              startedAt,
+              finishedAt,
+              durationMs: 1_000,
               step: {
                 keyword: 'Then',
                 text: 'pay',
@@ -128,7 +157,7 @@ test('formatHtml can include every available test artifact', async () => {
     const passedPath = join(dirname(failurePath), 'passed.png')
     await Bun.write(passedPath, 'passed-bytes')
     const manifest: TestRunManifest = {
-      schemaVersion: 1,
+      schemaVersion: 2,
       id: 'run-html-all',
       startedAt: '2026-08-15T12:00:00.000Z',
       state: 'failed',
@@ -136,6 +165,10 @@ test('formatHtml can include every available test artifact', async () => {
         result('Complete a purchase', 'passed', {
           steps: [
             {
+              index: 0,
+              startedAt,
+              finishedAt,
+              durationMs: 1_000,
               step: {
                 keyword: 'Then',
                 text: 'ok',
@@ -156,6 +189,10 @@ test('formatHtml can include every available test artifact', async () => {
         result('Pay for the order', 'failed', {
           steps: [
             {
+              index: 0,
+              startedAt,
+              finishedAt,
+              durationMs: 1_000,
               step: {
                 keyword: 'Then',
                 text: 'pay',

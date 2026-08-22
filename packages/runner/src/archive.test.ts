@@ -47,9 +47,21 @@ function importRunArchive(input: ImportRunArchiveInput) {
   })
 }
 
+function unavailableEvidence(): TestResult['attempts'][number]['evidenceAvailability'] {
+  return [
+    { kind: 'screenshot', state: 'not-supported' },
+    { kind: 'trace', state: 'not-supported' },
+    { kind: 'recording', state: 'not-supported' },
+    { kind: 'device-log', state: 'not-supported' },
+    { kind: 'diagnostics', state: 'not-supported' },
+  ]
+}
+
 function passedResult(): TestResult {
+  const startedAt = '2026-08-15T12:00:00.000Z'
+  const finishedAt = '2026-08-15T12:00:00.012Z'
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     specification: {
       name: 'Checkout',
       uri: 'features/checkout.feature',
@@ -57,11 +69,124 @@ function passedResult(): TestResult {
     scenario: { name: 'Complete a purchase', id: 'scnpurchasebbbbbb' },
     executionTargetProfile: { id: 'deterministic' },
     state: 'passed',
-    steps: [],
-    executionMode: 'replay',
-    cacheOutcome: 'hit',
-    inferenceCount: 0,
+    startedAt,
+    finishedAt,
     durationMs: 12,
+    attempts: [
+      {
+        attempt: 1,
+        startedAt,
+        finishedAt,
+        durationMs: 12,
+        state: 'passed',
+        steps: [],
+        executionMode: 'replay',
+        cacheOutcome: 'hit',
+        inferenceCount: 0,
+        evidenceAvailability: unavailableEvidence(),
+      },
+    ],
+  }
+}
+
+function scenarioFinished(result: TestResult, attemptIndex = -1) {
+  const attempt = result.attempts.at(attemptIndex)!
+  return {
+    type: 'scenario-finished' as const,
+    specification: result.specification,
+    scenario: result.scenario,
+    executionTargetProfile: result.executionTargetProfile,
+    scope: {
+      scenarioId: result.scenario.id!,
+      examplesRowId: result.scenario.examplesRowId,
+      executionTargetProfileId: result.executionTargetProfile.id,
+      attempt: attempt.attempt,
+    },
+    attempt,
+  }
+}
+
+function failedResultWithArtifact(path: string): TestResult {
+  const result = passedResult()
+  const attempt = result.attempts[0]!
+  const step = {
+    index: 0,
+    startedAt: attempt.startedAt,
+    finishedAt: attempt.finishedAt,
+    durationMs: attempt.durationMs,
+    step: {
+      keyword: 'Then',
+      text: 'payment is captured',
+      type: 'outcome' as const,
+    },
+    state: 'failed' as const,
+    resolvedActions: [{ description: 'Click pay on chrome' }],
+    message: 'Payment was declined',
+    artifacts: [{ kind: 'screenshot' as const, path, mediaType: 'image/png' }],
+  }
+  return {
+    ...result,
+    state: 'failed',
+    attempts: [
+      {
+        ...attempt,
+        state: 'failed',
+        steps: [step],
+        evidenceAvailability: unavailableEvidence().map((availability) =>
+          availability.kind === 'screenshot'
+            ? { ...availability, state: 'available' as const }
+            : availability,
+        ),
+      },
+    ],
+  }
+}
+
+function emptyArchive(id: string) {
+  const startedAt = '2026-08-01T00:00:00.000Z'
+  return {
+    schemaVersion: 2 as const,
+    kind: 'run-archive' as const,
+    manifest: {
+      schemaVersion: 2 as const,
+      id,
+      startedAt,
+      finishedAt: '2026-08-01T00:00:01.000Z',
+      state: 'passed' as const,
+      results: [],
+    },
+    events: [
+      {
+        schemaVersion: 2 as const,
+        sequence: 1,
+        occurredAt: startedAt,
+        type: 'run-started' as const,
+        run: { id, startedAt },
+      },
+    ],
+    artifacts: [],
+  }
+}
+
+function archiveWithResult(id: string, result: TestResult) {
+  const archive = emptyArchive(id)
+  return {
+    ...archive,
+    manifest: {
+      ...archive.manifest,
+      finishedAt: result.finishedAt,
+      state: result.state,
+      results: [result],
+    },
+    events: [
+      ...archive.events,
+      {
+        ...scenarioFinished(result),
+        schemaVersion: 2 as const,
+        sequence: 2,
+        occurredAt: result.finishedAt,
+      },
+    ],
   }
 }
 
@@ -76,31 +201,7 @@ test('writeRunArchive preserves events, manifests, and selected test artifacts',
     const artifactSource = join(root, 'source.png')
     await Bun.write(artifactSource, 'png-bytes')
     const run = await store.create()
-    await run.append({
-      type: 'scenario-finished',
-      result: {
-        ...passedResult(),
-        state: 'failed',
-        steps: [
-          {
-            step: {
-              keyword: 'Then',
-              text: 'the purchase succeeds',
-              type: 'outcome',
-            },
-            state: 'failed',
-            resolvedActions: [],
-            artifacts: [
-              {
-                kind: 'screenshot',
-                path: artifactSource,
-                mediaType: 'image/png',
-              },
-            ],
-          },
-        ],
-      },
-    })
+    await run.append(scenarioFinished(failedResultWithArtifact(artifactSource)))
     const manifest = await run.materialize()
     const archivePath = join(root, 'run-archive.json')
 
@@ -112,17 +213,13 @@ test('writeRunArchive preserves events, manifests, and selected test artifacts',
 
     const archive = await readRunArchive(archivePath)
     expect(archive).toMatchObject({
-      schemaVersion: 1,
+      schemaVersion: 2,
       kind: 'run-archive',
       manifest: {
         id: 'run-archive',
         state: 'failed',
         results: [
-          {
-            executionMode: 'replay',
-            cacheOutcome: 'hit',
-            inferenceCount: 0,
-          },
+          { attempts: [{ executionMode: 'replay', cacheOutcome: 'hit' }] },
         ],
       },
     })
@@ -150,24 +247,34 @@ test('archive round-trip omits private replay payloads from resolved actions', a
       now: () => new Date('2026-08-15T12:00:00.000Z'),
     })
     const run = await store.create()
-    await run.append({
-      type: 'scenario-finished',
-      result: {
-        ...passedResult(),
-        steps: [
+    const result = passedResult()
+    const attempt = result.attempts[0]!
+    await run.append(
+      scenarioFinished({
+        ...result,
+        attempts: [
           {
-            step: { keyword: 'When', text: 'I submit', type: 'action' },
-            state: 'passed',
-            resolvedActions: [
+            ...attempt,
+            steps: [
               {
-                description: 'Submit the form',
-                replay: { payload: 'raw-cache-payload-must-not-export' },
+                index: 0,
+                startedAt: attempt.startedAt,
+                finishedAt: attempt.finishedAt,
+                durationMs: attempt.durationMs,
+                step: { keyword: 'When', text: 'I submit', type: 'action' },
+                state: 'passed',
+                resolvedActions: [
+                  {
+                    description: 'Submit the form',
+                    replay: { payload: 'raw-cache-payload-must-not-export' },
+                  },
+                ],
               },
             ],
           },
         ],
-      },
-    })
+      }),
+    )
     await run.materialize()
     const archivePath = join(root, 'private-cache-payload.json')
 
@@ -176,111 +283,86 @@ test('archive round-trip omits private replay payloads from resolved actions', a
     const source = await Bun.file(archivePath).text()
     const archive = await readRunArchive(archivePath)
     expect(source).not.toContain('raw-cache-payload-must-not-export')
-    expect(archive.manifest.results[0]).toMatchObject({
+    expect(archive.manifest.results[0]?.attempts[0]).toMatchObject({
       executionMode: 'replay',
       cacheOutcome: 'hit',
       inferenceCount: 0,
     })
     expect(archive.events[1]).toMatchObject({
       type: 'scenario-finished',
-      result: {
+      attempt: {
         executionMode: 'replay',
         cacheOutcome: 'hit',
         inferenceCount: 0,
       },
     })
-    expect(archive.manifest.results[0]?.steps[0]?.resolvedActions).toEqual([
-      { description: 'Submit the form' },
-    ])
+    expect(
+      archive.manifest.results[0]?.attempts[0]?.steps[0]?.resolvedActions,
+    ).toEqual([{ description: 'Submit the form' }])
   } finally {
     await rm(root, { recursive: true, force: true })
   }
 })
 
-test('import preserves the original archive and migrates older schemas in memory', async () => {
+test('import preserves the original schema-v2 archive bytes', async () => {
   const root = await tempRoot()
   try {
-    const archivePath = join(root, 'legacy-archive.json')
-    const legacy = {
-      kind: 'run-archive',
+    const archivePath = join(root, 'schema-v2-archive.json')
+    const result = passedResult()
+    const archive = emptyArchive('run-current')
+    const original = `${JSON.stringify({
+      ...archive,
       manifest: {
-        id: 'run-legacy',
-        startedAt: '2026-08-01T00:00:00.000Z',
+        ...archive.manifest,
         finishedAt: '2026-08-01T00:00:01.000Z',
-        state: 'passed',
-        results: [
-          {
-            specification: {
-              name: 'Checkout',
-              uri: 'features/checkout.feature',
-            },
-            scenario: { name: 'Complete a purchase' },
-            executionTargetProfile: { id: 'deterministic' },
-            state: 'passed',
-            steps: [],
-          },
-        ],
+        results: [result],
       },
       events: [
+        ...archive.events,
         {
-          sequence: 1,
-          type: 'run-started',
-          run: { id: 'run-legacy', startedAt: '2026-08-01T00:00:00.000Z' },
-        },
-        {
+          ...scenarioFinished(result),
+          schemaVersion: 2,
           sequence: 2,
-          type: 'scenario-finished',
-          result: {
-            specification: {
-              name: 'Checkout',
-              uri: 'features/checkout.feature',
-            },
-            scenario: { name: 'Complete a purchase' },
-            executionTargetProfile: { id: 'deterministic' },
-            state: 'passed',
-            steps: [],
-          },
+          occurredAt: '2026-08-01T00:00:01.000Z',
         },
       ],
-      artifacts: [],
-    }
-    const original = `${JSON.stringify(legacy)}\n`
+    })}\n`
     await Bun.write(archivePath, original)
 
     const imported = await importRunArchive({ root, archivePath })
     const preserved = join(
       storageFor(root).archivesDirectory,
-      'run-legacy.json',
+      'run-current.json',
     )
 
     expect(await Bun.file(preserved).text()).toBe(original)
     expect(await Bun.file(archivePath).text()).toBe(original)
     expect(imported.manifest).toMatchObject({
-      schemaVersion: 1,
-      id: 'run-legacy',
+      schemaVersion: 2,
+      id: 'run-current',
       state: 'passed',
       results: [
         {
-          schemaVersion: 1,
+          schemaVersion: 2,
           scenario: { name: 'Complete a purchase' },
         },
       ],
     })
     expect(imported.events[0]).toMatchObject({
-      schemaVersion: 1,
+      schemaVersion: 2,
       sequence: 1,
       type: 'run-started',
     })
     expect(imported.manifest.results[0]).toMatchObject({
-      executionMode: 'adaptive',
-      cacheOutcome: 'uncacheable',
-      inferenceCount: 0,
+      attempts: [
+        { executionMode: 'replay', cacheOutcome: 'hit', inferenceCount: 0 },
+      ],
     })
 
     const store = openTestRunStore({ root })
     expect(await store.list()).toEqual([
       {
-        id: 'run-legacy',
+        id: 'run-current',
         executionTargetProfileIds: ['deterministic'],
         specificationUris: ['features/checkout.feature'],
         startedAt: '2026-08-01T00:00:00.000Z',
@@ -288,8 +370,8 @@ test('import preserves the original archive and migrates older schemas in memory
         durationMs: 1_000,
         state: 'passed',
         resultCount: 1,
-        executionModes: ['adaptive'],
-        cacheOutcomes: ['uncacheable'],
+        executionModes: ['replay'],
+        cacheOutcomes: ['hit'],
         inferenceCount: 0,
       },
     ])
@@ -298,102 +380,157 @@ test('import preserves the original archive and migrates older schemas in memory
   }
 })
 
-test('migration normalizes invalid Execution cache metadata from untrusted archives', async () => {
+test('archive parsing removes private fields from schema-v2 input', async () => {
   const root = await tempRoot()
   try {
-    const archivePath = join(root, 'invalid-cache-metadata.json')
-    await Bun.write(
-      archivePath,
-      JSON.stringify({
-        manifest: {
-          id: 'run-invalid-cache-metadata',
-          startedAt: '2026-08-01T00:00:00.000Z',
-          state: 'passed',
-          results: [
+    const archivePath = join(root, 'private-fields.json')
+    const result = passedResult()
+    const attempt = result.attempts[0]!
+    const privateResult: TestResult = {
+      ...result,
+      attempts: [
+        {
+          ...attempt,
+          steps: [
             {
-              specification: {
-                name: 'Checkout',
-                uri: 'features/checkout.feature',
-              },
-              scenario: { name: 'Complete a purchase' },
-              executionTargetProfile: { id: 'deterministic' },
+              index: 0,
+              startedAt: attempt.startedAt,
+              finishedAt: attempt.finishedAt,
+              durationMs: attempt.durationMs,
+              step: { keyword: 'When', text: 'I submit', type: 'action' },
               state: 'passed',
-              steps: [],
-              executionMode: 'automatic',
-              cacheOutcome: 'stale',
-              inferenceCount: -1,
-              cacheUncacheableReason: 'unknown',
-              failureKind: 'model-error',
+              resolvedActions: [
+                {
+                  description: 'Submit the form',
+                  replay: { payload: 'private-replay-payload' },
+                },
+              ],
             },
           ],
         },
+      ],
+    }
+    const archive = emptyArchive('run-private-fields')
+    await Bun.write(
+      archivePath,
+      JSON.stringify({
+        ...archive,
+        manifest: {
+          ...archive.manifest,
+          results: [privateResult],
+        },
         events: [
           {
+            ...archive.events[0],
             sequence: 1,
-            type: 'run-started',
             prompt: 'private-system-prompt',
             adapterPayload: { secret: 'private-adapter-payload' },
             run: {
-              id: 'run-invalid-cache-metadata',
+              id: 'run-private-fields',
               startedAt: '2026-08-01T00:00:00.000Z',
               privateValue: 'private-bound-value',
             },
+          },
+          {
+            schemaVersion: 2,
+            sequence: 2,
+            occurredAt: privateResult.finishedAt,
+            ...scenarioFinished(privateResult),
+            prompt: 'private-scenario-prompt',
           },
         ],
       }),
     )
 
-    const archive = await readRunArchive(archivePath)
+    const parsed = await readRunArchive(archivePath)
 
-    expect(archive.manifest.results[0]).toMatchObject({
-      executionMode: 'adaptive',
-      cacheOutcome: 'uncacheable',
-      inferenceCount: 0,
-      cacheUncacheableReason: undefined,
-      failureKind: undefined,
-    })
-    expect(archive.events).toEqual([
-      {
-        schemaVersion: 1,
-        sequence: 1,
-        type: 'run-started',
-        run: {
-          id: 'run-invalid-cache-metadata',
-          startedAt: '2026-08-01T00:00:00.000Z',
-          sourceRunId: undefined,
-          suite: undefined,
-          applicationRevision: undefined,
-        },
+    expect(
+      parsed.manifest.results[0]?.attempts[0]?.steps[0]?.resolvedActions,
+    ).toEqual([{ description: 'Submit the form' }])
+    expect(parsed.events).toHaveLength(2)
+    expect(parsed.events[0]).toEqual({
+      schemaVersion: 2,
+      sequence: 1,
+      occurredAt: '2026-08-01T00:00:00.000Z',
+      type: 'run-started',
+      run: {
+        id: 'run-private-fields',
+        startedAt: '2026-08-01T00:00:00.000Z',
+        sourceRunId: undefined,
+        suite: undefined,
+        applicationRevision: undefined,
       },
-    ])
-    expect(JSON.stringify(archive)).not.toContain('private-system-prompt')
-    expect(JSON.stringify(archive)).not.toContain('private-adapter-payload')
-    expect(JSON.stringify(archive)).not.toContain('private-bound-value')
+    })
+    expect(parsed.events[1]).toMatchObject({
+      type: 'scenario-finished',
+      attempt: {
+        steps: [{ resolvedActions: [{ description: 'Submit the form' }] }],
+      },
+    })
+    expect(JSON.stringify(parsed)).not.toContain('private-system-prompt')
+    expect(JSON.stringify(parsed)).not.toContain('private-adapter-payload')
+    expect(JSON.stringify(parsed)).not.toContain('private-bound-value')
+    expect(JSON.stringify(parsed)).not.toContain('private-replay-payload')
   } finally {
     await rm(root, { recursive: true, force: true })
   }
 })
 
-test('archive migration rejects result states outside the public contract', async () => {
+test('archive parsing rejects result states outside the public contract', async () => {
   const root = await tempRoot()
   try {
     const archivePath = join(root, 'invalid-result-state.json')
     await Bun.write(
       archivePath,
       JSON.stringify({
+        ...emptyArchive('run-invalid-state'),
         manifest: {
+          schemaVersion: 2,
           id: 'run-invalid-state',
           startedAt: '2026-08-01T00:00:00.000Z',
           state: 'unknown-state',
           results: [],
         },
-        events: [],
-        artifacts: [],
       }),
     )
 
     await expect(readRunArchive(archivePath)).rejects.toThrow(
-      'archive state must be a current result state',
+      'must be a current result state',
+    )
+  } finally {
+    await rm(root, { recursive: true, force: true })
+  }
+})
+
+test('archive parsing rejects invalid or inconsistent evidence timing', async () => {
+  const root = await tempRoot()
+  try {
+    const archivePath = join(root, 'invalid-evidence-timing.json')
+    const archive = emptyArchive('run-invalid-timing')
+    await Bun.write(
+      archivePath,
+      JSON.stringify({
+        ...archive,
+        manifest: { ...archive.manifest, startedAt: 'not-a-timestamp' },
+      }),
+    )
+    await expect(readRunArchive(archivePath)).rejects.toThrow(
+      'Invalid ISO datetime',
+    )
+
+    const result = passedResult()
+    await Bun.write(
+      archivePath,
+      JSON.stringify({
+        ...archive,
+        manifest: {
+          ...archive.manifest,
+          results: [{ ...result, durationMs: result.durationMs + 1 }],
+        },
+      }),
+    )
+    await expect(readRunArchive(archivePath)).rejects.toThrow(
+      'durationMs must match startedAt and finishedAt',
     )
   } finally {
     await rm(root, { recursive: true, force: true })
@@ -404,26 +541,7 @@ test('import refuses to overwrite an existing immutable run or retained archive'
   const root = await tempRoot()
   try {
     const archivePath = join(root, 'run-archive.json')
-    const archive = {
-      kind: 'run-archive',
-      manifest: {
-        id: 'run-existing',
-        startedAt: '2026-08-01T00:00:00.000Z',
-        state: 'passed',
-        results: [],
-      },
-      events: [
-        {
-          sequence: 1,
-          type: 'run-started',
-          run: {
-            id: 'run-existing',
-            startedAt: '2026-08-01T00:00:00.000Z',
-          },
-        },
-      ],
-      artifacts: [],
-    }
+    const archive = emptyArchive('run-existing')
     const original = `${JSON.stringify(archive)}\n`
     await Bun.write(archivePath, original)
     const imported = await importRunArchive({ root, archivePath })
@@ -434,10 +552,7 @@ test('import refuses to overwrite an existing immutable run or retained archive'
     )
     const eventsBefore = await Bun.file(eventsPath).text()
     const archiveBefore = await Bun.file(imported.preservedArchivePath).text()
-    await Bun.write(
-      archivePath,
-      `${JSON.stringify({ ...archive, events: [] })}\n`,
-    )
+    await Bun.write(archivePath, original)
 
     await expect(importRunArchive({ root, archivePath })).rejects.toThrow(
       'Test run "run-existing" already exists',
@@ -455,26 +570,7 @@ test('concurrent imports reserve an immutable run before writing it', async () =
   const root = await tempRoot()
   try {
     const archivePath = join(root, 'run-archive.json')
-    const archive = {
-      kind: 'run-archive',
-      manifest: {
-        id: 'run-concurrent',
-        startedAt: '2026-08-01T00:00:00.000Z',
-        state: 'passed',
-        results: [],
-      },
-      events: [
-        {
-          sequence: 1,
-          type: 'run-started',
-          run: {
-            id: 'run-concurrent',
-            startedAt: '2026-08-01T00:00:00.000Z',
-          },
-        },
-      ],
-      artifacts: [],
-    }
+    const archive = emptyArchive('run-concurrent')
     const original = `${JSON.stringify(archive)}\n`
     await Bun.write(archivePath, original)
 
@@ -512,14 +608,7 @@ test('import rejects run identifiers and artifact paths that escape the run dire
     await Bun.write(existingEventsPath, 'immutable\n')
     const archivePath = join(root, 'unsafe-archive.json')
     const unsafeArtifact = {
-      kind: 'run-archive',
-      manifest: {
-        id: 'run-imported',
-        startedAt: '2026-08-01T00:00:00.000Z',
-        state: 'passed',
-        results: [],
-      },
-      events: [],
+      ...emptyArchive('run-imported'),
       artifacts: [
         {
           path: '../run-existing/events.ndjson',
@@ -547,5 +636,388 @@ test('import rejects run identifiers and artifact paths that escape the run dire
     )
   } finally {
     await rm(root, { recursive: true, force: true })
+  }
+})
+
+test('issue 77: exports and imports a schema-v2 archive with contained artifact paths', async () => {
+  const sourceRoot = await tempRoot()
+  const targetRoot = await tempRoot()
+  try {
+    const screenshot = join(sourceRoot, 'failure.png')
+    await Bun.write(screenshot, 'failure-evidence')
+    const store = openTestRunStore({
+      root: sourceRoot,
+      createId: () => 'run-schema-v2-archive',
+      now: () => new Date('2026-08-22T12:00:00.000Z'),
+    })
+    const run = await store.create()
+    await run.append(scenarioFinished(failedResultWithArtifact(screenshot)))
+    await run.materialize()
+    const archivePath = join(sourceRoot, 'run.archive.json')
+
+    await writeRunArchive({
+      root: sourceRoot,
+      runId: run.id,
+      outputPath: archivePath,
+    })
+    const archiveSource = await Bun.file(archivePath).text()
+    const archive = await readRunArchive(archivePath)
+
+    expect(archive.schemaVersion).toBe(2)
+    expect(archive.manifest.schemaVersion).toBe(2)
+    expect(archive.events.every((event) => event.schemaVersion === 2)).toBe(
+      true,
+    )
+    expect(archive.artifacts).toHaveLength(1)
+    expect(archive.artifacts[0]!.path.startsWith('artifacts/')).toBe(true)
+    expect(archiveSource).not.toContain(storageFor(sourceRoot).pickleHome)
+
+    const imported = await importRunArchive({
+      root: targetRoot,
+      archivePath,
+    })
+    const importedPath =
+      imported.manifest.results[0]!.attempts[0]!.steps[0]!.artifacts![0]!.path
+    const targetArtifacts = join(
+      storageFor(targetRoot).runsDirectory,
+      run.id,
+      'artifacts',
+    )
+    expect(importedPath.startsWith(`${targetArtifacts}/`)).toBe(true)
+    expect(await Bun.file(importedPath).text()).toBe('failure-evidence')
+    await expect(
+      (await openTestRunStore({ root: targetRoot }).open(run.id)).events(),
+    ).resolves.toEqual(imported.events)
+  } finally {
+    await Promise.all(
+      [sourceRoot, targetRoot].map((root) =>
+        rm(root, { recursive: true, force: true }),
+      ),
+    )
+  }
+})
+
+test('issue 77: rejects a v1 archive without changing it or creating local storage', async () => {
+  const root = await tempRoot()
+  try {
+    const archivePath = join(root, 'run-v1.archive.json')
+    const source = `${JSON.stringify({
+      schemaVersion: 1,
+      kind: 'run-archive',
+      manifest: {
+        schemaVersion: 1,
+        id: 'run-v1-archive',
+        startedAt: '2026-08-01T00:00:00.000Z',
+        state: 'passed',
+        results: [],
+      },
+      events: [
+        {
+          schemaVersion: 1,
+          sequence: 1,
+          type: 'run-started',
+          run: {
+            id: 'run-v1-archive',
+            startedAt: '2026-08-01T00:00:00.000Z',
+          },
+        },
+      ],
+      artifacts: [],
+    })}\n`
+    await Bun.write(archivePath, source)
+    const storage = storageFor(root)
+
+    await expect(importRunArchive({ root, archivePath })).rejects.toThrow(
+      'schema version 1',
+    )
+    expect(await Bun.file(archivePath).text()).toBe(source)
+    expect(await Bun.file(storage.runsDirectory).exists()).toBe(false)
+    expect(await Bun.file(storage.archivesDirectory).exists()).toBe(false)
+  } finally {
+    await rm(root, { recursive: true, force: true })
+  }
+})
+
+test('issue 77: rejects contradictory manifest and event evidence before writing', async () => {
+  const root = await tempRoot()
+  try {
+    const archivePath = join(root, 'contradictory.archive.json')
+    const archive = emptyArchive('run-contradictory')
+    const source = `${JSON.stringify({
+      ...archive,
+      manifest: {
+        ...archive.manifest,
+        results: [passedResult()],
+      },
+    })}\n`
+    await Bun.write(archivePath, source)
+    const storage = storageFor(root)
+
+    await expect(readRunArchive(archivePath)).rejects.toThrow(
+      'manifest results must match its Run events',
+    )
+    await expect(importRunArchive({ root, archivePath })).rejects.toThrow(
+      'manifest results must match its Run events',
+    )
+    expect(await Bun.file(archivePath).text()).toBe(source)
+    expect(await Bun.file(storage.runsDirectory).exists()).toBe(false)
+    expect(await Bun.file(storage.archivesDirectory).exists()).toBe(false)
+  } finally {
+    await rm(root, { recursive: true, force: true })
+  }
+})
+
+test('issue 77: rejects escaping artifact references before writing', async () => {
+  const root = await tempRoot()
+  try {
+    const archivePath = join(root, 'reference-traversal.archive.json')
+    const result = failedResultWithArtifact('../../victim.txt')
+    const attempt = result.attempts[0]!
+    await Bun.write(
+      archivePath,
+      JSON.stringify({
+        schemaVersion: 2,
+        kind: 'run-archive',
+        manifest: {
+          schemaVersion: 2,
+          id: 'run-reference-traversal',
+          startedAt: '2026-08-22T12:00:00.000Z',
+          finishedAt: '2026-08-22T12:00:00.012Z',
+          state: 'failed',
+          results: [result],
+        },
+        events: [
+          {
+            schemaVersion: 2,
+            sequence: 1,
+            occurredAt: '2026-08-22T12:00:00.000Z',
+            type: 'run-started',
+            run: {
+              id: 'run-reference-traversal',
+              startedAt: '2026-08-22T12:00:00.000Z',
+            },
+          },
+          {
+            schemaVersion: 2,
+            sequence: 2,
+            occurredAt: '2026-08-22T12:00:00.012Z',
+            type: 'scenario-finished',
+            specification: result.specification,
+            scenario: result.scenario,
+            executionTargetProfile: result.executionTargetProfile,
+            scope: {
+              scenarioId: result.scenario.id,
+              executionTargetProfileId: result.executionTargetProfile.id,
+              attempt: attempt.attempt,
+            },
+            attempt,
+          },
+        ],
+        artifacts: [
+          {
+            path: '../../victim.txt',
+            content: Buffer.from('victim').toString('base64'),
+          },
+        ],
+      }),
+    )
+
+    await expect(importRunArchive({ root, archivePath })).rejects.toThrow(
+      'Artifact path must stay inside the imported test run',
+    )
+    expect(
+      await Bun.file(
+        join(storageFor(root).runsDirectory, 'run-reference-traversal'),
+      ).exists(),
+    ).toBe(false)
+  } finally {
+    await rm(root, { recursive: true, force: true })
+  }
+})
+
+test('issue 77: rejects unfinished archives before mutating any destination', async () => {
+  const sourceRoot = await tempRoot()
+  const targetRoot = await tempRoot()
+  try {
+    const store = openTestRunStore({
+      root: sourceRoot,
+      createId: () => 'run-unfinished',
+    })
+    const run = await store.create()
+    await run.append(scenarioFinished(passedResult()))
+    const eventsPath = join(
+      storageFor(sourceRoot).runsDirectory,
+      run.id,
+      'events.ndjson',
+    )
+    const eventsBefore = await Bun.file(eventsPath).text()
+    const outputPath = join(sourceRoot, 'unfinished-export.json')
+
+    await expect(
+      writeRunArchive({ root: sourceRoot, runId: run.id, outputPath }),
+    ).rejects.toThrow('must be finalized')
+    expect(await Bun.file(outputPath).exists()).toBe(false)
+    expect(await Bun.file(eventsPath).text()).toBe(eventsBefore)
+
+    const archivePath = join(sourceRoot, 'unfinished-input.json')
+    const archive = emptyArchive('run-unfinished-input')
+    const { finishedAt: _finishedAt, ...unfinishedManifest } = archive.manifest
+    const source = `${JSON.stringify({
+      ...archive,
+      manifest: unfinishedManifest,
+    })}\n`
+    await Bun.write(archivePath, source)
+
+    await expect(readRunArchive(archivePath)).rejects.toThrow(
+      'must be finalized',
+    )
+    await expect(
+      importRunArchive({ root: targetRoot, archivePath }),
+    ).rejects.toThrow('must be finalized')
+    expect(await Bun.file(archivePath).text()).toBe(source)
+    expect(await Bun.file(storageFor(targetRoot).runsDirectory).exists()).toBe(
+      false,
+    )
+    expect(
+      await Bun.file(storageFor(targetRoot).archivesDirectory).exists(),
+    ).toBe(false)
+  } finally {
+    await Promise.all(
+      [sourceRoot, targetRoot].map((root) =>
+        rm(root, { recursive: true, force: true }),
+      ),
+    )
+  }
+})
+
+test('issue 77: export rejects a missing artifact source without writing output', async () => {
+  const root = await tempRoot()
+  try {
+    const screenshot = join(root, 'source.png')
+    await Bun.write(screenshot, 'source-bytes')
+    const store = openTestRunStore({
+      root,
+      createId: () => 'run-missing-artifact-source',
+    })
+    const run = await store.create()
+    await run.append(scenarioFinished(failedResultWithArtifact(screenshot)))
+    const manifest = await run.materialize()
+    const persistedPath =
+      manifest.results[0]!.attempts[0]!.steps[0]!.artifacts![0]!.path
+    await rm(persistedPath)
+    const outputPath = join(root, 'missing-source', 'archive.json')
+
+    await expect(
+      writeRunArchive({ root, runId: run.id, outputPath }),
+    ).rejects.toThrow('Artifact source file is missing')
+    expect(await Bun.file(outputPath).exists()).toBe(false)
+    expect(await Bun.file(join(root, 'missing-source')).exists()).toBe(false)
+  } finally {
+    await rm(root, { recursive: true, force: true })
+  }
+})
+
+test('issue 77: rejects an artifact reference without an embedded payload', async () => {
+  const sourceRoot = await tempRoot()
+  const targetRoot = await tempRoot()
+  try {
+    const archivePath = join(sourceRoot, 'missing-payload.json')
+    const result = failedResultWithArtifact('artifacts/missing.png')
+    const source = `${JSON.stringify(archiveWithResult('run-missing-payload', result))}\n`
+    await Bun.write(archivePath, source)
+
+    await expect(readRunArchive(archivePath)).rejects.toThrow(
+      'requires exactly one embedded payload',
+    )
+    await expect(
+      importRunArchive({ root: targetRoot, archivePath }),
+    ).rejects.toThrow('requires exactly one embedded payload')
+    expect(await Bun.file(archivePath).text()).toBe(source)
+    expect(await Bun.file(storageFor(targetRoot).runsDirectory).exists()).toBe(
+      false,
+    )
+    expect(
+      await Bun.file(storageFor(targetRoot).archivesDirectory).exists(),
+    ).toBe(false)
+  } finally {
+    await Promise.all(
+      [sourceRoot, targetRoot].map((root) =>
+        rm(root, { recursive: true, force: true }),
+      ),
+    )
+  }
+})
+
+test('issue 77: rejects an orphan embedded artifact payload', async () => {
+  const sourceRoot = await tempRoot()
+  const targetRoot = await tempRoot()
+  try {
+    const archivePath = join(sourceRoot, 'orphan-payload.json')
+    const source = `${JSON.stringify({
+      ...emptyArchive('run-orphan-payload'),
+      artifacts: [
+        {
+          path: 'artifacts/orphan.png',
+          content: Buffer.from('orphan').toString('base64'),
+        },
+      ],
+    })}\n`
+    await Bun.write(archivePath, source)
+
+    await expect(readRunArchive(archivePath)).rejects.toThrow(
+      'has no manifest or event reference',
+    )
+    await expect(
+      importRunArchive({ root: targetRoot, archivePath }),
+    ).rejects.toThrow('has no manifest or event reference')
+    expect(await Bun.file(archivePath).text()).toBe(source)
+    expect(await Bun.file(storageFor(targetRoot).runsDirectory).exists()).toBe(
+      false,
+    )
+    expect(
+      await Bun.file(storageFor(targetRoot).archivesDirectory).exists(),
+    ).toBe(false)
+  } finally {
+    await Promise.all(
+      [sourceRoot, targetRoot].map((root) =>
+        rm(root, { recursive: true, force: true }),
+      ),
+    )
+  }
+})
+
+test('issue 77: rejects invalid base64 artifact payloads', async () => {
+  const sourceRoot = await tempRoot()
+  const targetRoot = await tempRoot()
+  try {
+    const archivePath = join(sourceRoot, 'invalid-base64.json')
+    const result = failedResultWithArtifact('artifacts/invalid.png')
+    const source = `${JSON.stringify({
+      ...archiveWithResult('run-invalid-base64', result),
+      artifacts: [
+        { path: 'artifacts/invalid.png', content: 'not+canonical===' },
+      ],
+    })}\n`
+    await Bun.write(archivePath, source)
+
+    await expect(readRunArchive(archivePath)).rejects.toThrow(
+      'must be valid base64',
+    )
+    await expect(
+      importRunArchive({ root: targetRoot, archivePath }),
+    ).rejects.toThrow('must be valid base64')
+    expect(await Bun.file(archivePath).text()).toBe(source)
+    expect(await Bun.file(storageFor(targetRoot).runsDirectory).exists()).toBe(
+      false,
+    )
+    expect(
+      await Bun.file(storageFor(targetRoot).archivesDirectory).exists(),
+    ).toBe(false)
+  } finally {
+    await Promise.all(
+      [sourceRoot, targetRoot].map((root) =>
+        rm(root, { recursive: true, force: true }),
+      ),
+    )
   }
 })

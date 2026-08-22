@@ -36,6 +36,30 @@ _Avoid_: Execution, session, job
 The outcome and evidence produced for one scenario and execution target profile during a test run.
 _Avoid_: Report, output, log
 
+**Test evidence**:
+Information used to investigate a test result, including its step timeline, resolved actions, messages, diagnostic entries, related run events, and test artifacts.
+_Avoid_: Replay, report, artifact
+
+**Diagnostic entry**:
+A timestamped, structured observation from an execution target, adapter, runner, or opted-in managed application server that helps investigate a test result.
+_Avoid_: Run event, test result, unstructured log
+
+**Evidence persistence policy**:
+The `off`, `on-failure`, or `always` rule that determines whether temporary diagnostic entries and test artifacts become part of an immutable test run.
+_Avoid_: Capture mode, logging level, retention policy
+
+**Evidence availability**:
+The classification that states whether a kind of Test evidence is `available`, `not-requested`, `not-supported`, `not-retained`, `capture-failed`, or `missing`.
+_Avoid_: Test result state, artifact status, empty evidence
+
+**Test run export**:
+A derived external representation of an immutable test run, such as HTML, JUnit, JSON, NDJSON, or Allure results. It is not a source of truth.
+_Avoid_: Test result, run archive, canonical record
+
+**Test run export outcome**:
+The success or failure of one requested Test run export, recorded separately from the outcome of the test run itself.
+_Avoid_: Test result, test run state, output log
+
 **Studio**:
 The local interface for authoring specifications, managing test runs, and reviewing test results.
 _Avoid_: Workbench, dashboard, report viewer, admin panel
@@ -104,6 +128,10 @@ _Avoid_: Build, commit, deployment version
 A test result that succeeds only after one or more failed attempts.
 _Avoid_: Unstable test, intermittent pass, retried test
 
+**Scenario attempt**:
+One attempt to produce a test result for a scenario and execution target profile within a test run. Multiple attempts may contribute to one flaky result.
+_Avoid_: Rerun, test run, retry result
+
 **Fast profile**:
 An explicit execution profile that trades selected fidelity guarantees for lower test-run duration.
 _Avoid_: Optimized mode, performance mode, quick run
@@ -127,6 +155,14 @@ _Avoid_: Device requirement, target constraint, prerequisite
 **Run archive**:
 A portable, immutable package containing one test run and its selected test artifacts.
 _Avoid_: Report bundle, export file, test package
+
+**Pinned test run**:
+A local test run explicitly protected from retention deletion until a user unpins it. Exporting a test run does not pin it.
+_Avoid_: Exported run, archived run, favorite run
+
+**Run retention policy**:
+A rule for deleting complete, unpinned local test runs based on age or storage use without mutating retained runs.
+_Avoid_: Artifact cleanup, cache eviction, automatic export
 
 **External link**:
 A reference from a specification or scenario to an item in another system.

@@ -1,23 +1,27 @@
 import type { ScenarioStep } from '@pickle-spec/spec'
 import type { ExecutionCacheKey } from './execution-cache'
-import type {
-  ExecutionTargetProfile,
-  FidelityPolicy,
-  RunEvent,
-  RunEventPayload,
-  ScenarioIdentity,
-  TestArtifact,
-  TestResult,
-  TestResultState,
-  TestStepResult,
+import {
+  type EvidenceAvailability,
+  type ExecutionTargetProfile,
+  type FidelityPolicy,
+  type RunEvent,
+  type RunEventPayload,
+  type RunEventScope,
+  type ScenarioAttempt,
+  type ScenarioIdentity,
+  type TestArtifact,
+  type TestResult,
+  type TestStepResult,
+  testRunSchemaVersion,
 } from './run-scenario'
 
 interface EventResultMappers {
   step(result: TestStepResult): TestStepResult
-  scenario(result: TestResult): TestResult
+  attempt(attempt: ScenarioAttempt): ScenarioAttempt
 }
 
 type StepResultProjection = (result: TestStepResult) => TestStepResult
+type AttemptProjection = (attempt: ScenarioAttempt) => ScenarioAttempt
 
 function publicScenarioIdentity(identity: ScenarioIdentity): ScenarioIdentity {
   return {
@@ -60,6 +64,16 @@ function publicArtifact(artifact: TestArtifact): TestArtifact {
   }
 }
 
+function publicEvidenceAvailability(
+  availability: EvidenceAvailability,
+): EvidenceAvailability {
+  return {
+    kind: availability.kind,
+    state: availability.state,
+    message: availability.message,
+  }
+}
+
 function publicFidelityPolicy(
   policy: FidelityPolicy | undefined,
 ): FidelityPolicy | undefined {
@@ -80,10 +94,24 @@ function publicCacheKey(key: ExecutionCacheKey): ExecutionCacheKey {
   }
 }
 
+function publicEventScope(scope: RunEventScope): RunEventScope {
+  return {
+    scenarioId: scope.scenarioId,
+    examplesRowId: scope.examplesRowId,
+    executionTargetProfileId: scope.executionTargetProfileId,
+    attempt: scope.attempt,
+    stepIndex: scope.stepIndex,
+  }
+}
+
 export function withoutPrivateStepResultData(
   result: TestStepResult,
 ): TestStepResult {
   return {
+    index: result.index,
+    startedAt: result.startedAt,
+    finishedAt: result.finishedAt,
+    durationMs: result.durationMs,
     step: publicScenarioStep(result.step),
     state: result.state,
     resolvedActions: result.resolvedActions.map(({ description }) => ({
@@ -94,13 +122,51 @@ export function withoutPrivateStepResultData(
   }
 }
 
+function projectAttempt(
+  attempt: ScenarioAttempt,
+  projectStep: StepResultProjection,
+): ScenarioAttempt {
+  return {
+    attempt: attempt.attempt,
+    startedAt: attempt.startedAt,
+    finishedAt: attempt.finishedAt,
+    durationMs: attempt.durationMs,
+    state: attempt.state,
+    steps: attempt.steps.map(projectStep),
+    executionMode: attempt.executionMode,
+    cacheOutcome: attempt.cacheOutcome,
+    inferenceCount: attempt.inferenceCount,
+    cacheUncacheableReason: attempt.cacheUncacheableReason,
+    failureKind: attempt.failureKind,
+    message: attempt.message,
+    fidelityPolicy: publicFidelityPolicy(attempt.fidelityPolicy),
+    evidenceAvailability: attempt.evidenceAvailability.map(
+      publicEvidenceAvailability,
+    ),
+  }
+}
+
+function withoutPrivateScenarioAttemptData(
+  attempt: ScenarioAttempt,
+): ScenarioAttempt {
+  return projectAttempt(attempt, withoutPrivateStepResultData)
+}
+
+function recordableScenarioAttempt(attempt: ScenarioAttempt): ScenarioAttempt {
+  return {
+    ...withoutPrivateScenarioAttemptData(attempt),
+    executionMode: attempt.executionMode ?? 'adaptive',
+    cacheOutcome: attempt.cacheOutcome ?? 'uncacheable',
+    inferenceCount: attempt.inferenceCount ?? 0,
+  }
+}
+
 function projectTestResult(
   result: TestResult,
-  state: TestResultState,
-  projectStep: StepResultProjection,
+  projectAttemptData: AttemptProjection,
 ): TestResult {
   return {
-    schemaVersion: 1,
+    schemaVersion: testRunSchemaVersion,
     specification: {
       name: result.specification.name,
       uri: result.specification.uri,
@@ -109,40 +175,25 @@ function projectTestResult(
     executionTargetProfile: publicExecutionTargetProfile(
       result.executionTargetProfile,
     ),
-    state,
-    steps: result.steps.map(projectStep),
-    executionMode: result.executionMode,
-    cacheOutcome: result.cacheOutcome,
-    inferenceCount: result.inferenceCount,
-    cacheUncacheableReason: result.cacheUncacheableReason,
-    failureKind: result.failureKind,
-    message: result.message,
-    attempts: result.attempts,
-    flaky: result.flaky,
+    state: result.state,
+    startedAt: result.startedAt,
+    finishedAt: result.finishedAt,
     durationMs: result.durationMs,
-    fidelityPolicy: publicFidelityPolicy(result.fidelityPolicy),
+    attempts: result.attempts.map(projectAttemptData),
+    flaky: result.flaky,
   }
 }
 
 export function withoutPrivateTestResultData(result: TestResult): TestResult {
-  return projectTestResult(result, result.state, withoutPrivateStepResultData)
+  return projectTestResult(result, withoutPrivateScenarioAttemptData)
 }
 
 export function recordableTestResult(result: TestResult): TestResult {
-  return {
-    ...withoutPrivateTestResultData(result),
-    executionMode: result.executionMode ?? 'adaptive',
-    cacheOutcome: result.cacheOutcome ?? 'uncacheable',
-    inferenceCount: result.inferenceCount ?? 0,
-  }
-}
-
-function publicStepResult(result: TestStepResult): TestStepResult {
-  return withoutPrivateStepResultData(result)
+  return projectTestResult(result, recordableScenarioAttempt)
 }
 
 export function publicTestResult(result: TestResult): TestResult {
-  return projectTestResult(result, result.state, publicStepResult)
+  return projectTestResult(result, withoutPrivateScenarioAttemptData)
 }
 
 function publicEventPayload(
@@ -165,31 +216,30 @@ function publicEventPayload(
       return {
         type: 'scenario-started',
         scenario: publicScenarioIdentity(event.scenario),
-        executionTargetProfile: event.executionTargetProfile
-          ? publicExecutionTargetProfile(event.executionTargetProfile)
-          : undefined,
+        executionTargetProfile: publicExecutionTargetProfile(
+          event.executionTargetProfile,
+        ),
+        scope: publicEventScope(event.scope),
       }
     case 'step-started':
       return {
         type: 'step-started',
         step: publicScenarioStep(event.step),
-        scenario: event.scenario
-          ? publicScenarioIdentity(event.scenario)
-          : undefined,
-        executionTargetProfile: event.executionTargetProfile
-          ? publicExecutionTargetProfile(event.executionTargetProfile)
-          : undefined,
+        scenario: publicScenarioIdentity(event.scenario),
+        executionTargetProfile: publicExecutionTargetProfile(
+          event.executionTargetProfile,
+        ),
+        scope: publicEventScope(event.scope),
       }
     case 'step-finished':
       return {
         type: 'step-finished',
         result: mappers.step(event.result),
-        scenario: event.scenario
-          ? publicScenarioIdentity(event.scenario)
-          : undefined,
-        executionTargetProfile: event.executionTargetProfile
-          ? publicExecutionTargetProfile(event.executionTargetProfile)
-          : undefined,
+        scenario: publicScenarioIdentity(event.scenario),
+        executionTargetProfile: publicExecutionTargetProfile(
+          event.executionTargetProfile,
+        ),
+        scope: publicEventScope(event.scope),
       }
     case 'cache-hit':
     case 'cache-miss':
@@ -197,18 +247,36 @@ function publicEventPayload(
     case 'replay-diverged':
     case 'adaptive-fallback-started':
     case 'cache-written':
-      return { type: event.type, cacheKey: publicCacheKey(event.cacheKey) }
+      return {
+        type: event.type,
+        cacheKey: publicCacheKey(event.cacheKey),
+        scope: publicEventScope(event.scope),
+      }
     case 'cache-uncacheable':
-      return { type: 'cache-uncacheable', reason: event.reason }
+      return {
+        type: 'cache-uncacheable',
+        reason: event.reason,
+        scope: publicEventScope(event.scope),
+      }
     case 'inference-count-updated':
       return {
         type: 'inference-count-updated',
         inferenceCount: event.inferenceCount,
+        scope: publicEventScope(event.scope),
       }
     case 'scenario-finished':
       return {
         type: 'scenario-finished',
-        result: mappers.scenario(event.result),
+        specification: {
+          name: event.specification.name,
+          uri: event.specification.uri,
+        },
+        scenario: publicScenarioIdentity(event.scenario),
+        executionTargetProfile: publicExecutionTargetProfile(
+          event.executionTargetProfile,
+        ),
+        scope: publicEventScope(event.scope),
+        attempt: mappers.attempt(event.attempt),
         scheduleIndex: event.scheduleIndex,
       }
     default:
@@ -221,17 +289,18 @@ export function recordableRunEventPayloadData(
 ): RunEventPayload {
   return publicEventPayload(event, {
     step: withoutPrivateStepResultData,
-    scenario: recordableTestResult,
+    attempt: recordableScenarioAttempt,
   })
 }
 
 export function publicRunEvent(event: RunEvent): RunEvent {
   return {
     ...publicEventPayload(event, {
-      step: publicStepResult,
-      scenario: publicTestResult,
+      step: withoutPrivateStepResultData,
+      attempt: withoutPrivateScenarioAttemptData,
     }),
-    schemaVersion: 1,
+    schemaVersion: testRunSchemaVersion,
     sequence: event.sequence,
+    occurredAt: event.occurredAt,
   } as RunEvent
 }

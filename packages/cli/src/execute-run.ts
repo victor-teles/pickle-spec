@@ -15,7 +15,6 @@ import {
   latestHistoricalDurations,
   openLocalExecutionCache,
   openTestRunStore,
-  resolveLocalProjectStorage,
   resolveRunConfiguration,
   runScenarios,
   scheduleScenarios,
@@ -300,14 +299,7 @@ export async function loadPersistedRun(root: string, runId: string) {
   const run = await store.open(runId)
   const events = await run.events()
   if (events.length === 0) throw new Error(`Unknown test run "${runId}"`)
-  const manifestPath = resolve(
-    resolveLocalProjectStorage(root).runsDirectory,
-    runId,
-    'manifest.json',
-  )
-  const manifest = (await Bun.file(manifestPath).exists())
-    ? ((await Bun.file(manifestPath).json()) as TestRunManifest)
-    : await run.materialize({ finished: false })
+  const manifest = await run.materialize({ finished: false })
   return { manifest, events }
 }
 

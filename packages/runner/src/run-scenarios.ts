@@ -50,6 +50,7 @@ export interface RunScenariosInput extends ExecutionPolicy {
   cachePolicy?: ExecutionCachePolicy
   applicationRevision?: string
   concurrency?: number
+  now?: () => Date
   signal?: AbortSignal
   onEvent?: (
     event: RunEvent,
@@ -169,6 +170,7 @@ export async function runScenarios(
         executionCache: input.executionCache,
         cachePolicy: input.cachePolicy,
         applicationRevision: input.applicationRevision,
+        now: input.now,
         signal: input.signal,
         retry: input.retry,
         timeout: input.timeout,

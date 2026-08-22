@@ -90,6 +90,9 @@ export { publicRunEvent, publicTestResult } from './src/public-results'
 export type { RerunFilter } from './src/rerun'
 export { selectRerunResults } from './src/rerun'
 export type {
+  EvidenceAvailability,
+  EvidenceAvailabilityState,
+  EvidenceKind,
   ExecutionCachePolicy,
   ExecutionMode,
   ExecutionPolicy,
@@ -103,6 +106,7 @@ export type {
   RetryPolicy,
   RunEvent,
   RunEventPayload,
+  ScenarioAttempt,
   ScenarioExecution,
   ScenarioExecutionCache,
   ScenarioIdentity,
@@ -118,8 +122,9 @@ export type {
   TestArtifact,
   TestResult,
   TestResultState,
+  TestStepResult,
 } from './src/run-scenario'
-export { isEvidenceState } from './src/run-scenario'
+export { finalScenarioAttempt, isEvidenceState } from './src/run-scenario'
 export { runScenario } from './src/run-scenario-entry'
 export type {
   RunScenariosInput,

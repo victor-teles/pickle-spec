@@ -266,9 +266,9 @@ async function run(argv: string[]): Promise<number> {
     })
     startedRunId = started.id
     reporting.start()
-    const { runs, manifest } = await started.done
+    const { runs } = await started.done
     const store = openTestRunStore({ root })
-    await writeRunOutputs(args, root, started.id, manifest)
+    await writeRunOutputs(args, root, started.id)
     outputsWritten = true
     await store.applyRetention({
       maxAgeMs: config.retention?.days

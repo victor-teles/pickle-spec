@@ -2,7 +2,11 @@ import { expect, test } from 'bun:test'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { openLocalExecutionCache, runScenario } from '@pickle-spec/runner'
+import {
+  finalScenarioAttempt,
+  openLocalExecutionCache,
+  runScenario,
+} from '@pickle-spec/runner'
 import { createMobileAdapter } from '../index'
 import {
   type AgentDeviceClientPort,
@@ -227,31 +231,33 @@ test('public cache-only replays SQLite .ad and rejects semantic inference or hea
       executionCache: { ...commonInput.executionCache, sourceRunId: 'run-4' },
     })
 
-    expect(adaptive.result).toMatchObject({
+    expect(finalScenarioAttempt(adaptive.result)).toMatchObject({
       state: 'passed',
       executionMode: 'adaptive',
       cacheOutcome: 'miss',
     })
-    expect(replay.result).toMatchObject({
+    expect(finalScenarioAttempt(replay.result)).toMatchObject({
       state: 'passed',
       executionMode: 'replay',
       cacheOutcome: 'hit',
       inferenceCount: 0,
     })
-    expect(semanticInferenceReplay.result).toMatchObject({
+    expect(finalScenarioAttempt(semanticInferenceReplay.result)).toMatchObject({
       state: 'infrastructure-error',
       executionMode: 'replay',
       cacheOutcome: 'hit',
     })
-    expect(semanticInferenceReplay.result.message).toContain(
-      'semantic inference route',
+    expect(
+      finalScenarioAttempt(semanticInferenceReplay.result).message,
+    ).toContain('semantic inference route')
+    expect(finalScenarioAttempt(healedReplay.result)).toMatchObject({
+      state: 'infrastructure-error',
+      executionMode: 'replay',
+      cacheOutcome: 'hit',
+    })
+    expect(finalScenarioAttempt(healedReplay.result).message).toContain(
+      'unexpectedly healed',
     )
-    expect(healedReplay.result).toMatchObject({
-      state: 'infrastructure-error',
-      executionMode: 'replay',
-      cacheOutcome: 'hit',
-    })
-    expect(healedReplay.result.message).toContain('unexpectedly healed')
     expect(opened.map((request) => request.mode)).toEqual([
       'adaptive',
       'replay',

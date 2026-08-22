@@ -1,41 +1,81 @@
 import { expect, test } from 'bun:test'
 import { compareTestRuns } from '../index'
-import type { TestResult } from './run-scenario'
+import {
+  finalScenarioAttempt,
+  type ScenarioAttempt,
+  type TestResult,
+} from './run-scenario'
 import type { TestRunManifest } from './test-run-store'
+
+interface ResultFixtureOptions {
+  durationMs?: number
+  executionTargetProfile?: TestResult['executionTargetProfile']
+  flaky?: boolean
+  attempt?: Partial<ScenarioAttempt>
+}
+
+const fixtureStartedAt = '2026-08-15T12:00:00.000Z'
 
 function result(
   name: string,
   state: TestResult['state'],
-  extras: Partial<TestResult> = {},
+  options: ResultFixtureOptions = {},
 ): TestResult {
+  const durationMs = options.durationMs ?? 100
+  const finishedAt = new Date(
+    Date.parse(fixtureStartedAt) + durationMs,
+  ).toISOString()
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     specification: {
       name: 'Checkout',
       uri: 'features/checkout.feature',
     },
     scenario: { name, id: `scn-${name.replace(/\s+/g, '-').toLowerCase()}` },
-    executionTargetProfile: { id: 'web' },
+    executionTargetProfile: options.executionTargetProfile ?? { id: 'web' },
     state,
-    steps: [
+    startedAt: fixtureStartedAt,
+    finishedAt,
+    durationMs,
+    attempts: [
       {
-        step: {
-          keyword: 'Then',
-          text: 'the purchase succeeds',
-          type: 'outcome',
-        },
+        attempt: 1,
+        startedAt: fixtureStartedAt,
+        finishedAt,
+        durationMs,
         state,
-        resolvedActions: [{ description: 'Click purchase' }],
+        steps: [
+          {
+            index: 0,
+            startedAt: fixtureStartedAt,
+            finishedAt,
+            durationMs,
+            step: {
+              keyword: 'Then',
+              text: 'the purchase succeeds',
+              type: 'outcome',
+            },
+            state,
+            resolvedActions: [{ description: 'Click purchase' }],
+          },
+        ],
+        executionMode: 'replay',
+        evidenceAvailability: [
+          { kind: 'screenshot', state: 'not-supported' },
+          { kind: 'trace', state: 'not-supported' },
+          { kind: 'recording', state: 'not-supported' },
+          { kind: 'device-log', state: 'not-supported' },
+          { kind: 'diagnostics', state: 'not-supported' },
+        ],
+        ...options.attempt,
       },
     ],
-    durationMs: 100,
-    executionMode: 'replay',
-    ...extras,
+    ...(options.flaky ? { flaky: true } : {}),
   }
 }
 
 const baseline: TestRunManifest = {
-  schemaVersion: 1,
+  schemaVersion: 2,
   id: 'run-baseline',
   startedAt: '2026-08-15T12:00:00.000Z',
   finishedAt: '2026-08-15T12:01:00.000Z',
@@ -47,6 +87,17 @@ const baseline: TestRunManifest = {
   ],
 }
 
+test('finalScenarioAttempt rejects a noncanonical Test result without attempts', () => {
+  const malformedResult = {
+    ...result('Complete a purchase', 'passed'),
+    attempts: [],
+  }
+
+  expect(() => finalScenarioAttempt(malformedResult)).toThrow(
+    'A Test result requires at least one Scenario attempt',
+  )
+})
+
 test('compareTestRuns matches results by Scenario and execution target profile identifiers', () => {
   const candidate: TestRunManifest = {
     ...baseline,
@@ -55,25 +106,31 @@ test('compareTestRuns matches results by Scenario and execution target profile i
       result('Complete a purchase', 'passed', { durationMs: 150, flaky: true }),
       result('Pay for the order', 'passed', {
         durationMs: 200,
-        executionMode: 'adaptive',
-        steps: [
-          {
-            step: {
-              keyword: 'Then',
-              text: 'the purchase succeeds',
-              type: 'outcome',
-            },
-            state: 'passed',
-            resolvedActions: [{ description: 'Click buy now' }],
-            artifacts: [
-              {
-                kind: 'screenshot',
-                path: '.pickle/runs/run-candidate/artifacts/pay.png',
-                mediaType: 'image/png',
+        attempt: {
+          executionMode: 'adaptive',
+          steps: [
+            {
+              index: 0,
+              startedAt: fixtureStartedAt,
+              finishedAt: '2026-08-15T12:00:00.200Z',
+              durationMs: 200,
+              step: {
+                keyword: 'Then',
+                text: 'the purchase succeeds',
+                type: 'outcome',
               },
-            ],
-          },
-        ],
+              state: 'passed',
+              resolvedActions: [{ description: 'Click buy now' }],
+              artifacts: [
+                {
+                  kind: 'screenshot',
+                  path: '.pickle/runs/run-candidate/artifacts/pay.png',
+                  mediaType: 'image/png',
+                },
+              ],
+            },
+          ],
+        },
       }),
       result('Mobile purchase', 'passed', {
         executionTargetProfile: { id: 'android' },
@@ -120,7 +177,7 @@ test('compareTestRuns matches results by Scenario and execution target profile i
 
 test('compareTestRuns falls back to Scenario name when identifiers are absent', () => {
   const olderBaseline: TestRunManifest = {
-    schemaVersion: 1,
+    schemaVersion: 2,
     id: 'run-old',
     startedAt: '2026-08-15T12:00:00.000Z',
     state: 'passed',
@@ -128,12 +185,11 @@ test('compareTestRuns falls back to Scenario name when identifiers are absent', 
       {
         ...result('Complete a purchase', 'passed'),
         scenario: { name: 'Complete a purchase' },
-        durationMs: undefined,
       },
     ],
   }
   const candidate: TestRunManifest = {
-    schemaVersion: 1,
+    schemaVersion: 2,
     id: 'run-new',
     startedAt: '2026-08-15T12:00:00.000Z',
     state: 'failed',
@@ -183,9 +239,11 @@ test('compareTestRuns reports execution mode, Cache outcome, and inference chang
     id: 'run-cache-baseline',
     results: [
       result('Complete a purchase', 'passed', {
-        executionMode: 'replay',
-        cacheOutcome: 'hit',
-        inferenceCount: 0,
+        attempt: {
+          executionMode: 'replay',
+          cacheOutcome: 'hit',
+          inferenceCount: 0,
+        },
       }),
     ],
   }
@@ -194,9 +252,11 @@ test('compareTestRuns reports execution mode, Cache outcome, and inference chang
     id: 'run-cache-candidate',
     results: [
       result('Complete a purchase', 'passed', {
-        executionMode: 'adaptive',
-        cacheOutcome: 'fallback',
-        inferenceCount: 4,
+        attempt: {
+          executionMode: 'adaptive',
+          cacheOutcome: 'fallback',
+          inferenceCount: 4,
+        },
       }),
     ],
   }

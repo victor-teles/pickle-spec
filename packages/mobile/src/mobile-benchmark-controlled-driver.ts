@@ -2,7 +2,11 @@ import { createHash } from 'node:crypto'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { openLocalExecutionCache, runScenario } from '@pickle-spec/runner'
+import {
+  finalScenarioAttempt,
+  openLocalExecutionCache,
+  runScenario,
+} from '@pickle-spec/runner'
 import {
   assertNoProviderCredentials,
   type ProviderCredentialEnvironment,
@@ -215,13 +219,14 @@ export async function createControlledMobileBenchmarkDriver(
               cacheOutcome: 'hit',
               inferenceCount: 0,
             }
+      const attempt = finalScenarioAttempt(run.result)
       if (run.result.state !== 'passed') {
         throw new Error(
-          `Controlled ${mode} run failed: ${run.result.message ?? run.result.state}`,
+          `Controlled ${mode} run failed: ${attempt.message ?? run.result.state}`,
         )
       }
       for (const [field, value] of Object.entries(expected)) {
-        if (run.result[field as keyof typeof run.result] !== value) {
+        if (attempt[field as keyof typeof attempt] !== value) {
           throw new Error(`Controlled ${mode} run reported invalid ${field}`)
         }
       }

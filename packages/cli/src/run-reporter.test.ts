@@ -1,6 +1,32 @@
 import { expect, test } from 'bun:test'
+import {
+  finalScenarioAttempt,
+  type ScenarioRun,
+  type TestResultState,
+} from '@pickle-spec/runner'
 import { createRunReporter, terminalReporterCapabilities } from './run-reporter'
 import { finishReporter, passedRun } from './run-reporter.test-support'
+
+function setResultState(
+  run: ScenarioRun,
+  state: TestResultState,
+): ReturnType<typeof finalScenarioAttempt> {
+  run.result.state = state
+  const attempt = finalScenarioAttempt(run.result)
+  attempt.state = state
+  return attempt
+}
+
+function markFlaky(run: ScenarioRun, attemptCount: number): void {
+  const finalAttempt = finalScenarioAttempt(run.result)
+  run.result.flaky = true
+  run.result.attempts = Array.from({ length: attemptCount }, (_, index) => ({
+    ...finalAttempt,
+    attempt: index + 1,
+    state: index === attemptCount - 1 ? 'passed' : 'failed',
+    steps: index === attemptCount - 1 ? finalAttempt.steps : [],
+  }))
+}
 
 test('renders completed Test results as Vitest-style lines', () => {
   const lines: string[] = []
@@ -242,7 +268,7 @@ test('uses a visible failure symbol with color only as supplemental information'
     profileId: 'web',
     durationMs: 150,
   })
-  run.result.state = 'failed'
+  setResultState(run, 'failed')
   const colorLines: string[] = []
   const plainLines: string[] = []
   const sharedOptions = {
@@ -283,8 +309,7 @@ test('gives flaky metadata its own readable symbol and supplemental color', () =
     profileId: 'web',
     durationMs: 150,
   })
-  run.result.flaky = true
-  run.result.attempts = 2
+  markFlaky(run, 2)
   const colorLines: string[] = []
   const plainLines: string[] = []
   const sharedOptions = {
@@ -433,17 +458,12 @@ test('counts Test result states as mutually exclusive summary outcomes', () => {
       profileId: index % 2 === 0 ? 'web' : 'android',
       durationMs: 150,
     })
-    return {
-      ...run,
-      result: {
-        ...run.result,
-        state,
-        ...(state === 'skipped'
-          ? { message: 'Scenario is tagged @ignore' }
-          : {}),
-        ...(state === 'passed' ? { flaky: true, attempts: index + 2 } : {}),
-      },
+    const attempt = setResultState(run, state)
+    if (state === 'skipped') {
+      attempt.message = 'Scenario is tagged @ignore'
     }
+    if (state === 'passed') markFlaky(run, index + 2)
+    return run
   })
 
   reporter.start()
@@ -491,7 +511,7 @@ test('labels an interrupted non-interactive report as a partial summary', () => 
     profileId: 'web',
     durationMs: 10,
   })
-  run.result.state = 'cancelled'
+  setResultState(run, 'cancelled')
 
   reporter.start()
   reporter.finish([run], 10, {
@@ -524,9 +544,10 @@ test('renders execution mode, Cache outcome, and inference count independently f
     profileId: 'web',
     durationMs: 12,
   })
-  replay.result.executionMode = 'replay'
-  replay.result.cacheOutcome = 'hit'
-  replay.result.inferenceCount = 0
+  const replayAttempt = finalScenarioAttempt(replay.result)
+  replayAttempt.executionMode = 'replay'
+  replayAttempt.cacheOutcome = 'hit'
+  replayAttempt.inferenceCount = 0
   const fallback = passedRun({
     specificationUri: 'features/checkout.feature',
     specificationName: 'Checkout',
@@ -535,9 +556,10 @@ test('renders execution mode, Cache outcome, and inference count independently f
     profileId: 'web',
     durationMs: 25,
   })
-  fallback.result.executionMode = 'adaptive'
-  fallback.result.cacheOutcome = 'fallback'
-  fallback.result.inferenceCount = 2
+  const fallbackAttempt = finalScenarioAttempt(fallback.result)
+  fallbackAttempt.executionMode = 'adaptive'
+  fallbackAttempt.cacheOutcome = 'fallback'
+  fallbackAttempt.inferenceCount = 2
   const uncacheable = passedRun({
     specificationUri: 'features/checkout.feature',
     specificationName: 'Checkout',
@@ -546,10 +568,11 @@ test('renders execution mode, Cache outcome, and inference count independently f
     profileId: 'web',
     durationMs: 30,
   })
-  uncacheable.result.executionMode = 'adaptive'
-  uncacheable.result.cacheOutcome = 'uncacheable'
-  uncacheable.result.cacheUncacheableReason = 'non-deterministic-assertion'
-  uncacheable.result.inferenceCount = 3
+  const uncacheableAttempt = finalScenarioAttempt(uncacheable.result)
+  uncacheableAttempt.executionMode = 'adaptive'
+  uncacheableAttempt.cacheOutcome = 'uncacheable'
+  uncacheableAttempt.cacheUncacheableReason = 'non-deterministic-assertion'
+  uncacheableAttempt.inferenceCount = 3
 
   reporter.start()
   finishReporter(reporter, [replay, fallback, uncacheable], 67)
@@ -608,8 +631,8 @@ test('preserves result-level failure messages when no executed step owns them', 
     profileId: 'web',
     durationMs: 150,
   })
-  run.result.state = 'failed'
-  run.result.message =
+  const attempt = setResultState(run, 'failed')
+  attempt.message =
     'Expected results, but the page remained empty\nScreenshot captured'
 
   reporter.start()
@@ -641,10 +664,14 @@ test('renders functional failure diagnostics from executed Gherkin steps without
     profileId: 'web',
     durationMs: 150,
   })
-  run.result.state = 'failed'
-  run.result.message = 'Expected confirmation\nbut the page remained empty'
-  run.result.steps = [
+  const attempt = setResultState(run, 'failed')
+  attempt.message = 'Expected confirmation\nbut the page remained empty'
+  attempt.steps = [
     {
+      index: 0,
+      startedAt: attempt.startedAt,
+      finishedAt: attempt.finishedAt,
+      durationMs: attempt.durationMs,
       step: {
         keyword: 'Given',
         text: 'a product is in the basket',
@@ -654,6 +681,10 @@ test('renders functional failure diagnostics from executed Gherkin steps without
       resolvedActions: [{ description: 'Open the basket internals' }],
     },
     {
+      index: 1,
+      startedAt: attempt.startedAt,
+      finishedAt: attempt.finishedAt,
+      durationMs: attempt.durationMs,
       step: {
         keyword: 'Then',
         text: 'the purchase succeeds',
@@ -707,9 +738,13 @@ test('separates infrastructure diagnostics and renders profiles, messages, and a
     profileId: 'web',
     durationMs: 150,
   })
-  failedRun.result.state = 'failed'
-  failedRun.result.steps = [
+  const failedAttempt = setResultState(failedRun, 'failed')
+  failedAttempt.steps = [
     {
+      index: 0,
+      startedAt: failedAttempt.startedAt,
+      finishedAt: failedAttempt.finishedAt,
+      durationMs: failedAttempt.durationMs,
       step: {
         keyword: 'Then',
         text: 'the purchase succeeds',
@@ -734,11 +769,18 @@ test('separates infrastructure diagnostics and renders profiles, messages, and a
     profileId: 'android',
     durationMs: 240,
   })
-  infrastructureRun.result.state = 'infrastructure-error'
-  infrastructureRun.result.message =
+  const infrastructureAttempt = setResultState(
+    infrastructureRun,
+    'infrastructure-error',
+  )
+  infrastructureAttempt.message =
     'Emulator disconnected\nwhile the outcome step was running'
-  infrastructureRun.result.steps = [
+  infrastructureAttempt.steps = [
     {
+      index: 0,
+      startedAt: infrastructureAttempt.startedAt,
+      finishedAt: infrastructureAttempt.finishedAt,
+      durationMs: infrastructureAttempt.durationMs,
       step: {
         keyword: 'Given',
         text: 'the catalog is open',
@@ -748,6 +790,10 @@ test('separates infrastructure diagnostics and renders profiles, messages, and a
       resolvedActions: [],
     },
     {
+      index: 1,
+      startedAt: infrastructureAttempt.startedAt,
+      finishedAt: infrastructureAttempt.finishedAt,
+      durationMs: infrastructureAttempt.durationMs,
       step: {
         keyword: 'Then',
         text: 'pickle results are visible',

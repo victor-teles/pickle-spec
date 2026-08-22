@@ -1,0 +1,47 @@
+Use case: ui-mockup
+Asset type: 1536x1024 landscape desktop product UI comp for Pickle Spec Studio
+
+Design read: a dense expert QA investigation workspace for developers and test engineers, translated into Modal's current visual language: developer-first, calm dark technical UI, warm near-black background, true-black surfaces, muted sage typography, pale mint emphasis, strong legibility, generous rounded geometry, and restrained motion-ready hierarchy. This is a product interface, not a landing page.
+
+Reference image: preserve its information architecture, real content, and synchronized causal timeline. Do not preserve its forensic paper, archival folder, glassine, rubber-stamp, distressed texture, serif/typewriter nostalgia, or physical evidence metaphors.
+
+Primary request: Redesign the Pickle Spec Test result inspector using these design tokens as authority:
+- background #181818
+- surface #000000
+- primary/text #5b6d5c
+- accent/text-muted #ddffdc
+- border #3e4a3c
+- on-primary #ffffff
+- display/heading character inspired by Goga, body typography inspired by Inter Variable
+- spacing base 8px with 8/16/24/32/48 scale
+- radii: 25px large, 12px medium, 4px small, pill for compact states
+Use available close font approximations if exact fonts are unavailable.
+
+Architecture to preserve:
+- compact global top bar with Pickle Spec, Specification Checkout, Scenario Pay for the order, Target chrome, run metadata, and Inspect result action
+- left contextual navigation for Checkout > Pay for the order > chrome, followed by concise run details, tags, notes, export
+- summary row showing failed, adaptive, uncacheable, inference 0
+- tabs Overview, Timeline, Artifacts, Diagnostics
+- main center-left synchronized multitrack timeline
+- right evidence viewer showing failure.png and metadata
+- horizontal time ruler
+- aligned lanes for Steps, Run events, Diagnostics, Artifacts
+- one vertical causal cursor at the failed instant
+- failed step “Then payment is captured”, event “Click pay on chrome”, diagnostic “Payment was declined”, artifact “failure.png” aligned at the same instant
+- explicitly spelled states so meaning is never color-only
+
+Visual direction:
+- remove ornamental “chain of evidence” theming while keeping causal evidence as the product idea
+- use flat near-black app canvas, true-black panels, sage borders, and pale mint active surfaces
+- panels can use 12px or 25px radii selectively; timeline lane segments use 4px or 12px radii
+- preserve professional data density without becoming a cockpit
+- make the failed causal point unmistakable using a restrained warm error red that works alongside the Modal palette; never turn the whole UI red
+- use mint for active navigation and successful steps, outlined/inset treatments for secondary data
+- timeline should be the visual center of gravity and the most original component
+- evidence image stays large and useful
+- avoid excessive cards; use borders, spatial grouping, and surface changes
+- precise, shippable, WCAG-minded product interface
+
+Real content (spell exactly where present): “Pickle Spec”, “Checkout”, “Pay for the order”, “chrome”, “failed”, “adaptive”, “uncacheable”, “0”, “Overview”, “Timeline”, “Artifacts”, “Diagnostics”, “Inspect result”, “Steps”, “Run events”, “Then payment is captured”, “Payment was declined”, “Click pay on chrome”, “failure.png”.
+
+Constraints: no Modal logo, no copying Modal page layouts, no marketing hero, no AI gradients, no neon, no glow, no glassmorphism, no hardware chassis, no amber LCD, no paper texture, no detective corkboard, no fake screws, no tiny gibberish, no generic dashboard KPI card grid, no device frame, no watermark. Make it recognizably Pickle Spec, only using Modal's token system and design sensibility.
