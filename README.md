@@ -4,7 +4,9 @@
 
 Pickle Spec runs Gherkin Specifications against execution targets. The web
 adapter uses Stagehand for browser automation, and the mobile adapter uses
-`agent-device` for Android Emulator automation.
+`agent-device` for Android Emulator and iOS Simulator automation. The platform
+is local-first: Specifications, test runs, caches, and artifacts stay on the
+user's machine or CI runner by default.
 
 ## Package ownership
 
@@ -15,10 +17,30 @@ Each scoped package owns one public boundary.
 | `@pickle-spec/spec` | Parse Specifications and select Scenarios. |
 | `@pickle-spec/runner` | Schedule Scenarios and produce run events and test results. |
 | `@pickle-spec/web` | Adapt Stagehand operations to the runner contract. |
-| `@pickle-spec/mobile` | Adapt Android Emulator operations through an isolated Node worker. |
-| `@pickle-spec/cli` | Compose configuration and public package interfaces. |
+| `@pickle-spec/mobile` | Adapt Android Emulator and iOS Simulator operations through an isolated Node worker. |
+| `@pickle-spec/studio` | Provide the local Studio installed for `pickle studio`. |
+| `@pickle-spec/cli` | Install the `pickle` executable and compose product commands. |
 
 The `apps/example` workspace contains sample Specifications.
+
+All six packages publish at one lockstep version. Library consumers use the
+package roots; adapter conformance and controlled benchmark tooling are exposed
+only at `@pickle-spec/runner/testing` and
+`@pickle-spec/runner/benchmarking`.
+
+## Install the executable products
+
+Install the CLI in a Bun project, then initialize a project or open Studio:
+
+```bash
+bun add --dev @pickle-spec/cli
+bunx pickle init
+bunx pickle studio
+```
+
+The CLI package installs Studio as part of the compatible package set. Pickle
+Spec does not require a cloud service. This release excludes hosted
+synchronization and physical-device provisioning.
 
 ## Run the development checks
 
@@ -29,6 +51,8 @@ bun install --frozen-lockfile
 bun run lint
 bun run typecheck
 bun run test
+bun run release:check
+bun run benchmark:replay
 ```
 
 To run one package test suite, use:
@@ -36,6 +60,9 @@ To run one package test suite, use:
 ```bash
 bunx turbo run test --filter=@pickle-spec/web
 ```
+
+See [Release validation](docs/releasing.md) for package artifacts, required
+resource-independent gates, provisioned smoke tests, and release exclusions.
 
 ## Configure web execution
 

@@ -1,4 +1,5 @@
 import { join, resolve } from 'node:path'
+import type { MobileAdapterOptions } from '@pickle-spec/mobile'
 import {
   type ArtifactCapturePolicy,
   type ExecutionSettings,
@@ -34,6 +35,7 @@ export interface ProjectExecutionTargetProfile {
   adapter: string
   capabilities?: readonly string[]
   web?: WebAdapterOptions
+  mobile?: MobileAdapterOptions
 }
 
 export interface ProjectRetention {
@@ -156,6 +158,19 @@ function optionalString(field: string) {
   return z.string({ error: `${field} must be a string` }).optional()
 }
 
+function nonemptyTrimmedString(field: string) {
+  return z
+    .string({ error: `${field} must not be empty` })
+    .transform((value) => value.trim())
+    .refine((value) => value.length > 0, {
+      error: `${field} must not be empty`,
+    })
+}
+
+function optionalNonemptyTrimmedString(field: string) {
+  return nonemptyTrimmedString(field).optional()
+}
+
 function optionalPositiveInteger(field: string) {
   return z
     .number({
@@ -195,7 +210,70 @@ const projectProfileSchema = strictObject('executionTargetProfiles', {
     .min(1, { error: 'capabilities must contain at least one capability' })
     .optional(),
   web: webAdapterOptionsSchema.optional(),
+  mobile: strictObject('executionTargetProfiles.mobile', {
+    executionTarget: z.enum(['android-emulator', 'ios-simulator']).optional(),
+    application: strictObject('executionTargetProfiles.mobile.application', {
+      id: nonemptyTrimmedString(
+        'executionTargetProfiles.mobile.application.id',
+      ),
+      binaryPath: nonemptyTrimmedString(
+        'executionTargetProfiles.mobile.application.binaryPath',
+      ),
+    }),
+    targetId: optionalNonemptyTrimmedString(
+      'executionTargetProfiles.mobile.targetId',
+    ),
+    artifactDirectory: optionalNonemptyTrimmedString(
+      'executionTargetProfiles.mobile.artifactDirectory',
+    ),
+    artifacts: z
+      .array(z.enum(['screenshot', 'trace', 'recording', 'device-log']))
+      .min(1, {
+        error:
+          'executionTargetProfiles.mobile.artifacts must contain at least one artifact kind',
+      })
+      .optional(),
+    redactions: z
+      .array(
+        strictObject('executionTargetProfiles.mobile.redactions', {
+          match: z.string().min(1, {
+            error:
+              'executionTargetProfiles.mobile.redactions.match must not be empty',
+          }),
+          replacement: optionalString(
+            'executionTargetProfiles.mobile.redactions.replacement',
+          ),
+        }),
+      )
+      .optional(),
+    nodePath: optionalNonemptyTrimmedString(
+      'executionTargetProfiles.mobile.nodePath',
+    ),
+  }).optional(),
 })
+  .superRefine((profile, context) => {
+    if (profile.adapter === 'mobile' && !profile.mobile) {
+      context.addIssue({
+        code: 'custom',
+        message:
+          'executionTargetProfiles.mobile is required when adapter is "mobile"',
+      })
+    }
+    if (
+      profile.mobile?.executionTarget === 'ios-simulator' ||
+      profile.mobile?.executionTarget === 'android-emulator'
+    ) {
+      return
+    }
+    if (profile.mobile) {
+      context.addIssue({
+        code: 'custom',
+        message:
+          'executionTargetProfiles.mobile.executionTarget is required for mobile profiles',
+      })
+    }
+  })
+  .transform((profile) => profile as ProjectExecutionTargetProfile)
 
 const pickleConfigSchema = strictObject('configuration', {
   schemaVersion: z.number().superRefine((value, context) => {

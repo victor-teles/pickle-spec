@@ -13,6 +13,8 @@ import {
 import { Input } from './components/ui/input'
 import { Label } from './components/ui/label'
 import { ExecutionCacheSettings } from './execution-cache-settings'
+import { MobileProfileSettings } from './mobile-profile-settings'
+import type { StudioMobileProfile } from './server'
 
 type StudioSuite = {
   name: string
@@ -26,6 +28,7 @@ type StudioProfile = {
   id: string
   adapter: string
   capabilities?: readonly string[]
+  mobile?: StudioMobileProfile
 }
 
 type StudioCredential = {
@@ -96,6 +99,12 @@ export function SettingsPanel<
   const [capabilities, setCapabilities] = useState(
     (selectedProfile?.capabilities ?? []).join(', '),
   )
+  const [mobileProfile, setMobileProfile] = useState<StudioMobileProfile>(
+    selectedProfile?.mobile ?? {
+      executionTarget: 'android-emulator',
+      application: { id: '', binaryPath: '' },
+    },
+  )
   const [savedProfileId, setSavedProfileId] = useState<string>()
   const [secretName, setSecretName] = useState('')
   const [secretValue, setSecretValue] = useState('')
@@ -129,6 +138,12 @@ export function SettingsPanel<
       props.project.profileDetails?.[0]
     setAdapter(profile?.adapter ?? 'custom')
     setCapabilities((profile?.capabilities ?? []).join(', '))
+    setMobileProfile(
+      profile?.mobile ?? {
+        executionTarget: 'android-emulator',
+        application: { id: '', binaryPath: '' },
+      },
+    )
   }, [props.project.profileDetails, profileId])
 
   useEffect(() => {
@@ -216,6 +231,7 @@ export function SettingsPanel<
           ...(profile.capabilities
             ? { capabilities: profile.capabilities }
             : {}),
+          ...(profile.mobile ? { mobile: profile.mobile } : {}),
         },
       ]),
     )
@@ -226,6 +242,18 @@ export function SettingsPanel<
     profiles[id] = {
       adapter: adapter.trim() || 'custom',
       ...(nextCapabilities.length ? { capabilities: nextCapabilities } : {}),
+      ...(adapter.trim() === 'mobile'
+        ? {
+            mobile: {
+              ...mobileProfile,
+              targetId: mobileProfile.targetId?.trim() || undefined,
+              application: {
+                id: mobileProfile.application.id.trim(),
+                binaryPath: mobileProfile.application.binaryPath.trim(),
+              },
+            },
+          }
+        : {}),
     }
     props.onError(undefined)
     try {
@@ -451,6 +479,15 @@ export function SettingsPanel<
             />
           </div>
         </div>
+        {adapter.trim() === 'mobile' ? (
+          <MobileProfileSettings
+            api={props.api}
+            onChange={setMobileProfile}
+            onError={props.onError}
+            profile={mobileProfile}
+            profileId={profileId}
+          />
+        ) : null}
         <Button type="button" onClick={() => void saveProfiles()}>
           Save execution target profile
         </Button>

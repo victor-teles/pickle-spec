@@ -7,6 +7,9 @@
     "./benchmarking": "./benchmarking.ts",
     "./testing": "./testing.ts"
   },
+  "publishConfig": {
+    "access": "public"
+  },
   "files": [
     "benchmarking.ts",
     "index.ts",

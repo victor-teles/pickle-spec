@@ -5,6 +5,9 @@
   "exports": {
     ".": "./index.ts"
   },
+  "publishConfig": {
+    "access": "public"
+  },
   "files": [
     "index.ts",
     "src/*.ts",

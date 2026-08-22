@@ -15,7 +15,7 @@ jobs:
 
       - uses: oven-sh/setup-bun@v2
         with:
-          bun-version: latest
+          bun-version: 1.3.11
 
       - run: bun install --frozen-lockfile
 
@@ -27,6 +27,9 @@ jobs:
 
       - name: Test
         run: bun run test
+
+      - name: Release package acceptance
+        run: bun run release:check
 
       - name: Replay performance gate
         run: bun run benchmark:replay

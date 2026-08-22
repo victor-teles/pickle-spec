@@ -38,6 +38,7 @@ import {
 } from './config'
 import type { Extensions } from './extensions'
 import { startServer } from './server'
+import { configuredMobileAdapter } from './studio-mobile-targets'
 
 export interface ProjectRunOptions {
   pattern?: string
@@ -193,6 +194,12 @@ function configuredRunExtensions(
   if (extensions.adapter) adapters.custom ??= extensions.adapter
 
   for (const profile of profiles) {
+    if (profile.adapter === 'mobile') {
+      if (!adapters[profile.id] && !adapters.mobile) {
+        adapters[profile.id] = configuredMobileAdapter(config, profile.id)
+      }
+      continue
+    }
     if (profile.adapter !== 'web' || adapters[profile.id]) continue
     const web = configuredWebOptions(config, args, profile.id)
     if (adapters.web) {

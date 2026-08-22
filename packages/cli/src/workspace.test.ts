@@ -250,6 +250,105 @@ Feature: Example
     expect(checked.stderr.toString()).toBe('')
   })
 
+  test('carries one initialized project through execution and result exports', async () => {
+    const project = join(workspace, 'complete-workspace-lifecycle')
+    await mkdir(project, { recursive: true })
+    const initialized = Bun.spawnSync({
+      cmd: [pickleCommand, 'init'],
+      cwd: project,
+      env: { ...Bun.env },
+    })
+    expect(initialized.exitCode).toBe(0)
+
+    await mkdir(join(project, 'features'), { recursive: true })
+    await Bun.write(
+      join(project, 'features', 'release.feature'),
+      `@pickle:id:specreleaseaaaaaa @pickle:state:active
+Feature: Release acceptance
+  @pickle:id:scnreleasebbbbbb
+  Scenario: Export a completed result
+    Then the release result is available`,
+    )
+    await Bun.write(
+      join(project, 'pickle.config.jsonc'),
+      JSON.stringify(deterministicRunConfig),
+    )
+    await Bun.write(
+      join(project, 'pickle.extensions.ts'),
+      `export default {
+  adapter: {
+    async openSession() {
+      return {
+        async executeStep(step) {
+          return {
+            state: 'passed',
+            resolvedActions: [{ description: \`Complete: \${step.text}\` }],
+          }
+        },
+        async close() {},
+      }
+    },
+  },
+}`,
+    )
+
+    const run = runProject(project)
+    expect(run.stderr.toString()).toBe('')
+    expect(run.exitCode).toBe(0)
+    const manifests = [
+      ...new Bun.Glob('*/manifest.json').scanSync({
+        cwd: join(project, '.pickle', 'runs'),
+      }),
+    ]
+    expect(manifests).toHaveLength(1)
+    const runId = dirname(manifests[0]!)
+    const manifest = (await Bun.file(
+      join(project, '.pickle', 'runs', manifests[0]!),
+    ).json()) as {
+      id: string
+      finishedAt?: string
+      state: string
+      results: Array<{ scenario: { name: string }; state: string }>
+    }
+    expect(manifest).toMatchObject({
+      id: runId,
+      state: 'passed',
+      results: [
+        {
+          scenario: { name: 'Export a completed result' },
+          state: 'passed',
+        },
+      ],
+    })
+    expect(manifest.finishedAt).toBeDefined()
+
+    const archivePath = join(project, 'release-run.archive.json')
+    const archive = Bun.spawnSync({
+      cmd: [pickleCommand, 'export', runId, '--archive', archivePath],
+      cwd: project,
+      env: { ...Bun.env },
+    })
+    expect(archive.stderr.toString()).toBe('')
+    expect(archive.exitCode).toBe(0)
+    expect(await Bun.file(archivePath).json()).toMatchObject({
+      schemaVersion: 1,
+      kind: 'run-archive',
+      manifest: { id: runId, state: 'passed' },
+    })
+
+    const htmlPath = join(project, 'release-run.html')
+    const html = Bun.spawnSync({
+      cmd: [pickleCommand, 'export', runId, '--html', htmlPath],
+      cwd: project,
+      env: { ...Bun.env },
+    })
+    expect(html.stderr.toString()).toBe('')
+    expect(html.exitCode).toBe(0)
+    expect(await Bun.file(htmlPath).text()).toContain(
+      '<h2>Export a completed result</h2>',
+    )
+  })
+
   test('check validates extension imports without evaluating extension code', async () => {
     const projectName = 'side-effect-free-check'
     const projectPath = join(workspace, projectName)
@@ -1380,6 +1479,69 @@ export default {
     )
     expect(run.stderr.toString()).not.toContain('\n    at ')
     expect(run.stdout.toString()).not.toContain('Test results    ')
+    expect(await Bun.file(marker).exists()).toBe(false)
+  })
+
+  test('composes declarative Android and iOS profiles before allocating mobile resources', async () => {
+    const projectName = 'mobile-profile-capabilities'
+    const projectPath = join(workspace, projectName)
+    const marker = join(projectPath, 'server-started.txt')
+    const project = await createCheckProject(projectName, {
+      config: {
+        schemaVersion: 1,
+        specifications: 'features/**/*.feature',
+        executionTargetProfiles: {
+          android: {
+            adapter: 'mobile',
+            capabilities: ['android'],
+            mobile: {
+              executionTarget: 'android-emulator',
+              application: {
+                id: 'com.example.checkout',
+                binaryPath: '/apps/checkout.apk',
+              },
+            },
+          },
+          ios: {
+            adapter: 'mobile',
+            capabilities: ['ios'],
+            mobile: {
+              executionTarget: 'ios-simulator',
+              application: {
+                id: 'com.example.checkout',
+                binaryPath: '/apps/Checkout.app',
+              },
+            },
+          },
+        },
+        server: {
+          command: `bun -e "await Bun.write('${marker}', 'started')"`,
+          url: 'http://127.0.0.1:1',
+          startupTimeoutMs: 50,
+          pollIntervalMs: 10,
+        },
+      },
+      specification: {
+        path: 'features/location.feature',
+        source: `@pickle:id:speclocationaaaa @pickle:state:active @pickle:requires:geolocation
+Feature: Nearby stores
+  @pickle:id:scnlocationbbbb
+  Scenario: Show stores near the customer
+    Then nearby stores are listed`,
+      },
+    })
+
+    const run = Bun.spawnSync({
+      cmd: [pickleCommand, 'run'],
+      cwd: project,
+      env: { ...Bun.env },
+    })
+
+    expect(run.exitCode).toBe(2)
+    expect(run.stderr.toString()).toContain(
+      'Execution target profile "android" lacks required capabilities for Scenario "Show stores near the customer": geolocation',
+    )
+    expect(run.stderr.toString()).not.toContain('mobile worker')
     expect(await Bun.file(marker).exists()).toBe(false)
   })
 
