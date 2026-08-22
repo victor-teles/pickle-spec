@@ -22,6 +22,18 @@ export {
   webAdapterOptionsSchema,
 } from './src/web-adapter'
 export type {
+  RunWebPerformanceBenchmarkInput,
+  WebBenchmarkMode,
+  WebBenchmarkSample,
+  WebBenchmarkStatistics,
+  WebPerformanceBenchmarkResult,
+  WebPerformanceGate,
+} from './src/web-benchmark'
+export {
+  evaluateWebPerformanceGates,
+  runWebPerformanceBenchmark,
+} from './src/web-benchmark'
+export type {
   WebExecutionCachePayload,
   WebInstruction,
   WebLocator,
