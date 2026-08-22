@@ -2,6 +2,7 @@ import { afterEach, describe, expect, test } from 'bun:test'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { providerCredentialEnvironmentNames } from '@pickle-spec/runner'
 
 const temporaryDirectories: string[] = []
 const cliPath = join(import.meta.dir, 'mobile-benchmark-cli.ts')
@@ -36,18 +37,12 @@ function runCli(...args: string[]) {
 }
 
 describe('mobile benchmark executable', () => {
-  test('controlled driver rejects AWS, Azure, and OpenRouter credentials', async () => {
+  test('controlled driver rejects every provider credential', async () => {
     const controlledBenchmarkUrl = new URL(
       './mobile-benchmark-controlled-driver.ts',
       import.meta.url,
     ).href
-    const credentialNames = [
-      'AWS_SECRET_ACCESS_KEY',
-      'AZURE_OPENAI_API_KEY',
-      'OPENROUTER_API_KEY',
-    ] as const
-
-    for (const credentialName of credentialNames) {
+    for (const credentialName of providerCredentialEnvironmentNames) {
       const process = Bun.spawn(
         [
           Bun.which('bun')!,
@@ -70,12 +65,14 @@ describe('mobile benchmark executable', () => {
     }
   })
 
-  test('removes AWS, Azure, and OpenRouter credentials before starting the controlled driver', async () => {
-    const execution = await executeCli([], {
-      AWS_SECRET_ACCESS_KEY: 'must-not-reach-controlled-mobile',
-      AZURE_OPENAI_API_KEY: 'must-not-reach-controlled-mobile',
-      OPENROUTER_API_KEY: 'must-not-reach-controlled-mobile',
-    })
+  test('removes provider credentials before starting the controlled driver', async () => {
+    const environment = Object.fromEntries(
+      providerCredentialEnvironmentNames.map((name) => [
+        name,
+        'must-not-reach-controlled-mobile',
+      ]),
+    )
+    const execution = await executeCli([], environment)
 
     expect(execution.exitCode).toBe(0)
     expect(execution.stderr).toBe('')
@@ -123,12 +120,21 @@ describe('mobile benchmark executable', () => {
     })
   })
 
-  test('returns two for an invalid sample count without printing a report', async () => {
-    const execution = await runCli('--samples', '19')
+  test('rejects unknown, trailing, missing, fractional, and insufficient arguments without printing JSON', async () => {
+    const invalidArguments = [
+      ['--unknown'],
+      ['--samples', '20', 'trailing'],
+      ['--samples'],
+      ['--samples', '20.5'],
+      ['--samples', '19'],
+    ]
 
-    expect(execution.exitCode).toBe(2)
-    expect(execution.stdout).toBe('')
-    expect(execution.stderr).toContain('at least 20 paired samples')
+    for (const args of invalidArguments) {
+      const execution = await runCli(...args)
+      expect(execution.exitCode).toBe(2)
+      expect(execution.stdout).toBe('')
+      expect(execution.stderr).not.toBe('')
+    }
   })
 
   test('returns two instead of serializing a non-finite ratio', async () => {

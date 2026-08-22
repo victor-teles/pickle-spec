@@ -1,7 +1,11 @@
 import { mkdir, mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { openLocalExecutionCache, runScenario } from '@pickle-spec/runner'
+import {
+  assertNoProviderCredentials,
+  openLocalExecutionCache,
+  runScenario,
+} from '@pickle-spec/runner'
 import { parseSpecification } from '@pickle-spec/spec'
 import {
   createWebAdapter,
@@ -13,7 +17,6 @@ import {
   runWebPerformanceBenchmark,
   type WebPerformanceBenchmarkResult,
 } from './web-benchmark'
-import { assertNoWebBenchmarkProviderCredentials } from './web-benchmark-credentials'
 import {
   bindWebTemplate,
   type WebAssertionDraft,
@@ -180,7 +183,7 @@ Feature: Controlled web benchmark
 export async function runControlledWebPerformanceBenchmark(
   options: ControlledWebBenchmarkOptions = defaultOptions,
 ): Promise<WebPerformanceBenchmarkResult> {
-  assertNoWebBenchmarkProviderCredentials(process.env)
+  assertNoProviderCredentials(process.env, 'Controlled web benchmark')
   const workspace = await mkdtemp(join(tmpdir(), 'pickle-web-benchmark-'))
   const projectRoot = join(workspace, 'project')
   await mkdir(projectRoot)

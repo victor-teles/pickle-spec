@@ -2,14 +2,15 @@ import { createHash } from 'node:crypto'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { openLocalExecutionCache, runScenario } from '@pickle-spec/runner'
+import {
+  assertNoProviderCredentials,
+  openLocalExecutionCache,
+  type ProviderCredentialEnvironment,
+  runScenario,
+} from '@pickle-spec/runner'
 import { compileMobileScenario } from './mobile-ad-script'
 import { createMobileAdapter } from './mobile-adapter'
 import type { MobileBenchmarkMode } from './mobile-benchmark'
-import {
-  assertNoMobileBenchmarkProviderCredentials,
-  type MobileBenchmarkEnvironment,
-} from './mobile-benchmark-credentials'
 import type { MobileWorkerClient } from './worker-client'
 import type { MobileWorkerRequest } from './worker-protocol'
 
@@ -66,9 +67,9 @@ const scenario = {
 }
 
 export async function createControlledMobileBenchmarkDriver(
-  environment: MobileBenchmarkEnvironment = process.env,
+  environment: ProviderCredentialEnvironment = process.env,
 ): Promise<ControlledMobileBenchmarkDriver> {
-  assertNoMobileBenchmarkProviderCredentials(environment)
+  assertNoProviderCredentials(environment, 'Controlled mobile benchmark')
   const projectRoot = await mkdtemp(join(tmpdir(), 'pickle-mobile-benchmark-'))
   const cacheRoot = await mkdtemp(
     join(tmpdir(), 'pickle-mobile-benchmark-cache-'),

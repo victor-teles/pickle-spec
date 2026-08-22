@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import {
   evaluateMobilePerformanceGates,
   runMobilePerformanceBenchmark,
-} from '../index'
+} from './mobile-benchmark'
 import { createControlledMobileBenchmarkDriver } from './mobile-benchmark-controlled-driver'
 
 describe('runMobilePerformanceBenchmark', () => {

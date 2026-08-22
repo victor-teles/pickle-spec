@@ -1,6 +1,6 @@
+import { removeProviderCredentials } from '@pickle-spec/runner'
 import { z } from 'zod'
 import type { WebPerformanceBenchmarkResult } from './web-benchmark'
-import { removeWebBenchmarkProviderCredentials } from './web-benchmark-credentials'
 import {
   type ControlledWebBenchmarkOptions,
   runControlledWebPerformanceBenchmark,
@@ -32,7 +32,7 @@ export async function webBenchmarkMain(
   argv: readonly string[] = process.argv.slice(2),
 ): Promise<number> {
   try {
-    removeWebBenchmarkProviderCredentials(process.env)
+    removeProviderCredentials(process.env)
     const result = await runControlledWebPerformanceBenchmark(
       benchmarkOptions(argv),
     )

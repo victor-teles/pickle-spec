@@ -81,6 +81,12 @@ export {
   formatJunit,
   formatNdjson,
 } from './src/outputs'
+export type { ProviderCredentialEnvironment } from './src/provider-credentials'
+export {
+  assertNoProviderCredentials,
+  providerCredentialEnvironmentNames,
+  removeProviderCredentials,
+} from './src/provider-credentials'
 export { publicRunEvent, publicTestResult } from './src/public-results'
 export type {
   EvaluateReplayPerformanceBenchmarkInput,

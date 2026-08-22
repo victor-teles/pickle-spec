@@ -37,10 +37,12 @@ No warm-up sample contributes to those values.
 | Web | Replay <= 50% of Adaptive | Replay <= 65% of Adaptive |
 | Mobile | Replay <= 75% of Adaptive | Replay <= 110% of Adaptive |
 
-The mobile p95 tolerance allows emulator and worker startup jitter. Its p50
-still requires a material orchestration improvement. The controlled mobile
-fixture executes the same deterministic `.ad` representation in both paths, so
-the gate does not manufacture model latency to make Replay look faster.
+The mobile CI gate uses a controlled in-process driver. It compiles and compares
+the deterministic `.ad` representation without launching an emulator, a worker
+process, or Agent Device. Its p95 tolerance accounts for measured tail variance
+in SQLite orchestration, the mobile protocol path, and simulated runtime work.
+Its p50 still requires a material orchestration improvement, and the gate does
+not manufacture model latency to make Replay look faster.
 
 The gate rejects fewer than 20 measured pairs. A value exactly on a budget is a
 pass; a value above it is a failure.
@@ -48,7 +50,7 @@ pass; a value above it is a failure.
 ## Interpreting results
 
 p50 describes the typical warm execution. p95 exposes tail latency such as
-process scheduling, SQLite contention, and browser or emulator coordination.
+process scheduling, SQLite contention, and adapter/runtime coordination.
 Inspect the raw paired samples before treating a single percentile movement as
 a regression.
 

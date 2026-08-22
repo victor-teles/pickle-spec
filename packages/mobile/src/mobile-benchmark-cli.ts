@@ -1,11 +1,15 @@
 import { resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import {
+  minimumReplayBenchmarkSamplePairs,
+  removeProviderCredentials,
+} from '@pickle-spec/runner'
+import { z } from 'zod'
+import {
   type MobileBenchmarkMode,
   runMobilePerformanceBenchmark,
 } from './mobile-benchmark'
 import { createControlledMobileBenchmarkDriver } from './mobile-benchmark-controlled-driver'
-import { removeMobileBenchmarkProviderCredentials } from './mobile-benchmark-credentials'
 
 interface MobileBenchmarkDriverModule {
   measureMobileBenchmark?: (
@@ -18,26 +22,45 @@ interface MobileBenchmarkCliOptions {
   driverPath?: string
 }
 
+const samplePairsSchema = z.coerce
+  .number()
+  .int()
+  .min(minimumReplayBenchmarkSamplePairs)
+const driverPathSchema = z.string().min(1)
+const benchmarkArgumentsSchema = z.union([
+  z.tuple([]).transform(() => ({})),
+  z
+    .tuple([z.literal('--samples'), samplePairsSchema])
+    .transform(([, samplePairs]) => ({ samplePairs })),
+  z
+    .tuple([z.literal('--driver'), driverPathSchema])
+    .transform(([, driverPath]) => ({ driverPath })),
+  z
+    .tuple([
+      z.literal('--samples'),
+      samplePairsSchema,
+      z.literal('--driver'),
+      driverPathSchema,
+    ])
+    .transform(([, samplePairs, , driverPath]) => ({
+      samplePairs,
+      driverPath,
+    })),
+  z
+    .tuple([
+      z.literal('--driver'),
+      driverPathSchema,
+      z.literal('--samples'),
+      samplePairsSchema,
+    ])
+    .transform(([, driverPath, , samplePairs]) => ({
+      samplePairs,
+      driverPath,
+    })),
+])
+
 function parseArguments(args: readonly string[]): MobileBenchmarkCliOptions {
-  const options: MobileBenchmarkCliOptions = {}
-  for (let index = 0; index < args.length; index++) {
-    const argument = args[index]
-    const value = args[index + 1]
-    if (argument === '--samples' && value) {
-      options.samplePairs = Number(value)
-      index++
-      continue
-    }
-    if (argument === '--driver' && value) {
-      options.driverPath = value
-      index++
-      continue
-    }
-    throw new Error(
-      `Unknown or incomplete mobile benchmark argument: ${argument}`,
-    )
-  }
-  return options
+  return benchmarkArgumentsSchema.parse(args)
 }
 
 async function loadModuleDriver(
@@ -63,7 +86,7 @@ export async function runMobileBenchmarkCli(
 ): Promise<number> {
   let dispose: (() => Promise<void>) | undefined
   try {
-    removeMobileBenchmarkProviderCredentials(process.env)
+    removeProviderCredentials(process.env)
     const options = parseArguments(args)
     let measure: NonNullable<
       MobileBenchmarkDriverModule['measureMobileBenchmark']

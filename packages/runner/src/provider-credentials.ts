@@ -1,4 +1,4 @@
-export const webBenchmarkProviderCredentialEnvironmentNames = [
+export const providerCredentialEnvironmentNames = [
   'AI_GATEWAY_API_KEY',
   'ANTHROPIC_API_KEY',
   'AWS_ACCESS_KEY_ID',
@@ -23,25 +23,26 @@ export const webBenchmarkProviderCredentialEnvironmentNames = [
   'XAI_API_KEY',
 ] as const
 
-type WebBenchmarkEnvironment = Record<string, string | undefined>
+export type ProviderCredentialEnvironment = Record<string, string | undefined>
 
-export function assertNoWebBenchmarkProviderCredentials(
-  environment: WebBenchmarkEnvironment,
+export function assertNoProviderCredentials(
+  environment: ProviderCredentialEnvironment,
+  consumer: string,
 ): void {
-  const exposedCredential = webBenchmarkProviderCredentialEnvironmentNames.find(
+  const exposedCredential = providerCredentialEnvironmentNames.find(
     (name) => environment[name] !== undefined,
   )
   if (exposedCredential) {
     throw new Error(
-      `Controlled web benchmark must not receive provider credentials: ${exposedCredential}`,
+      `${consumer} must not receive provider credentials: ${exposedCredential}`,
     )
   }
 }
 
-export function removeWebBenchmarkProviderCredentials(
-  environment: WebBenchmarkEnvironment,
+export function removeProviderCredentials(
+  environment: ProviderCredentialEnvironment,
 ): void {
-  for (const name of webBenchmarkProviderCredentialEnvironmentNames) {
+  for (const name of providerCredentialEnvironmentNames) {
     delete environment[name]
   }
 }

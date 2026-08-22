@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import {
   evaluateWebPerformanceGates,
   runWebPerformanceBenchmark,
-} from '../index'
+} from './web-benchmark'
 
 describe('runWebPerformanceBenchmark', () => {
   test('measures and discards three warmup pairs before retaining twenty pairs', async () => {
