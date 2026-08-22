@@ -42,6 +42,14 @@ type MonacoEditorHost = {
   }
 }
 
+async function waitForFile(path: string): Promise<void> {
+  const deadline = Date.now() + 20_000
+  while (!(await Bun.file(path).exists())) {
+    if (Date.now() >= deadline) throw new Error(`Timed out waiting for ${path}`)
+    await Bun.sleep(25)
+  }
+}
+
 describe('Studio browser seam', () => {
   const fixture = new StudioBrowserFixture()
   const createStudioProject = fixture.createProject.bind(fixture)
@@ -170,6 +178,132 @@ Feature: Search
     }
   }, 30_000)
 
+  test('Studio refreshes adaptively and atomically publishes a replacement cache revision', async () => {
+    const project = await createStudioProject('refresh-cache-lifecycle')
+    const cacheRoot = join(fixture.workspace, 'refresh-cache-root')
+    const blockRefresh = join(project, 'block-refresh')
+    const refreshStarted = join(project, 'refresh-started')
+    const releaseRefresh = join(project, 'release-refresh')
+    const payloadVersion = join(project, 'payload-version')
+    const configPath = join(project, 'pickle.config.jsonc')
+    const config = await Bun.file(configPath).json()
+    await Bun.write(
+      configPath,
+      JSON.stringify({
+        ...config,
+        applicationRevision: 'app-1',
+        executionTargetProfiles: {
+          deterministic: { adapter: 'custom' },
+        },
+      }),
+    )
+    await Bun.write(payloadVersion, 'v1')
+    await Bun.write(
+      join(project, 'pickle.extensions.ts'),
+      `
+export default {
+  adapter: {
+    executionCache: {
+      adapterKind: 'studio-refresh-test',
+      adapterCacheSchemaVersion: '1',
+      targetConfigurationFingerprint: 'target-1',
+      parse(payload) {
+        if (!payload || typeof payload !== 'object') return undefined
+        if (!Array.isArray(payload.operations)) return undefined
+        return payload
+      },
+    },
+    async openSession(input) {
+      return {
+        async executeStep(_step, signal) {
+          if (
+            input.mode === 'adaptive' &&
+            await Bun.file(${JSON.stringify(blockRefresh)}).exists()
+          ) {
+            await Bun.write(${JSON.stringify(refreshStarted)}, 'started')
+            while (!(await Bun.file(${JSON.stringify(releaseRefresh)}).exists())) {
+              if (signal?.aborted) {
+                throw new DOMException('Scenario cancelled', 'AbortError')
+              }
+              await Bun.sleep(10)
+            }
+          }
+          return { state: 'passed', resolvedActions: [] }
+        },
+        async complete() {
+          return {
+            inferenceCount: input.mode === 'adaptive' ? 1 : 0,
+            cacheCandidate: {
+              cacheable: true,
+              adapterPayload: {
+                operations: [await Bun.file(${JSON.stringify(payloadVersion)}).text()],
+              },
+              requiredVariables: [],
+            },
+          }
+        },
+        async close() {},
+      }
+    },
+  },
+}
+`,
+    )
+    const cache = await openLocalExecutionCache({
+      projectRoot: project,
+      cacheRoot,
+    })
+    const { child, url } = await startStudio(project, {
+      PICKLE_CACHE_ROOT: cacheRoot,
+    })
+    const page = await browser.newPage()
+    try {
+      await page.goto(url)
+      await page.getByRole('button', { name: 'Run Specification' }).click()
+      await page.getByRole('button', { name: 'Run Specification' }).waitFor({
+        timeout: 20_000,
+      })
+      const before = (await cache.inspect())[0]
+      expect(before).toBeDefined()
+      if (!before) throw new Error('Initial cache revision was not published')
+      const beforeSource = await cache.read(before.key)
+      expect(beforeSource).toContain('v1')
+
+      await Bun.write(payloadVersion, 'v2')
+      await Bun.write(blockRefresh, 'block')
+      await page.getByRole('button', { name: 'Refresh cache' }).click()
+      await waitForFile(refreshStarted)
+      const during = (await cache.inspect()).find(
+        (entry) => entry.payloadDigest === before.payloadDigest,
+      )
+      expect(during?.sourceRunId).toBe(before.sourceRunId)
+      expect(await cache.read(before.key)).toBe(beforeSource)
+
+      await Bun.write(releaseRefresh, 'release')
+      await page.getByRole('button', { name: 'Run Specification' }).waitFor({
+        timeout: 20_000,
+      })
+      const after = (await cache.inspect()).find(
+        (entry) => entry.key.scenarioId === before.key.scenarioId,
+      )
+      expect(after?.sourceRunId).not.toBe(before.sourceRunId)
+      expect(await cache.read(before.key)).toContain('v2')
+
+      await page.getByRole('button', { name: 'History' }).click()
+      const latestRun = page
+        .getByRole('table', { name: 'Test run history' })
+        .getByRole('row')
+        .nth(1)
+      expect(await latestRun.textContent()).toContain('adaptive')
+      expect(await latestRun.textContent()).toContain('refresh')
+      expect(await latestRun.textContent()).toContain('3 inferences')
+    } finally {
+      await page.close()
+      child.kill()
+      await child.exited
+    }
+  }, 60_000)
+
   test('Settings inspects metadata and confirms clearing the local Execution cache', async () => {
     const project = await createStudioProject('execution-cache-settings')
     const cacheRoot = join(fixture.workspace, 'execution-cache-root')
@@ -232,11 +366,26 @@ Feature: Search
       expect(await page.textContent('body')).not.toContain('runtime_password')
       expect(await page.textContent('body')).not.toContain('adapterPayload')
 
+      await page.route('**/api/execution-cache', async (route) => {
+        if (route.request().method() === 'DELETE') {
+          await route.fulfill({ status: 500, body: 'Cache clear failed' })
+          return
+        }
+        await route.continue()
+      })
       await page.getByRole('button', { name: 'Clear Execution cache' }).click()
       const confirmation = page.getByRole('dialog', {
         name: 'Clear Execution cache?',
       })
       await confirmation.waitFor()
+      await confirmation.getByRole('button', { name: 'Clear cache' }).click()
+      await confirmation
+        .getByRole('alert')
+        .filter({ hasText: 'Cache clear failed' })
+        .waitFor()
+      expect(await confirmation.isVisible()).toBe(true)
+
+      await page.unroute('**/api/execution-cache')
       await confirmation.getByRole('button', { name: 'Clear cache' }).click()
       await page
         .getByRole('status')

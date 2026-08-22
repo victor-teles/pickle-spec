@@ -1,4 +1,3 @@
-import type { ExecutionCacheEntryMetadata } from '@pickle-spec/runner'
 import { useCallback, useEffect, useState } from 'react'
 import { Badge } from './components/ui/badge'
 import { Button } from './components/ui/button'
@@ -19,12 +18,7 @@ import {
   TableHeader,
   TableRow,
 } from './components/ui/table'
-
-type ExecutionCacheInspection = {
-  projectKey: string
-  maxBytes: number
-  entries: readonly ExecutionCacheEntryMetadata[]
-}
+import type { StudioExecutionCacheInspection } from './server'
 
 type ExecutionCacheSettingsProps = {
   api: <R>(path: string, init?: RequestInit) => Promise<R>
@@ -46,8 +40,9 @@ function errorMessage(reason: unknown): string {
 }
 
 export function ExecutionCacheSettings(props: ExecutionCacheSettingsProps) {
-  const [inspection, setInspection] = useState<ExecutionCacheInspection>()
+  const [inspection, setInspection] = useState<StudioExecutionCacheInspection>()
   const [error, setError] = useState<string>()
+  const [clearError, setClearError] = useState<string>()
   const [loading, setLoading] = useState(true)
   const [clearing, setClearing] = useState(false)
   const [confirmOpen, setConfirmOpen] = useState(false)
@@ -58,7 +53,7 @@ export function ExecutionCacheSettings(props: ExecutionCacheSettingsProps) {
     setError(undefined)
     try {
       setInspection(
-        await props.api<ExecutionCacheInspection>('/api/execution-cache'),
+        await props.api<StudioExecutionCacheInspection>('/api/execution-cache'),
       )
     } catch (reason) {
       setError(errorMessage(reason))
@@ -73,7 +68,7 @@ export function ExecutionCacheSettings(props: ExecutionCacheSettingsProps) {
 
   async function clear() {
     setClearing(true)
-    setError(undefined)
+    setClearError(undefined)
     setNotice(undefined)
     try {
       const result = await props.api<{ clearedEntries: number }>(
@@ -86,7 +81,7 @@ export function ExecutionCacheSettings(props: ExecutionCacheSettingsProps) {
       )
       await load()
     } catch (reason) {
-      setError(errorMessage(reason))
+      setClearError(errorMessage(reason))
     } finally {
       setClearing(false)
     }
@@ -112,7 +107,10 @@ export function ExecutionCacheSettings(props: ExecutionCacheSettingsProps) {
           type="button"
           variant="destructive"
           disabled={loading || !inspection?.entries.length}
-          onClick={() => setConfirmOpen(true)}
+          onClick={() => {
+            setClearError(undefined)
+            setConfirmOpen(true)
+          }}
         >
           Clear Execution cache
         </Button>
@@ -201,6 +199,11 @@ export function ExecutionCacheSettings(props: ExecutionCacheSettingsProps) {
               next run evaluates scenarios adaptively again.
             </DialogDescription>
           </DialogHeader>
+          {clearError ? (
+            <p className="text-sm text-destructive" role="alert">
+              {clearError}
+            </p>
+          ) : null}
           <DialogFooter>
             <Button
               type="button"
