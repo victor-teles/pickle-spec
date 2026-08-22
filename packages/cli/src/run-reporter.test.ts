@@ -475,6 +475,40 @@ test('counts Test result states as mutually exclusive summary outcomes', () => {
   )
 })
 
+test('labels an interrupted non-interactive report as a partial summary', () => {
+  const lines: string[] = []
+  const reporter = createRunReporter('default', {
+    write: (line) => lines.push(line),
+    projectRoot: '/workspace/project',
+    version: '1.0.2',
+    color: false,
+    columns: 120,
+    now: () => new Date(2026, 7, 20, 14, 32, 7),
+  })
+  const run = passedRun({
+    specificationUri: 'features/checkout.feature',
+    specificationName: 'Checkout',
+    scenarioId: 'scenario-cancelled',
+    scenarioName: 'Interrupted checkout',
+    profileId: 'web',
+    durationMs: 10,
+  })
+  run.result.state = 'cancelled'
+
+  reporter.start()
+  reporter.finish([run], 10, {
+    exitCode: 130,
+    interrupted: true,
+    rejectedAdaptedResults: 0,
+  })
+
+  expect(lines).toContain(' ! Run interrupted')
+  expect(lines).toContain(
+    '   Partial summary: every Test result materialized before interruption is included.',
+  )
+  expect(lines).toContain(' Test results    1 cancelled (1)')
+})
+
 test('enables color only for a TTY when NO_COLOR is absent', () => {
   expect(terminalReporterCapabilities(true, 100, undefined)).toEqual({
     color: true,

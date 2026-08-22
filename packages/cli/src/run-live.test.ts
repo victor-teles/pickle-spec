@@ -10,6 +10,37 @@ type PackageManifest = {
   bin: { pickle: string }
 }
 
+type InteractiveRunOptions = {
+  cmd: string[]
+  cwd: string
+  env: Record<string, string | undefined>
+}
+
+function spawnInteractiveRun(options: InteractiveRunOptions) {
+  const output: string[] = []
+  const decoder = new TextDecoder()
+  const child = Bun.spawn({
+    ...options,
+    terminal: {
+      cols: 80,
+      rows: 24,
+      data(_terminal, data) {
+        output.push(decoder.decode(data, { stream: true }))
+      },
+    },
+  })
+  return {
+    child,
+    output,
+    async finish() {
+      const exitCode = await child.exited
+      output.push(decoder.decode())
+      child.terminal?.close()
+      return { exitCode, output: output.join('') }
+    },
+  }
+}
+
 async function waitForFile(path: string): Promise<void> {
   const deadline = Date.now() + 5_000
   while (!(await Bun.file(path).exists())) {
@@ -100,9 +131,7 @@ Feature: Streaming Specification
     Then second`,
   )
 
-  const output: string[] = []
-  const decoder = new TextDecoder()
-  const child = Bun.spawn({
+  const interactiveRun = spawnInteractiveRun({
     cmd: [pickleCommand, 'run'],
     cwd: project,
     env: {
@@ -111,14 +140,8 @@ Feature: Streaming Specification
       PICKLE_TEST_GATE_DIRECTORY: gates,
       TERM: 'xterm-256color',
     },
-    terminal: {
-      cols: 80,
-      rows: 24,
-      data(_terminal, data) {
-        output.push(decoder.decode(data, { stream: true }))
-      },
-    },
   })
+  const { child, output } = interactiveRun
 
   await Promise.race([
     Promise.all([
@@ -147,14 +170,323 @@ Feature: Streaming Specification
   expect(liveOutput).not.toContain('First result appears last [')
 
   await Bun.write(join(gates, 'first.release'), '')
-  const exitCode = await child.exited
-  output.push(decoder.decode())
-  child.terminal?.close()
-  const finalOutput = output.join('')
+  const { exitCode, output: finalOutput } = await interactiveRun.finish()
 
   expect(exitCode).toBe(0)
   expect(finalOutput).toContain('First result appears last [')
   expect(finalOutput.split(' Specifications  1')).toHaveLength(2)
   expect(finalOutput.split(' Test results    2 passed (2)')).toHaveLength(2)
   expect(finalOutput).not.toContain('\u001b[32m')
+}, 15_000)
+
+test('finishes an interrupted interactive run with partial persisted and exported evidence', async () => {
+  const project = join(workspace, 'interrupted-run')
+  const gates = join(project, 'gates')
+  const jsonPath = join(project, 'interrupted.json')
+  const ndjsonPath = join(project, 'interrupted.ndjson')
+  await mkdir(join(project, 'features'), { recursive: true })
+  await mkdir(gates, { recursive: true })
+  await Bun.write(
+    join(project, 'pickle.config.jsonc'),
+    JSON.stringify({
+      schemaVersion: 1,
+      specifications: 'features/**/*.feature',
+      executionTargetProfile: { id: 'deterministic' },
+      concurrency: 2,
+    }),
+  )
+  await Bun.write(
+    join(project, 'pickle.extensions.ts'),
+    `
+const gateDirectory = process.env.PICKLE_TEST_GATE_DIRECTORY
+
+export default {
+  adapter: {
+    async openSession() {
+      return {
+        async executeStep(step, signal) {
+          await Bun.write(\`\${gateDirectory}/\${step.text}.started\`, '')
+          while (!(await Bun.file(\`\${gateDirectory}/\${step.text}.release\`).exists())) {
+            if (signal?.aborted) throw new DOMException('Scenario cancelled', 'AbortError')
+            await Bun.sleep(5)
+          }
+          return { state: 'passed', resolvedActions: [] }
+        },
+        async close() {},
+      }
+    },
+  },
+}
+`,
+  )
+  await Bun.write(
+    join(project, 'features', 'interrupt.feature'),
+    `@pickle:id:specinterruptaaa @pickle:state:active
+Feature: Interrupt safely
+  @pickle:id:scncompletedaaaa
+  Scenario: Completed before interruption
+    Then completed
+
+  @pickle:id:scncancelledaaaa
+  Scenario: Cancelled by interruption
+    Then cancelled`,
+  )
+
+  const interactiveRun = spawnInteractiveRun({
+    cmd: [pickleCommand, 'run', '--json', jsonPath, '--ndjson', ndjsonPath],
+    cwd: project,
+    env: {
+      ...Bun.env,
+      NO_COLOR: '1',
+      PICKLE_TEST_GATE_DIRECTORY: gates,
+      TERM: 'xterm-256color',
+    },
+  })
+  const { child, output } = interactiveRun
+
+  await Promise.all([
+    waitForFile(join(gates, 'completed.started')),
+    waitForFile(join(gates, 'cancelled.started')),
+  ])
+  await Bun.write(join(gates, 'completed.release'), '')
+  await waitForOutput(output, 'Completed before interruption [')
+  child.kill('SIGINT')
+
+  const { exitCode, output: finalOutput } = await interactiveRun.finish()
+
+  expect(exitCode).toBe(130)
+  expect(finalOutput).toContain('Run interrupted')
+  expect(finalOutput).toContain('Partial summary')
+  expect(finalOutput).toContain('1 passed | 1 cancelled (2)')
+
+  const manifestPaths = [
+    ...new Bun.Glob('*/manifest.json').scanSync({
+      cwd: join(project, '.pickle', 'runs'),
+    }),
+  ]
+  expect(manifestPaths).toHaveLength(1)
+  const persistedManifest = await Bun.file(
+    join(project, '.pickle', 'runs', manifestPaths[0]!),
+  ).json()
+  const exportedManifest = await Bun.file(jsonPath).json()
+  expect(exportedManifest).toEqual(persistedManifest)
+  expect(
+    persistedManifest.results.map((result: { state: string }) => result.state),
+  ).toEqual(['passed', 'cancelled'])
+  expect(persistedManifest.finishedAt).toBeString()
+
+  const exportedEvents = (await Bun.file(ndjsonPath).text())
+    .trim()
+    .split('\n')
+    .map((line) => JSON.parse(line))
+  expect(
+    exportedEvents
+      .filter((event) => event.type === 'scenario-finished')
+      .map((event) => event.result.state),
+  ).toEqual(['passed', 'cancelled'])
+}, 15_000)
+
+test('restores an interactive terminal before reporting a zero-selection command error', async () => {
+  const project = join(workspace, 'zero-selection')
+  await mkdir(join(project, 'features'), { recursive: true })
+  await Bun.write(
+    join(project, 'pickle.config.jsonc'),
+    JSON.stringify({
+      schemaVersion: 1,
+      specifications: 'features/**/*.feature',
+      executionTargetProfile: { id: 'deterministic' },
+    }),
+  )
+  await Bun.write(
+    join(project, 'pickle.extensions.ts'),
+    `export default {
+  adapter: {
+    async openSession() { throw new Error('must not start') },
+  },
+}`,
+  )
+  await Bun.write(
+    join(project, 'features', 'selection.feature'),
+    `@pickle:id:specselectionaaa @pickle:state:active
+Feature: Selection
+  @pickle:id:scnselectionaaaa
+  Scenario: Existing Scenario
+    Then validation succeeds`,
+  )
+
+  const interactiveRun = spawnInteractiveRun({
+    cmd: [pickleCommand, 'run', '--scenario', 'Missing Scenario'],
+    cwd: project,
+    env: { ...Bun.env, NO_COLOR: '1', TERM: 'xterm-256color' },
+  })
+
+  const { exitCode, output: finalOutput } = await interactiveRun.finish()
+  const restoredTerminal = '\u001b[0m\u001b[?25h'
+
+  expect(exitCode).toBe(2)
+  expect(finalOutput).toContain(
+    'ERROR No Scenarios match the current selection',
+  )
+  expect(finalOutput).not.toContain('Run failed')
+  expect(finalOutput).not.toContain('Specifications  ')
+  expect(finalOutput).not.toContain('Test results    ')
+  expect(finalOutput.indexOf(restoredTerminal)).toBeLessThan(
+    finalOutput.indexOf('ERROR '),
+  )
+  expect(finalOutput.split(restoredTerminal)).toHaveLength(2)
+  expect(finalOutput.match(/ERROR /g)).toHaveLength(1)
+}, 15_000)
+
+test('preserves materialized evidence and restores the terminal when rendering throws', async () => {
+  const project = join(workspace, 'reporter-failure')
+  const jsonPath = join(project, 'reporter-failure.json')
+  const ndjsonPath = join(project, 'reporter-failure.ndjson')
+  await mkdir(join(project, 'features'), { recursive: true })
+  await Bun.write(
+    join(project, 'pickle.config.jsonc'),
+    JSON.stringify({
+      schemaVersion: 1,
+      specifications: 'features/**/*.feature',
+      executionTargetProfile: { id: 'deterministic' },
+      concurrency: 2,
+    }),
+  )
+  await Bun.write(
+    join(project, 'pickle.extensions.ts'),
+    `Bun.stringWidth = () => { throw new Error('Reporter rendering failed') }
+
+export default {
+  adapter: {
+    async openSession() {
+      return {
+        async executeStep() {
+          return { state: 'passed', resolvedActions: [] }
+        },
+        async close() {},
+      }
+    },
+  },
+}`,
+  )
+  await Bun.write(
+    join(project, 'features', 'reporter.feature'),
+    `@pickle:id:specreporteraaaaa @pickle:state:active
+Feature: Reporter failure
+  @pickle:id:scnreporteraaaaaa
+  Scenario: Preserve completed evidence
+    Then rendering fails after completion
+
+  @pickle:id:scnreporterbbbbbb
+  Scenario: Preserve concurrent evidence
+    Then concurrent rendering also completes`,
+  )
+
+  const interactiveRun = spawnInteractiveRun({
+    cmd: [pickleCommand, 'run', '--json', jsonPath, '--ndjson', ndjsonPath],
+    cwd: project,
+    env: { ...Bun.env, NO_COLOR: '1', TERM: 'xterm-256color' },
+  })
+
+  const { exitCode, output: finalOutput } = await interactiveRun.finish()
+  const restoredTerminal = '\u001b[0m\u001b[?25h'
+
+  expect(exitCode).toBe(2)
+  expect(finalOutput).toContain('ERROR Reporter rendering failed')
+  expect(finalOutput.indexOf(restoredTerminal)).toBeLessThan(
+    finalOutput.indexOf('ERROR '),
+  )
+  expect(finalOutput.split(restoredTerminal)).toHaveLength(2)
+  expect(finalOutput.match(/ERROR /g)).toHaveLength(1)
+  expect(finalOutput).not.toContain('Test results    ')
+
+  const exportedManifest = await Bun.file(jsonPath).json()
+  expect(
+    exportedManifest.results.map((result: { state: string }) => result.state),
+  ).toEqual(['passed', 'passed'])
+  const exportedEvents = (await Bun.file(ndjsonPath).text())
+    .trim()
+    .split('\n')
+    .map((line) => JSON.parse(line))
+  expect(
+    exportedEvents
+      .filter((event) => event.type === 'scenario-finished')
+      .map((event) => event.result.state),
+  ).toEqual(['passed', 'passed'])
+}, 15_000)
+
+test('interrupts application server startup and exits with the cancellation code', async () => {
+  const project = join(workspace, 'interrupt-server-startup')
+  const marker = join(project, 'server-started')
+  const jsonPath = join(project, 'startup-interrupted.json')
+  const junitPath = join(project, 'startup-interrupted.xml')
+  const ndjsonPath = join(project, 'startup-interrupted.ndjson')
+  await mkdir(join(project, 'features'), { recursive: true })
+  await Bun.write(
+    join(project, 'pickle.config.jsonc'),
+    JSON.stringify({
+      schemaVersion: 1,
+      specifications: 'features/**/*.feature',
+      executionTargetProfile: { id: 'deterministic' },
+      server: {
+        command: `bun -e "await Bun.write('${marker}', 'started'); setInterval(() => {}, 1000)"`,
+        url: 'http://127.0.0.1:1',
+        startupTimeoutMs: 10_000,
+        pollIntervalMs: 5_000,
+      },
+    }),
+  )
+  await Bun.write(
+    join(project, 'pickle.extensions.ts'),
+    `export default {
+  adapter: {
+    async openSession() { throw new Error('must not start') },
+  },
+}`,
+  )
+  await Bun.write(
+    join(project, 'features', 'startup.feature'),
+    `@pickle:id:specstartupaaaaa @pickle:state:active
+Feature: Startup interruption
+  @pickle:id:scnstartupaaaaaa
+  Scenario: Stop before execution
+    Then execution never starts`,
+  )
+
+  const interactiveRun = spawnInteractiveRun({
+    cmd: [
+      pickleCommand,
+      'run',
+      '--json',
+      jsonPath,
+      '--junit',
+      junitPath,
+      '--ndjson',
+      ndjsonPath,
+    ],
+    cwd: project,
+    env: { ...Bun.env, NO_COLOR: '1', TERM: 'xterm-256color' },
+  })
+  const { child } = interactiveRun
+
+  await waitForFile(marker)
+  const interruptedAt = Date.now()
+  child.kill('SIGINT')
+  const { exitCode, output: finalOutput } = await interactiveRun.finish()
+
+  expect(exitCode).toBe(130)
+  expect(Date.now() - interruptedAt).toBeLessThan(1_000)
+  expect(finalOutput).toContain('Run interrupted')
+  expect(finalOutput).toContain('Partial summary')
+  expect(finalOutput).not.toContain('ERROR Server failed to start')
+  expect(finalOutput.indexOf('\u001b[0m\u001b[?25h')).toBeGreaterThan(-1)
+
+  const exportedManifest = await Bun.file(jsonPath).json()
+  expect(exportedManifest.results).toEqual([])
+  expect(exportedManifest.finishedAt).toBeString()
+  expect(await Bun.file(junitPath).text()).toContain('tests="0"')
+  const exportedEvents = (await Bun.file(ndjsonPath).text())
+    .trim()
+    .split('\n')
+    .map((line) => JSON.parse(line))
+  expect(exportedEvents.map((event) => event.type)).toEqual(['run-started'])
 }, 15_000)

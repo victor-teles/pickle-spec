@@ -13,6 +13,11 @@ export interface ServerRuntime {
   spawn: typeof Bun.spawn
 }
 
+export interface StartServerOptions {
+  runtime?: ServerRuntime
+  signal?: AbortSignal
+}
+
 const runtime: ServerRuntime = { fetch, sleep: Bun.sleep, spawn: Bun.spawn }
 
 function commandForShell(command: string): string[] {
@@ -33,11 +38,14 @@ async function isHealthy(
   url: string,
   deadline: number,
   serverRuntime: ServerRuntime,
+  signal?: AbortSignal,
 ): Promise<boolean> {
   const remaining = deadline - Date.now()
   if (remaining <= 0) return false
   const controller = new AbortController()
+  const onAbort = () => controller.abort()
   const timeout = setTimeout(() => controller.abort(), remaining)
+  signal?.addEventListener('abort', onAbort, { once: true })
   try {
     const response = await serverRuntime.fetch(
       config.readinessPath ? new URL(config.readinessPath, url) : url,
@@ -50,25 +58,64 @@ async function isHealthy(
     return false
   } finally {
     clearTimeout(timeout)
+    signal?.removeEventListener('abort', onAbort)
   }
+}
+
+function cancellationError(): DOMException {
+  return new DOMException('Server startup cancelled', 'AbortError')
+}
+
+function throwIfCancelled(signal?: AbortSignal): void {
+  if (signal?.aborted) throw cancellationError()
+}
+
+async function waitForPoll(
+  durationMs: number,
+  serverRuntime: ServerRuntime,
+  signal?: AbortSignal,
+): Promise<void> {
+  if (!signal) {
+    await serverRuntime.sleep(durationMs)
+    return
+  }
+  throwIfCancelled(signal)
+  await new Promise<void>((resolve, reject) => {
+    const onAbort = () => {
+      clearTimeout(timeout)
+      signal.removeEventListener('abort', onAbort)
+      reject(cancellationError())
+    }
+    const timeout = setTimeout(() => {
+      signal.removeEventListener('abort', onAbort)
+      resolve()
+    }, durationMs)
+    signal.addEventListener('abort', onAbort, { once: true })
+    if (signal.aborted) onAbort()
+  })
 }
 
 export async function startServer(
   config: ServerConfig,
-  serverRuntime: ServerRuntime = runtime,
+  options: StartServerOptions = {},
 ): Promise<ManagedServer | undefined> {
+  const serverRuntime = options.runtime ?? runtime
+  const signal = options.signal
   if (!config.command) return undefined
+  throwIfCancelled(signal)
   const url = serverUrl(config)
   const timeoutMs = config.startupTimeoutMs ?? 30_000
   const deadline = Date.now() + timeoutMs
 
   if (
     config.reuseExisting &&
-    (await isHealthy(config, url, deadline, serverRuntime))
+    (await isHealthy(config, url, deadline, serverRuntime, signal))
   ) {
+    throwIfCancelled(signal)
     return { mode: 'reused', url, stop() {} }
   }
 
+  throwIfCancelled(signal)
   const child: Subprocess = serverRuntime.spawn(
     commandForShell(config.command),
     {
@@ -77,17 +124,27 @@ export async function startServer(
       stderr: 'pipe',
     },
   )
-  while (Date.now() < deadline) {
-    if (await isHealthy(config, url, deadline, serverRuntime)) {
-      return { mode: 'spawned', url, stop: () => child.kill() }
+  try {
+    while (Date.now() < deadline) {
+      throwIfCancelled(signal)
+      if (await isHealthy(config, url, deadline, serverRuntime, signal)) {
+        throwIfCancelled(signal)
+        return { mode: 'spawned', url, stop: () => child.kill() }
+      }
+      throwIfCancelled(signal)
+      const remaining = deadline - Date.now()
+      if (remaining <= 0) break
+      await waitForPoll(
+        Math.min(config.pollIntervalMs ?? 500, remaining),
+        serverRuntime,
+        signal,
+      )
     }
-    await serverRuntime.sleep(
-      Math.min(config.pollIntervalMs ?? 500, deadline - Date.now()),
+    throw new Error(
+      `Server failed to start within ${timeoutMs}ms. Command: "${config.command}", URL: "${url}"`,
     )
+  } catch (error) {
+    child.kill()
+    throw error
   }
-
-  child.kill()
-  throw new Error(
-    `Server failed to start within ${timeoutMs}ms. Command: "${config.command}", URL: "${url}"`,
-  )
 }

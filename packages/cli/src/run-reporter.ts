@@ -9,6 +9,7 @@ import {
   clockLabel,
   diagnosticLines,
   groupResults,
+  interruptionLines,
   policyLines,
   renderTestResult,
   summaryLines,
@@ -130,6 +131,9 @@ function createBufferedRunReporter(options: RunReporterOptions): RunReporter {
         write(line)
       }
       for (const line of policyLines(exitStatus, options.columns)) write(line)
+      for (const line of interruptionLines(exitStatus, options.columns)) {
+        write(line)
+      }
       for (const line of summaryLines(
         specifications,
         results,

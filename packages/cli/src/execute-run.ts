@@ -459,10 +459,13 @@ export async function startProjectRun(
           includeTarget,
         }),
       )
-      server = await startServer({
-        ...input.config.server,
-        ...(args.reuseServer ? { reuseExisting: true } : {}),
-      })
+      server = await startServer(
+        {
+          ...input.config.server,
+          ...(args.reuseServer ? { reuseExisting: true } : {}),
+        },
+        { signal: input.signal },
+      )
       const onEvent = async (event: RunEvent) => {
         const persisted = await testRun.append(event)
         if (event.type === 'scenario-finished') {

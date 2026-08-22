@@ -347,6 +347,7 @@ test('finishes live progress with a prominent adaptation-policy rejection', () =
   reporter.start()
   reporter.finish([run], 10, {
     exitCode: 1,
+    interrupted: false,
     rejectedAdaptedResults: 1,
   })
 
