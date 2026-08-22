@@ -1,4 +1,7 @@
 import { describe, expect, mock, test } from 'bun:test'
+import { mkdtemp, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import {
   type ExecutionCacheStore,
   runScenario,
@@ -127,7 +130,7 @@ Feature: Status
     ])
   })
 
-  test('executes the compiled representation and replays placeholders without AI calls', async () => {
+  test('does not publish parameterized AI output without value-free provenance', async () => {
     const specification = parseSpecification({
       uri: 'features/sign-in.feature',
       source: `
@@ -162,12 +165,10 @@ Feature: Sign in
       async navigate() {},
       observe,
       async act() {
-        throw new Error('legacy act must not execute for a cacheable Scenario')
+        return { success: true }
       },
       async verify() {
-        throw new Error(
-          'legacy verify must not execute for a cacheable Scenario',
-        )
+        return { meetsExpectation: true, actualState: 'value is present' }
       },
       compileAssertion,
       executeInstruction,
@@ -198,27 +199,112 @@ Feature: Sign in
     }
 
     const adaptive = await runScenario(input)
-    const replay = await runScenario({ ...input, cachePolicy: 'cache-only' })
 
     expect(adaptive.result).toMatchObject({
       state: 'passed',
       executionMode: 'adaptive',
-      cacheOutcome: 'miss',
-      inferenceCount: 2,
-    })
-    expect(replay.result).toMatchObject({
-      state: 'passed',
-      executionMode: 'replay',
-      cacheOutcome: 'hit',
-      inferenceCount: 0,
+      cacheOutcome: 'uncacheable',
+      cacheUncacheableReason: 'bound-parameter-value',
+      inferenceCount: 4,
     })
     expect(observe).toHaveBeenCalledTimes(1)
     expect(compileAssertion).toHaveBeenCalledTimes(1)
-    expect(executeInstruction).toHaveBeenCalledTimes(6)
-    expect(cache.writes).toHaveLength(1)
-    expect(cache.writes[0]).not.toContain('alice@example.com')
-    expect(cache.writes[0]).toContain('email')
+    expect(executeInstruction).toHaveBeenCalledTimes(1)
+    expect(cache.writes).toHaveLength(0)
     expect(JSON.stringify(adaptive.events)).not.toContain('alice@example.com')
+  })
+
+  test('uses value-free screenshot paths across parameterized Adaptive and Replay runs', async () => {
+    const artifactDirectory = await mkdtemp(
+      join(tmpdir(), 'pickle-web-cache-screenshots-'),
+    )
+    try {
+      const specification = parseSpecification({
+        uri: 'features/account.feature',
+        source: `
+Feature: Account
+  Scenario Outline: Open an account
+    When I visit /accounts/<account>
+
+    Examples:
+      | account            |
+      | private-account-42 |
+`,
+      })
+      const scenario = specification.scenarios[0]!
+      const executeInstruction = mock(async () => ({ success: true }))
+      const automation: WebAutomation = {
+        async navigate() {},
+        async observe() {
+          throw new Error('deterministic navigation must not call AI')
+        },
+        async act() {
+          throw new Error('deterministic navigation must not call AI')
+        },
+        async verify() {
+          throw new Error('deterministic navigation must not call AI')
+        },
+        executeInstruction,
+        async screenshot() {
+          return new TextEncoder().encode('image')
+        },
+        async readIsolationState() {
+          return { cookieCount: 0, storageKeyCount: 0 }
+        },
+        async close() {},
+      }
+      const adapter = createWebAdapter(
+        {
+          baseUrl: 'https://example.test',
+          screenshots: { mode: 'on-step', outputDir: artifactDirectory },
+        },
+        factoryFor(automation),
+      )
+      const cache = memoryStore()
+      const input = {
+        specification,
+        scenario,
+        executionTargetProfile: { id: 'web' },
+        adapter,
+        executionCache: {
+          store: cache.store,
+          projectKey: 'project-1',
+          sourceRunId: 'run-screenshot',
+        },
+        applicationRevision: 'app-1',
+      }
+
+      const adaptive = await runScenario(input)
+      const replay = await runScenario({ ...input, cachePolicy: 'cache-only' })
+      await adapter.dispose?.()
+
+      expect(adaptive.result).toMatchObject({
+        state: 'passed',
+        executionMode: 'adaptive',
+        cacheOutcome: 'miss',
+      })
+      expect(replay.result).toMatchObject({
+        state: 'passed',
+        executionMode: 'replay',
+        cacheOutcome: 'hit',
+      })
+      const adaptivePath = adaptive.result.steps[0]?.artifacts?.[0]?.path
+      const replayPath = replay.result.steps[0]?.artifacts?.[0]?.path
+      expect(adaptivePath).toMatch(
+        /specification-[a-f0-9]{16}\/scenario-[a-f0-9]{16}\/step-01-passed\.png$/,
+      )
+      expect(replayPath).toBe(adaptivePath)
+      expect(cache.writes).toHaveLength(1)
+      const persistedAndReported = JSON.stringify({
+        writes: cache.writes,
+        adaptive,
+        replay,
+      })
+      expect(persistedAndReported).not.toContain('private-account-42')
+      expect(executeInstruction).toHaveBeenCalledTimes(2)
+    } finally {
+      await rm(artifactDirectory, { recursive: true, force: true })
+    }
   })
 
   test('passes but remains uncacheable when an operation is not deterministic', async () => {

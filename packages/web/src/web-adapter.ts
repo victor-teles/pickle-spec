@@ -5,7 +5,6 @@ import {
   type ResolvedAction,
   type StepExecution,
   type StepExecutionTargetAdapter,
-  slug,
   type TestArtifact,
 } from '@pickle-spec/runner'
 import type { ScenarioStep, ScenarioVariableBinding } from '@pickle-spec/spec'
@@ -26,6 +25,12 @@ import {
   type WebAdapterOptions,
 } from './web-options'
 import { WebProcessPool } from './web-pool'
+import {
+  errorMessage,
+  navigationTarget,
+  navigationUrl,
+  promptFor,
+} from './web-step'
 
 export type {
   BrowserOptions,
@@ -104,18 +109,6 @@ export interface WebAutomationFactory {
   launch(input: WebClientContext): Promise<WebBrowserProcess>
 }
 
-const navigationPattern = new RegExp(
-  '(?:' +
-    'I (?:am on|navigate to|visit|go to|open)' +
-    '|(?:eu )?(?:navego para|visito|abro|estou em)' +
-    '|(?:yo )?(?:navego a|visito|abro|estoy en)' +
-    '|(?:je )?(?:navigue vers|visite|ouvre|suis sur)' +
-    ')' +
-    '\\s+(?:(?:the|a|o|la|le|el|à)\\s+)?' +
-    '["\']?(.+?)["\']?\\s*$',
-  'i',
-)
-
 const providerApiKeyEnvNamesByProvider: Record<string, string[]> = {
   openai: ['OPENAI_API_KEY'],
   anthropic: ['ANTHROPIC_API_KEY'],
@@ -130,28 +123,9 @@ type BrowserLaunchConfig = {
   requiresInference: boolean
 }
 
-function promptFor(step: ScenarioStep): string {
-  let prompt = step.text
-  if (step.argument?.dataTable) {
-    prompt += '\n\nWith the following data:\n'
-    prompt += step.argument.dataTable.map((row) => row.join(' | ')).join('\n')
-  }
-  if (step.argument?.docString) prompt += `\n\n${step.argument.docString}`
-  return prompt
-}
-
-function screenshotName(value: string): string {
-  return slug(value).slice(0, 80)
-}
-
-function navigationUrl(baseUrl: string, target: string): string {
-  if (/^https?:\/\//i.test(target)) return target
-  if (target.startsWith('/')) return new URL(target, baseUrl).toString()
-  return baseUrl
-}
-
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error)
+function screenshotIdentity(kind: string, value: string): string {
+  const digest = new Bun.CryptoHasher('sha256').update(value).digest('hex')
+  return `${kind}-${digest.slice(0, 16)}`
 }
 
 function replayPayload(handle: unknown): Record<string, unknown> | undefined {
@@ -285,6 +259,18 @@ export function createWebAdapter(
       let closePromise: Promise<void> | undefined
       let navigated = false
       let stepIndex = 0
+      const specificationArtifactId = screenshotIdentity(
+        'specification',
+        input.specification.id ?? input.specification.source.uri,
+      )
+      const scenarioArtifactId = screenshotIdentity(
+        'scenario',
+        input.scenario.id ??
+          input.scenario.template?.name ??
+          (input.runtimeBindings?.length
+            ? 'parameterized'
+            : input.scenario.name),
+      )
 
       const close = async () => {
         if (closePromise) return closePromise
@@ -310,7 +296,6 @@ export function createWebAdapter(
       }
 
       async function screenshot(
-        step: ScenarioStep,
         state: StepExecution['state'],
       ): Promise<TestArtifact | undefined> {
         const screenshotOptions = options.screenshots
@@ -321,13 +306,13 @@ export function createWebAdapter(
           const format = screenshotOptions?.format ?? 'png'
           const directory = resolve(
             screenshotOptions?.outputDir ?? './.pickle/artifacts',
-            screenshotName(input.specification.name),
-            screenshotName(input.scenario.name),
+            specificationArtifactId,
+            scenarioArtifactId,
           )
           await mkdir(directory, { recursive: true })
           const path = join(
             directory,
-            `step-${String(stepIndex).padStart(2, '0')}-${state}-${screenshotName(step.text).slice(0, 40)}.${format}`,
+            `step-${String(stepIndex).padStart(2, '0')}-${state}.${format}`,
           )
           await Bun.write(
             path,
@@ -347,10 +332,10 @@ export function createWebAdapter(
       }
 
       async function finish(
-        step: ScenarioStep,
+        _step: ScenarioStep,
         result: StepExecution,
       ): Promise<StepExecution> {
-        const artifact = await screenshot(step, result.state)
+        const artifact = await screenshot(result.state)
         return artifact ? { ...result, artifacts: [artifact] } : result
       }
 
@@ -445,9 +430,9 @@ export function createWebAdapter(
           const prompt = promptFor(step)
 
           try {
-            const navigation = prompt.match(navigationPattern)
-            if (navigation) {
-              const url = navigationUrl(options.baseUrl, navigation[1]!.trim())
+            const target = navigationTarget(prompt)
+            if (target) {
+              const url = navigationUrl(options.baseUrl, target)
               await automation.navigate(url, operationSignal)
               navigated = true
               return finish(step, {

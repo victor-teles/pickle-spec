@@ -7,6 +7,7 @@ import {
 import {
   compileObservedWebAction,
   compileWebAssertion,
+  parameterizeWebValue,
 } from './web-execution-cache'
 
 const variableTemplate = (name: string) => ({
@@ -111,13 +112,42 @@ describe('web Execution cache payload', () => {
     ).toBeUndefined()
   })
 
-  test('does not cache transformed runtime values or ambiguous count locators', () => {
+  test('only parameterizes runtime values proven by a value-free source template', () => {
+    const bindings = [{ name: 'email', value: 'Alice "QA"+test@example.test' }]
+
+    expect(
+      parameterizeWebValue(bindings[0]!.value, bindings, {
+        template: '<email>',
+      }),
+    ).toEqual(variableTemplate('email'))
+    expect(parameterizeWebValue(bindings[0]!.value, bindings)).toBeUndefined()
+    expect(
+      parameterizeWebValue(JSON.stringify(bindings[0]!.value), bindings),
+    ).toBeUndefined()
+    expect(
+      parameterizeWebValue(
+        'Alice\\ \\"QA\\"\\+test\\@example\\.test',
+        bindings,
+      ),
+    ).toBeUndefined()
+  })
+
+  test('does not cache AI-derived selectors in parameterized Scenarios', () => {
     const bindings = [{ name: 'email', value: 'Alice+QA@example.test' }]
 
     expect(
       compileObservedWebAction(
         {
-          selector: `[data-email="${encodeURIComponent(bindings[0]!.value)}"]`,
+          selector: '[data-email="Alice\\+QA\\@example\\.test"]',
+          method: 'click',
+        },
+        bindings,
+      ),
+    ).toBeUndefined()
+    expect(
+      compileObservedWebAction(
+        {
+          selector: `[data-email=${JSON.stringify(bindings[0]!.value)}]`,
           method: 'click',
         },
         bindings,

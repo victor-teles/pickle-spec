@@ -3,6 +3,7 @@ import { z } from 'zod'
 import type { ResolvedFidelity } from './fidelity'
 import type { WebAdapterBehavior } from './web-adapter'
 import type { WebAdapterOptions } from './web-options'
+import { navigationUrl } from './web-step'
 
 export const defaultWebActionTimeoutMs = 15_000
 export const defaultWebNavigationTimeoutMs = 15_000
@@ -91,6 +92,10 @@ export type WebExecutionCachePayload = z.infer<
   typeof webExecutionCachePayloadSchema
 >
 
+export interface WebValueProvenance {
+  template: string
+}
+
 export type WebAssertionDraft =
   | { kind: 'exists' | 'visible' | 'hidden'; selector: string; nth?: number }
   | {
@@ -136,66 +141,25 @@ function addLiteral(segments: WebTemplate['segments'], literal: string): void {
 export function parameterizeWebValue(
   value: string,
   bindings: readonly ScenarioVariableBinding[],
+  provenance?: WebValueProvenance,
 ): WebTemplate | undefined {
-  const byValue = new Map<string, string>()
-  for (const binding of bindings) {
-    if (!binding.value) continue
-    const previous = byValue.get(binding.value)
-    if (
-      previous &&
-      previous !== binding.name &&
-      value.includes(binding.value)
-    ) {
-      return undefined
-    }
-    byValue.set(binding.value, binding.name)
-  }
-  for (const binding of bindings) {
-    if (!binding.value) continue
-    const derivedValues = new Set([encodeURIComponent(binding.value)])
-    if (binding.value.length >= 4) {
-      derivedValues.add(binding.value.toLocaleLowerCase())
-      derivedValues.add(binding.value.toLocaleUpperCase())
-    }
-    if (
-      [...derivedValues].some(
-        (derived) => derived !== binding.value && value.includes(derived),
-      )
-    ) {
-      return undefined
-    }
-  }
-  const candidates = [...byValue]
-    .map(([runtimeValue, name]) => ({ runtimeValue, name }))
-    .sort((left, right) => right.runtimeValue.length - left.runtimeValue.length)
+  if (bindings.length > 0 && !provenance) return undefined
+  const source = provenance?.template ?? value
+  const byName = new Map(bindings.map((binding) => [binding.name, binding]))
   const segments: WebTemplate['segments'] = []
   let offset = 0
-  while (offset < value.length) {
-    let matchIndex = -1
-    let match: (typeof candidates)[number] | undefined
-    for (const candidate of candidates) {
-      const index = value.indexOf(candidate.runtimeValue, offset)
-      if (
-        index >= 0 &&
-        (matchIndex < 0 ||
-          index < matchIndex ||
-          (index === matchIndex &&
-            candidate.runtimeValue.length > (match?.runtimeValue.length ?? 0)))
-      ) {
-        matchIndex = index
-        match = candidate
-      }
-    }
-    if (!match || matchIndex < 0) {
-      addLiteral(segments, value.slice(offset))
-      break
-    }
-    addLiteral(segments, value.slice(offset, matchIndex))
-    segments.push({ variable: match.name })
-    offset = matchIndex + match.runtimeValue.length
+  for (const match of source.matchAll(/<([A-Za-z_][A-Za-z0-9_.-]*)>/g)) {
+    const index = match.index
+    const name = match[1]!
+    if (!byName.has(name)) return undefined
+    addLiteral(segments, source.slice(offset, index))
+    segments.push({ variable: name })
+    offset = index + match[0].length
   }
-  if (segments.length === 0) segments.push({ literal: value })
-  return { segments }
+  addLiteral(segments, source.slice(offset))
+  if (segments.length === 0) segments.push({ literal: source })
+  const template = { segments }
+  return bindWebTemplate(template, bindings) === value ? template : undefined
 }
 
 export function bindWebTemplate(
@@ -215,6 +179,48 @@ export function bindWebTemplate(
     }
   }
   return result
+}
+
+function absoluteNavigationTemplate(
+  baseUrl: string,
+  target: string,
+  targetTemplate: WebTemplate,
+  bindings: readonly ScenarioVariableBinding[],
+): WebTemplate | undefined {
+  if (/^https?:\/\//i.test(target)) return targetTemplate
+  if (!target.startsWith('/')) {
+    return parameterizeWebValue(baseUrl, bindings, { template: baseUrl })
+  }
+  const segments: WebTemplate['segments'] = []
+  addLiteral(segments, new URL(baseUrl).origin)
+  for (const segment of targetTemplate.segments) {
+    if ('literal' in segment) addLiteral(segments, segment.literal)
+    else segments.push(segment)
+  }
+  const template = { segments }
+  const expectedUrl = navigationUrl(baseUrl, target)
+  return bindWebTemplate(template, bindings) === expectedUrl
+    ? template
+    : undefined
+}
+
+export function compileWebNavigation(
+  baseUrl: string,
+  target: string,
+  templateTarget: string,
+  bindings: readonly ScenarioVariableBinding[],
+): WebInstruction | undefined {
+  const targetTemplate = parameterizeWebValue(target, bindings, {
+    template: templateTarget,
+  })
+  if (!targetTemplate) return undefined
+  const url = absoluteNavigationTemplate(
+    baseUrl,
+    target,
+    targetTemplate,
+    bindings,
+  )
+  return url ? { kind: 'navigate', url } : undefined
 }
 
 export function webInstructionVariables(
@@ -257,7 +263,9 @@ function locatorFrom(
 ): WebLocator | undefined {
   const parameterized = parameterizeWebValue(selector, bindings)
   if (!parameterized) return undefined
-  return { selector: parameterized, ...(nth === undefined ? {} : { nth }) }
+  const locator: WebLocator = { selector: parameterized }
+  if (nth !== undefined) locator.nth = nth
+  return locator
 }
 
 export function compileWebAssertion(
