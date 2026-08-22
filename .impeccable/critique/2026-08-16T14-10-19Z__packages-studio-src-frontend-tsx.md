@@ -7,6 +7,7 @@ p0_count: 0
 p1_count: 3
 timestamp: 2026-08-16T14-10-19Z
 slug: packages-studio-src-frontend-tsx
+status: superseded by ADR-0012
 ---
 Method: dual-agent (A: e5528ae4-8eb2-444a-b6e7-08b365227a31 · B: 1e786e82-a26e-4006-aa88-2b6b865fb2f5)
 
