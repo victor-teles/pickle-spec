@@ -209,6 +209,26 @@ test('public output boundaries omit private replay data without mutating results
   })
 })
 
+test('public event boundaries whitelist non-result event fields', () => {
+  const malicious = {
+    schemaVersion: 1,
+    sequence: 1,
+    type: 'run-started',
+    prompt: 'private-system-prompt',
+    adapterPayload: { secret: 'private-adapter-payload' },
+    run: {
+      id: 'run-public',
+      startedAt: '2026-08-15T12:00:00.000Z',
+      privateValue: 'private-bound-value',
+    },
+  } as unknown as RunEvent
+
+  const source = JSON.stringify(publicRunEvent(malicious))
+  expect(source).toBe(
+    '{"type":"run-started","run":{"id":"run-public","startedAt":"2026-08-15T12:00:00.000Z"},"schemaVersion":1,"sequence":1}',
+  )
+})
+
 test('formats JUnit XML with cache metadata, stable states, flaky, and error classes', () => {
   const junitManifest: TestRunManifest = {
     ...manifest,

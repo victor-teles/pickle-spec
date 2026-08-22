@@ -279,6 +279,9 @@ Feature: Search
       expect(await run.textContent()).toContain('chrome, firefox')
       expect(await run.textContent()).toContain('app-42')
       expect(await run.textContent()).toContain('failed')
+      expect(await run.textContent()).toContain('adaptive')
+      expect(await run.textContent()).toContain('uncacheable')
+      expect(await run.textContent()).toContain('0 inferences')
       expect(await run.textContent()).toContain('6 results')
 
       await page.getByRole('button', { name: 'Search' }).click()
@@ -313,6 +316,9 @@ Feature: Search
         .click()
       const results = page.getByRole('table', { name: 'Test run results' })
       expect(await results.textContent()).toContain('Pay for the order')
+      expect(await results.textContent()).toContain('adaptive')
+      expect(await results.textContent()).toContain('uncacheable')
+      expect(await results.textContent()).toContain('0 inferences')
       expect(
         await results.getByRole('button', { name: 'Rerun Scenario' }).count(),
       ).toBeGreaterThan(0)

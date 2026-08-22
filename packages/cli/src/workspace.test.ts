@@ -1531,7 +1531,7 @@ export default {
         schemaVersion: 1,
         specifications: 'features/**/*.feature',
         executionTargetProfile: { id: 'deterministic' },
-        artifacts: { capture: 'on-failure-or-adaptation' },
+        artifacts: { capture: 'on-failure' },
       },
       specification: {
         path: 'features/purchase.feature',
@@ -1820,7 +1820,7 @@ export default {
         schemaVersion: 1,
         specifications: 'features/**/*.feature',
         executionTargetProfile: { id: 'deterministic' },
-        artifacts: { capture: 'on-failure-or-adaptation' },
+        artifacts: { capture: 'on-failure' },
       },
       specification: {
         path: 'features/purchase.feature',
@@ -2124,7 +2124,7 @@ Feature: Slow checkout
 
     expect(checked.exitCode).toBe(2)
     expect(checked.stderr.toString()).toContain(
-      'artifacts.capture must be off, on-failure-or-adaptation, or always',
+      'artifacts.capture must be off, on-failure, or always',
     )
   })
 })

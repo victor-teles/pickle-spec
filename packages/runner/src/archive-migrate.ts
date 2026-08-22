@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import type { RunArchive, RunArchiveArtifact } from './archive'
+import { publicRunEvent, recordableTestResult } from './public-results'
 import type {
   FidelityPolicy,
   RunEvent,
@@ -140,7 +141,7 @@ function migrateResolvedAction(
 function migrateResult(result: unknown): TestResult {
   const value = parsed(archiveResultInput, result)
   const scenario = parsed(archiveScenarioInput, value.scenario)
-  return {
+  return recordableTestResult({
     schemaVersion: 1,
     specification: value.specification as TestResult['specification'],
     scenario: {
@@ -162,7 +163,7 @@ function migrateResult(result: unknown): TestResult {
     durationMs:
       typeof value.durationMs === 'number' ? value.durationMs : undefined,
     fidelityPolicy: migrateFidelityPolicy(value.fidelityPolicy),
-  }
+  })
 }
 
 function migrateEvent(event: unknown, index: number): RunEvent {
@@ -172,20 +173,24 @@ function migrateEvent(event: unknown, index: number): RunEvent {
     sequence: typeof value.sequence === 'number' ? value.sequence : index + 1,
   }
   if (value.type === 'scenario-finished') {
-    return {
+    return publicRunEvent({
       ...base,
       type: 'scenario-finished',
       result: migrateResult(value.result),
-    }
+      scheduleIndex:
+        typeof value.scheduleIndex === 'number'
+          ? value.scheduleIndex
+          : undefined,
+    })
   }
   if (value.type === 'step-finished') {
-    return {
+    return publicRunEvent({
       ...base,
       type: 'step-finished',
       result: migrateStep(value.result),
-    }
+    })
   }
-  return { ...base, ...value } as RunEvent
+  return publicRunEvent({ ...value, ...base } as RunEvent)
 }
 
 function migrateManifest(manifest: unknown): TestRunManifest {

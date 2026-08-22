@@ -2,7 +2,7 @@ import { Database } from 'bun:sqlite'
 import { appendFile, copyFile, mkdir, rm } from 'node:fs/promises'
 import { dirname, extname, join } from 'node:path'
 import type { CacheOutcome } from './execution-cache'
-import { withoutPrivateRunEventPayloadData } from './public-results'
+import { recordableRunEventPayloadData } from './public-results'
 import type {
   ExecutionMode,
   RunEvent,
@@ -11,12 +11,8 @@ import type {
   TestResultState,
   TestStepResult,
 } from './run-scenario'
-import { isEvidenceState } from './run-scenario'
 
-export type ArtifactCapturePolicy =
-  | 'off'
-  | 'on-failure-or-adaptation'
-  | 'always'
+export type ArtifactCapturePolicy = 'off' | 'on-failure' | 'always'
 
 export interface TestRunStoreOptions {
   root: string
@@ -104,7 +100,7 @@ const stateRank: Record<TestResultState, number> = {
 export function openTestRunStore(options: TestRunStoreOptions): TestRunStore {
   const createId = options.createId ?? (() => crypto.randomUUID())
   const now = options.now ?? (() => new Date())
-  const artifactCapture = options.artifactCapture ?? 'on-failure-or-adaptation'
+  const artifactCapture = options.artifactCapture ?? 'on-failure'
   const pickleDirectory = join(options.root, '.pickle')
   const runsDirectory = join(pickleDirectory, 'runs')
   const indexPath = join(pickleDirectory, 'index.sqlite')
@@ -263,7 +259,7 @@ function persistedTestRun(
       const current = await readEvents(eventsPath)
       const versioned = {
         ...(await persistEventArtifacts(
-          withoutPrivateRunEventPayloadData(eventPayload(event)),
+          recordableRunEventPayloadData(eventPayload(event)),
           artifactCapture,
           artifactsDirectory,
         )),
@@ -647,7 +643,7 @@ function shouldCapture(
 ): boolean {
   if (policy === 'always') return true
   if (policy === 'off') return false
-  return isEvidenceState(state)
+  return state === 'failed' || state === 'infrastructure-error'
 }
 
 async function removeRun(

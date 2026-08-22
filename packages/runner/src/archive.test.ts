@@ -235,9 +235,11 @@ test('import preserves the original archive and migrates older schemas in memory
       sequence: 1,
       type: 'run-started',
     })
-    expect(imported.manifest.results[0]?.executionMode).toBeUndefined()
-    expect(imported.manifest.results[0]?.cacheOutcome).toBeUndefined()
-    expect(imported.manifest.results[0]?.inferenceCount).toBeUndefined()
+    expect(imported.manifest.results[0]).toMatchObject({
+      executionMode: 'adaptive',
+      cacheOutcome: 'uncacheable',
+      inferenceCount: 0,
+    })
 
     const store = openTestRunStore({ root })
     expect(await store.list()).toEqual([
@@ -250,6 +252,9 @@ test('import preserves the original archive and migrates older schemas in memory
         durationMs: 1_000,
         state: 'passed',
         resultCount: 1,
+        executionModes: ['adaptive'],
+        cacheOutcomes: ['uncacheable'],
+        inferenceCount: 0,
       },
     ])
   } finally {
@@ -286,18 +291,48 @@ test('migration normalizes invalid Execution cache metadata from untrusted archi
             },
           ],
         },
+        events: [
+          {
+            sequence: 1,
+            type: 'run-started',
+            prompt: 'private-system-prompt',
+            adapterPayload: { secret: 'private-adapter-payload' },
+            run: {
+              id: 'run-invalid-cache-metadata',
+              startedAt: '2026-08-01T00:00:00.000Z',
+              privateValue: 'private-bound-value',
+            },
+          },
+        ],
       }),
     )
 
     const archive = await readRunArchive(archivePath)
 
     expect(archive.manifest.results[0]).toMatchObject({
-      executionMode: undefined,
-      cacheOutcome: undefined,
-      inferenceCount: undefined,
+      executionMode: 'adaptive',
+      cacheOutcome: 'uncacheable',
+      inferenceCount: 0,
       cacheUncacheableReason: undefined,
       failureKind: undefined,
     })
+    expect(archive.events).toEqual([
+      {
+        schemaVersion: 1,
+        sequence: 1,
+        type: 'run-started',
+        run: {
+          id: 'run-invalid-cache-metadata',
+          startedAt: '2026-08-01T00:00:00.000Z',
+          sourceRunId: undefined,
+          suite: undefined,
+          applicationRevision: undefined,
+        },
+      },
+    ])
+    expect(JSON.stringify(archive)).not.toContain('private-system-prompt')
+    expect(JSON.stringify(archive)).not.toContain('private-adapter-payload')
+    expect(JSON.stringify(archive)).not.toContain('private-bound-value')
   } finally {
     await rm(root, { recursive: true, force: true })
   }

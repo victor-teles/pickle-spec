@@ -309,9 +309,8 @@ const pickleConfigSchema = strictObject('configuration', {
   }).optional(),
   artifacts: strictObject('artifacts', {
     capture: z
-      .enum(['off', 'on-failure-or-adaptation', 'always'], {
-        error:
-          'artifacts.capture must be off, on-failure-or-adaptation, or always',
+      .enum(['off', 'on-failure', 'always'], {
+        error: 'artifacts.capture must be off, on-failure, or always',
       })
       .optional(),
   }).optional(),

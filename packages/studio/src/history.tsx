@@ -46,6 +46,19 @@ function resultCountLabel(count: number): string {
   return `${count} ${count === 1 ? 'result' : 'results'}`
 }
 
+function executionModesLabel(run: TestRunSummary): string {
+  return run.executionModes?.join(', ') ?? 'Not recorded'
+}
+
+function cacheOutcomesLabel(run: TestRunSummary): string {
+  return run.cacheOutcomes?.join(', ') ?? 'Not recorded'
+}
+
+function inferenceCountLabel(count: number | undefined): string {
+  if (count === undefined) return 'Not recorded'
+  return `${count} ${count === 1 ? 'inference' : 'inferences'}`
+}
+
 function bytesLabel(bytes: number): string {
   if (bytes < 1_024) return `${bytes} B`
   if (bytes < 1_024 ** 2) return `${(bytes / 1_024).toFixed(1)} KB`
@@ -266,12 +279,15 @@ export function HistoryPanel(props: HistoryPanelProps) {
                 <TableHead>Application revision</TableHead>
                 <TableHead>Duration</TableHead>
                 <TableHead>State</TableHead>
+                <TableHead>Execution mode</TableHead>
+                <TableHead>Cache outcome</TableHead>
+                <TableHead>Inferences</TableHead>
                 <TableHead>Results</TableHead>
                 <TableHead>Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              <VirtualTableSpacer height={runWindow.before} colSpan={9} />
+              <VirtualTableSpacer height={runWindow.before} colSpan={12} />
               {visibleRuns.map((run) => (
                 <TableRow key={run.id} style={{ height: historyRowHeight }}>
                   <TableCell>
@@ -311,6 +327,11 @@ export function HistoryPanel(props: HistoryPanelProps) {
                       {run.state}
                     </Badge>
                   </TableCell>
+                  <TableCell>{executionModesLabel(run)}</TableCell>
+                  <TableCell>{cacheOutcomesLabel(run)}</TableCell>
+                  <TableCell>
+                    {inferenceCountLabel(run.inferenceCount)}
+                  </TableCell>
                   <TableCell>{resultCountLabel(run.resultCount)}</TableCell>
                   <TableCell>
                     <div className="flex items-center gap-2">
@@ -349,7 +370,7 @@ export function HistoryPanel(props: HistoryPanelProps) {
                   </TableCell>
                 </TableRow>
               ))}
-              <VirtualTableSpacer height={runWindow.after} colSpan={9} />
+              <VirtualTableSpacer height={runWindow.after} colSpan={12} />
             </TableBody>
           </Table>
         </section>
@@ -445,12 +466,15 @@ export function HistoryPanel(props: HistoryPanelProps) {
                   <TableHead>Scenario</TableHead>
                   <TableHead>Target</TableHead>
                   <TableHead>State</TableHead>
+                  <TableHead>Execution mode</TableHead>
+                  <TableHead>Cache outcome</TableHead>
+                  <TableHead>Inferences</TableHead>
                   <TableHead>Duration</TableHead>
                   <TableHead>Rerun</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                <VirtualTableSpacer height={resultWindow.before} colSpan={5} />
+                <VirtualTableSpacer height={resultWindow.before} colSpan={8} />
                 {visibleResults.map((result) => (
                   <TableRow
                     key={`${result.scenario.id ?? result.scenario.name}:${result.executionTargetProfile.id}`}
@@ -459,6 +483,15 @@ export function HistoryPanel(props: HistoryPanelProps) {
                     <TableCell>{result.scenario.name}</TableCell>
                     <TableCell>{result.executionTargetProfile.id}</TableCell>
                     <TableCell>{result.state}</TableCell>
+                    <TableCell>
+                      {result.executionMode ?? 'Not recorded'}
+                    </TableCell>
+                    <TableCell>
+                      {result.cacheOutcome ?? 'Not recorded'}
+                    </TableCell>
+                    <TableCell>
+                      {inferenceCountLabel(result.inferenceCount)}
+                    </TableCell>
                     <TableCell>{durationLabel(result.durationMs)}</TableCell>
                     <TableCell>
                       <div className="flex gap-2">
@@ -496,7 +529,7 @@ export function HistoryPanel(props: HistoryPanelProps) {
                     </TableCell>
                   </TableRow>
                 ))}
-                <VirtualTableSpacer height={resultWindow.after} colSpan={5} />
+                <VirtualTableSpacer height={resultWindow.after} colSpan={8} />
               </TableBody>
             </Table>
           </section>
