@@ -20,6 +20,18 @@ export interface StartServerOptions {
 
 const runtime: ServerRuntime = { fetch, sleep: Bun.sleep, spawn: Bun.spawn }
 
+function stopServerProcess(child: Subprocess): void {
+  if (process.platform === 'win32') {
+    child.kill()
+    return
+  }
+  try {
+    process.kill(-child.pid, 'SIGTERM')
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ESRCH') throw error
+  }
+}
+
 function commandForShell(command: string): string[] {
   return process.platform === 'win32'
     ? ['cmd.exe', '/d', '/s', '/c', command]
@@ -120,8 +132,9 @@ export async function startServer(
     commandForShell(config.command),
     {
       cwd: process.cwd(),
+      detached: process.platform !== 'win32',
       stdout: 'ignore',
-      stderr: 'pipe',
+      stderr: 'ignore',
     },
   )
   try {
@@ -129,7 +142,7 @@ export async function startServer(
       throwIfCancelled(signal)
       if (await isHealthy(config, url, deadline, serverRuntime, signal)) {
         throwIfCancelled(signal)
-        return { mode: 'spawned', url, stop: () => child.kill() }
+        return { mode: 'spawned', url, stop: () => stopServerProcess(child) }
       }
       throwIfCancelled(signal)
       const remaining = deadline - Date.now()
@@ -144,7 +157,7 @@ export async function startServer(
       `Server failed to start within ${timeoutMs}ms. Command: "${config.command}", URL: "${url}"`,
     )
   } catch (error) {
-    child.kill()
+    stopServerProcess(child)
     throw error
   }
 }

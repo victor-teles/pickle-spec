@@ -428,7 +428,7 @@ test('interrupts application server startup and exits with the cancellation code
       specifications: 'features/**/*.feature',
       executionTargetProfile: { id: 'deterministic' },
       server: {
-        command: `bun -e "await Bun.write('${marker}', 'started'); setInterval(() => {}, 1000)"`,
+        command: `bun -e "await Bun.write('${marker}', 'started'); setInterval(() => {}, 1000)" & wait`,
         url: 'http://127.0.0.1:1',
         startupTimeoutMs: 10_000,
         pollIntervalMs: 5_000,
