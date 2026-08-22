@@ -9,6 +9,7 @@ import {
   clockLabel,
   diagnosticLines,
   groupResults,
+  policyLines,
   renderTestResult,
   summaryLines,
   type WriteLine,
@@ -24,6 +25,7 @@ import {
   createProcessTerminalSurface,
   type InteractiveTerminalSurface,
 } from './terminal-surface'
+import type { TestRunExitStatus } from './test-run-exit-status'
 
 export type RunReporterName = 'default' | 'ndjson'
 
@@ -34,7 +36,11 @@ export interface RunReporter {
   complete?(result: TestResult): void
   fail?(error: unknown, durationMs: number): void
   refresh?(): void
-  finish(runs: readonly ScenarioRun[], durationMs: number): void
+  finish(
+    runs: readonly ScenarioRun[],
+    durationMs: number,
+    exitStatus: TestRunExitStatus,
+  ): void
 }
 
 type RunReporterOptions = {
@@ -106,7 +112,7 @@ function createBufferedRunReporter(options: RunReporterOptions): RunReporter {
     prepare,
     event() {},
     complete,
-    finish(runs, durationMs) {
+    finish(runs, durationMs, exitStatus) {
       const results = runs.map((run) => run.result)
       if (completedResults.length === 0) {
         prepare(orderedScheduleFromResults(results))
@@ -123,6 +129,7 @@ function createBufferedRunReporter(options: RunReporterOptions): RunReporter {
       })) {
         write(line)
       }
+      for (const line of policyLines(exitStatus, options.columns)) write(line)
       for (const line of summaryLines(
         specifications,
         results,

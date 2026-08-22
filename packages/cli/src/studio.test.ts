@@ -36,6 +36,29 @@ type MonacoEditorHost = {
   }
 }
 
+async function saveExecutionTargetProfile(
+  page: Page,
+  profileId: string,
+): Promise<void> {
+  const responsePromise = page.waitForResponse(
+    (response) =>
+      new URL(response.url()).pathname === '/api/config' &&
+      response.request().method() === 'PUT',
+  )
+  await page
+    .getByRole('button', { name: 'Save execution target profile' })
+    .click()
+  const response = await responsePromise
+  await response.finished()
+  if (!response.ok()) {
+    throw new Error(`Profile update failed with status ${response.status()}`)
+  }
+  await page
+    .getByRole('status')
+    .filter({ hasText: `Execution target profile ${profileId} saved` })
+    .waitFor({ timeout: 10_000 })
+}
+
 describe('Studio browser seam', () => {
   const fixture = new StudioBrowserFixture()
   const createStudioProject = fixture.createProject.bind(fixture)
@@ -254,6 +277,13 @@ Feature: Search
     const { child, url } = await startStudio(project)
     const page = await browser.newPage()
     try {
+      let historyRequestCount = 0
+      await page.route('**/api/history', async (route) => {
+        if (route.request().method() === 'GET' && historyRequestCount++ === 1) {
+          await Bun.sleep(100)
+        }
+        await route.continue()
+      })
       await page.goto(url)
       await page.getByRole('button', { name: 'Run Specification' }).click()
       await page
@@ -273,6 +303,7 @@ Feature: Search
       await page.getByRole('button', { name: 'History' }).click()
 
       const history = page.getByRole('table', { name: 'Test run history' })
+      await history.waitFor()
       expect(await history.getByRole('row').count()).toBe(2)
       const run = history.getByRole('row').nth(1)
       expect(await run.textContent()).toContain('Ad hoc selection')
@@ -1061,6 +1092,13 @@ Feature: Checkout
     const { child, url } = await startStudio(project)
     const page = await browser.newPage()
     try {
+      let configUpdateCount = 0
+      await page.route('**/api/config', async (route) => {
+        if (route.request().method() === 'PUT' && configUpdateCount++ === 0) {
+          await Bun.sleep(500)
+        }
+        await route.continue()
+      })
       await page.goto(url)
       await page.getByRole('heading', { name: 'Checkout' }).waitFor()
       expect(
@@ -1075,14 +1113,10 @@ Feature: Checkout
       await page.getByRole('button', { name: 'Settings' }).click()
       await page.getByRole('button', { name: 'chrome' }).click()
       await page.getByLabel('Profile capabilities').fill('geolocation')
-      await page
-        .getByRole('button', { name: 'Save execution target profile' })
-        .click()
+      await saveExecutionTargetProfile(page, 'chrome')
       await page.getByRole('button', { name: 'firefox' }).click()
       await page.getByLabel('Profile capabilities').fill('geolocation')
-      await page
-        .getByRole('button', { name: 'Save execution target profile' })
-        .click()
+      await saveExecutionTargetProfile(page, 'firefox')
       await page.getByRole('button', { name: 'Specifications' }).click()
       await page.getByRole('button', { name: 'Run Specification' }).waitFor({
         timeout: 10_000,
