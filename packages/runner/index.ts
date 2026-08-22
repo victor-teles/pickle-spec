@@ -94,6 +94,7 @@ export {
   formatJunit,
   formatNdjson,
 } from './src/outputs'
+export { publicRunEvent, publicTestResult } from './src/public-results'
 export type { RerunFilter } from './src/rerun'
 export { selectRerunResults } from './src/rerun'
 export type {

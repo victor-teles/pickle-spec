@@ -1,5 +1,11 @@
 import { expect, test } from 'bun:test'
-import { formatJson, formatJunit, formatNdjson } from '../index'
+import {
+  formatJson,
+  formatJunit,
+  formatNdjson,
+  publicRunEvent,
+  publicTestResult,
+} from '../index'
 import type { RunEvent, TestResult } from './run-scenario'
 import type { TestRunManifest } from './test-run-store'
 
@@ -162,6 +168,45 @@ test('normalizes the removed adaptation state at JSON and NDJSON boundaries', ()
   expect(formattedEvents[0].result.state).toBe('passed')
   expect(formattedEvents[1].result.state).toBe('passed')
   expect(adapted.state).toBe('passed-with-adaptation')
+  expect(publicTestResult(adapted).state).toBe('passed')
+  expect(publicRunEvent(legacyEvents[1]!).type).toBe('scenario-finished')
+})
+
+test('public output boundaries omit private replay data without mutating results', () => {
+  const privateResult = result('Private cache payload', 'passed', {
+    executionMode: 'replay',
+    cacheOutcome: 'hit',
+    inferenceCount: 0,
+    steps: [
+      {
+        step: { keyword: 'When', text: 'I submit', type: 'action' },
+        state: 'passed',
+        resolvedActions: [
+          {
+            description: 'Submit the form',
+            replay: { raw: 'private-replay-payload' },
+          },
+        ],
+      },
+    ],
+  })
+  const privateEvent: RunEvent = {
+    schemaVersion: 1,
+    sequence: 1,
+    type: 'scenario-finished',
+    result: privateResult,
+  }
+
+  expect(formatJson({ ...manifest, results: [privateResult] })).not.toContain(
+    'private-replay-payload',
+  )
+  expect(formatNdjson([privateEvent])).not.toContain('private-replay-payload')
+  expect(publicTestResult(privateResult).steps[0]?.resolvedActions).toEqual([
+    { description: 'Submit the form' },
+  ])
+  expect(privateResult.steps[0]?.resolvedActions[0]?.replay).toEqual({
+    raw: 'private-replay-payload',
+  })
 })
 
 test('formats JUnit XML with cache metadata, stable states, flaky, and error classes', () => {

@@ -162,6 +162,59 @@ test('materializes a manifest from events without replacing the event stream', a
   ])
 })
 
+test('persists public evidence without private replay data', async () => {
+  const root = await tempRoot()
+  const store = openTestRunStore({
+    root,
+    createId: () => 'run-public-evidence',
+    now: () => new Date('2026-08-15T12:00:00.000Z'),
+  })
+  const run = await store.create()
+  await run.append({
+    type: 'scenario-finished',
+    result: {
+      ...passedResult(),
+      executionMode: 'replay',
+      cacheOutcome: 'hit',
+      inferenceCount: 0,
+      steps: [
+        {
+          step: { keyword: 'When', text: 'I submit', type: 'action' },
+          state: 'passed',
+          resolvedActions: [
+            {
+              description: 'Submit the form',
+              replay: { raw: 'private-replay-payload' },
+            },
+          ],
+        },
+      ],
+    },
+  })
+
+  const manifest = await run.materialize()
+  expect(manifest.results[0]).toMatchObject({
+    executionMode: 'replay',
+    cacheOutcome: 'hit',
+    inferenceCount: 0,
+    steps: [
+      {
+        resolvedActions: [{ description: 'Submit the form' }],
+      },
+    ],
+  })
+  expect(
+    await Bun.file(
+      join(root, '.pickle', 'runs', run.id, 'events.ndjson'),
+    ).text(),
+  ).not.toContain('private-replay-payload')
+  expect(
+    await Bun.file(
+      join(root, '.pickle', 'runs', run.id, 'manifest.json'),
+    ).text(),
+  ).not.toContain('private-replay-payload')
+})
+
 test('an in-progress manifest omits finishedAt until the test run finishes', async () => {
   const root = await tempRoot()
   const store = openTestRunStore({
@@ -285,13 +338,21 @@ test('lists immutable history metadata for Studio after rebuilding the index', a
   })
   await run.append({
     type: 'scenario-finished',
-    result: passedResult(),
+    result: {
+      ...passedResult(),
+      executionMode: 'replay',
+      cacheOutcome: 'hit',
+      inferenceCount: 0,
+    },
   })
   await run.append({
     type: 'scenario-finished',
     result: {
       ...passedResult('Complete a mobile purchase'),
       executionTargetProfile: { id: 'android' },
+      executionMode: 'adaptive',
+      cacheOutcome: 'fallback',
+      inferenceCount: 3,
     },
   })
   clock = new Date('2026-08-15T12:00:03.500Z')
@@ -316,6 +377,9 @@ test('lists immutable history metadata for Studio after rebuilding the index', a
       durationMs: 3_500,
       state: 'passed',
       resultCount: 2,
+      executionModes: ['adaptive', 'replay'],
+      cacheOutcomes: ['fallback', 'hit'],
+      inferenceCount: 3,
     },
   ])
 })

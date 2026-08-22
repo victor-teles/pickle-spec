@@ -1,52 +1,25 @@
-import type {
-  RunEvent,
-  TestResult,
-  TestResultState,
-  TestStepResult,
-} from './run-scenario'
-import { isEvidenceState } from './run-scenario'
+import {
+  publicRunEvent,
+  publicTestResult,
+  publicTestRunState,
+} from './public-results'
+import type { RunEvent, TestResult, TestResultState } from './run-scenario'
 import type { TestRunManifest } from './test-run-store'
 
 export function formatJson(manifest: TestRunManifest): string {
   const output: TestRunManifest = {
     ...manifest,
-    state: outputState(manifest.state),
-    results: manifest.results.map(outputTestResult),
+    state: publicTestRunState(manifest.state),
+    results: manifest.results.map(publicTestResult),
   }
   return `${JSON.stringify(output, null, 2)}\n`
 }
 
 export function formatNdjson(events: readonly RunEvent[]): string {
-  return `${events.map((event) => JSON.stringify(outputRunEvent(event))).join('\n')}\n`
+  return `${events.map((event) => JSON.stringify(publicRunEvent(event))).join('\n')}\n`
 }
 
-function outputState(state: TestResultState): TestResultState {
-  return state === 'passed-with-adaptation' ? 'passed' : state
-}
-
-function outputStepResult(result: TestStepResult): TestStepResult {
-  return { ...result, state: outputState(result.state) }
-}
-
-function outputTestResult(result: TestResult): TestResult {
-  return {
-    ...result,
-    state: outputState(result.state),
-    steps: result.steps.map(outputStepResult),
-  }
-}
-
-function outputRunEvent(event: RunEvent): RunEvent {
-  if (event.type === 'step-finished') {
-    return { ...event, result: outputStepResult(event.result) }
-  }
-  if (event.type === 'scenario-finished') {
-    return { ...event, result: outputTestResult(event.result) }
-  }
-  return event
-}
-
-export type HtmlArtifactMode = 'failures-and-adaptations' | 'all'
+export type HtmlArtifactMode = 'failures' | 'all'
 
 export interface FormatHtmlOptions {
   artifacts?: HtmlArtifactMode
@@ -55,7 +28,6 @@ export interface FormatHtmlOptions {
 const priorityStates = new Set<TestResultState>([
   'failed',
   'infrastructure-error',
-  'passed-with-adaptation',
   'cancelled',
 ])
 
@@ -64,15 +36,14 @@ function shouldEmbedArtifacts(
   mode: HtmlArtifactMode,
 ): boolean {
   if (mode === 'all') return true
-  return isEvidenceState(state)
+  return state === 'failed' || state === 'infrastructure-error'
 }
 
 function resultPriority(state: TestResultState): number {
   if (state === 'failed' || state === 'infrastructure-error') return 0
-  if (state === 'passed-with-adaptation') return 1
-  if (state === 'cancelled') return 2
+  if (state === 'cancelled') return 1
   if (state === 'skipped') return 4
-  return 3
+  return 2
 }
 
 async function embedArtifacts(
@@ -103,7 +74,7 @@ export async function formatHtml(
   manifest: TestRunManifest,
   options: FormatHtmlOptions = {},
 ): Promise<string> {
-  const mode = options.artifacts ?? 'failures-and-adaptations'
+  const mode = options.artifacts ?? 'failures'
   const results = [...manifest.results].sort(
     (left, right) =>
       resultPriority(left.state) - resultPriority(right.state) ||
@@ -119,6 +90,9 @@ export async function formatHtml(
   <h2>${escapeXml(result.scenario.name)}</h2>
   <p>State: ${escapeXml(result.state)}</p>
   <p>Profile: ${escapeXml(result.executionTargetProfile.id)}</p>
+  ${result.executionMode ? `<p>Execution mode: ${escapeXml(result.executionMode)}</p>` : ''}
+  ${result.cacheOutcome ? `<p>Cache outcome: ${escapeXml(result.cacheOutcome)}</p>` : ''}
+  ${result.inferenceCount !== undefined ? `<p>Inference count: ${result.inferenceCount}</p>` : ''}
   ${result.message ? `<p>${escapeXml(result.message)}</p>` : ''}
   ${artifacts}
 </section>`

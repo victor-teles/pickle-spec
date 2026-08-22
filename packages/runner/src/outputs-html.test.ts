@@ -39,10 +39,15 @@ function result(
   }
 }
 
-test('formatHtml includes failure and adaptation artifacts by default', async () => {
+test('formatHtml includes failure artifacts and Cache execution metadata by default', async () => {
   await withArtifact(async (failurePath) => {
     const passedPath = join(dirname(failurePath), 'passed.png')
     await Bun.write(passedPath, 'passed-bytes')
+    const legacyAdaptationPath = join(
+      dirname(failurePath),
+      'legacy-adaptation.png',
+    )
+    await Bun.write(legacyAdaptationPath, 'legacy-adaptation-bytes')
     const manifest: TestRunManifest = {
       schemaVersion: 1,
       id: 'run-html',
@@ -90,20 +95,59 @@ test('formatHtml includes failure and adaptation artifacts by default', async ()
             },
           ],
         }),
-        result('Adapt the purchase', 'passed-with-adaptation'),
+        result('Replay the purchase', 'passed', {
+          executionMode: 'replay',
+          cacheOutcome: 'hit',
+          inferenceCount: 0,
+        }),
+        result('Fallback the purchase', 'passed', {
+          executionMode: 'adaptive',
+          cacheOutcome: 'fallback',
+          inferenceCount: 2,
+        }),
+        result('Legacy adapted purchase', 'passed-with-adaptation', {
+          steps: [
+            {
+              step: {
+                keyword: 'Then',
+                text: 'legacy succeeds',
+                type: 'outcome',
+              },
+              state: 'passed-with-adaptation',
+              resolvedActions: [],
+              artifacts: [
+                {
+                  kind: 'screenshot',
+                  path: legacyAdaptationPath,
+                  mediaType: 'image/png',
+                },
+              ],
+            },
+          ],
+        }),
       ],
     }
     const html = await formatHtml(manifest)
 
     expect(html).toContain('<!DOCTYPE html>')
     expect(html).toContain('Pay for the order')
-    expect(html).toContain('Adapt the purchase')
+    expect(html).toContain('Replay the purchase')
+    expect(html).toContain('Fallback the purchase')
+    expect(html).toContain('Execution mode: replay')
+    expect(html).toContain('Cache outcome: hit')
+    expect(html).toContain('Inference count: 0')
+    expect(html).toContain('Execution mode: adaptive')
+    expect(html).toContain('Cache outcome: fallback')
+    expect(html).toContain('Inference count: 2')
     expect(html.indexOf('Pay for the order')).toBeLessThan(
       html.indexOf('Complete a purchase'),
     )
     expect(html).toContain('data:image/png;base64,')
     expect(html).toContain(Buffer.from('png-bytes').toString('base64'))
     expect(html).not.toContain(Buffer.from('passed-bytes').toString('base64'))
+    expect(html).not.toContain(
+      Buffer.from('legacy-adaptation-bytes').toString('base64'),
+    )
   })
 })
 

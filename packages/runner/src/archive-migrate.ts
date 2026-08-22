@@ -38,6 +38,10 @@ const archiveResultInput = object('archive result', {
   state: z.unknown().optional(),
   steps: z.unknown().optional(),
   executionMode: z.unknown().optional(),
+  cacheOutcome: z.unknown().optional(),
+  inferenceCount: z.unknown().optional(),
+  cacheUncacheableReason: z.unknown().optional(),
+  failureKind: z.unknown().optional(),
   message: z.unknown().optional(),
   attempts: z.unknown().optional(),
   flaky: z.unknown().optional(),
@@ -82,13 +86,23 @@ function migrateStep(step: unknown): TestStepResult {
     step: value.step as TestStepResult['step'],
     state: value.state as TestStepResult['state'],
     resolvedActions: Array.isArray(value.resolvedActions)
-      ? (value.resolvedActions as TestStepResult['resolvedActions'])
+      ? value.resolvedActions.map(migrateResolvedAction)
       : [],
     message: typeof value.message === 'string' ? value.message : undefined,
     artifacts: Array.isArray(value.artifacts)
       ? (value.artifacts as TestStepResult['artifacts'])
       : undefined,
   }
+}
+
+function migrateResolvedAction(
+  action: unknown,
+): TestStepResult['resolvedActions'][number] {
+  if (action === null || typeof action !== 'object') {
+    return { description: String(action ?? '') }
+  }
+  const description = 'description' in action ? action.description : ''
+  return { description: String(description ?? '') }
 }
 
 function migrateResult(result: unknown): TestResult {
@@ -109,6 +123,19 @@ function migrateResult(result: unknown): TestResult {
       typeof value.executionMode === 'string'
         ? (value.executionMode as TestResult['executionMode'])
         : undefined,
+    cacheOutcome:
+      typeof value.cacheOutcome === 'string'
+        ? (value.cacheOutcome as TestResult['cacheOutcome'])
+        : undefined,
+    inferenceCount:
+      typeof value.inferenceCount === 'number'
+        ? value.inferenceCount
+        : undefined,
+    cacheUncacheableReason:
+      typeof value.cacheUncacheableReason === 'string'
+        ? (value.cacheUncacheableReason as TestResult['cacheUncacheableReason'])
+        : undefined,
+    failureKind: value.failureKind === 'cache-miss' ? 'cache-miss' : undefined,
     message: typeof value.message === 'string' ? value.message : undefined,
     attempts: typeof value.attempts === 'number' ? value.attempts : undefined,
     flaky: typeof value.flaky === 'boolean' ? value.flaky : undefined,

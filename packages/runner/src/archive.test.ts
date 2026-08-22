@@ -25,6 +25,9 @@ function passedResult(): TestResult {
     executionTargetProfile: { id: 'deterministic' },
     state: 'passed',
     steps: [],
+    executionMode: 'replay',
+    cacheOutcome: 'hit',
+    inferenceCount: 0,
     durationMs: 12,
   }
 }
@@ -78,7 +81,17 @@ test('writeRunArchive preserves events, manifests, and selected test artifacts',
     expect(archive).toMatchObject({
       schemaVersion: 1,
       kind: 'run-archive',
-      manifest: { id: 'run-archive', state: 'failed' },
+      manifest: {
+        id: 'run-archive',
+        state: 'failed',
+        results: [
+          {
+            executionMode: 'replay',
+            cacheOutcome: 'hit',
+            inferenceCount: 0,
+          },
+        ],
+      },
     })
     expect(archive.events[0]).toMatchObject({
       type: 'run-started',
@@ -90,6 +103,62 @@ test('writeRunArchive preserves events, manifests, and selected test artifacts',
       Buffer.from(archive.artifacts[0]!.content, 'base64').toString(),
     ).toBe('png-bytes')
     expect(manifest.id).toBe('run-archive')
+  } finally {
+    await rm(root, { recursive: true, force: true })
+  }
+})
+
+test('archive round-trip omits private replay payloads from resolved actions', async () => {
+  const root = await tempRoot()
+  try {
+    const store = openTestRunStore({
+      root,
+      createId: () => 'run-private-cache-payload',
+      now: () => new Date('2026-08-15T12:00:00.000Z'),
+    })
+    const run = await store.create()
+    await run.append({
+      type: 'scenario-finished',
+      result: {
+        ...passedResult(),
+        steps: [
+          {
+            step: { keyword: 'When', text: 'I submit', type: 'action' },
+            state: 'passed',
+            resolvedActions: [
+              {
+                description: 'Submit the form',
+                replay: { payload: 'raw-cache-payload-must-not-export' },
+              },
+            ],
+          },
+        ],
+      },
+    })
+    await run.materialize()
+    const archivePath = join(root, 'private-cache-payload.json')
+
+    await writeRunArchive({ root, runId: run.id, outputPath: archivePath })
+
+    const source = await Bun.file(archivePath).text()
+    const archive = await readRunArchive(archivePath)
+    expect(source).not.toContain('raw-cache-payload-must-not-export')
+    expect(archive.manifest.results[0]).toMatchObject({
+      executionMode: 'replay',
+      cacheOutcome: 'hit',
+      inferenceCount: 0,
+    })
+    expect(archive.events[1]).toMatchObject({
+      type: 'scenario-finished',
+      result: {
+        executionMode: 'replay',
+        cacheOutcome: 'hit',
+        inferenceCount: 0,
+      },
+    })
+    expect(archive.manifest.results[0]?.steps[0]?.resolvedActions).toEqual([
+      { description: 'Submit the form' },
+    ])
   } finally {
     await rm(root, { recursive: true, force: true })
   }
@@ -166,6 +235,9 @@ test('import preserves the original archive and migrates older schemas in memory
       sequence: 1,
       type: 'run-started',
     })
+    expect(imported.manifest.results[0]?.executionMode).toBeUndefined()
+    expect(imported.manifest.results[0]?.cacheOutcome).toBeUndefined()
+    expect(imported.manifest.results[0]?.inferenceCount).toBeUndefined()
 
     const store = openTestRunStore({ root })
     expect(await store.list()).toEqual([

@@ -391,7 +391,7 @@ async function exportRun(argv: string[]): Promise<number> {
 
   const { manifest } = await loadPersistedRun(process.cwd(), runId)
   const html = await formatHtml(manifest, {
-    artifacts: allArtifacts ? 'all' : 'failures-and-adaptations',
+    artifacts: allArtifacts ? 'all' : 'failures',
   })
   const htmlBytes = Buffer.byteLength(html, 'utf8')
   const warningThreshold = 10 * 1024 * 1024

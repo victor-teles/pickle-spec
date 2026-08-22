@@ -574,9 +574,7 @@ export async function startStudio(
             })
           }
           const artifacts =
-            url.searchParams.get('artifacts') === 'all'
-              ? 'all'
-              : 'failures-and-adaptations'
+            url.searchParams.get('artifacts') === 'all' ? 'all' : 'failures'
           return new Response(
             await options.history.exportHtml(runId, artifacts),
             {

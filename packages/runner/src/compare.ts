@@ -5,8 +5,10 @@ export type ResultChangeKind =
   | 'state'
   | 'duration'
   | 'flaky'
-  | 'adaptation'
-  | 'plan'
+  | 'execution-mode'
+  | 'cache-outcome'
+  | 'inference-count'
+  | 'resolved-actions'
   | 'artifacts'
 
 export interface ComparedResultPair {
@@ -47,11 +49,8 @@ function artifactSignature(result: TestResult): string {
   )
 }
 
-function planSignature(result: TestResult): string {
-  return JSON.stringify({
-    executionMode: result.executionMode,
-    steps: result.steps.map((step) => step.resolvedActions),
-  })
+function resolvedActionsSignature(result: TestResult): string {
+  return JSON.stringify(result.steps.map((step) => step.resolvedActions))
 }
 
 function changesBetween(
@@ -70,11 +69,19 @@ function changesBetween(
   if (Boolean(baseline.flaky) !== Boolean(candidate.flaky)) {
     changes.push('flaky')
   }
-  const baselineAdapted = baseline.state === 'passed-with-adaptation'
-  const candidateAdapted = candidate.state === 'passed-with-adaptation'
-  if (baselineAdapted !== candidateAdapted) changes.push('adaptation')
-  if (planSignature(baseline) !== planSignature(candidate)) {
-    changes.push('plan')
+  if (baseline.executionMode !== candidate.executionMode) {
+    changes.push('execution-mode')
+  }
+  if (baseline.cacheOutcome !== candidate.cacheOutcome) {
+    changes.push('cache-outcome')
+  }
+  if (baseline.inferenceCount !== candidate.inferenceCount) {
+    changes.push('inference-count')
+  }
+  if (
+    resolvedActionsSignature(baseline) !== resolvedActionsSignature(candidate)
+  ) {
+    changes.push('resolved-actions')
   }
   if (artifactSignature(baseline) !== artifactSignature(candidate)) {
     changes.push('artifacts')

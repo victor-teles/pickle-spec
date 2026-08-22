@@ -1,6 +1,7 @@
 import { mkdir, open, rm, stat } from 'node:fs/promises'
 import { basename, dirname, join, relative, resolve, sep } from 'node:path'
 import { migrateRunArchive } from './archive-migrate'
+import { withoutPrivateStepResultData } from './public-results'
 import type { RunEvent, TestResult, TestStepResult } from './run-scenario'
 import { openTestRunStore, type TestRunManifest } from './test-run-store'
 
@@ -74,10 +75,11 @@ function mapStepArtifacts(
   step: TestStepResult,
   mapPath: MapArtifactPath,
 ): TestStepResult {
-  if (!step.artifacts) return step
+  const publicStep = withoutPrivateStepResultData(step)
+  if (!publicStep.artifacts) return publicStep
   return {
-    ...step,
-    artifacts: step.artifacts.map((artifact) => ({
+    ...publicStep,
+    artifacts: publicStep.artifacts.map((artifact) => ({
       ...artifact,
       path: mapPath(artifact.path),
     })),

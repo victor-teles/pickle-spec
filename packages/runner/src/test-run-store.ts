@@ -1,7 +1,10 @@
 import { Database } from 'bun:sqlite'
 import { appendFile, copyFile, mkdir, rm } from 'node:fs/promises'
 import { dirname, extname, join } from 'node:path'
+import type { CacheOutcome } from './execution-cache'
+import { withoutPrivateRunEventPayloadData } from './public-results'
 import type {
+  ExecutionMode,
   RunEvent,
   RunEventPayload,
   TestResult,
@@ -52,6 +55,9 @@ export interface TestRunSummary {
   durationMs?: number
   state: TestResultState
   resultCount: number
+  executionModes?: ExecutionMode[]
+  cacheOutcomes?: CacheOutcome[]
+  inferenceCount?: number
 }
 
 export interface PersistedTestRun {
@@ -79,7 +85,7 @@ export interface TestRunStore {
 }
 
 const dayMs = 24 * 60 * 60 * 1000
-const indexSchemaVersion = 3
+const indexSchemaVersion = 4
 
 export const defaultRetention = {
   maxAgeMs: 30 * dayMs,
@@ -257,7 +263,7 @@ function persistedTestRun(
       const current = await readEvents(eventsPath)
       const versioned = {
         ...(await persistEventArtifacts(
-          eventPayload(event),
+          withoutPrivateRunEventPayloadData(eventPayload(event)),
           artifactCapture,
           artifactsDirectory,
         )),
@@ -318,6 +324,9 @@ interface IndexedRun {
   durationMs: number | null
   state: TestResultState
   resultCount: number
+  executionModes: string
+  cacheOutcomes: string
+  inferenceCount: number | null
 }
 
 type IndexColumn = { name: string }
@@ -337,7 +346,10 @@ function openIndex(path: string): Database {
       application_revision TEXT,
       duration_ms INTEGER,
       state TEXT NOT NULL,
-      result_count INTEGER NOT NULL
+      result_count INTEGER NOT NULL,
+      execution_modes TEXT NOT NULL DEFAULT '[]',
+      cache_outcomes TEXT NOT NULL DEFAULT '[]',
+      inference_count INTEGER
     )
   `)
   const columns = new Set(
@@ -353,6 +365,9 @@ function openIndex(path: string): Database {
     ['specification_uris', "TEXT NOT NULL DEFAULT '[]'"],
     ['application_revision', 'TEXT'],
     ['duration_ms', 'INTEGER'],
+    ['execution_modes', "TEXT NOT NULL DEFAULT '[]'"],
+    ['cache_outcomes', "TEXT NOT NULL DEFAULT '[]'"],
+    ['inference_count', 'INTEGER'],
   ] as const
   for (const [name, definition] of additions) {
     if (!columns.has(name))
@@ -401,14 +416,35 @@ function upsertRun(db: Database, manifest: TestRunManifest): void {
   const durationMs = manifest.finishedAt
     ? Date.parse(manifest.finishedAt) - Date.parse(manifest.startedAt)
     : undefined
+  const executionModes = [
+    ...new Set(
+      manifest.results.flatMap((result) =>
+        result.executionMode ? [result.executionMode] : [],
+      ),
+    ),
+  ].sort()
+  const cacheOutcomes = [
+    ...new Set(
+      manifest.results.flatMap((result) =>
+        result.cacheOutcome ? [result.cacheOutcome] : [],
+      ),
+    ),
+  ].sort()
+  const inferenceCounts = manifest.results.flatMap((result) =>
+    result.inferenceCount === undefined ? [] : [result.inferenceCount],
+  )
+  const inferenceCount =
+    inferenceCounts.length > 0
+      ? inferenceCounts.reduce((total, count) => total + count, 0)
+      : undefined
   db.run(
     `INSERT INTO runs (
        id, started_at, finished_at, source_run_id, suite,
        execution_target_profile_ids, specification_uris,
        application_revision, duration_ms,
-       state, result_count
+       state, result_count, execution_modes, cache_outcomes, inference_count
      )
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT(id) DO UPDATE SET
        started_at = excluded.started_at,
        finished_at = excluded.finished_at,
@@ -419,7 +455,10 @@ function upsertRun(db: Database, manifest: TestRunManifest): void {
        application_revision = excluded.application_revision,
        duration_ms = excluded.duration_ms,
        state = excluded.state,
-       result_count = excluded.result_count`,
+       result_count = excluded.result_count,
+       execution_modes = excluded.execution_modes,
+       cache_outcomes = excluded.cache_outcomes,
+       inference_count = excluded.inference_count`,
     [
       manifest.id,
       manifest.startedAt,
@@ -432,6 +471,9 @@ function upsertRun(db: Database, manifest: TestRunManifest): void {
       durationMs ?? null,
       manifest.state,
       manifest.results.length,
+      JSON.stringify(executionModes),
+      JSON.stringify(cacheOutcomes),
+      inferenceCount ?? null,
     ],
   )
 }
@@ -444,12 +486,19 @@ function listRuns(db: Database): TestRunSummary[] {
         execution_target_profile_ids AS executionTargetProfileIds,
         specification_uris AS specificationUris,
         application_revision AS applicationRevision, duration_ms AS durationMs,
-        state, result_count AS resultCount
+        state, result_count AS resultCount,
+        execution_modes AS executionModes,
+        cache_outcomes AS cacheOutcomes,
+        inference_count AS inferenceCount
        FROM runs ORDER BY id`,
     )
     .all()
     .map((row) => {
       const indexed = row as IndexedRun
+      const executionModes = JSON.parse(
+        indexed.executionModes,
+      ) as ExecutionMode[]
+      const cacheOutcomes = JSON.parse(indexed.cacheOutcomes) as CacheOutcome[]
       return {
         id: indexed.id,
         startedAt: indexed.startedAt,
@@ -468,6 +517,11 @@ function listRuns(db: Database): TestRunSummary[] {
           : {}),
         state: indexed.state,
         resultCount: indexed.resultCount,
+        ...(executionModes.length > 0 ? { executionModes } : {}),
+        ...(cacheOutcomes.length > 0 ? { cacheOutcomes } : {}),
+        ...(indexed.inferenceCount !== null
+          ? { inferenceCount: indexed.inferenceCount }
+          : {}),
       }
     })
 }

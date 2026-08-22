@@ -193,7 +193,7 @@ export function HistoryPanel(props: HistoryPanelProps) {
   const reviewedRun = reviewed
     ? runs.find((run) => run.id === reviewed.id)
     : undefined
-  const artifactMode = includeAllArtifacts ? 'all' : 'failures-and-adaptations'
+  const artifactMode = includeAllArtifacts ? 'all' : 'failures'
   const retentionDays = history
     ? Math.round(history.retention.maxAgeMs / (24 * 60 * 60 * 1_000))
     : undefined
