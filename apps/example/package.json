@@ -5,7 +5,7 @@
   "scripts": {
     "run:example": "pickle run",
     "migrate": "pickle migrate",
-    "smoke": "pickle run --suite google --profile web",
+    "smoke": "pickle run --profile web",
     "export": "pickle export 83c9a5e9-0384-466e-ae38-bc623214b9c3 --html report.html",
     "studio": "pickle studio"
   },

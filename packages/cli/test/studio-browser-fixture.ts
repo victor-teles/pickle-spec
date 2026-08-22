@@ -177,10 +177,18 @@ Feature: Search
     })
     const stdout = collectStream(child.stdout)
     const stderr = collectStream(child.stderr)
-    const url = await stdout.waitFor(
-      /Studio (http:\/\/127\.0\.0\.1:\d+\S*)/,
-      45_000,
-    )
+    let url: string
+    try {
+      url = await Promise.race([
+        stdout.waitFor(/Studio (http:\/\/127\.0\.0\.1:\d+\S*)/, 45_000),
+        child.exited.then(async (code) => {
+          await Bun.sleep(25)
+          throw new Error(`Studio exited with code ${code}`)
+        }),
+      ])
+    } catch (error) {
+      throw new Error(`${String(error)}\n${stderr.text()}`)
+    }
     return { child, url, stdout, stderr }
   }
 }

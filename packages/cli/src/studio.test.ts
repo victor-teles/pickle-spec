@@ -284,6 +284,12 @@ export default {
     })
     const page = await browser.newPage()
     try {
+      let readinessRequestCount = 0
+      await page.route('**/api/run-readiness', async (route) => {
+        readinessRequestCount += 1
+        if (readinessRequestCount === 2) await Bun.sleep(200)
+        await route.continue()
+      })
       await page.goto(url)
       await page.getByRole('button', { name: 'Run Specification' }).click()
       await page.getByRole('button', { name: 'Run Specification' }).waitFor({
@@ -298,6 +304,7 @@ export default {
       await Bun.write(payloadVersion, 'v2')
       await Bun.write(blockRefresh, 'block')
       await page.getByRole('button', { name: 'Refresh cache' }).click()
+      await page.getByRole('button', { name: 'Checking readiness…' }).waitFor()
       await waitForFile(refreshStarted)
       const during = (await cache.inspect()).find(
         (entry) => entry.payloadDigest === before.payloadDigest,
@@ -543,6 +550,204 @@ export default {
       expect(await page.getByRole('img', { name: /screenshot/ }).count()).toBe(
         1,
       )
+    } finally {
+      await page.close()
+      child.kill()
+      await child.exited
+    }
+  }, 60_000)
+
+  test('Studio discovers mobile targets and runs a deterministic web, Android, and iOS matrix', async () => {
+    const project = await createStudioProject('mobile-target-matrix')
+    const screenshot = join(project, 'failure.png')
+    const sessionMarker = join(project, 'mobile-session-opened')
+    await Bun.write(
+      join(project, 'pickle.config.jsonc'),
+      JSON.stringify({
+        schemaVersion: 1,
+        specifications: 'features/**/*.feature',
+        concurrency: 3,
+        artifacts: { capture: 'always' },
+        executionTargetProfiles: {
+          web: { adapter: 'custom', capabilities: ['screenshots'] },
+          android: {
+            adapter: 'mobile',
+            capabilities: ['android', 'screenshots', 'device-logs'],
+            mobile: {
+              executionTarget: 'android-emulator',
+              application: {
+                id: 'com.example.checkout',
+                binaryPath: '/apps/checkout.apk',
+              },
+            },
+          },
+          ios: {
+            adapter: 'mobile',
+            capabilities: ['ios', 'screenshots'],
+            mobile: {
+              executionTarget: 'ios-simulator',
+              application: {
+                id: 'com.example.checkout',
+                binaryPath: '/apps/Checkout.app',
+              },
+            },
+          },
+        },
+      }),
+    )
+    await Bun.write(
+      join(project, 'pickle.extensions.ts'),
+      `
+const adapter = (configuredProfile) => ({
+  capabilities: ['android', 'ios', 'screenshots'],
+  async discoverTargets() {
+    return [{
+      id: configuredProfile === 'android'
+        ? 'emulator-5554'
+        : 'simulator-iphone-16',
+      name: configuredProfile === 'android'
+        ? 'Pixel 9 API 35'
+        : 'iPhone 16 Pro',
+      state: 'booted',
+      capabilities: [configuredProfile, 'screenshots'],
+    }]
+  },
+  async openSession(input) {
+    await Bun.write(${JSON.stringify(sessionMarker)}, 'opened')
+    return {
+      async executeStep(step) {
+        const profile = input.executionTargetProfile.id
+        return {
+          state: 'passed',
+          resolvedActions: [{
+            description: profile === 'web'
+              ? 'Click checkout in the browser'
+              : \`Tap checkout on \${profile}\`,
+          }],
+          artifacts: profile === 'web' ? undefined : [{
+            kind: 'screenshot',
+            path: ${JSON.stringify(screenshot)},
+            mediaType: 'image/png',
+          }],
+        }
+      },
+      async close() {},
+    }
+  },
+})
+
+export default {
+  adapters: {
+    web: adapter('web'),
+    android: adapter('android'),
+    ios: adapter('ios'),
+  },
+}
+`,
+    )
+    const { child, url } = await startStudio(project)
+    const page = await browser.newPage()
+    try {
+      await page.route('**/api/mobile-targets', async (route) => {
+        await route.fulfill({
+          contentType: 'application/json',
+          body: JSON.stringify([
+            {
+              profileId: 'android',
+              executionTarget: 'android-emulator',
+              targets: [
+                {
+                  id: 'emulator-5554',
+                  name: 'Pixel 9 API 35',
+                  state: 'booted',
+                  capabilities: ['android', 'screenshots'],
+                },
+              ],
+            },
+            {
+              profileId: 'ios',
+              executionTarget: 'ios-simulator',
+              targets: [
+                {
+                  id: 'simulator-iphone-16',
+                  name: 'iPhone 16 Pro',
+                  state: 'booted',
+                  capabilities: ['ios', 'screenshots'],
+                },
+              ],
+            },
+          ]),
+        })
+      })
+      await page.goto(url)
+      await page.getByRole('button', { name: 'Run Specification' }).click()
+      await page
+        .getByRole('alert')
+        .filter({ hasText: 'lacks configured capabilities: device-logs' })
+        .waitFor()
+      expect(await Bun.file(sessionMarker).exists()).toBe(false)
+      await page.getByRole('button', { name: 'Settings' }).click()
+      await page.getByRole('button', { name: 'android' }).click()
+      expect(await page.getByLabel('Mobile application id').inputValue()).toBe(
+        'com.example.checkout',
+      )
+      expect(
+        await page.getByLabel('Mobile application binary path').inputValue(),
+      ).toBe('/apps/checkout.apk')
+      await page.getByLabel('Profile capabilities').fill('android, screenshots')
+      await page
+        .getByRole('button', { name: 'Discover mobile targets' })
+        .click()
+      await page
+        .getByRole('button', { name: 'Pixel 9 API 35 · booted' })
+        .click()
+      expect(await page.getByLabel('Mobile target id').inputValue()).toBe(
+        'emulator-5554',
+      )
+      await page.getByRole('button', { name: 'Android Emulator' }).click()
+      expect(await page.getByLabel('Mobile target id').inputValue()).toBe(
+        'emulator-5554',
+      )
+      await page.getByRole('button', { name: 'iOS Simulator' }).click()
+      expect(await page.getByLabel('Mobile target id').inputValue()).toBe('')
+      await page.getByRole('button', { name: 'Android Emulator' }).click()
+      await page.getByLabel('Mobile target id').fill('emulator-5554')
+      await page.getByLabel('Mobile target id').fill('')
+      await saveExecutionTargetProfile(page, 'android')
+      expect(
+        await Bun.file(join(project, 'pickle.config.jsonc')).text(),
+      ).not.toContain('targetId')
+      await page
+        .getByRole('button', { name: 'Discover mobile targets' })
+        .click()
+      await page
+        .getByRole('button', { name: 'Pixel 9 API 35 · booted' })
+        .click()
+      await saveExecutionTargetProfile(page, 'android')
+      const savedConfig = await Bun.file(
+        join(project, 'pickle.config.jsonc'),
+      ).text()
+      expect(savedConfig).toContain('emulator-5554')
+      expect(savedConfig).not.toContain('secret')
+
+      await page.getByRole('button', { name: 'Specifications' }).click()
+      await page.getByRole('button', { name: 'Run Specification' }).click()
+      const scenarios = page.getByRole('table', { name: 'Scenarios' })
+      for (const profile of ['web', 'android', 'ios']) {
+        await scenarios
+          .getByRole('button', {
+            name: `Pay for the order ${profile} passed`,
+          })
+          .waitFor({ timeout: 20_000 })
+      }
+      await scenarios
+        .getByRole('button', { name: 'Pay for the order android passed' })
+        .click()
+      const timeline = page.getByRole('list', { name: 'Step timeline' })
+      expect(await timeline.textContent()).toContain('Tap checkout on android')
+      expect(
+        await timeline.getByRole('img', { name: /screenshot/ }).count(),
+      ).toBe(1)
     } finally {
       await page.close()
       child.kill()

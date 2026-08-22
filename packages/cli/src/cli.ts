@@ -38,6 +38,10 @@ import { createRunReportingSession } from './run-reporting-session'
 import { createStudioExecutionCacheGateway } from './studio-cache'
 import { createStudioHistoryGateway } from './studio-history'
 import {
+  discoverStudioMobileTargets,
+  validateStudioMobileTargetCapabilities,
+} from './studio-mobile-targets'
+import {
   loadStudioProject,
   patchStudioConfig,
   resolveConfigSecrets,
@@ -509,6 +513,13 @@ async function studio(argv: string[]): Promise<number> {
     management: {
       saveConfig: (patch) => patchStudioConfig(context, patch),
       saveCredential: (input) => saveStudioCredential(context, input),
+      async discoverMobileTargets() {
+        return discoverStudioMobileTargets(
+          await loadConfig(args.configPath, root),
+          undefined,
+          extensions.adapters,
+        )
+      },
       async readiness(request) {
         const current = await loadConfig(args.configPath, root)
         const specifications = await loadProjectSpecifications(
@@ -516,7 +527,34 @@ async function studio(argv: string[]): Promise<number> {
           current.language,
           root,
         )
-        return studioRunReadiness(context, request, current, specifications)
+        const readiness = await studioRunReadiness(
+          context,
+          request,
+          current,
+          specifications,
+        )
+        if (!readiness.ready) return readiness
+        try {
+          validateStudioMobileTargetCapabilities(
+            current,
+            await discoverStudioMobileTargets(
+              current,
+              undefined,
+              extensions.adapters,
+              request?.profiles,
+            ),
+            request?.profiles,
+          )
+          return readiness
+        } catch (reason) {
+          return {
+            ready: false,
+            reasons: [
+              ...readiness.reasons,
+              reason instanceof Error ? reason.message : String(reason),
+            ],
+          }
+        }
       },
     },
     executionCache: createStudioExecutionCacheGateway(root, async () => {
@@ -540,6 +578,16 @@ async function studio(argv: string[]): Promise<number> {
           once: true,
         })
         const current = await loadConfig(args.configPath, root)
+        validateStudioMobileTargetCapabilities(
+          current,
+          await discoverStudioMobileTargets(
+            current,
+            undefined,
+            extensions.adapters,
+            request?.profiles,
+          ),
+          request?.profiles,
+        )
         const started = await startProjectRun({
           root,
           config: await resolveConfigSecrets(current, credentials),

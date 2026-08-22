@@ -101,6 +101,22 @@ function profileDetails(config: PickleConfig): StudioProfile[] {
         ...(profile.capabilities
           ? { capabilities: [...profile.capabilities] }
           : {}),
+        ...(profile.mobile
+          ? {
+              mobile: {
+                ...profile.mobile,
+                executionTarget:
+                  profile.mobile.executionTarget ?? 'android-emulator',
+                application: { ...profile.mobile.application },
+                artifacts: profile.mobile.artifacts
+                  ? [...profile.mobile.artifacts]
+                  : undefined,
+                redactions: profile.mobile.redactions?.map((redaction) => ({
+                  ...redaction,
+                })),
+              },
+            }
+          : {}),
       }),
     )
   }
@@ -274,6 +290,16 @@ export async function patchStudioConfig(
           ? { capabilities: [...profile.capabilities] }
           : {}),
         ...(existing[id]?.web ? { web: existing[id].web } : {}),
+        ...(profile.mobile
+          ? {
+              mobile: {
+                ...profile.mobile,
+                application: { ...profile.mobile.application },
+              },
+            }
+          : profile.adapter === 'mobile' && existing[id]?.mobile
+            ? { mobile: existing[id].mobile }
+            : {}),
       }
     }
     next.executionTargetProfiles = profiles

@@ -58,6 +58,34 @@ export interface StudioProfile {
   id: string
   adapter: string
   capabilities?: readonly string[]
+  mobile?: StudioMobileProfile
+}
+
+export interface StudioMobileProfile {
+  executionTarget: 'android-emulator' | 'ios-simulator'
+  application: {
+    id: string
+    binaryPath: string
+  }
+  targetId?: string
+  artifactDirectory?: string
+  artifacts?: readonly ('screenshot' | 'trace' | 'recording' | 'device-log')[]
+  redactions?: readonly { match: string; replacement?: string }[]
+  nodePath?: string
+}
+
+export interface StudioMobileTarget {
+  id: string
+  name: string
+  state: 'booted' | 'offline'
+  capabilities: readonly string[]
+}
+
+export interface StudioMobileTargetDiscovery {
+  profileId: string
+  executionTarget: 'android-emulator' | 'ios-simulator'
+  targets: readonly StudioMobileTarget[]
+  error?: string
 }
 
 export interface StudioCredential {
@@ -82,7 +110,11 @@ export interface StudioConfigPatch {
   >
   executionTargetProfiles?: Record<
     string,
-    { adapter: string; capabilities?: readonly string[] }
+    {
+      adapter: string
+      capabilities?: readonly string[]
+      mobile?: StudioMobileProfile
+    }
   >
   links?: Record<string, string>
   secrets?: Record<string, { keychain: string }>
@@ -181,6 +213,7 @@ export interface StudioManagementGateway {
     secret: string
   }): Promise<StudioProject>
   readiness(request?: StudioRunRequest): Promise<StudioRunReadiness>
+  discoverMobileTargets?(): Promise<readonly StudioMobileTargetDiscovery[]>
 }
 
 export interface StudioOptions {
@@ -638,6 +671,17 @@ export async function startStudio(
             .json()
             .catch(() => ({}))) as StudioRunRequest
           return Response.json(await options.management.readiness(body))
+        }
+        if (
+          url.pathname === '/api/mobile-targets' &&
+          request.method === 'GET'
+        ) {
+          if (!options.management?.discoverMobileTargets) {
+            return new Response('Mobile target discovery is unavailable', {
+              status: 501,
+            })
+          }
+          return Response.json(await options.management.discoverMobileTargets())
         }
         if (url.pathname === '/api/git' && request.method === 'GET') {
           return Response.json(await git.status())

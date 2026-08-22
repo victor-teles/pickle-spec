@@ -38,6 +38,7 @@ import { SpecificationEditor } from './specification-editor'
 import './styles.css'
 import type {
   StudioProject,
+  StudioRunReadiness,
   StudioRunRequest,
   StudioScenario,
   StudioSpecification,
@@ -182,8 +183,17 @@ function StudioApp() {
   async function startRun(request: StudioRunRequest) {
     if (running) return
     setError(undefined)
+    setRunId(undefined)
     setView({ ...emptyRunView(), phase: 'running' })
     try {
+      const readiness = await api<StudioRunReadiness>('/api/run-readiness', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(request),
+      })
+      if (!readiness.ready) {
+        throw new Error(readiness.reasons.join('\n'))
+      }
       const started = await api<{ id: string }>('/api/runs', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
@@ -389,19 +399,24 @@ function StudioApp() {
                           : 'ml-auto flex shrink-0 items-center gap-2',
                       )}
                     >
-                      {authoring ? null : running && runId ? (
-                        <Button
-                          type="button"
-                          variant="destructive"
-                          onClick={() => void cancelRun()}
-                        >
-                          Cancel test run
-                        </Button>
+                      {authoring ? null : running ? (
+                        runId ? (
+                          <Button
+                            type="button"
+                            variant="destructive"
+                            onClick={() => void cancelRun()}
+                          >
+                            Cancel test run
+                          </Button>
+                        ) : (
+                          <Button type="button" disabled>
+                            Checking readiness…
+                          </Button>
+                        )
                       ) : specCanRun ? (
                         <>
                           <Button
                             type="button"
-                            disabled={running}
                             onClick={() =>
                               void startRun({ paths: [selected.uri] })
                             }
@@ -411,7 +426,6 @@ function StudioApp() {
                           <Button
                             type="button"
                             variant="outline"
-                            disabled={running}
                             onClick={() =>
                               void startRun({
                                 paths: [selected.uri],

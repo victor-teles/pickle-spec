@@ -24,6 +24,7 @@
         "pickle": "./src/cli.ts",
       },
       "dependencies": {
+        "@pickle-spec/mobile": "workspace:*",
         "@pickle-spec/runner": "workspace:*",
         "@pickle-spec/spec": "workspace:*",
         "@pickle-spec/studio": "workspace:*",
