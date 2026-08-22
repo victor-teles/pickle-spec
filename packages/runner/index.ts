@@ -71,6 +71,14 @@ export {
   historicalDurationsFrom,
   latestHistoricalDurations,
 } from './src/historical-durations'
+export type {
+  LocalExecutionCache,
+  LocalExecutionCacheOptions,
+} from './src/local-execution-cache'
+export {
+  defaultExecutionCacheMaxBytes,
+  openLocalExecutionCache,
+} from './src/local-execution-cache'
 export type { FormatHtmlOptions, HtmlArtifactMode } from './src/outputs'
 export {
   formatHtml,

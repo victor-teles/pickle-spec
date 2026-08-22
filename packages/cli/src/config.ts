@@ -45,6 +45,10 @@ export interface ProjectRetention {
   maxBytes?: number
 }
 
+export interface ProjectCache {
+  maxBytes?: number
+}
+
 export interface ProjectArtifacts {
   capture?: ArtifactCapturePolicy
 }
@@ -68,6 +72,7 @@ export interface PickleConfig {
   concurrency?: number
   server?: ServerConfig
   retention?: ProjectRetention
+  cache?: ProjectCache
   artifacts?: ProjectArtifacts
   links?: Record<string, string>
   secrets?: Record<string, ProjectSecretRef>
@@ -298,6 +303,9 @@ const pickleConfigSchema = strictObject('configuration', {
   retention: strictObject('retention', {
     days: optionalPositiveInteger('retention.days'),
     maxBytes: optionalPositiveInteger('retention.maxBytes'),
+  }).optional(),
+  cache: strictObject('cache', {
+    maxBytes: optionalPositiveInteger('cache.maxBytes'),
   }).optional(),
   artifacts: strictObject('artifacts', {
     capture: z

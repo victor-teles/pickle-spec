@@ -21,6 +21,7 @@ import {
   type WebAdapterOptions,
 } from '@pickle-spec/web'
 import cliPackage from '../package.json' with { type: 'json' }
+import { runCacheCommand } from './cache'
 import { defaultSpecificationGlob, loadConfig } from './config'
 import {
   loadExtensions,
@@ -542,6 +543,9 @@ async function main(argv: string[]): Promise<number> {
   }
   if (argv[0] === 'studio') {
     return studio(argv)
+  }
+  if (argv[0] === 'cache') {
+    return runCacheCommand(argv)
   }
   if (argv[0] === 'check') {
     await checkProject({ ...projectOptions(argv), report: console.log })
