@@ -176,7 +176,7 @@ async function applyFidelity(
 
 function createStagehandAutomation(
   browser: StagehandBrowser,
-  ensureStagehand: () => Promise<Stagehand>,
+  stagehand: Stagehand,
   timeouts: StagehandTimeouts,
 ): WebAutomation {
   const direct = createDirectBrowser(browser.context, {
@@ -186,7 +186,6 @@ function createStagehandAutomation(
   return {
     navigate: direct.navigate,
     async observe(prompt, signal) {
-      const stagehand = await ensureStagehand()
       const result = await withAbort(
         stagehand.observe(prompt, {
           timeout: timeouts.observeTimeoutMs,
@@ -199,7 +198,6 @@ function createStagehandAutomation(
       }))
     },
     async act(action, signal) {
-      const stagehand = await ensureStagehand()
       const result = await withAbort(
         stagehand.act(action.handle as Parameters<Stagehand['act']>[0], {
           timeout: timeouts.actTimeoutMs,
@@ -212,7 +210,6 @@ function createStagehandAutomation(
       }
     },
     async verify(prompt, signal) {
-      const stagehand = await ensureStagehand()
       const result = await withAbort(
         stagehand.extract(
           `Verify the following condition on the current page: "${prompt}". ` +
@@ -224,7 +221,6 @@ function createStagehandAutomation(
       return result.data
     },
     async compileAssertion(prompt, signal) {
-      const stagehand = await ensureStagehand()
       const result = await withAbort(
         stagehand.extract(
           'Compile the following Scenario outcome into exactly one deterministic ' +
@@ -271,9 +267,6 @@ export const stagehandFactory: WebAutomationFactory = {
       context: WebClientContext,
     ): Promise<Stagehand> {
       if (stagehand) return stagehand
-      const modelName =
-        context.browser.modelName ?? options.modelName ?? defaultModelName
-      const modelApiKey = context.browser.modelApiKey ?? options.modelApiKey
       const selfHeal = context.browser.selfHeal ?? options.selfHeal ?? true
       const domSettleTimeoutMs =
         context.browser.domSettleTimeoutMs ??
@@ -281,16 +274,21 @@ export const stagehandFactory: WebAutomationFactory = {
         defaultDomSettleTimeoutMs
       const cache = context.browser.cache ?? options.cache
 
-      const model: ModelConfig = {
-        modelName: modelName as ModelConfig['modelName'],
-      }
-      if (modelApiKey !== undefined) model.apiKey = modelApiKey
       const createOptions: StagehandCreateOptions = {
         browser,
-        model,
         logging: { level: 'off', format: 'json' },
         selfHeal,
         domSettleTimeoutMs,
+      }
+      if (context.mode !== 'replay') {
+        const modelName =
+          context.browser.modelName ?? options.modelName ?? defaultModelName
+        const modelApiKey = context.browser.modelApiKey ?? options.modelApiKey
+        const model: ModelConfig = {
+          modelName: modelName as ModelConfig['modelName'],
+        }
+        if (modelApiKey !== undefined) model.apiKey = modelApiKey
+        createOptions.model = model
       }
       if (cache !== undefined) createOptions.cache = cache
 
@@ -301,25 +299,22 @@ export const stagehandFactory: WebAutomationFactory = {
     return {
       async openContext(context) {
         if (context.signal?.aborted) throw abortError()
+        const activeStagehand = await ensureStagehand(context)
         await applyFidelity(browser.context, context.fidelity)
-        return createStagehandAutomation(
-          browser,
-          () => ensureStagehand(context),
-          {
-            navigationTimeoutMs:
-              context.browser.navigationTimeoutMs ??
-              options.navigationTimeoutMs ??
-              defaultWebNavigationTimeoutMs,
-            observeTimeoutMs:
-              context.browser.observeTimeoutMs ??
-              options.observeTimeoutMs ??
-              defaultObserveTimeoutMs,
-            actTimeoutMs:
-              context.browser.actTimeoutMs ??
-              options.actTimeoutMs ??
-              defaultWebActionTimeoutMs,
-          },
-        )
+        return createStagehandAutomation(browser, activeStagehand, {
+          navigationTimeoutMs:
+            context.browser.navigationTimeoutMs ??
+            options.navigationTimeoutMs ??
+            defaultWebNavigationTimeoutMs,
+          observeTimeoutMs:
+            context.browser.observeTimeoutMs ??
+            options.observeTimeoutMs ??
+            defaultObserveTimeoutMs,
+          actTimeoutMs:
+            context.browser.actTimeoutMs ??
+            options.actTimeoutMs ??
+            defaultWebActionTimeoutMs,
+        })
       },
       async close() {
         try {
