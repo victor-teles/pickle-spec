@@ -1,15 +1,30 @@
 {
   "schemaVersion": 1,
-  "specifications": "**/*.feature",
+  "specifications": "features/**/*.feature",
+  "suites": {
+    "smoke": {
+      "tagExpression": "@smoke",
+      "states": ["active"]
+    },
+    "regression": {
+      "tagExpression": "@regression",
+      "states": ["active"]
+    }
+  },
   "executionTargetProfile": {
     "id": "web"
   },
   "web": {
-    "baseUrl": "https://google.com",
+    "baseUrl": "https://www.saucedemo.com",
     "browser": {
       "environment": "local",
       "modelName": "google/gemini-3.6-flash",
       "headless": false
     }
-  }
+  },
+  "execution": {
+    "scenarioTimeoutMs": 120000,
+    "stepTimeoutMs": 30000
+  },
+  "concurrency": 1
 }

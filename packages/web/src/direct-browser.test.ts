@@ -102,7 +102,7 @@ describe('direct web assertions', () => {
 
 describe('direct web actions', () => {
   test('executes the closed action and wait vocabulary through browser primitives', async () => {
-    const click = mock(async () => {})
+    const sendClickEvent = mock(async () => {})
     const fill = mock(async () => {})
     const type = mock(async () => {})
     const hover = mock(async () => {})
@@ -116,7 +116,7 @@ describe('direct web actions', () => {
       },
       count: mock(async () => 1),
       isVisible: mock(async () => true),
-      click,
+      sendClickEvent,
       fill,
       type,
       hover,
@@ -149,7 +149,7 @@ describe('direct web actions', () => {
       expect(await browser.execute(action, [])).toEqual({ success: true })
     }
 
-    expect(click).toHaveBeenCalledTimes(1)
+    expect(sendClickEvent).toHaveBeenCalledTimes(1)
     expect(fill).toHaveBeenCalledWith('Alice')
     expect(type).toHaveBeenCalledWith(' Smith')
     expect(hover).toHaveBeenCalledTimes(1)

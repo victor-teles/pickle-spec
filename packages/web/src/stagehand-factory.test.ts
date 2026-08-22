@@ -10,11 +10,20 @@ type LaunchedBrowser = Awaited<ReturnType<typeof localBrowser.launch>>
 describe('stagehandFactory', () => {
   afterEach(() => mock.restore())
 
-  test('omits unset Stagehand options from the JSON-RPC initialization payload', async () => {
+  test('attaches Stagehand before opening an Adaptive browser context', async () => {
+    let attached = false
+    const context = {
+      activePage: mock(async () => null),
+      cookies: mock(async () => []),
+    }
     const browser = {
-      context: {
-        activePage: mock(async () => null),
-        cookies: mock(async () => []),
+      get context() {
+        if (!attached) {
+          throw new Error(
+            'Browser context is unavailable. Attach the browser with await Stagehand.create({ browser }).',
+          )
+        }
+        return context
       },
       close: mock(async () => {}),
     } as unknown as LaunchedBrowser
@@ -29,6 +38,7 @@ describe('stagehandFactory', () => {
     } as unknown as Stagehand
     spyOn(localBrowser, 'launch').mockResolvedValue(browser)
     spyOn(Stagehand, 'create').mockImplementation(async (input) => {
+      attached = true
       const { browser: _browser, ...initialization } = input
       z.json().parse(initialization)
       return stagehand
@@ -52,21 +62,37 @@ describe('stagehandFactory', () => {
     }
   })
 
-  test('runs public cache Replay without model credentials or creating Stagehand', async () => {
+  test('attaches Stagehand for public cache Replay without a model', async () => {
     const goto = mock(async () => null)
     const page = {
       goto,
       evaluate: mock(async () => 0),
     }
+    let attached = false
+    const context = {
+      activePage: mock(async () => page),
+      cookies: mock(async () => []),
+    }
     const browser = {
-      context: {
-        activePage: mock(async () => page),
-        cookies: mock(async () => []),
+      get context() {
+        if (!attached) {
+          throw new Error(
+            'Browser context is unavailable. Attach the browser with await Stagehand.create({ browser }).',
+          )
+        }
+        return context
       },
       close: mock(async () => {}),
     } as unknown as LaunchedBrowser
+    const stagehand = {
+      browser,
+      close: mock(async () => {}),
+    } as unknown as Stagehand
     spyOn(localBrowser, 'launch').mockResolvedValue(browser)
-    const create = spyOn(Stagehand, 'create')
+    const create = spyOn(Stagehand, 'create').mockImplementation(async () => {
+      attached = true
+      return stagehand
+    })
     const scenario: Scenario = {
       name: 'Open account',
       tags: ['@web'],
@@ -118,6 +144,7 @@ describe('stagehandFactory', () => {
     }
 
     expect(goto).toHaveBeenCalledTimes(1)
-    expect(create).not.toHaveBeenCalled()
+    expect(create).toHaveBeenCalledTimes(1)
+    expect(create.mock.calls[0]?.[0]).not.toHaveProperty('model')
   })
 })
