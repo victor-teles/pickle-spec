@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os'
 import { basename, join, resolve } from 'node:path'
 import type {
   CandidateExecutionPlan,
+  ExecutionCacheEntryMetadata,
   ExecutionPlan,
   HtmlArtifactMode,
   RunEvent,
@@ -144,6 +145,7 @@ export interface StudioRunRequest {
   rerunId?: string
   failures?: boolean
   adaptations?: boolean
+  refreshCache?: boolean
 }
 
 export interface StudioRunSnapshot {
@@ -183,6 +185,17 @@ export interface StudioHistory {
   retention: StudioRetentionPolicy
 }
 
+export interface StudioExecutionCacheInspection {
+  projectKey: string
+  maxBytes: number
+  entries: readonly ExecutionCacheEntryMetadata[]
+}
+
+export interface StudioExecutionCacheGateway {
+  inspect(): Promise<StudioExecutionCacheInspection>
+  clear(): Promise<{ clearedEntries: number }>
+}
+
 export interface StudioAuthoringGateway {
   model: StudioAuthoringModel
   propose?: (input: {
@@ -208,6 +221,7 @@ export interface StudioOptions {
   documents?: SpecificationWorkspace
   authoring?: StudioAuthoringGateway
   management?: StudioManagementGateway
+  executionCache?: StudioExecutionCacheGateway
   plans?: StudioPlanGateway
   git?: GitWorkspace
   specificationGlobs?: string | readonly string[]
@@ -647,6 +661,27 @@ export async function startStudio(
         return null
       }
 
+      async function routeExecutionCache(): Promise<Response | null> {
+        if (url.pathname !== '/api/execution-cache') return null
+        if (!options.executionCache) {
+          return new Response('Execution cache is unavailable', {
+            status: 501,
+          })
+        }
+        try {
+          if (request.method === 'GET') {
+            return Response.json(await options.executionCache.inspect())
+          }
+          if (request.method === 'DELETE') {
+            return Response.json(await options.executionCache.clear())
+          }
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error)
+          return new Response(message, { status: 500 })
+        }
+        return null
+      }
+
       async function routeManagement(): Promise<Response | null> {
         if (url.pathname === '/api/config' && request.method === 'PUT') {
           if (!options.management) {
@@ -938,6 +973,8 @@ export async function startStudio(
         if (historyResponse) return historyResponse
         const planResponse = await routePlans()
         if (planResponse) return planResponse
+        const executionCacheResponse = await routeExecutionCache()
+        if (executionCacheResponse) return executionCacheResponse
         const managementResponse = await routeManagement()
         if (managementResponse) return managementResponse
         const documentResponse = await routeDocuments()

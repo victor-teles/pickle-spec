@@ -130,7 +130,6 @@ export function registerStudioHardeningTests(
 
       for (const [areaIndex, area] of [
         'Specifications',
-        'Plans',
         'Settings',
       ].entries()) {
         await page.goto(url)

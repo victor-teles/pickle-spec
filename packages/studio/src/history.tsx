@@ -468,13 +468,14 @@ export function HistoryPanel(props: HistoryPanelProps) {
                   <TableHead>State</TableHead>
                   <TableHead>Execution mode</TableHead>
                   <TableHead>Cache outcome</TableHead>
+                  <TableHead>Uncacheable reason</TableHead>
                   <TableHead>Inferences</TableHead>
                   <TableHead>Duration</TableHead>
                   <TableHead>Rerun</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                <VirtualTableSpacer height={resultWindow.before} colSpan={8} />
+                <VirtualTableSpacer height={resultWindow.before} colSpan={9} />
                 {visibleResults.map((result) => (
                   <TableRow
                     key={`${result.scenario.id ?? result.scenario.name}:${result.executionTargetProfile.id}`}
@@ -488,6 +489,9 @@ export function HistoryPanel(props: HistoryPanelProps) {
                     </TableCell>
                     <TableCell>
                       {result.cacheOutcome ?? 'Not recorded'}
+                    </TableCell>
+                    <TableCell>
+                      {result.cacheUncacheableReason ?? 'Not recorded'}
                     </TableCell>
                     <TableCell>
                       {inferenceCountLabel(result.inferenceCount)}
@@ -529,7 +533,7 @@ export function HistoryPanel(props: HistoryPanelProps) {
                     </TableCell>
                   </TableRow>
                 ))}
-                <VirtualTableSpacer height={resultWindow.after} colSpan={8} />
+                <VirtualTableSpacer height={resultWindow.after} colSpan={9} />
               </TableBody>
             </Table>
           </section>

@@ -15,6 +15,8 @@ export type {
   StudioAuthoringModel,
   StudioConfigPatch,
   StudioCredential,
+  StudioExecutionCacheGateway,
+  StudioExecutionCacheInspection,
   StudioExternalLink,
   StudioHistory,
   StudioHistoryGateway,

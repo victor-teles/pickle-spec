@@ -35,6 +35,7 @@ import {
   type RunReporterName,
   terminalReporterCapabilities,
 } from './run-reporter'
+import { createStudioExecutionCacheGateway } from './studio-cache'
 import { createStudioHistoryGateway } from './studio-history'
 import { createStudioPlanGateway } from './studio-plans'
 import {
@@ -472,6 +473,10 @@ async function studio(argv: string[]): Promise<number> {
       },
     },
     plans: createStudioPlanGateway(root, loadProject),
+    executionCache: createStudioExecutionCacheGateway(root, async () => {
+      const current = await loadConfig(args.configPath, root)
+      return current.cache ?? {}
+    }),
     history: createStudioHistoryGateway(root, async () => {
       const current = await loadConfig(args.configPath, root)
       return {
@@ -501,6 +506,7 @@ async function studio(argv: string[]): Promise<number> {
             scenarioIds: request?.scenarioId ? [request.scenarioId] : undefined,
             failures: request?.failures,
             adaptations: request?.adaptations,
+            refreshCache: request?.refreshCache,
           },
           signal: runController.signal,
           onEvent,

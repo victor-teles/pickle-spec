@@ -1,3 +1,9 @@
+import type {
+  CacheOutcome,
+  ExecutionCacheUncacheableReason,
+  ExecutionMode,
+} from '@pickle-spec/runner'
+
 export type TestResultState =
   | 'passed'
   | 'passed-with-adaptation'
@@ -21,6 +27,10 @@ export type TestResult = {
   executionTargetProfile: { id: string }
   state: TestResultState
   steps: StepResult[]
+  executionMode?: ExecutionMode
+  cacheOutcome?: CacheOutcome
+  cacheUncacheableReason?: ExecutionCacheUncacheableReason
+  inferenceCount?: number
   message?: string
 }
 
