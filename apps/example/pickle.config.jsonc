@@ -1,15 +1,29 @@
 {
   "schemaVersion": 1,
-  "specifications": "**/*.feature",
+  "specifications": "features/**/*.feature",
+  "suites": {
+    "smoke": {
+      "tagExpression": "@smoke",
+      "states": ["active"]
+    }
+  },
+  "links": {
+    "automation-exercise": "https://automationexercise.com/test_cases#collapse{id}"
+  },
   "executionTargetProfile": {
     "id": "web"
   },
   "web": {
-    "baseUrl": "https://google.com",
+    "baseUrl": "https://automationexercise.com",
     "browser": {
       "environment": "local",
       "modelName": "google/gemini-3.6-flash",
-      "headless": false
+      "headless": true
     }
-  }
+  },
+  "execution": {
+    "scenarioTimeoutMs": 120000,
+    "stepTimeoutMs": 30000
+  },
+  "concurrency": 1
 }
