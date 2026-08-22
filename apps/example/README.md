@@ -39,6 +39,11 @@ cd apps/example
 bun run run:regression
 ```
 
+The first successful Adaptive run stores deterministic actions in the local
+Execution cache. Later runs against the configured SauceDemo revision use
+Replay mode without model inference. Use `pickle run --refresh-cache` after
+the public practice site changes.
+
 To run the complete journey directly from this project:
 
 ```sh

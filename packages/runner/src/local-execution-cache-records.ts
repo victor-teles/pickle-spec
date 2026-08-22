@@ -234,10 +234,17 @@ export function writeExecutionCacheEntry(
   return result.changes === 1
 }
 
-export function evictLeastRecentlyUsed(db: Database, maxBytes: number): number {
+export function evictLeastRecentlyUsed(
+  db: Database,
+  projectKey: string,
+  maxBytes: number,
+): number {
   const total = db
-    .query('SELECT COALESCE(SUM(size_bytes), 0) AS bytes FROM entries')
-    .get() as StoredBytesRow
+    .query(
+      `SELECT COALESCE(SUM(size_bytes), 0) AS bytes
+       FROM entries WHERE project_key = ?`,
+    )
+    .get(projectKey) as StoredBytesRow
   let retainedBytes = total.bytes
   let evictedEntries = 0
   while (retainedBytes > maxBytes) {
@@ -245,10 +252,11 @@ export function evictLeastRecentlyUsed(db: Database, maxBytes: number): number {
       .query(
         `SELECT key_digest AS keyDigest, size_bytes AS sizeBytes
          FROM entries
+         WHERE project_key = ?
          ORDER BY last_used_at, created_at, key_digest
          LIMIT 1`,
       )
-      .get() as StoredEntrySize | null
+      .get(projectKey) as StoredEntrySize | null
     if (!oldest) break
     db.run('DELETE FROM entries WHERE key_digest = ?', [oldest.keyDigest])
     retainedBytes -= oldest.sizeBytes

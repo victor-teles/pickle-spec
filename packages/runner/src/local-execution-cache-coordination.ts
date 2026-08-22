@@ -146,15 +146,18 @@ export function createLocalExecutionCacheCoordination(
             )?.revision
             db.run(
               `INSERT INTO leases (
-               key_digest, owner_token, expires_at, baseline_revision
-             ) VALUES (?, ?, ?, ?)
+               key_digest, project_key, owner_token, expires_at,
+               baseline_revision
+             ) VALUES (?, ?, ?, ?, ?)
              ON CONFLICT(key_digest) DO UPDATE SET
+               project_key = excluded.project_key,
                owner_token = excluded.owner_token,
                expires_at = excluded.expires_at,
                baseline_revision = excluded.baseline_revision
              WHERE leases.expires_at <= ?`,
               [
                 digestKey,
+                projectKey,
                 ownerToken,
                 timestamp + timing.ttlMs,
                 baselineRevision ?? null,
@@ -294,7 +297,11 @@ export function createLocalExecutionCacheCoordination(
               )
               return { published: false, stored: false, evictedEntries: 0 }
             }
-            const evictedEntries = evictLeastRecentlyUsed(db, maxBytes)
+            const evictedEntries = evictLeastRecentlyUsed(
+              db,
+              projectKey,
+              maxBytes,
+            )
             const stored = executionCacheEntryIsRetained(db, serialized.key)
             if (stored) {
               db.run(
@@ -327,9 +334,16 @@ export function createLocalExecutionCacheCoordination(
             if (!active) return false
             db.run(
               `INSERT INTO lease_outcomes (
-                 key_digest, owner_token, terminal_outcome, completed_at
-               ) VALUES (?, ?, ?, ?)`,
-              [digestKey, lease.ownerToken, terminalOutcome.source, timestamp],
+                 key_digest, project_key, owner_token, terminal_outcome,
+                 completed_at
+               ) VALUES (?, ?, ?, ?, ?)`,
+              [
+                digestKey,
+                projectKey,
+                lease.ownerToken,
+                terminalOutcome.source,
+                timestamp,
+              ],
             )
             db.run(
               'DELETE FROM leases WHERE key_digest = ? AND owner_token = ?',

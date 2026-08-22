@@ -1,5 +1,6 @@
 {
   "$schema": "https://turbo.build/schema.json",
+  "globalPassThroughEnv": ["PICKLE_HOME", "PICKLE_CACHE_ROOT"],
   "tasks": {
     "typecheck": {
       "dependsOn": ["^typecheck"]

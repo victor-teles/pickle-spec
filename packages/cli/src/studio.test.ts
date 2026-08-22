@@ -5,6 +5,7 @@ import {
   type ExecutionCacheEnvelope,
   type ExecutionCachePayloadValidator,
   openLocalExecutionCache,
+  resolveLocalProjectStorage,
   serializeExecutionCacheEnvelope,
 } from '@pickle-spec/runner'
 import type { Browser, Page } from 'playwright'
@@ -923,7 +924,10 @@ Feature: Search
       await history.getByText('run-imported').waitFor({ timeout: 20_000 })
       expect(
         await Bun.file(
-          join(project, '.pickle', 'archives', 'run-imported.json'),
+          join(
+            resolveLocalProjectStorage(project).archivesDirectory,
+            'run-imported.json',
+          ),
         ).text(),
       ).toBe(importBytes)
 
@@ -933,7 +937,10 @@ Feature: Search
       await page.getByText(/Deleted \d+ local test runs/).waitFor()
       expect(
         await Bun.file(
-          join(project, '.pickle', 'archives', 'run-imported.json'),
+          join(
+            resolveLocalProjectStorage(project).archivesDirectory,
+            'run-imported.json',
+          ),
         ).text(),
       ).toBe(importBytes)
     } finally {
@@ -1666,13 +1673,13 @@ async function setGherkinValue(page: Page, source: string) {
 
 async function finishedManifestCount(project: string): Promise<number> {
   const manifests = new Bun.Glob('*/manifest.json').scan({
-    cwd: join(project, '.pickle', 'runs'),
+    cwd: resolveLocalProjectStorage(project).runsDirectory,
     onlyFiles: true,
   })
   let finished = 0
   for await (const relativePath of manifests) {
     const manifest = (await Bun.file(
-      join(project, '.pickle', 'runs', relativePath),
+      join(resolveLocalProjectStorage(project).runsDirectory, relativePath),
     ).json()) as TestRunManifestFile
     if (manifest.finishedAt) finished++
   }

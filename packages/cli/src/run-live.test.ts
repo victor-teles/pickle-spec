@@ -2,6 +2,7 @@ import { afterAll, beforeAll, expect, test } from 'bun:test'
 import { mkdir, mkdtemp, rm, symlink } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
+import { resolveLocalProjectStorage } from '@pickle-spec/runner'
 
 let workspace: string
 let pickleCommand: string
@@ -261,12 +262,12 @@ Feature: Interrupt safely
 
   const manifestPaths = [
     ...new Bun.Glob('*/manifest.json').scanSync({
-      cwd: join(project, '.pickle', 'runs'),
+      cwd: resolveLocalProjectStorage(project).runsDirectory,
     }),
   ]
   expect(manifestPaths).toHaveLength(1)
   const persistedManifest = await Bun.file(
-    join(project, '.pickle', 'runs', manifestPaths[0]!),
+    join(resolveLocalProjectStorage(project).runsDirectory, manifestPaths[0]!),
   ).json()
   const exportedManifest = await Bun.file(jsonPath).json()
   expect(exportedManifest).toEqual(persistedManifest)

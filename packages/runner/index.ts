@@ -74,6 +74,11 @@ export {
   openLocalExecutionCache,
 } from './src/local-execution-cache'
 export type { ExecutionCacheLeaseTiming } from './src/local-execution-cache-coordination'
+export type { LocalProjectStorage } from './src/local-project-storage'
+export {
+  localProjectKey,
+  resolveLocalProjectStorage,
+} from './src/local-project-storage'
 export type { FormatHtmlOptions, HtmlArtifactMode } from './src/outputs'
 export {
   formatHtml,

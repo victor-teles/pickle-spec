@@ -26,5 +26,6 @@
     "scenarioTimeoutMs": 120000,
     "stepTimeoutMs": 30000
   },
+  "applicationRevision": "saucedemo-current",
   "concurrency": 1
 }

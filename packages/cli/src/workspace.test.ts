@@ -2,10 +2,15 @@ import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
 import { mkdir, mkdtemp, realpath, rm, symlink } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
+import { resolveLocalProjectStorage } from '@pickle-spec/runner'
 
 describe('public CLI workspace seam', () => {
   let workspace: string
   let pickleCommand: string
+
+  function runsDirectory(project: string): string {
+    return resolveLocalProjectStorage(project).runsDirectory
+  }
 
   interface CheckProjectFixture {
     config: unknown
@@ -198,6 +203,7 @@ export default {
     expect(stdout).not.toContain('"kind":"test-result"')
     expect(stdout).not.toContain('gherkinDocument')
     expect(stdout).not.toContain('Stagehand')
+    expect(await Bun.file(join(workspace, '.pickle')).exists()).toBe(false)
   }, 15_000)
 
   test('initializes a project without overwriting files and checks it without opening a session', async () => {
@@ -297,13 +303,13 @@ Feature: Release acceptance
     expect(run.exitCode).toBe(0)
     const manifests = [
       ...new Bun.Glob('*/manifest.json').scanSync({
-        cwd: join(project, '.pickle', 'runs'),
+        cwd: runsDirectory(project),
       }),
     ]
     expect(manifests).toHaveLength(1)
     const runId = dirname(manifests[0]!)
     const manifest = (await Bun.file(
-      join(project, '.pickle', 'runs', manifests[0]!),
+      join(runsDirectory(project), manifests[0]!),
     ).json()) as {
       id: string
       finishedAt?: string
@@ -1373,7 +1379,7 @@ export default {
 
     const [sourceManifest] = [
       ...new Bun.Glob('*/manifest.json').scanSync({
-        cwd: join(project, '.pickle', 'runs'),
+        cwd: runsDirectory(project),
       }),
     ]
     const sourceId = dirname(sourceManifest!)
@@ -1851,12 +1857,12 @@ Feature: Purchase
 
     const manifests = [
       ...new Bun.Glob('*/manifest.json').scanSync({
-        cwd: join(project, '.pickle', 'runs'),
+        cwd: runsDirectory(project),
       }),
     ]
     expect(manifests).toHaveLength(1)
     const manifest = (await Bun.file(
-      join(project, '.pickle', 'runs', manifests[0]!),
+      join(runsDirectory(project), manifests[0]!),
     ).json()) as {
       schemaVersion: number
       id: string
@@ -1870,13 +1876,7 @@ Feature: Purchase
     })
     const events = (
       await Bun.file(
-        join(
-          project,
-          '.pickle',
-          'runs',
-          dirname(manifests[0]!),
-          'events.ndjson',
-        ),
+        join(runsDirectory(project), dirname(manifests[0]!), 'events.ndjson'),
       ).text()
     )
       .trim()
@@ -1924,7 +1924,7 @@ Feature: Purchase
         join(workspace, 'pickle.extensions.ts'),
       ).text(),
     })
-    const expiredDirectory = join(project, '.pickle', 'runs', 'run-expired')
+    const expiredDirectory = join(runsDirectory(project), 'run-expired')
     await mkdir(expiredDirectory, { recursive: true })
     await Bun.write(
       join(expiredDirectory, 'events.ndjson'),
@@ -1946,7 +1946,7 @@ Feature: Purchase
         results: [],
       }),
     )
-    const retainedDirectory = join(project, '.pickle', 'runs', 'run-retained')
+    const retainedDirectory = join(runsDirectory(project), 'run-retained')
     await mkdir(retainedDirectory, { recursive: true })
     const retainedEvents = `${JSON.stringify({
       schemaVersion: 1,
@@ -2037,13 +2037,13 @@ export default {
     expect(first.exitCode).toBe(1)
     const sourceManifests = [
       ...new Bun.Glob('*/manifest.json').scanSync({
-        cwd: join(project, '.pickle', 'runs'),
+        cwd: runsDirectory(project),
       }),
     ]
     expect(sourceManifests).toHaveLength(1)
     const sourceId = dirname(sourceManifests[0]!)
     const sourceEvents = await Bun.file(
-      join(project, '.pickle', 'runs', sourceId, 'events.ndjson'),
+      join(runsDirectory(project), sourceId, 'events.ndjson'),
     ).text()
 
     const rerun = Bun.spawnSync({
@@ -2060,7 +2060,7 @@ export default {
 
     const manifests = [
       ...new Bun.Glob('*/manifest.json').scanSync({
-        cwd: join(project, '.pickle', 'runs'),
+        cwd: runsDirectory(project),
       }),
     ]
     expect(manifests).toHaveLength(2)
@@ -2068,7 +2068,7 @@ export default {
       (path) => dirname(path) !== sourceId,
     )!
     const rerunManifest = (await Bun.file(
-      join(project, '.pickle', 'runs', rerunManifestPath),
+      join(runsDirectory(project), rerunManifestPath),
     ).json()) as {
       sourceRunId?: string
       results: Array<{ scenario: { name: string }; state: string }>
@@ -2081,7 +2081,7 @@ export default {
     })
     expect(
       await Bun.file(
-        join(project, '.pickle', 'runs', sourceId, 'events.ndjson'),
+        join(runsDirectory(project), sourceId, 'events.ndjson'),
       ).text(),
     ).toBe(sourceEvents)
   })
@@ -2135,7 +2135,7 @@ export default {
     const sourceId = dirname(
       [
         ...new Bun.Glob('*/manifest.json').scanSync({
-          cwd: join(project, '.pickle', 'runs'),
+          cwd: runsDirectory(project),
         }),
       ][0]!,
     )
@@ -2170,7 +2170,10 @@ export default {
     )
     expect(
       await Bun.file(
-        join(target, '.pickle', 'archives', `${sourceId}.json`),
+        join(
+          resolveLocalProjectStorage(target).archivesDirectory,
+          `${sourceId}.json`,
+        ),
       ).text(),
     ).toBe(originalArchive)
     const compare = Bun.spawnSync({

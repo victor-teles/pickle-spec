@@ -16,6 +16,7 @@ import {
   type ExecutionCacheKey,
   type ExecutionCachePayloadValidator,
   openLocalExecutionCache,
+  resolveLocalProjectStorage,
   serializeExecutionCacheEnvelope,
 } from '../index'
 import { serializeExecutionCacheTerminalOutcome } from './execution-cache'
@@ -378,6 +379,36 @@ describe('local Execution cache', () => {
       undefined,
     )
     expect(await first.read(entry.key)).toBe(entry.source)
+    expect(
+      (await readdir(cacheRoot, { withFileTypes: true })).filter((item) =>
+        item.isDirectory(),
+      ),
+    ).toEqual([])
+    expect(
+      await Bun.file(join(cacheRoot, 'execution-cache.sqlite')).exists(),
+    ).toBe(true)
+  })
+
+  test('shares one project identity and storage directory across Git worktrees', async () => {
+    const repository = await tempRoot('pickle-repository')
+    const worktree = await tempRoot('pickle-worktree')
+    const commonGitDirectory = join(repository, '.git')
+    const worktreeGitDirectory = join(
+      commonGitDirectory,
+      'worktrees',
+      'feature',
+    )
+    await mkdir(worktreeGitDirectory, { recursive: true })
+    await Bun.write(join(worktreeGitDirectory, 'commondir'), '../..\n')
+    await Bun.write(join(worktree, '.git'), `gitdir: ${worktreeGitDirectory}\n`)
+
+    const repositoryStorage = resolveLocalProjectStorage(repository)
+    const worktreeStorage = resolveLocalProjectStorage(worktree)
+
+    expect(worktreeStorage.projectKey).toBe(repositoryStorage.projectKey)
+    expect(worktreeStorage.projectDirectory).toBe(
+      repositoryStorage.projectDirectory,
+    )
   })
 
   test('inspects metadata and records successful reads without exposing payloads', async () => {
@@ -471,8 +502,7 @@ describe('local Execution cache', () => {
     const projectRoot = await tempRoot('pickle-project')
     const cacheRoot = await tempRoot('pickle-cache')
     const initial = await openLocalExecutionCache({ projectRoot, cacheRoot })
-    const cacheDirectory = join(cacheRoot, initial.projectKey)
-    const databasePath = join(cacheDirectory, 'execution-cache.sqlite')
+    const databasePath = join(cacheRoot, 'execution-cache.sqlite')
     const entry = serialized(initial.projectKey, 'scenario-v1')
     await initial.write(entry, writeMetadata)
     await rm(`${databasePath}-wal`, { force: true })
@@ -483,7 +513,7 @@ describe('local Execution cache', () => {
 
     expect(await recovered.read(entry.key)).toBeUndefined()
     expect(
-      (await readdir(cacheDirectory)).some((name) =>
+      (await readdir(cacheRoot)).some((name) =>
         name.startsWith('execution-cache.sqlite.corrupt-'),
       ),
     ).toBe(true)
@@ -500,12 +530,8 @@ describe('local Execution cache', () => {
   test('migrates an empty version-zero database through the public store', async () => {
     const projectRoot = await tempRoot('pickle-project')
     const cacheRoot = await tempRoot('pickle-cache')
-    const initial = await openLocalExecutionCache({ projectRoot, cacheRoot })
-    const databasePath = join(
-      cacheRoot,
-      initial.projectKey,
-      'execution-cache.sqlite',
-    )
+    await openLocalExecutionCache({ projectRoot, cacheRoot })
+    const databasePath = join(cacheRoot, 'execution-cache.sqlite')
     await rm(databasePath, { force: true })
     await rm(`${databasePath}-wal`, { force: true })
     await rm(`${databasePath}-shm`, { force: true })
@@ -523,12 +549,8 @@ describe('local Execution cache', () => {
   test('migrates a version-two cache to revision-based publication', async () => {
     const projectRoot = await tempRoot('pickle-project')
     const cacheRoot = await tempRoot('pickle-cache')
-    const initial = await openLocalExecutionCache({ projectRoot, cacheRoot })
-    const databasePath = join(
-      cacheRoot,
-      initial.projectKey,
-      'execution-cache.sqlite',
-    )
+    await openLocalExecutionCache({ projectRoot, cacheRoot })
+    const databasePath = join(cacheRoot, 'execution-cache.sqlite')
     await rm(databasePath, { force: true })
     await rm(`${databasePath}-wal`, { force: true })
     await rm(`${databasePath}-shm`, { force: true })
@@ -608,10 +630,9 @@ describe('local Execution cache', () => {
     )
     expect(await second.read(secondEntry.key)).toBe(secondEntry.source)
     if (process.platform !== 'win32') {
-      const directory = join(cacheRoot, first.projectKey)
-      expect((await stat(directory)).mode & 0o777).toBe(0o700)
+      expect((await stat(cacheRoot)).mode & 0o777).toBe(0o700)
       expect(
-        (await stat(join(directory, 'execution-cache.sqlite'))).mode & 0o777,
+        (await stat(join(cacheRoot, 'execution-cache.sqlite'))).mode & 0o777,
       ).toBe(0o600)
     }
   })

@@ -10,7 +10,7 @@ The Studio can show diffs, stage files, and create local commits after confirmat
 
 The HTML export includes failure artifacts by default. An explicit option includes all artifacts.
 
-The Studio stores test runs under `.pickle/runs/<run-id>/`. A rebuildable SQLite index supports queries without becoming the source of truth.
+The Studio stores test runs under `~/.pickle/projects/<project-name>-<project-key>/runs/<run-id>/`. A rebuildable SQLite index supports queries without becoming the source of truth. Runtime data stays outside the project folder.
 
 The first version documents future hosted synchronization but contains no cloud API or synchronization implementation.
 

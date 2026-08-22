@@ -2,6 +2,7 @@ import { Database } from 'bun:sqlite'
 import { appendFile, copyFile, mkdir, rm } from 'node:fs/promises'
 import { dirname, extname, join } from 'node:path'
 import type { CacheOutcome } from './execution-cache'
+import { resolveLocalProjectStorage } from './local-project-storage'
 import { recordableRunEventPayloadData } from './public-results'
 import type {
   ExecutionMode,
@@ -16,6 +17,7 @@ export type ArtifactCapturePolicy = 'off' | 'on-failure' | 'always'
 
 export interface TestRunStoreOptions {
   root: string
+  pickleHome?: string
   createId?: () => string
   now?: () => Date
   artifactCapture?: ArtifactCapturePolicy
@@ -100,12 +102,13 @@ export function openTestRunStore(options: TestRunStoreOptions): TestRunStore {
   const createId = options.createId ?? (() => crypto.randomUUID())
   const now = options.now ?? (() => new Date())
   const artifactCapture = options.artifactCapture ?? 'on-failure'
-  const pickleDirectory = join(options.root, '.pickle')
-  const runsDirectory = join(pickleDirectory, 'runs')
-  const indexPath = join(pickleDirectory, 'index.sqlite')
+  const storage = resolveLocalProjectStorage(options.root, options.pickleHome)
+  const projectDirectory = storage.projectDirectory
+  const runsDirectory = storage.runsDirectory
+  const indexPath = storage.runIndexPath
 
   async function upsertManifest(manifest: TestRunManifest): Promise<void> {
-    await mkdir(pickleDirectory, { recursive: true })
+    await mkdir(projectDirectory, { recursive: true })
     withIndex(indexPath, (db) => upsertRun(db, manifest))
   }
 
@@ -168,7 +171,7 @@ export function openTestRunStore(options: TestRunStoreOptions): TestRunStore {
   }
 
   async function rebuild() {
-    await mkdir(pickleDirectory, { recursive: true })
+    await mkdir(projectDirectory, { recursive: true })
     const manifests = await loadManifests()
     withIndex(indexPath, (db) => {
       db.run('DELETE FROM runs')

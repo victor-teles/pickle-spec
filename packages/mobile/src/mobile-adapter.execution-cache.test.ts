@@ -267,7 +267,7 @@ test('public cache-only replays SQLite .ad and rejects semantic inference or hea
     expect(entry?.hitCount).toBe(3)
     expect(JSON.stringify(entry)).not.toContain('Pickles')
     const database = await Bun.file(
-      join(cacheRoot, cache.projectKey, 'execution-cache.sqlite'),
+      join(cacheRoot, 'execution-cache.sqlite'),
     ).bytes()
     expect(Buffer.from(database).includes(Buffer.from('Pickles'))).toBe(false)
   } finally {

@@ -1,6 +1,6 @@
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { basename, join, resolve } from 'node:path'
+import { basename, join, resolve, sep } from 'node:path'
 import type {
   ExecutionCacheEntryMetadata,
   HtmlArtifactMode,
@@ -9,6 +9,7 @@ import type {
   TestRunManifest,
   TestRunSummary,
 } from '@pickle-spec/runner'
+import { resolveLocalProjectStorage } from '@pickle-spec/runner'
 import type {
   SpecificationMetadata,
   StructuredSpecification,
@@ -855,8 +856,13 @@ export async function startStudio(
           const filePath = url.searchParams.get('path')
           if (!filePath) return new Response('Missing path', { status: 400 })
           const resolved = resolve(filePath)
-          const allowed = resolve(options.project.root, '.pickle', 'runs')
-          if (resolved !== allowed && !resolved.startsWith(`${allowed}/`)) {
+          const allowed = resolveLocalProjectStorage(
+            options.project.root,
+          ).runsDirectory
+          if (
+            resolved !== allowed &&
+            !resolved.startsWith(`${allowed}${sep}`)
+          ) {
             return new Response('Forbidden', { status: 403 })
           }
           const file = Bun.file(resolved)
