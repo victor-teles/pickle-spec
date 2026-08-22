@@ -8,9 +8,13 @@ Login → Products → Add backpack → Cart → Checkout
       → Customer information → Order confirmation
 ```
 
-The example is split into two independent Specifications:
+The example is split into four independent Specifications:
 
-- Customer authentication verifies that the standard customer reaches Products.
+- Customer authentication covers successful, rejected, required-field, and
+  logout paths.
+- Product catalog covers inventory completeness, price sorting, and product
+  details.
+- Shopping cart covers adding, removing, and retaining products.
 - Backpack checkout covers the complete journey through order confirmation.
 
 SauceDemo publishes its practice credentials on the login page. The
@@ -25,6 +29,14 @@ repository root:
 
 ```sh
 bun run run:example
+```
+
+The default command runs the two `@smoke` Scenarios. To run all authentication,
+catalog, cart, validation, cancellation, and order paths:
+
+```sh
+cd apps/example
+bun run run:regression
 ```
 
 To run the complete journey directly from this project:

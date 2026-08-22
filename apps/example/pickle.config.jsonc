@@ -5,6 +5,10 @@
     "smoke": {
       "tagExpression": "@smoke",
       "states": ["active"]
+    },
+    "regression": {
+      "tagExpression": "@regression",
+      "states": ["active"]
     }
   },
   "executionTargetProfile": {

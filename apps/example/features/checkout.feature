@@ -1,7 +1,7 @@
 @pickle:state:active
 Feature: Backpack checkout
 
-  @smoke
+  @smoke @regression
   Scenario: Standard customer completes a backpack order
     Given I am on the SauceDemo login page
     When I sign in with "standard_user" and "secret_sauce"
@@ -21,3 +21,32 @@ Feature: Backpack checkout
     When I click "Finish"
     Then "Checkout: Complete!" should be visible
     And "Thank you for your order!" should be visible
+
+  @regression
+  Scenario: Checkout requires complete customer information
+    Given I am on the SauceDemo login page
+    When I sign in with "standard_user" and "secret_sauce"
+    And I add "Sauce Labs Backpack" to the cart
+    And I select the shopping cart
+    And I click "Checkout"
+    Then "Checkout: Your Information" should be visible
+    When I click "Continue" without entering customer information
+    Then "Error: First Name is required" should be visible
+    When I fill "First Name" with "Sauce"
+    And I click "Continue"
+    Then "Error: Last Name is required" should be visible
+    When I fill "Last Name" with "Demo"
+    And I click "Continue"
+    Then "Error: Postal Code is required" should be visible
+
+  @regression
+  Scenario: Customer cancels checkout before entering information
+    Given I am on the SauceDemo login page
+    When I sign in with "standard_user" and "secret_sauce"
+    And I add "Sauce Labs Backpack" to the cart
+    And I select the shopping cart
+    And I click "Checkout"
+    Then "Checkout: Your Information" should be visible
+    When I click "Cancel"
+    Then the "Your Cart" page should be visible
+    And the cart should contain 1 "Sauce Labs Backpack"

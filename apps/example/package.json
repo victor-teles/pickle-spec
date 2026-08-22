@@ -4,7 +4,8 @@
   "type": "module",
   "scripts": {
     "run:example": "pickle run --suite smoke",
-    "run:journey": "pickle run",
+    "run:journey": "pickle run --scenario \"Standard customer completes a backpack order\"",
+    "run:regression": "pickle run --suite regression",
     "migrate": "pickle migrate",
     "smoke": "pickle run --suite smoke --profile web",
     "export": "pickle export 83c9a5e9-0384-466e-ae38-bc623214b9c3 --html report.html",
