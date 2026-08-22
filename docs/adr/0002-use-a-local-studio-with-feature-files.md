@@ -8,7 +8,7 @@ The Studio can show diffs, stage files, and create local commits after confirmat
 
 `pickle studio` provides authoring, test-run management, and result review. `pickle run` supports non-interactive execution and can export a self-contained HTML report.
 
-The HTML export includes failure and adaptation artifacts by default. An explicit option includes all artifacts.
+The HTML export includes failure artifacts by default. An explicit option includes all artifacts.
 
 The Studio stores test runs under `.pickle/runs/<run-id>/`. A rebuildable SQLite index supports queries without becoming the source of truth.
 

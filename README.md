@@ -71,8 +71,8 @@ Create `pickle.config.jsonc` in the project root:
     }
   },
   "applicationRevision": "git:HEAD",
-  "policy": {
-    "adaptedResults": "reject"
+  "cache": {
+    "maxBytes": 104857600
   },
   "execution": {
     "infrastructureRetries": 1,
@@ -83,7 +83,7 @@ Create `pickle.config.jsonc` in the project root:
 }
 ```
 
-Set the API key for the configured model provider. Bun loads environment variables from `.env`. For local Chrome, Stagehand needs that key on `model.apiKey`: set `web.browser.modelApiKey` or the provider env var (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GOOGLE_API_KEY`, `GEMINI_API_KEY`, or `GOOGLE_GENERATIVE_AI_API_KEY`). `web.browser.modelName` must be a Stagehand-supported `provider/model` value; Pickle Spec rejects unknown names before it starts browsers.
+Adaptive execution and Cache refresh require the API key for the configured model provider. Bun loads environment variables from `.env`. For local Chrome, set `web.browser.modelApiKey` or the provider environment variable (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GOOGLE_API_KEY`, `GEMINI_API_KEY`, or `GOOGLE_GENERATIVE_AI_API_KEY`). `web.browser.modelName` must be a Stagehand-supported `provider/model` value; Pickle Spec rejects unknown names before Adaptive execution starts. Replay and `--cache-only` execute browser primitives without model credentials.
 
 ## Open Studio
 
@@ -151,34 +151,28 @@ a machine-readable contract.
 
 ## Run Adaptive and Replay modes
 
-A Scenario without an applicable approved plan runs in Adaptive mode. Adaptive mode resolves actions while the Scenario runs and writes a candidate plan under `.pickle/candidates/`.
+A Scenario without an applicable Execution cache entry runs in Adaptive mode. The adapter resolves and executes deterministic actions and assertions, then stores the exact successful representation automatically. A successful Scenario that cannot be represented deterministically remains `passed` with an `uncacheable` Cache outcome and is not stored.
 
-An applicable approved plan runs in Replay mode. Replay mode uses the stored resolved actions and does not resolve actions with a model. Approved plans live under `.pickle/plans/` and belong in Git.
+An applicable entry runs in Replay mode without model inference. Web Replay executes stored browser operations directly. Mobile Replay materializes and runs the stored Agent Device `.ad` script for the Scenario.
 
-A plan applies to one Scenario revision, execution target profile, plan-format version, and application revision. A plan for one execution target profile cannot run on another profile.
+Entries apply to one project, Scenario revision, execution target profile and configuration fingerprint, application revision, adapter, and adapter cache schema version. Set `applicationRevision` in `pickle.config.jsonc` or pass `--application-revision`; a run without it remains Adaptive and does not read or write the cache.
 
-If Replay cannot complete a Scenario and Adaptive mode then succeeds, the test result is `passed-with-adaptation`. That run writes a candidate plan. It does not change the approved plan.
+Entries store placeholders and variable names instead of bound runtime values. An execution remains `uncacheable` when its adapter cannot separate reusable structure from runtime values.
 
-Set `applicationRevision` in `pickle.config.jsonc` or pass `--application-revision`. CI Replay requires that value. CI can reject adapted results:
+If Replay diverges, normal execution performs an observable Adaptive fallback. A successful fallback returns `passed` and atomically replaces the entry. Execution mode, Cache outcome, and inference count remain separate from the Scenario result.
 
-```jsonc
-{
-  "applicationRevision": "git:abc123",
-  "policy": {
-    "adaptedResults": "reject"
-  }
-}
+Use the cache controls explicitly:
+
+```bash
+pickle run --refresh-cache
+pickle run --cache-only
+pickle cache inspect
+pickle cache clear
 ```
 
-`policy.adaptedResults` accepts `accept` or `reject`. The default is `accept`.
+`--refresh-cache` bypasses the current entry and replaces it only after success. `--cache-only` never calls a model and fails on a miss or divergence. CI that requires zero inference must use `--cache-only`.
 
-Open **Plans** in Studio to review approved and candidate plans by Scenario and
-execution target profile. The comparison shows applicability metadata and
-resolved actions. Candidate evidence opens the originating test result and its
-retained test artifacts. Promotion always requires confirmation, replaces the
-Git-tracked approved plan, and removes the local candidate. Studio blocks plan
-promotion while one of its test runs is active; the CI adapted-result policy is
-visible for context but never promotes a plan automatically.
+Each checkout stores its cache outside the repository under `~/.pickle/cache/projects/<project-key>/execution-cache.sqlite`. SQLite is the only cache tier. The cache retains multiple Scenario and application revisions without a fixed TTL. Its default configurable limit is 100 MiB, with least-recently-used eviction by `lastUsedAt`. Studio shows cache behavior with results, offers Cache refresh beside Run, and keeps cache inspection and clearing under Settings.
 
 ## Persist, rerun, compare, and export test runs
 
@@ -189,7 +183,6 @@ To create a selective rerun from an earlier test run, use:
 ```bash
 pickle run --rerun <run-id>
 pickle run --rerun <run-id> --failures
-pickle run --rerun <run-id> --adaptations
 pickle run --rerun <run-id> --failures --scenario "Pay for the order"
 pickle run --rerun <run-id> --profile web
 ```
@@ -211,7 +204,7 @@ To compare compatible test runs, use:
 pickle compare <baseline-id> <candidate-id>
 ```
 
-Comparison matches results by Scenario identifier and execution target profile identifier. It reports state, duration, flaky, adaptation, plan, and artifact changes.
+Comparison matches results by Scenario identifier and execution target profile identifier. It reports state, duration, flaky, execution-mode, Cache-outcome, inference-count, and artifact changes.
 
 To create a self-contained HTML export, use:
 
@@ -220,7 +213,7 @@ pickle export <run-id> --html report.html
 pickle export <run-id> --html report.html --all-artifacts
 ```
 
-HTML export includes failure and adaptation artifacts by default. `--all-artifacts` embeds every available test artifact and prints a size warning when the export exceeds 10 MB.
+HTML export includes failure artifacts by default. Successful Adaptive fallback uses the normal artifact policy rather than a special category. The manifest includes execution mode, Cache outcome, and inference count. `--all-artifacts` embeds every available test artifact and prints a size warning when the export exceeds 10 MB.
 
 ## Add a custom adapter
 

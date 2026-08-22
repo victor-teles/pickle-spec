@@ -12,8 +12,8 @@ colors:
   brine-tint: "oklch(0.24 0.025 185)"
   brine-teal: "oklch(0.74 0.08 185)"
   brine-ink: "oklch(0.16 0.03 185)"
-  plan-amber: "oklch(0.8 0.11 85)"
-  plan-ink: "oklch(0.22 0.05 85)"
+  cache-amber: "oklch(0.8 0.11 85)"
+  cache-ink: "oklch(0.22 0.05 85)"
   failure-oxide: "oklch(0.7 0.14 32)"
   failure-ink: "oklch(0.16 0.03 32)"
   focus-ring: "oklch(0.72 0.008 250 / 0.4)"
@@ -102,9 +102,9 @@ components:
     rounded: "{rounded.pill}"
     padding: "0.125rem 0.5rem"
     typography: "{typography.mono}"
-  badge-adaptation:
+  badge-cache-outcome:
     backgroundColor: "oklch(0.8 0.11 85 / 0.2)"
-    textColor: "{colors.plan-amber}"
+    textColor: "{colors.cache-amber}"
     rounded: "{rounded.pill}"
     padding: "0.125rem 0.5rem"
     typography: "{typography.mono}"
@@ -139,20 +139,20 @@ components:
 
 **Creative North Star: "The Spec Ledger"**
 
-Studio is a bound technical ledger that happens to run on a screen. Feature files are the page; test results are the ink; an adaptation is a distinct mark, never a silent rewrite. The operator sits in a dark room with a local project, reading live state the way one reads a night-shift instrument — not a marketing dashboard.
+Studio is a bound technical ledger that happens to run on a screen. Feature files are the page; test results are the ink; execution mode and Cache outcome are explicit annotations, never hidden state. The operator sits in a dark room with a local project, reading live state the way one reads a night-shift instrument — not a marketing dashboard.
 
 The atmosphere is clinical lab, executed at the craft level of dark developer tools (Vercel, Cursor): near-black cool field, hairline plates, one light primary action, and color reserved for result state. Density is high. Chrome is thin. Empty space is leftover work, not a lifestyle.
 
 **Key Characteristics:**
 - Dark cool field with one-step raised plates, never a drop shadow
-- Bone-white primary action; teal, amber, and oxide only name a test-result state
+- Bone-white primary action; teal and oxide name result state, while amber labels cache behavior
 - Inter for UI, JetBrains Mono for measurements and resolved actions
 - Compact 8px corners, 9px controls, hairline borders
 - Status is a labeled chip, never a color-only dot
 
 ## Colors
 
-A restrained night palette: cool neutrals plus one light action, with three semantic inks for failed, adapted, and passed.
+A restrained night palette: cool neutrals plus one light action, with semantic inks for failed and passed plus an amber cache annotation.
 
 ### Primary
 - **Bone**: The only large action fill. Used on "Start test run" so the operator can find the next move without scanning for teal.
@@ -161,7 +161,7 @@ A restrained night palette: cool neutrals plus one light action, with three sema
 - **Brine Teal**: Passed results and the selected nav tint. It is not the product accent for chrome.
 
 ### Tertiary
-- **Plan Amber**: `passed-with-adaptation` chips. The ledger's distinct mark that a plan changed and still needs a human.
+- **Cache Amber**: Cache outcome labels such as `adaptive fallback` and `uncacheable`. It never replaces the result-state label.
 
 ### Neutral
 - **Night Ledger**: Canvas behind the whole Studio.
@@ -173,7 +173,7 @@ A restrained night palette: cool neutrals plus one light action, with three sema
 ### Named Rules
 **The Bone Rule.** The light fill is the primary action. Do not paint navigation, tables, or idle chips with Bone.
 
-**The State Ink Rule.** Teal, amber, and oxide appear only on labeled result chips or a failed matrix cell. They do not tint the page.
+**The State Ink Rule.** Teal and oxide appear only on labeled result chips or result cells. Amber appears only on a labeled Cache outcome annotation. They do not tint the page.
 
 ## Typography
 
@@ -197,7 +197,7 @@ A restrained night palette: cool neutrals plus one light action, with three sema
 
 A full-height column: header, then a single-row area nav, then a master-detail ledger. The left rail (16rem) lists Specifications. The main pane holds the selected Specification, contextual Scenarios / History navigation, the Scenario table (profile columns plus a per-row Run), Needs attention, and the step timeline. Run Specification and Edit Specification form one right-aligned action group in view mode and remain adjacent when the row wraps. Gherkin source and metadata appear only after Edit Specification. Padding is 1.5rem in the main stage, 0.75rem in the header, 0.25rem in the nav. Rhythm is 1rem inside a rail, 1.5rem between table and timeline.
 
-There is no marketing container or max-width. Studio is an app shell. Specifications is the current room. History belongs to the selected Specification; Plans and Settings remain global areas.
+There is no marketing container or max-width. Studio is an app shell. Specifications is the current room. History belongs to the selected Specification; Runs and Settings remain global areas.
 
 ### Named Rules
 **The Scenario-First Rule.** A selected Specification opens directly on its Scenario table. Gherkin source and metadata appear only after Edit Specification.
@@ -222,12 +222,11 @@ Quiet Mira instrument controls. Color names a result; geometry stays compact so 
 - **Primary:** Bone fill, Ink text. Hover is Bone at 80% opacity. Used for Run Specification on the selected file, and for Save Specification while Gherkin is dirty.
 - **Outline:** Hairline border, translucent input fill. Used for pending and running matrix cells, per-Scenario Run, Run all Specifications, Edit Specification, View Specification, Edit metadata, and Propose Specification.
 - **Passed:** Brine Teal tint and ink, with a Tick. Used for a passed matrix cell.
-- **Adaptation:** Plan Amber tint and ink. Used for `passed-with-adaptation` matrix cells.
 - **Destructive:** Failure Oxide tint and ink (not a solid fill). Used for a failed matrix cell and for Cancel during a live run.
 
 ### Chips
-- **Style:** Mira pills, JetBrains Mono 0.625rem, height 1.25rem. Variants: Ready Well, failed Oxide tint, adaptation Amber tint, passed Teal tint, running Brine Tint.
-- **State:** The chip text is the domain state word (`failed`, `passed-with-adaptation`, `running`) except idle, which reads Ready. Color never stands alone. A live run uses Beautiful UI’s Loading State Drive grid: a 3×3 pixel wavefront, a shimmering `running` label, and a mono elapsed timer in the header. Matrix cells carry the same grid beside the spelled state. A finished chip or matrix cell adds a Tick (Brine Teal, or Plan Amber for Adaptation) or a Cancel mark (Failure Oxide). `prefers-reduced-motion` freezes the grid and shimmer; the timer still ticks.
+- **Style:** Mira pills, JetBrains Mono 0.625rem, height 1.25rem. Result variants are Ready Well, failed Oxide tint, passed Teal tint, and running Brine Tint. Cache outcome uses a separate Cache Amber label.
+- **State:** The result chip text is the domain state word (`failed`, `passed`, `running`) except idle, which reads Ready. Color never stands alone. A live run uses Beautiful UI’s Loading State Drive grid: a 3×3 pixel wavefront, a shimmering `running` label, and a mono elapsed timer in the header. Matrix cells carry the same grid beside the spelled state. A finished chip or matrix cell adds a Brine Teal Tick or Failure Oxide Cancel mark. `prefers-reduced-motion` freezes the grid and shimmer; the timer still ticks. Execution mode and Cache outcome appear as adjacent labeled metadata rather than result variants.
 
 ### Cards / Containers
 - **Corner Style:** 0.5rem
@@ -237,7 +236,7 @@ Quiet Mira instrument controls. Color names a result; geometry stays compact so 
 - **Internal Padding:** 0.75rem–1rem
 
 ### Navigation
-- Mira-sized buttons: height 1.75rem, `text-xs/relaxed`, `rounded-md`. Active is Brine Tint with Bone text. No icons. Global areas are Specifications, Plans, and Settings. Scenarios and History switch context within the selected Specification.
+- Mira-sized buttons: height 1.75rem, `text-xs/relaxed`, `rounded-md`. Active is Brine Tint with Bone text. No icons. Global areas are Specifications, Runs, and Settings. Scenarios and History switch context within the selected Specification.
 
 ### Specification list
 Left rail, 16rem. Group label is 2rem tall at `text-xs`. Each Specification is a Mira sidebar menu item (`h-8`, `text-xs`, `p-2`) with the Scenario count in JetBrains Mono. The selected item is a Brine Tint well.
@@ -249,10 +248,10 @@ Opt-in after Edit Specification. Metadata controls belong to this mode and apply
 Signature component: a bordered plate table for the selected Specification. Row headers are Scenario names; columns are execution target profiles, then a per-row Run. Before a run, profile cells read pending. A result cell is a small button whose label is the result state, with the Drive pixel grid while running and a Tick or Cancel mark when finished. The selected cell uses a stronger hairline, not a ring; the timeline follows the worst Needs attention cell until the operator pins one.
 
 ### Needs attention
-Hidden until a failed, infrastructure-error, or Adaptation cell exists. Each row is a plate button with the Scenario name, a state chip, the profile, and “Open step timeline.”
+Hidden until a failed or infrastructure-error cell exists. Each row is a plate button with the Scenario name, a state chip, the profile, and “Open step timeline.” Adaptive fallback stays visible in the selected result metadata without turning a passing result into an attention item.
 
 ### Step timeline
-A vertical list of Hairline plates. Step intent in Sans; resolved actions in Mono; errors in Failure Oxide text; screenshots as bordered images, max height 16rem.
+A vertical list of Hairline plates. Step intent in Sans; deterministic actions and assertions in Mono; execution mode and Cache outcome in labeled metadata; errors in Failure Oxide text; screenshots as bordered images, max height 16rem.
 
 ## Do's and Don'ts
 
