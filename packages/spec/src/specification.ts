@@ -139,7 +139,7 @@ function collectStepInfo(document: GherkinDocument): Map<string, ScenarioStep> {
         keyword: step.keyword.trim(),
         text: step.text,
         type: previous,
-        ...(argument ? { argument } : {}),
+        argument,
       })
     }
   }

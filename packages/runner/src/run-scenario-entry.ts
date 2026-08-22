@@ -8,11 +8,18 @@ import { runLegacyScenario } from './run-scenario-legacy'
 export async function runScenario(
   input: RunScenarioInput,
 ): Promise<ScenarioRun> {
-  if (input.cachePolicy === 'cache-only' && !input.adapter.executionCache) {
+  const explicitlyRequiresCache =
+    input.cachePolicy === 'cache-only' || input.cachePolicy === 'refresh'
+  if (
+    explicitlyRequiresCache &&
+    (!input.adapter.executionCache || !input.executionCache)
+  ) {
     return runCacheOnlyMiss(
       input,
       [],
-      'Execution target adapter does not support Replay',
+      input.adapter.executionCache
+        ? 'Execution cache store is unavailable'
+        : 'Execution target adapter does not support Replay',
     )
   }
   if (input.adapter.executionCache && input.executionCache) {

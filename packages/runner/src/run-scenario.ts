@@ -1,4 +1,4 @@
-import { ignoreTag } from '@pickle-spec/spec'
+import { ignoreTag, type ScenarioVariableBinding } from '@pickle-spec/spec'
 import type { ExecutionCacheEnvelope } from './execution-cache'
 import type { ExecutionPlan } from './execution-plan'
 import type {
@@ -8,7 +8,9 @@ import type {
   RunEventPayload,
   RunScenarioInput,
   ScenarioRun,
+  ScenarioTargetSession,
   StepExecution,
+  StepTargetSession,
   TargetSession,
   TargetSessionCompletion,
   TestResult,
@@ -168,6 +170,130 @@ function attemptIdentity(input: ScenarioAttemptInput) {
   }
 }
 
+interface AttemptProgress {
+  state: TestResultState
+  message?: string
+  replayDiverged: boolean
+  runtimeValueExposed: boolean
+}
+
+type EmitAttemptEvent = (event: RunEventPayload) => Promise<void>
+type RecordExecution = (
+  stepIndex: number,
+  execution: StepExecution,
+) => Promise<boolean>
+type RecordStep = (result: TestStepResult) => Promise<void>
+
+function recordExecutionError(
+  progress: AttemptProgress,
+  error: unknown,
+  bindings: readonly ScenarioVariableBinding[],
+  signal?: AbortSignal,
+): void {
+  const rawMessage = errorMessage(error)
+  progress.runtimeValueExposed ||= stringContainsBinding(rawMessage, bindings)
+  progress.state = isCancellation(error, signal)
+    ? 'cancelled'
+    : 'infrastructure-error'
+  progress.message = redactString(rawMessage, bindings)
+}
+
+async function executeScenarioSession(
+  input: ScenarioAttemptInput,
+  session: ScenarioTargetSession,
+  bindings: readonly ScenarioVariableBinding[],
+  progress: AttemptProgress,
+  emit: EmitAttemptEvent,
+  recordExecution: RecordExecution,
+): Promise<void> {
+  try {
+    const scenarioExecution = await executeWithDeadline(
+      (operationSignal) => session.executeScenario(operationSignal),
+      input.signal,
+      input.timeout?.scenarioMs,
+      `Scenario exceeded its ${input.timeout?.scenarioMs}ms deadline`,
+    )
+    if (
+      scenarioExecution.stepExecutions.length > input.scenario.steps.length ||
+      (!scenarioExecution.replayDiverged &&
+        scenarioExecution.stepExecutions.length !== input.scenario.steps.length)
+    ) {
+      throw new Error(
+        'Scenario execution must return one result for every Scenario step',
+      )
+    }
+    for (const [
+      stepIndex,
+      execution,
+    ] of scenarioExecution.stepExecutions.entries()) {
+      await emit({
+        type: 'step-started',
+        step: templateStepAt(input.scenario, stepIndex),
+        ...attemptIdentity(input),
+      })
+      if (!(await recordExecution(stepIndex, execution))) break
+    }
+    if (scenarioExecution.replayDiverged) {
+      progress.replayDiverged = true
+      progress.state = 'failed'
+      progress.message ??= 'Replay diverged from the deterministic Scenario'
+    }
+  } catch (error) {
+    recordExecutionError(progress, error, bindings, input.signal)
+  }
+}
+
+async function executeStepSession(
+  input: ScenarioAttemptInput,
+  session: StepTargetSession,
+  scenarioStartedAt: number,
+  bindings: readonly ScenarioVariableBinding[],
+  progress: AttemptProgress,
+  emit: EmitAttemptEvent,
+  recordStep: RecordStep,
+  recordExecution: RecordExecution,
+): Promise<void> {
+  for (const [stepIndex, step] of input.scenario.steps.entries()) {
+    if (input.signal?.aborted) {
+      progress.state = 'cancelled'
+      progress.message = 'Scenario cancelled before the next step started'
+      break
+    }
+
+    const templateStep = templateStepAt(input.scenario, stepIndex)
+    await emit({
+      type: 'step-started',
+      step: templateStep,
+      ...attemptIdentity(input),
+    })
+    let execution: StepExecution
+    try {
+      const deadline = stepDeadline(input.timeout, scenarioStartedAt)
+      execution = await executeWithDeadline(
+        (operationSignal) =>
+          session.executeStep(step, operationSignal, {
+            stepIndex,
+            templateStep,
+            runtimeBindings: input.scenario.runtimeBindings ?? [],
+          }),
+        input.signal,
+        deadline.timeoutMs,
+        deadline.timeoutMessage,
+      )
+    } catch (error) {
+      recordExecutionError(progress, error, bindings, input.signal)
+      await recordStep({
+        step: templateStep,
+        state: progress.state,
+        resolvedActions: [],
+        message: progress.message,
+      })
+      break
+    }
+    if (!(await recordExecution(stepIndex, execution))) break
+  }
+}
+
 export async function runScenarioAttempt(
   input: ScenarioAttemptInput,
 ): Promise<AttemptScenarioRun> {
@@ -185,8 +311,11 @@ export async function runScenarioAttempt(
   }
 
   let completion: TargetSessionCompletion | undefined
-  let replayDiverged = false
-  let runtimeValueExposed = false
+  const progress: AttemptProgress = {
+    state: 'passed',
+    replayDiverged: false,
+    runtimeValueExposed: false,
+  }
   const finish = async (
     state: TestResultState,
     steps: TestStepResult[],
@@ -204,8 +333,8 @@ export async function runScenarioAttempt(
       events,
       result,
       completion,
-      replayDiverged,
-      runtimeValueExposed,
+      replayDiverged: progress.replayDiverged,
+      runtimeValueExposed: progress.runtimeValueExposed,
     }
   }
 
@@ -247,7 +376,7 @@ export async function runScenarioAttempt(
   } catch (error) {
     const bindings = nonemptyBindings(input.scenario.runtimeBindings)
     const rawMessage = errorMessage(error)
-    runtimeValueExposed ||= stringContainsBinding(rawMessage, bindings)
+    progress.runtimeValueExposed ||= stringContainsBinding(rawMessage, bindings)
     return finish(
       isCancellation(error, input.signal)
         ? 'cancelled'
@@ -262,8 +391,8 @@ export async function runScenarioAttempt(
     steps.push(result)
     await emit({ type: 'step-finished', result, ...attemptIdentity(input) })
   }
-  let state: TestResultState = input.signal?.aborted ? 'cancelled' : 'passed'
-  let message: string | undefined = input.signal?.aborted
+  progress.state = input.signal?.aborted ? 'cancelled' : 'passed'
+  progress.message = input.signal?.aborted
     ? 'Scenario cancelled before step execution started'
     : undefined
   const bindings = nonemptyBindings(input.scenario.runtimeBindings)
@@ -282,15 +411,15 @@ export async function runScenarioAttempt(
         ? 'passed'
         : 'failed'
       : projected.execution.state
-    runtimeValueExposed ||= projected.runtimeValueExposed
+    progress.runtimeValueExposed ||= projected.runtimeValueExposed
     if (input.signal?.aborted) {
-      state = 'cancelled'
-      message = 'Scenario cancelled during step execution'
+      progress.state = 'cancelled'
+      progress.message = 'Scenario cancelled during step execution'
       await recordStep({
         step: templateStep,
-        state,
+        state: progress.state,
         resolvedActions: projected.execution.resolvedActions,
-        message,
+        message: progress.message,
       })
       return false
     }
@@ -305,24 +434,25 @@ export async function runScenarioAttempt(
     })
 
     if (execution.replayDiverged) {
-      replayDiverged = true
-      state = 'failed'
-      message = projected.execution.message
+      progress.replayDiverged = true
+      progress.state = 'failed'
+      progress.message = projected.execution.message
       return false
     }
     if (cacheAdapted && input.mode === 'replay') {
-      replayDiverged = true
-      state = 'failed'
-      message ??= 'Replay adapted instead of executing deterministically'
+      progress.replayDiverged = true
+      progress.state = 'failed'
+      progress.message ??=
+        'Replay adapted instead of executing deterministically'
       return false
     }
     if (execution.state === 'passed-with-adaptation') {
-      state = publicState
+      progress.state = publicState
       return true
     }
     if (execution.state !== 'passed') {
-      state = execution.state
-      message = projected.execution.message
+      progress.state = execution.state
+      progress.message = projected.execution.message
       return false
     }
     return true
@@ -330,108 +460,45 @@ export async function runScenarioAttempt(
 
   try {
     if (Boolean(session.executeScenario) === Boolean(session.executeStep)) {
-      state = 'infrastructure-error'
-      message =
+      progress.state = 'infrastructure-error'
+      progress.message =
         'Target session must provide exactly one of executeStep or executeScenario'
     } else if (session.executeScenario) {
-      try {
-        const executeScenario = session.executeScenario
-        const scenarioExecution = await executeWithDeadline(
-          (operationSignal) => executeScenario(operationSignal),
-          input.signal,
-          input.timeout?.scenarioMs,
-          `Scenario exceeded its ${input.timeout?.scenarioMs}ms deadline`,
-        )
-        if (
-          scenarioExecution.stepExecutions.length >
-            input.scenario.steps.length ||
-          (!scenarioExecution.replayDiverged &&
-            scenarioExecution.stepExecutions.length !==
-              input.scenario.steps.length)
-        ) {
-          throw new Error(
-            'Scenario execution must return one result for every Scenario step',
-          )
-        }
-        for (const [
-          stepIndex,
-          execution,
-        ] of scenarioExecution.stepExecutions.entries()) {
-          const templateStep = templateStepAt(input.scenario, stepIndex)
-          await emit({
-            type: 'step-started',
-            step: templateStep,
-            ...attemptIdentity(input),
-          })
-          if (!(await recordExecution(stepIndex, execution))) break
-        }
-        if (scenarioExecution.replayDiverged) {
-          replayDiverged = true
-          state = 'failed'
-          message ??= 'Replay diverged from the deterministic Scenario'
-        }
-      } catch (error) {
-        const rawMessage = errorMessage(error)
-        runtimeValueExposed ||= stringContainsBinding(rawMessage, bindings)
-        state = isCancellation(error, input.signal)
-          ? 'cancelled'
-          : 'infrastructure-error'
-        message = redactString(rawMessage, bindings)
-      }
-    } else if (session.executeStep) {
-      for (const [stepIndex, step] of input.scenario.steps.entries()) {
-        if (input.signal?.aborted) {
-          state = 'cancelled'
-          message = 'Scenario cancelled before the next step started'
-          break
-        }
-
-        const templateStep = templateStepAt(input.scenario, stepIndex)
-        await emit({
-          type: 'step-started',
-          step: templateStep,
-          ...attemptIdentity(input),
-        })
-        let execution: StepExecution
-        try {
-          const deadline = stepDeadline(input.timeout, scenarioStartedAt)
-          execution = await executeWithDeadline(
-            (operationSignal) =>
-              session.executeStep(step, operationSignal, {
-                stepIndex,
-                templateStep,
-                runtimeBindings: input.scenario.runtimeBindings ?? [],
-              }),
-            input.signal,
-            deadline.timeoutMs,
-            deadline.timeoutMessage,
-          )
-        } catch (error) {
-          const rawMessage = errorMessage(error)
-          runtimeValueExposed ||= stringContainsBinding(rawMessage, bindings)
-          state = isCancellation(error, input.signal)
-            ? 'cancelled'
-            : 'infrastructure-error'
-          message = redactString(rawMessage, bindings)
-          await recordStep({
-            step: templateStep,
-            state,
-            resolvedActions: [],
-            message,
-          })
-          break
-        }
-        if (!(await recordExecution(stepIndex, execution))) break
-      }
+      await executeScenarioSession(
+        input,
+        session,
+        bindings,
+        progress,
+        emit,
+        recordExecution,
+      )
+    } else {
+      await executeStepSession(
+        input,
+        session,
+        scenarioStartedAt,
+        bindings,
+        progress,
+        emit,
+        recordStep,
+        recordExecution,
+      )
     }
-    if (state === 'passed' && !input.signal?.aborted && session.complete) {
+    if (
+      progress.state === 'passed' &&
+      !input.signal?.aborted &&
+      session.complete
+    ) {
       try {
         completion = validateCompletion(await session.complete())
       } catch (error) {
         const rawMessage = errorMessage(error)
-        runtimeValueExposed ||= stringContainsBinding(rawMessage, bindings)
-        state = 'infrastructure-error'
-        message = redactString(rawMessage, bindings)
+        progress.runtimeValueExposed ||= stringContainsBinding(
+          rawMessage,
+          bindings,
+        )
+        progress.state = 'infrastructure-error'
+        progress.message = redactString(rawMessage, bindings)
       }
     }
   } finally {
@@ -440,11 +507,14 @@ export async function runScenarioAttempt(
     } catch (error) {
       const bindings = nonemptyBindings(input.scenario.runtimeBindings)
       const rawMessage = errorMessage(error)
-      runtimeValueExposed ||= stringContainsBinding(rawMessage, bindings)
-      state = 'infrastructure-error'
-      message = redactString(rawMessage, bindings)
+      progress.runtimeValueExposed ||= stringContainsBinding(
+        rawMessage,
+        bindings,
+      )
+      progress.state = 'infrastructure-error'
+      progress.message = redactString(rawMessage, bindings)
     }
   }
 
-  return finish(state, steps, message)
+  return finish(progress.state, steps, progress.message)
 }

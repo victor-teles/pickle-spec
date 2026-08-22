@@ -78,22 +78,32 @@ function memoryStore() {
 interface CacheRunFixtureOptions {
   adapter: ExecutionTargetAdapter
   store: ExecutionCacheStore
+  applicationRevision?: string | null
+  cachePolicy?: RunScenarioInput['cachePolicy']
+  retry?: RunScenarioInput['retry']
   selectedScenario?: Scenario
+  selectedSpecification?: Specification
   sourceRunId?: string
 }
 
 function cacheRunInput({
   adapter,
   store,
+  applicationRevision = 'app-1',
+  cachePolicy,
+  retry,
   selectedScenario = scenario,
+  selectedSpecification = specification,
   sourceRunId = 'run-1',
 }: CacheRunFixtureOptions): CacheRunInput {
   return {
-    specification,
+    specification: selectedSpecification,
     scenario: selectedScenario,
     executionTargetProfile: { id: 'test' },
     adapter,
-    applicationRevision: 'app-1',
+    applicationRevision: applicationRevision ?? undefined,
+    cachePolicy,
+    retry,
     executionCache: {
       store,
       projectKey: 'project-1',
@@ -219,19 +229,10 @@ describe('Execution cache lifecycle', () => {
     })
     const { store } = memoryStore()
 
-    const run = await runScenario({
-      specification,
-      scenario,
-      executionTargetProfile: { id: 'test' },
-      adapter: { executionCache, openSession },
-      applicationRevision: 'app-1',
-      cachePolicy: 'cache-only',
-      executionCache: {
-        store,
-        projectKey: 'project-1',
-        sourceRunId: 'run-1',
-      },
-    })
+    const adapter: ExecutionTargetAdapter = { executionCache, openSession }
+    const run = await runScenario(
+      cacheRunInput({ adapter, store, cachePolicy: 'cache-only' }),
+    )
 
     expect(openSession).not.toHaveBeenCalled()
     expect(run.result).toMatchObject({
@@ -240,6 +241,32 @@ describe('Execution cache lifecycle', () => {
       cacheOutcome: 'miss',
       inferenceCount: 0,
     })
+  })
+
+  test('explicit cache policies fail without a runtime cache store', async () => {
+    const openSession = mock(async () => {
+      throw new Error('must not open')
+    })
+    const adapter: ExecutionTargetAdapter = { executionCache, openSession }
+
+    for (const cachePolicy of ['cache-only', 'refresh'] as const) {
+      const run = await runScenario({
+        specification,
+        scenario,
+        executionTargetProfile: { id: 'test' },
+        adapter,
+        applicationRevision: 'app-1',
+        cachePolicy,
+      })
+
+      expect(run.result).toMatchObject({
+        state: 'failed',
+        failureKind: 'cache-miss',
+        cacheOutcome: 'miss',
+        inferenceCount: 0,
+      })
+    }
+    expect(openSession).not.toHaveBeenCalled()
   })
 
   test('cache-only divergence fails without retries or Adaptive fallback', async () => {
@@ -357,37 +384,27 @@ describe('Execution cache lifecycle', () => {
 
   test('keeps a passed but non-deterministic Scenario uncacheable', async () => {
     const { store, writes } = memoryStore()
-    const run = await runScenario({
-      specification,
-      scenario,
-      executionTargetProfile: { id: 'test' },
-      adapter: {
-        executionCache,
-        async openSession() {
-          return {
-            async executeStep() {
-              return { state: 'passed' as const, resolvedActions: [] }
-            },
-            async complete() {
-              return {
-                inferenceCount: 3,
-                cacheCandidate: {
-                  cacheable: false as const,
-                  reason: 'non-deterministic-assertion' as const,
-                },
-              }
-            },
-            async close() {},
-          }
-        },
+    const adapter: ExecutionTargetAdapter = {
+      executionCache,
+      async openSession() {
+        return {
+          async executeStep() {
+            return { state: 'passed' as const, resolvedActions: [] }
+          },
+          async complete() {
+            return {
+              inferenceCount: 3,
+              cacheCandidate: {
+                cacheable: false as const,
+                reason: 'non-deterministic-assertion' as const,
+              },
+            }
+          },
+          async close() {},
+        }
       },
-      applicationRevision: 'app-1',
-      executionCache: {
-        store,
-        projectKey: 'project-1',
-        sourceRunId: 'run-1',
-      },
-    })
+    }
+    const run = await runScenario(cacheRunInput({ adapter, store }))
 
     expect(run.result).toMatchObject({
       state: 'passed',
@@ -402,37 +419,30 @@ describe('Execution cache lifecycle', () => {
     const { store, writes } = memoryStore()
     const read = mock(store.read.bind(store))
     store.read = read
-    const run = await runScenario({
-      specification,
-      scenario,
-      executionTargetProfile: { id: 'test' },
-      adapter: {
-        executionCache,
-        async openSession() {
-          return {
-            async executeStep() {
-              return { state: 'passed' as const, resolvedActions: [] }
-            },
-            async complete() {
-              return {
-                inferenceCount: 1,
-                cacheCandidate: {
-                  cacheable: true as const,
-                  adapterPayload: { operations: ['deterministic'] },
-                  requiredVariables: [],
-                },
-              }
-            },
-            async close() {},
-          }
-        },
+    const adapter: ExecutionTargetAdapter = {
+      executionCache,
+      async openSession() {
+        return {
+          async executeStep() {
+            return { state: 'passed' as const, resolvedActions: [] }
+          },
+          async complete() {
+            return {
+              inferenceCount: 1,
+              cacheCandidate: {
+                cacheable: true as const,
+                adapterPayload: { operations: ['deterministic'] },
+                requiredVariables: [],
+              },
+            }
+          },
+          async close() {},
+        }
       },
-      executionCache: {
-        store,
-        projectKey: 'project-1',
-        sourceRunId: 'run-1',
-      },
-    })
+    }
+    const run = await runScenario(
+      cacheRunInput({ adapter, store, applicationRevision: null }),
+    )
 
     expect(run.result).toMatchObject({
       state: 'passed',
@@ -446,40 +456,30 @@ describe('Execution cache lifecycle', () => {
 
   test('never writes a completed representation when session close fails', async () => {
     const { store, writes } = memoryStore()
-    const run = await runScenario({
-      specification,
-      scenario,
-      executionTargetProfile: { id: 'test' },
-      adapter: {
-        executionCache,
-        async openSession() {
-          return {
-            async executeStep() {
-              return { state: 'passed' as const, resolvedActions: [] }
-            },
-            async complete() {
-              return {
-                inferenceCount: 1,
-                cacheCandidate: {
-                  cacheable: true as const,
-                  adapterPayload: { operations: ['deterministic'] },
-                  requiredVariables: [],
-                },
-              }
-            },
-            async close() {
-              throw new Error('close failed')
-            },
-          }
-        },
+    const adapter: ExecutionTargetAdapter = {
+      executionCache,
+      async openSession() {
+        return {
+          async executeStep() {
+            return { state: 'passed' as const, resolvedActions: [] }
+          },
+          async complete() {
+            return {
+              inferenceCount: 1,
+              cacheCandidate: {
+                cacheable: true as const,
+                adapterPayload: { operations: ['deterministic'] },
+                requiredVariables: [],
+              },
+            }
+          },
+          async close() {
+            throw new Error('close failed')
+          },
+        }
       },
-      applicationRevision: 'app-1',
-      executionCache: {
-        store,
-        projectKey: 'project-1',
-        sourceRunId: 'run-1',
-      },
-    })
+    }
+    const run = await runScenario(cacheRunInput({ adapter, store }))
 
     expect(run.result.state).toBe('infrastructure-error')
     expect(writes).toEqual([])
@@ -498,45 +498,35 @@ describe('Execution cache lifecycle', () => {
       return originalWrite(...args)
     }
 
-    await runScenario({
-      specification,
-      scenario,
-      executionTargetProfile: { id: 'test' },
-      adapter: {
-        executionCache,
-        async openSession() {
-          return {
-            async executeStep(_step, _signal, context) {
-              order.push('execute')
-              executedOperations.push(
-                context?.stepIndex === 0 ? 'confirm' : 'assert-receipt',
-              )
-              return { state: 'passed' as const, resolvedActions: [] }
-            },
-            async complete() {
-              order.push('complete')
-              return {
-                inferenceCount: 1,
-                cacheCandidate: {
-                  cacheable: true as const,
-                  adapterPayload: { operations: [...executedOperations] },
-                  requiredVariables: [],
-                },
-              }
-            },
-            async close() {
-              order.push('close')
-            },
-          }
-        },
+    const adapter: ExecutionTargetAdapter = {
+      executionCache,
+      async openSession() {
+        return {
+          async executeStep(_step, _signal, context) {
+            order.push('execute')
+            executedOperations.push(
+              context?.stepIndex === 0 ? 'confirm' : 'assert-receipt',
+            )
+            return { state: 'passed' as const, resolvedActions: [] }
+          },
+          async complete() {
+            order.push('complete')
+            return {
+              inferenceCount: 1,
+              cacheCandidate: {
+                cacheable: true as const,
+                adapterPayload: { operations: [...executedOperations] },
+                requiredVariables: [],
+              },
+            }
+          },
+          async close() {
+            order.push('close')
+          },
+        }
       },
-      applicationRevision: 'app-1',
-      executionCache: {
-        store,
-        projectKey: 'project-1',
-        sourceRunId: 'run-1',
-      },
-    })
+    }
+    await runScenario(cacheRunInput({ adapter, store }))
 
     expect(order).toEqual(['execute', 'execute', 'complete', 'close', 'write'])
   })
@@ -564,18 +554,10 @@ describe('Execution cache lifecycle', () => {
       async close() {},
     }))
 
-    const run = await runScenario({
-      specification,
-      scenario: unsafeScenario,
-      executionTargetProfile: { id: 'test' },
-      adapter: { executionCache, openSession },
-      applicationRevision: 'app-1',
-      executionCache: {
-        store,
-        projectKey: 'project-1',
-        sourceRunId: 'run-1',
-      },
-    })
+    const adapter: ExecutionTargetAdapter = { executionCache, openSession }
+    const run = await runScenario(
+      cacheRunInput({ adapter, store, selectedScenario: unsafeScenario }),
+    )
 
     expect(openSession).toHaveBeenCalledTimes(1)
     expect(run.result).toMatchObject({
@@ -638,22 +620,14 @@ describe('Execution cache lifecycle', () => {
         }
       },
     }
-    const baseInput = {
-      specification: outlineSpecification,
-      executionTargetProfile: { id: 'test' },
+    const baseInput = cacheRunInput({
       adapter,
-      applicationRevision: 'app-1',
-      executionCache: {
-        store,
-        projectKey: 'project-1',
-        sourceRunId: 'run-1',
-      },
-    }
-
-    const first = await runScenario({
-      ...baseInput,
-      scenario: outlineSpecification.scenarios[0]!,
+      store,
+      selectedScenario: outlineSpecification.scenarios[0]!,
+      selectedSpecification: outlineSpecification,
     })
+
+    const first = await runScenario(baseInput)
     const second = await runScenario({
       ...baseInput,
       scenario: outlineSpecification.scenarios[1]!,
@@ -714,54 +688,46 @@ describe('Execution cache lifecycle', () => {
     }
     const { store, writes } = memoryStore()
 
-    const run = await runScenario({
-      specification,
-      scenario: boundScenario,
-      executionTargetProfile: { id: 'test' },
-      adapter: {
-        executionCache,
-        async openSession() {
-          return {
-            async executeStep() {
-              return {
-                state: 'passed' as const,
-                resolvedActions: [
-                  {
-                    description: 'Fill secret@example.com',
-                    replay: { value: 'secret@example.com' },
-                  },
-                ],
-                message: 'Used secret@example.com',
-                artifacts: [
-                  {
-                    kind: 'trace' as const,
-                    path: '/tmp/secret@example.com.trace',
-                    mediaType: 'secret@example.com/type',
-                  },
-                ],
-              }
-            },
-            async complete() {
-              return {
-                inferenceCount: 1,
-                cacheCandidate: {
-                  cacheable: true as const,
-                  adapterPayload: { operations: ['fill:<email>'] },
-                  requiredVariables: ['email'],
+    const adapter: ExecutionTargetAdapter = {
+      executionCache,
+      async openSession() {
+        return {
+          async executeStep() {
+            return {
+              state: 'passed' as const,
+              resolvedActions: [
+                {
+                  description: 'Fill secret@example.com',
+                  replay: { value: 'secret@example.com' },
                 },
-              }
-            },
-            async close() {},
-          }
-        },
+              ],
+              message: 'Used secret@example.com',
+              artifacts: [
+                {
+                  kind: 'trace' as const,
+                  path: '/tmp/secret@example.com.trace',
+                  mediaType: 'secret@example.com/type',
+                },
+              ],
+            }
+          },
+          async complete() {
+            return {
+              inferenceCount: 1,
+              cacheCandidate: {
+                cacheable: true as const,
+                adapterPayload: { operations: ['fill:<email>'] },
+                requiredVariables: ['email'],
+              },
+            }
+          },
+          async close() {},
+        }
       },
-      applicationRevision: 'app-1',
-      executionCache: {
-        store,
-        projectKey: 'project-1',
-        sourceRunId: 'run-1',
-      },
-    })
+    }
+    const run = await runScenario(
+      cacheRunInput({ adapter, store, selectedScenario: boundScenario }),
+    )
 
     expect(run.result).toMatchObject({
       state: 'passed',
@@ -791,29 +757,19 @@ describe('Execution cache lifecycle', () => {
     }))
     const { store, writes } = memoryStore()
 
-    const run = await runScenario({
-      specification,
-      scenario,
-      executionTargetProfile: { id: 'test' },
-      adapter: {
-        executionCache,
-        async openSession() {
-          return {
-            async executeStep() {
-              return { state: 'failed' as const, resolvedActions: [] }
-            },
-            complete,
-            async close() {},
-          }
-        },
+    const adapter: ExecutionTargetAdapter = {
+      executionCache,
+      async openSession() {
+        return {
+          async executeStep() {
+            return { state: 'failed' as const, resolvedActions: [] }
+          },
+          complete,
+          async close() {},
+        }
       },
-      applicationRevision: 'app-1',
-      executionCache: {
-        store,
-        projectKey: 'project-1',
-        sourceRunId: 'run-1',
-      },
-    })
+    }
+    const run = await runScenario(cacheRunInput({ adapter, store }))
 
     expect(run.result.state).toBe('failed')
     expect(complete).not.toHaveBeenCalled()
@@ -835,36 +791,26 @@ describe('Execution cache lifecycle', () => {
     }))
     const { store } = memoryStore()
 
-    const run = await runScenario({
-      specification,
-      scenario,
-      executionTargetProfile: { id: 'test' },
-      adapter: {
-        executionCache,
-        async openSession() {
-          return {
-            executeScenario,
-            async complete() {
-              return {
-                inferenceCount: 1,
-                cacheCandidate: {
-                  cacheable: true as const,
-                  adapterPayload: { operations: ['scenario-wide'] },
-                  requiredVariables: [],
-                },
-              }
-            },
-            async close() {},
-          }
-        },
+    const adapter: ExecutionTargetAdapter = {
+      executionCache,
+      async openSession() {
+        return {
+          executeScenario,
+          async complete() {
+            return {
+              inferenceCount: 1,
+              cacheCandidate: {
+                cacheable: true as const,
+                adapterPayload: { operations: ['scenario-wide'] },
+                requiredVariables: [],
+              },
+            }
+          },
+          async close() {},
+        }
       },
-      applicationRevision: 'app-1',
-      executionCache: {
-        store,
-        projectKey: 'project-1',
-        sourceRunId: 'run-1',
-      },
-    })
+    }
+    const run = await runScenario(cacheRunInput({ adapter, store }))
 
     expect(executeScenario).toHaveBeenCalledTimes(1)
     expect(run.result.steps.map((step) => step.step.text)).toEqual([
@@ -1000,38 +946,34 @@ describe('Execution cache lifecycle', () => {
       runtimeBindings: [{ name: 'kind', value: 'private-kind' }],
     }
 
-    const run = await runScenario({
-      specification,
-      scenario: parameterizedScenario,
-      executionTargetProfile: { id: 'test' },
-      adapter: {
-        executionCache,
-        async openSession() {
-          return {
-            async executeStep() {
-              return { state: 'passed' as const, resolvedActions: [] }
-            },
-            async complete() {
-              return {
-                inferenceCount: 1,
-                cacheCandidate: {
-                  cacheable: true as const,
-                  adapterPayload: { operations: ['deterministic'] },
-                  requiredVariables: ['kind', 'kind'],
-                },
-              }
-            },
-            async close() {},
-          }
-        },
+    const adapter: ExecutionTargetAdapter = {
+      executionCache,
+      async openSession() {
+        return {
+          async executeStep() {
+            return { state: 'passed' as const, resolvedActions: [] }
+          },
+          async complete() {
+            return {
+              inferenceCount: 1,
+              cacheCandidate: {
+                cacheable: true as const,
+                adapterPayload: { operations: ['deterministic'] },
+                requiredVariables: ['kind', 'kind'],
+              },
+            }
+          },
+          async close() {},
+        }
       },
-      applicationRevision: 'app-1',
-      executionCache: {
+    }
+    const run = await runScenario(
+      cacheRunInput({
+        adapter,
         store,
-        projectKey: 'project-1',
-        sourceRunId: 'run-1',
-      },
-    })
+        selectedScenario: parameterizedScenario,
+      }),
+    )
 
     expect(run.result).toMatchObject({
       state: 'passed',
@@ -1056,43 +998,39 @@ describe('Execution cache lifecycle', () => {
     const { store, writes } = memoryStore()
     let attempts = 0
 
-    const run = await runScenario({
-      specification,
-      scenario: boundScenario,
-      executionTargetProfile: { id: 'test' },
-      adapter: {
-        executionCache,
-        async openSession() {
-          attempts++
-          return {
-            async executeStep() {
-              if (attempts === 1) {
-                throw new Error(`Adapter failed while using ${secret}`)
-              }
-              return { state: 'passed' as const, resolvedActions: [] }
-            },
-            async complete() {
-              return {
-                inferenceCount: 1,
-                cacheCandidate: {
-                  cacheable: true as const,
-                  adapterPayload: { operations: ['fill:<email>'] },
-                  requiredVariables: ['email'],
-                },
-              }
-            },
-            async close() {},
-          }
-        },
+    const adapter: ExecutionTargetAdapter = {
+      executionCache,
+      async openSession() {
+        attempts++
+        return {
+          async executeStep() {
+            if (attempts === 1) {
+              throw new Error(`Adapter failed while using ${secret}`)
+            }
+            return { state: 'passed' as const, resolvedActions: [] }
+          },
+          async complete() {
+            return {
+              inferenceCount: 1,
+              cacheCandidate: {
+                cacheable: true as const,
+                adapterPayload: { operations: ['fill:<email>'] },
+                requiredVariables: ['email'],
+              },
+            }
+          },
+          async close() {},
+        }
       },
-      applicationRevision: 'app-1',
-      retry: { infrastructureErrors: 1 },
-      executionCache: {
+    }
+    const run = await runScenario(
+      cacheRunInput({
+        adapter,
         store,
-        projectKey: 'project-1',
-        sourceRunId: 'run-1',
-      },
-    })
+        selectedScenario: boundScenario,
+        retry: { infrastructureErrors: 1 },
+      }),
+    )
 
     expect(run.result).toMatchObject({
       state: 'passed',
@@ -1111,23 +1049,13 @@ describe('Execution cache lifecycle', () => {
       async close() {},
     } as unknown as TargetSession
 
-    const run = await runScenario({
-      specification,
-      scenario,
-      executionTargetProfile: { id: 'test' },
-      adapter: {
-        executionCache,
-        async openSession() {
-          return invalidSession
-        },
+    const adapter: ExecutionTargetAdapter = {
+      executionCache,
+      async openSession() {
+        return invalidSession
       },
-      applicationRevision: 'app-1',
-      executionCache: {
-        store,
-        projectKey: 'project-1',
-        sourceRunId: 'run-1',
-      },
-    })
+    }
+    const run = await runScenario(cacheRunInput({ adapter, store }))
 
     expect(run.result).toMatchObject({
       state: 'infrastructure-error',
@@ -1268,23 +1196,13 @@ describe('Execution cache lifecycle', () => {
       async close() {},
     } as unknown as TargetSession
 
-    const run = await runScenario({
-      specification,
-      scenario,
-      executionTargetProfile: { id: 'test' },
-      adapter: {
-        executionCache,
-        async openSession() {
-          return invalidSession
-        },
+    const adapter: ExecutionTargetAdapter = {
+      executionCache,
+      async openSession() {
+        return invalidSession
       },
-      applicationRevision: 'app-1',
-      executionCache: {
-        store,
-        projectKey: 'project-1',
-        sourceRunId: 'run-1',
-      },
-    })
+    }
+    const run = await runScenario(cacheRunInput({ adapter, store }))
 
     expect(run.result).toMatchObject({
       state: 'infrastructure-error',
