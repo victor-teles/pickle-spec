@@ -158,6 +158,7 @@ export function createLocalExecutionCacheEntries(
           .transaction(() => {
             db.run('DELETE FROM entries')
             db.run('DELETE FROM leases')
+            db.run('DELETE FROM lease_outcomes')
           })
           .immediate(),
       )

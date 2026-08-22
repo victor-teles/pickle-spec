@@ -37,11 +37,29 @@ export interface ExecutionCacheAdapter<AdapterPayload = unknown>
 }
 
 declare const serializedExecutionCacheEnvelope: unique symbol
+declare const serializedExecutionCacheTerminalOutcome: unique symbol
 
 export type SerializedExecutionCacheEnvelope = {
   readonly key: ExecutionCacheKey
   readonly source: string
   readonly [serializedExecutionCacheEnvelope]: true
+}
+
+export type ExecutionCacheTerminalOutcome = {
+  state:
+    | 'passed'
+    | 'passed-with-adaptation'
+    | 'failed'
+    | 'skipped'
+    | 'infrastructure-error'
+  cacheOutcome: Exclude<CacheOutcome, 'hit'>
+  cacheUncacheableReason?: ExecutionCacheUncacheableReason
+  failureKind?: 'cache-miss'
+}
+
+export type SerializedExecutionCacheTerminalOutcome = {
+  readonly source: string
+  readonly [serializedExecutionCacheTerminalOutcome]: true
 }
 
 export interface ExecutionCacheLease {
@@ -65,7 +83,11 @@ export type ExecutionCacheLeaseAcquisition =
     }
 
 export type ExecutionCacheLeaseWaitResult =
-  | { status: 'released'; published: boolean }
+  | {
+      status: 'released'
+      published: boolean
+      terminalOutcome?: SerializedExecutionCacheTerminalOutcome
+    }
   | { status: 'timed-out' | 'cancelled' }
 
 export interface ExecutionCacheLeasePublicationResult
@@ -90,6 +112,10 @@ export interface ExecutionCacheCoordination {
     serializedEnvelope: SerializedExecutionCacheEnvelope,
     metadata: ExecutionCacheWriteMetadata,
   ): Promise<ExecutionCacheLeasePublicationResult>
+  complete(
+    lease: ExecutionCacheLease,
+    terminalOutcome: SerializedExecutionCacheTerminalOutcome,
+  ): Promise<boolean>
   release(lease: ExecutionCacheLease): Promise<void>
 }
 
@@ -171,6 +197,49 @@ const executionCacheEnvelopeSchema = z.strictObject({
   requiredVariables: z.array(variableName),
   adapterPayload: z.unknown(),
 })
+
+const executionCacheTerminalOutcomeSchema = z.strictObject({
+  state: z.enum([
+    'passed',
+    'passed-with-adaptation',
+    'failed',
+    'skipped',
+    'infrastructure-error',
+  ]),
+  cacheOutcome: z.enum(['miss', 'refresh', 'fallback', 'uncacheable']),
+  cacheUncacheableReason: z
+    .enum([
+      'application-revision-missing',
+      'bound-parameter-value',
+      'non-deterministic-action',
+      'non-deterministic-assertion',
+      'payload-validation-failed',
+      'entry-too-large',
+    ])
+    .optional(),
+  failureKind: z.literal('cache-miss').optional(),
+})
+
+export function serializeExecutionCacheTerminalOutcome(
+  outcome: ExecutionCacheTerminalOutcome,
+): SerializedExecutionCacheTerminalOutcome {
+  const parsed = executionCacheTerminalOutcomeSchema.parse(outcome)
+  return Object.freeze({
+    source: JSON.stringify(parsed),
+  }) as SerializedExecutionCacheTerminalOutcome
+}
+
+export function deserializeExecutionCacheTerminalOutcome(
+  serialized: SerializedExecutionCacheTerminalOutcome,
+): ExecutionCacheTerminalOutcome | undefined {
+  try {
+    return executionCacheTerminalOutcomeSchema.safeParse(
+      JSON.parse(serialized.source) as unknown,
+    ).data
+  } catch {
+    return undefined
+  }
+}
 
 function invalidKeyMessage(error: z.ZodError): string {
   const unsupported = error.issues.find(

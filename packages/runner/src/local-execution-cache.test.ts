@@ -18,6 +18,7 @@ import {
   openLocalExecutionCache,
   serializeExecutionCacheEnvelope,
 } from '../index'
+import { serializeExecutionCacheTerminalOutcome } from './execution-cache'
 
 const roots: string[] = []
 
@@ -176,6 +177,41 @@ describe('local Execution cache', () => {
       ),
     ).toEqual({ status: 'released', published: false })
     expect((await cache.coordination.acquire(cacheKey)).acquired).toBe(true)
+  })
+
+  test('durably shares a terminal lease outcome without blocking a later owner', async () => {
+    const projectRoot = await tempRoot('pickle-project')
+    const cacheRoot = await tempRoot('pickle-cache')
+    const cache = await openLocalExecutionCache({ projectRoot, cacheRoot })
+    const cacheKey = key(cache.projectKey, 'scenario-v1')
+    const owner = await cache.coordination.acquire(cacheKey)
+    const waiter = await cache.coordination.acquire(cacheKey)
+    if (!owner.acquired || waiter.acquired) {
+      throw new Error('unexpected lease acquisition state')
+    }
+    const terminalOutcome = serializeExecutionCacheTerminalOutcome({
+      state: 'passed',
+      cacheOutcome: 'uncacheable',
+      cacheUncacheableReason: 'non-deterministic-action',
+    })
+
+    expect(
+      await cache.coordination.complete(owner.lease, terminalOutcome),
+    ).toBe(true)
+    const reopened = await openLocalExecutionCache({ projectRoot, cacheRoot })
+
+    expect(
+      await reopened.coordination.wait(
+        cacheKey,
+        waiter.ownerToken,
+        waiter.baselineRevision,
+      ),
+    ).toEqual({
+      status: 'released',
+      published: false,
+      terminalOutcome,
+    })
+    expect((await reopened.coordination.acquire(cacheKey)).acquired).toBe(true)
   })
 
   test('rejects publication by a previous owner after expired takeover', async () => {

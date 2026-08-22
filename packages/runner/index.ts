@@ -47,15 +47,19 @@ export type {
   ExecutionCacheLeaseWaitResult,
   ExecutionCachePayloadValidator,
   ExecutionCacheStore,
+  ExecutionCacheTerminalOutcome,
   ExecutionCacheUncacheableReason,
   ExecutionCacheWriteMetadata,
   ExecutionCacheWriteResult,
   SerializedExecutionCacheEnvelope,
+  SerializedExecutionCacheTerminalOutcome,
 } from './src/execution-cache'
 export {
   deserializeExecutionCacheEnvelope,
+  deserializeExecutionCacheTerminalOutcome,
   resolveExecutionCacheKey,
   serializeExecutionCacheEnvelope,
+  serializeExecutionCacheTerminalOutcome,
 } from './src/execution-cache'
 export type {
   CandidateExecutionPlan,

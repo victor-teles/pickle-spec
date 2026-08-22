@@ -11,6 +11,14 @@ interface CoordinateExecutionCacheRunInput<Evaluation, Result> {
   signal?: AbortSignal
   observedRevision?: number
   replayPublished(): Promise<Result | undefined>
+  reuseTerminal(
+    outcome: NonNullable<
+      Extract<
+        ExecutionCacheLeaseWaitResult,
+        { status: 'released' }
+      >['terminalOutcome']
+    >,
+  ): Promise<Result | undefined>
   waitEnded(
     status: Extract<
       ExecutionCacheLeaseWaitResult,
@@ -87,6 +95,10 @@ export async function coordinateExecutionCacheRun<Evaluation, Result>(
         const replay = await input.replayPublished()
         if (replay) return replay
       }
+      if (waited.terminalOutcome) {
+        const terminal = await input.reuseTerminal(waited.terminalOutcome)
+        if (terminal) return terminal
+      }
       continue
     }
 
@@ -99,7 +111,7 @@ export async function coordinateExecutionCacheRun<Evaluation, Result>(
       }
       const evaluation = await input.evaluate()
       if (await heartbeat.stop()) return input.ownershipLost(evaluation)
-      return input.completeOwner(evaluation, acquisition.lease)
+      return await input.completeOwner(evaluation, acquisition.lease)
     } finally {
       await heartbeat.stop()
       await coordination.release(acquisition.lease)

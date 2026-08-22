@@ -2,13 +2,16 @@ import { type Scenario, scenarioRevision } from '@pickle-spec/spec'
 import {
   type CacheOutcome,
   deserializeExecutionCacheEnvelope,
+  deserializeExecutionCacheTerminalOutcome,
   type ExecutionCacheEnvelope,
   type ExecutionCacheKey,
   type ExecutionCacheLease,
   type ExecutionCacheUncacheableReason,
   resolveExecutionCacheKey,
   type SerializedExecutionCacheEnvelope,
+  type SerializedExecutionCacheTerminalOutcome,
   serializeExecutionCacheEnvelope,
+  serializeExecutionCacheTerminalOutcome,
 } from './execution-cache'
 import { coordinateExecutionCacheRun } from './execution-cache-run-coordinator'
 import {
@@ -178,6 +181,34 @@ interface FinalizeAdaptiveRunInput {
   lease?: ExecutionCacheLease
 }
 
+type TerminalTestResult = TestResult & {
+  state: Exclude<TestResult['state'], 'cancelled'>
+  cacheOutcome: Exclude<CacheOutcome, 'hit'>
+}
+
+function terminalOutcomeFor(
+  result: TerminalTestResult,
+): SerializedExecutionCacheTerminalOutcome {
+  return serializeExecutionCacheTerminalOutcome({
+    state: result.state,
+    cacheOutcome: result.cacheOutcome,
+    cacheUncacheableReason: result.cacheUncacheableReason,
+    failureKind: result.failureKind,
+  })
+}
+
+async function completeLeaseWithTerminalOutcome(
+  input: RunScenarioInput,
+  lease: ExecutionCacheLease | undefined,
+  result: TestResult,
+): Promise<boolean> {
+  if (!lease || result.state === 'cancelled') return true
+  return input.executionCache!.store.coordination!.complete(
+    lease,
+    terminalOutcomeFor(result as TerminalTestResult),
+  )
+}
+
 async function finalizeAdaptiveRun(
   input: RunScenarioInput,
   events: RunEvent[],
@@ -194,7 +225,22 @@ async function finalizeAdaptiveRun(
     inferenceCount: run.inferenceCount,
   })
 
-  if (result.state !== 'passed') return finishRun(input, events, result)
+  if (result.state !== 'passed') {
+    if (
+      !(await completeLeaseWithTerminalOutcome(
+        input,
+        finalization.lease,
+        result,
+      ))
+    ) {
+      result = {
+        ...result,
+        state: 'infrastructure-error',
+        message: 'Execution cache lease ownership was lost after evaluation',
+      }
+    }
+    return finishRun(input, events, result)
+  }
 
   let reason = finalization.forcedUncacheableReason
   if (!reason && run.runtimeValueExposed) reason = 'bound-parameter-value'
@@ -276,6 +322,16 @@ async function finalizeAdaptiveRun(
       cacheUncacheableReason: reason,
     }
   }
+  if (
+    reason &&
+    !(await completeLeaseWithTerminalOutcome(input, finalization.lease, result))
+  ) {
+    result = {
+      ...result,
+      state: 'infrastructure-error',
+      message: 'Execution cache lease ownership was lost after evaluation',
+    }
+  }
   return finishRun(input, events, result)
 }
 
@@ -338,6 +394,48 @@ async function replayPublishedEntry(
   })
 }
 
+async function reuseTerminalOutcome(
+  input: RunScenarioInput,
+  events: RunEvent[],
+  serialized: SerializedExecutionCacheTerminalOutcome,
+): Promise<ScenarioRun | undefined> {
+  const outcome = deserializeExecutionCacheTerminalOutcome(serialized)
+  if (!outcome) return undefined
+  const result = {
+    ...createTestResult(
+      { ...input, mode: 'adaptive' },
+      outcome.state,
+      [],
+      0,
+      outcome.state === 'failed'
+        ? 'Concurrent Adaptive evaluation failed'
+        : outcome.state === 'infrastructure-error'
+          ? 'Concurrent Adaptive evaluation ended with an infrastructure error'
+          : undefined,
+    ),
+    cacheOutcome: outcome.cacheOutcome,
+    inferenceCount: 0,
+    cacheUncacheableReason: outcome.cacheUncacheableReason,
+    failureKind: outcome.failureKind,
+  }
+  await appendEvent(events, input, {
+    type: 'scenario-started',
+    scenario: result.scenario,
+    executionTargetProfile: input.executionTargetProfile,
+  })
+  if (outcome.cacheUncacheableReason) {
+    await appendEvent(events, input, {
+      type: 'cache-uncacheable',
+      reason: outcome.cacheUncacheableReason,
+    })
+  }
+  await appendEvent(events, input, {
+    type: 'inference-count-updated',
+    inferenceCount: 0,
+  })
+  return finishRun(input, events, result)
+}
+
 interface RunCoordinatedAdaptiveInput {
   input: RunScenarioInput
   events: RunEvent[]
@@ -369,6 +467,7 @@ async function runCoordinatedAdaptive(
     observedRevision: options.observedRevision,
     replayPublished: () =>
       replayPublishedEntry(input, events, cacheKey, inferenceOffset),
+    reuseTerminal: (outcome) => reuseTerminalOutcome(input, events, outcome),
     waitEnded: (status) =>
       finishLeaseWait(input, events, cacheOutcome, status, inferenceOffset),
     evaluate: () => runCachedAttempts(input, 'adaptive', events),

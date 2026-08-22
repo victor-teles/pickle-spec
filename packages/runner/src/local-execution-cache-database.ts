@@ -15,7 +15,7 @@ type CacheSchemaVersion = Record<'user_version', number>
 type CacheIntegrityCheck = Record<'quick_check', string>
 type FileSystemError = Error & { code?: string }
 
-const cacheSchemaVersion = 3
+const cacheSchemaVersion = 4
 
 class InvalidExecutionCacheDatabaseError extends Error {}
 
@@ -62,6 +62,19 @@ function migrate(db: Database): void {
         expires_at INTEGER NOT NULL,
         baseline_revision INTEGER
       )
+    `)
+    db.run(`
+      CREATE TABLE IF NOT EXISTS lease_outcomes (
+        key_digest TEXT NOT NULL,
+        owner_token TEXT NOT NULL,
+        terminal_outcome TEXT NOT NULL,
+        completed_at INTEGER NOT NULL,
+        PRIMARY KEY (key_digest, owner_token)
+      )
+    `)
+    db.run(`
+      CREATE INDEX IF NOT EXISTS lease_outcomes_completed
+      ON lease_outcomes(completed_at)
     `)
     if (version.user_version > 0 && version.user_version < 3) {
       db.run(

@@ -3,6 +3,7 @@ import type {
   ExecutionCacheCoordination,
   ExecutionCacheKey,
   ExecutionCacheLease,
+  SerializedExecutionCacheTerminalOutcome,
 } from './execution-cache'
 import type { LocalExecutionCacheDatabase } from './local-execution-cache-database'
 import {
@@ -35,6 +36,10 @@ interface LeaseRow {
   ownerToken: string
   expiresAt: number
   baselineRevision: number | null
+}
+
+interface LeaseOutcomeRow {
+  source: string
 }
 
 const defaultTiming: ExecutionCacheLeaseTiming = {
@@ -117,6 +122,9 @@ export function createLocalExecutionCacheCoordination(
           .transaction(() => {
             const digestKey = executionCacheKeyDigest(key)
             const timestamp = now().getTime()
+            db.run('DELETE FROM lease_outcomes WHERE completed_at <= ?', [
+              timestamp - timing.waitTimeoutMs,
+            ])
             const existing = db
               .query(
                 `SELECT owner_token AS ownerToken, expires_at AS expiresAt,
@@ -207,14 +215,26 @@ export function createLocalExecutionCacheCoordination(
         )
         if (signal?.aborted) break
         if (!active) {
-          const currentRevision = await database.use(
-            (db) =>
-              readExecutionCacheEntrySnapshot(db, executionCacheKeyDigest(key))
-                ?.revision,
-          )
+          const released = await database.use((db) => {
+            const digestKey = executionCacheKeyDigest(key)
+            const currentRevision = readExecutionCacheEntrySnapshot(
+              db,
+              digestKey,
+            )?.revision
+            const outcome = db
+              .query(
+                `SELECT terminal_outcome AS source FROM lease_outcomes
+                 WHERE key_digest = ? AND owner_token = ?`,
+              )
+              .get(digestKey, ownerToken) as LeaseOutcomeRow | null
+            return { currentRevision, outcome }
+          })
           return {
             status: 'released' as const,
-            published: currentRevision !== baselineRevision,
+            published: released.currentRevision !== baselineRevision,
+            terminalOutcome: released.outcome
+              ? (released.outcome as SerializedExecutionCacheTerminalOutcome)
+              : undefined,
           }
         }
         if (timestamp >= deadline) break
@@ -255,10 +275,6 @@ export function createLocalExecutionCacheCoordination(
               return { published: false, stored: false, evictedEntries: 0 }
             }
             if (executionCacheEntrySize(serialized) > maxBytes) {
-              db.run(
-                'DELETE FROM leases WHERE key_digest = ? AND owner_token = ?',
-                [executionCacheKeyDigest(lease.key), lease.ownerToken],
-              )
               return { published: true, stored: false, evictedEntries: 0 }
             }
             const published = writeExecutionCacheEntry(
@@ -271,19 +287,55 @@ export function createLocalExecutionCacheCoordination(
                 expectedRevision: active.baselineRevision ?? undefined,
               },
             )
-            db.run(
-              'DELETE FROM leases WHERE key_digest = ? AND owner_token = ?',
-              [executionCacheKeyDigest(lease.key), lease.ownerToken],
-            )
             if (!published) {
+              db.run(
+                'DELETE FROM leases WHERE key_digest = ? AND owner_token = ?',
+                [executionCacheKeyDigest(lease.key), lease.ownerToken],
+              )
               return { published: false, stored: false, evictedEntries: 0 }
             }
             const evictedEntries = evictLeastRecentlyUsed(db, maxBytes)
+            const stored = executionCacheEntryIsRetained(db, serialized.key)
+            if (stored) {
+              db.run(
+                'DELETE FROM leases WHERE key_digest = ? AND owner_token = ?',
+                [executionCacheKeyDigest(lease.key), lease.ownerToken],
+              )
+            }
             return {
               published: true,
-              stored: executionCacheEntryIsRetained(db, serialized.key),
+              stored,
               evictedEntries,
             }
+          })
+          .immediate(),
+      )
+    },
+    async complete(lease, terminalOutcome) {
+      assertExecutionCacheProjectKey(projectKey, lease.key)
+      return database.use((db) =>
+        db
+          .transaction(() => {
+            const digestKey = executionCacheKeyDigest(lease.key)
+            const timestamp = now().getTime()
+            const active = db
+              .query(
+                `SELECT 1 FROM leases
+                 WHERE key_digest = ? AND owner_token = ? AND expires_at > ?`,
+              )
+              .get(digestKey, lease.ownerToken, timestamp)
+            if (!active) return false
+            db.run(
+              `INSERT INTO lease_outcomes (
+                 key_digest, owner_token, terminal_outcome, completed_at
+               ) VALUES (?, ?, ?, ?)`,
+              [digestKey, lease.ownerToken, terminalOutcome.source, timestamp],
+            )
+            db.run(
+              'DELETE FROM leases WHERE key_digest = ? AND owner_token = ?',
+              [digestKey, lease.ownerToken],
+            )
+            return true
           })
           .immediate(),
       )

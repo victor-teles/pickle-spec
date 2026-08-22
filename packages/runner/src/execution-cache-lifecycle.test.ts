@@ -64,21 +64,50 @@ afterEach(async () => {
   )
 })
 
-async function localStore(waitTimeoutMs = 100) {
+interface LocalStoreOptions {
+  waitTimeoutMs?: number
+  maxBytes?: number
+}
+
+async function localStore(options: LocalStoreOptions = {}) {
   const projectRoot = await mkdtemp(join(tmpdir(), 'pickle-project-'))
   const cacheRoot = await mkdtemp(join(tmpdir(), 'pickle-cache-'))
   cacheRoots.push(projectRoot, cacheRoot)
   return openLocalExecutionCache({
     projectRoot,
     cacheRoot,
+    maxBytes: options.maxBytes,
     leaseTiming: {
       ttlMs: 100,
       heartbeatMs: 20,
-      waitTimeoutMs,
+      waitTimeoutMs: options.waitTimeoutMs ?? 100,
       minPollMs: 1,
       maxPollMs: 2,
     },
   })
+}
+
+function observeLeaseWait(cache: Awaited<ReturnType<typeof localStore>>): {
+  store: ExecutionCacheStore
+  waiting: Promise<void>
+} {
+  let waiterStarted: (() => void) | undefined
+  const waiting = new Promise<void>((resolve) => {
+    waiterStarted = resolve
+  })
+  return {
+    waiting,
+    store: {
+      ...cache,
+      coordination: {
+        ...cache.coordination,
+        async wait(...args) {
+          waiterStarted?.()
+          return cache.coordination.wait(...args)
+        },
+      },
+    },
+  }
 }
 
 function memoryStore() {
@@ -157,6 +186,7 @@ describe('Execution cache lifecycle', () => {
     const evaluationGate = new Promise<void>((resolve) => {
       releaseEvaluation = resolve
     })
+    const { store, waiting } = observeLeaseWait(cache)
     const modes: string[] = []
     const adapter: ExecutionTargetAdapter = {
       executionCache,
@@ -187,7 +217,7 @@ describe('Execution cache lifecycle', () => {
     }
     const input = cacheRunInput({
       adapter,
-      store: cache,
+      store,
       projectKey: cache.projectKey,
     })
 
@@ -197,6 +227,7 @@ describe('Execution cache lifecycle', () => {
       ...input,
       executionCache: { ...input.executionCache, sourceRunId: 'run-2' },
     })
+    await waiting
     releaseEvaluation?.()
     const [owner, waiter] = await Promise.all([ownerRun, waiterRun])
 
@@ -211,6 +242,200 @@ describe('Execution cache lifecycle', () => {
       state: 'passed',
       executionMode: 'replay',
       cacheOutcome: 'hit',
+      inferenceCount: 0,
+    })
+  })
+
+  test('shares a concurrent uncacheable outcome without duplicate Adaptive inference', async () => {
+    const cache = await localStore()
+    let adaptiveExecutions = 0
+    let releaseEvaluation: (() => void) | undefined
+    let evaluationStarted: (() => void) | undefined
+    const started = new Promise<void>((resolve) => {
+      evaluationStarted = resolve
+    })
+    const evaluationGate = new Promise<void>((resolve) => {
+      releaseEvaluation = resolve
+    })
+    const { store, waiting } = observeLeaseWait(cache)
+    const adapter: ExecutionTargetAdapter = {
+      executionCache,
+      async openSession() {
+        adaptiveExecutions++
+        return {
+          async executeStep() {
+            evaluationStarted?.()
+            await evaluationGate
+            return { state: 'passed' as const, resolvedActions: [] }
+          },
+          async complete() {
+            return {
+              inferenceCount: 1,
+              cacheCandidate: {
+                cacheable: false as const,
+                reason: 'non-deterministic-action' as const,
+              },
+            }
+          },
+          async close() {},
+        }
+      },
+    }
+    const input = cacheRunInput({
+      adapter,
+      store,
+      projectKey: cache.projectKey,
+    })
+
+    const ownerRun = runScenario(input)
+    await started
+    const waiterRun = runScenario({
+      ...input,
+      executionCache: { ...input.executionCache, sourceRunId: 'run-2' },
+    })
+    await waiting
+    releaseEvaluation?.()
+    const [owner, waiter] = await Promise.all([ownerRun, waiterRun])
+
+    expect(owner.result).toMatchObject({
+      state: 'passed',
+      cacheOutcome: 'uncacheable',
+      cacheUncacheableReason: 'non-deterministic-action',
+    })
+    expect(adaptiveExecutions).toBe(1)
+    expect(waiter.result).toMatchObject({
+      state: 'passed',
+      cacheOutcome: 'uncacheable',
+      cacheUncacheableReason: 'non-deterministic-action',
+      inferenceCount: 0,
+    })
+  })
+
+  test('shares a concurrent failed outcome without duplicate Adaptive inference', async () => {
+    const cache = await localStore()
+    const { store, waiting } = observeLeaseWait(cache)
+    let adaptiveExecutions = 0
+    let releaseEvaluation: (() => void) | undefined
+    let evaluationStarted: (() => void) | undefined
+    const started = new Promise<void>((resolve) => {
+      evaluationStarted = resolve
+    })
+    const evaluationGate = new Promise<void>((resolve) => {
+      releaseEvaluation = resolve
+    })
+    const adapter: ExecutionTargetAdapter = {
+      executionCache,
+      async openSession() {
+        adaptiveExecutions++
+        return {
+          async executeStep() {
+            evaluationStarted?.()
+            await evaluationGate
+            return {
+              state: 'failed' as const,
+              resolvedActions: [],
+              message: 'Receipt was not shown',
+            }
+          },
+          async complete() {
+            return { inferenceCount: 1 }
+          },
+          async close() {},
+        }
+      },
+    }
+    const input = cacheRunInput({
+      adapter,
+      store,
+      projectKey: cache.projectKey,
+    })
+
+    const ownerRun = runScenario(input)
+    await started
+    const waiterRun = runScenario({
+      ...input,
+      executionCache: { ...input.executionCache, sourceRunId: 'run-2' },
+    })
+    await waiting
+    releaseEvaluation?.()
+    const [owner, waiter] = await Promise.all([ownerRun, waiterRun])
+
+    expect(adaptiveExecutions).toBe(1)
+    expect(owner.result).toMatchObject({
+      state: 'failed',
+      cacheOutcome: 'miss',
+      message: 'Receipt was not shown',
+    })
+    expect(waiter.result).toMatchObject({
+      state: 'failed',
+      cacheOutcome: 'miss',
+      inferenceCount: 0,
+    })
+    expect(waiter.result.message).not.toContain('Receipt was not shown')
+  })
+
+  test('shares a concurrent oversized outcome without duplicate Adaptive inference', async () => {
+    const cache = await localStore({ maxBytes: 1 })
+    const { store, waiting } = observeLeaseWait(cache)
+    let adaptiveExecutions = 0
+    let releaseEvaluation: (() => void) | undefined
+    let evaluationStarted: (() => void) | undefined
+    const started = new Promise<void>((resolve) => {
+      evaluationStarted = resolve
+    })
+    const evaluationGate = new Promise<void>((resolve) => {
+      releaseEvaluation = resolve
+    })
+    const adapter: ExecutionTargetAdapter = {
+      executionCache,
+      async openSession() {
+        adaptiveExecutions++
+        return {
+          async executeStep() {
+            evaluationStarted?.()
+            await evaluationGate
+            return { state: 'passed' as const, resolvedActions: [] }
+          },
+          async complete() {
+            return {
+              inferenceCount: 1,
+              cacheCandidate: {
+                cacheable: true as const,
+                adapterPayload: { operations: ['oversized-operation'] },
+                requiredVariables: [],
+              },
+            }
+          },
+          async close() {},
+        }
+      },
+    }
+    const input = cacheRunInput({
+      adapter,
+      store,
+      projectKey: cache.projectKey,
+    })
+
+    const ownerRun = runScenario(input)
+    await started
+    const waiterRun = runScenario({
+      ...input,
+      executionCache: { ...input.executionCache, sourceRunId: 'run-2' },
+    })
+    await waiting
+    releaseEvaluation?.()
+    const [owner, waiter] = await Promise.all([ownerRun, waiterRun])
+
+    expect(adaptiveExecutions).toBe(1)
+    expect(owner.result).toMatchObject({
+      state: 'passed',
+      cacheOutcome: 'uncacheable',
+      cacheUncacheableReason: 'entry-too-large',
+    })
+    expect(waiter.result).toMatchObject({
+      state: 'passed',
+      cacheOutcome: 'uncacheable',
+      cacheUncacheableReason: 'entry-too-large',
       inferenceCount: 0,
     })
   })
@@ -296,7 +521,7 @@ describe('Execution cache lifecycle', () => {
   })
 
   test('reports lease wait timeout as infrastructure error without retrying or inferring', async () => {
-    const cache = await localStore(8)
+    const cache = await localStore({ waitTimeoutMs: 8 })
     const cacheKey = {
       projectKey: cache.projectKey,
       scenarioId: scenario.id!,
