@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test'
 import { createRunReporter, terminalReporterCapabilities } from './run-reporter'
-import { passedRun } from './run-reporter.test-support'
+import { finishReporter, passedRun } from './run-reporter.test-support'
 
 test('renders completed Test results as Vitest-style lines', () => {
   const lines: string[] = []
@@ -14,7 +14,8 @@ test('renders completed Test results as Vitest-style lines', () => {
   })
 
   reporter.start()
-  reporter.finish(
+  finishReporter(
+    reporter,
     [
       passedRun({
         specificationUri: 'src/google.feature',
@@ -55,10 +56,10 @@ test('renders completed Test results as Vitest-style lines', () => {
   expect(lines.join('\n')).toBe(`
  RUN  pickle 1.0.2 /workspace/project
 
- ✓ [web] src/google.feature > Visit main page [150ms]
- ✓ [android] src/google.feature > Visit main page [1.24s]
- ✓ [web] src/google.feature > Find pickles [820ms]
- ✓ [web] features/checkout.feature > Complete a purchase [5ms]
+ ✓ [web] src/google.feature > Visit main page [150ms] (passed)
+ ✓ [android] src/google.feature > Visit main page [1.24s] (passed)
+ ✓ [web] src/google.feature > Find pickles [820ms] (passed)
+ ✓ [web] features/checkout.feature > Complete a purchase [5ms] (passed)
 
  Specifications  2
  Scenarios       3
@@ -149,16 +150,16 @@ test('streams Test results in completion order without repeating them at finish'
   )
 
   progressiveReporter.complete?.(runs[2]!.result)
-  progressiveReporter.finish(runs, 100)
+  finishReporter(progressiveReporter, runs, 100)
 
   const resultLines = progressiveLines.filter((line) => /[✓×!↓○]/u.test(line))
   expect(resultLines).toEqual([
-    ' ✓ [web] features/b.feature > Ready early [50ms]',
-    ' ✓ [android] features/b.feature > Ready early [60ms]',
-    ' ✓ [android] features/a.feature > Second Scenario [40ms]',
-    ' ✓ [android] features/a.feature > First Scenario [20ms]',
-    ' ✓ [web] features/a.feature > First Scenario [10ms]',
-    ' ✓ [web] features/a.feature > Second Scenario [30ms]',
+    ' ✓ [web] features/b.feature > Ready early [50ms] (passed)',
+    ' ✓ [android] features/b.feature > Ready early [60ms] (passed)',
+    ' ✓ [android] features/a.feature > Second Scenario [40ms] (passed)',
+    ' ✓ [android] features/a.feature > First Scenario [20ms] (passed)',
+    ' ✓ [web] features/a.feature > First Scenario [10ms] (passed)',
+    ' ✓ [web] features/a.feature > Second Scenario [30ms] (passed)',
   ])
   expect(progressiveLines).toContain(' Test results    6 passed (6)')
 })
@@ -188,7 +189,7 @@ test('keeps schedule and completion callbacks out of NDJSON output', () => {
   reporter.complete?.(run.result)
   expect(lines).toEqual([])
 
-  reporter.finish([run], 10)
+  finishReporter(reporter, [run], 10)
   expect(lines).toHaveLength(1)
   expect(JSON.parse(lines[0]!)).toEqual({
     kind: 'test-result',
@@ -226,7 +227,7 @@ test('streams human output as each Test result completes', () => {
   reporter.complete?.(run.result)
   expect(lines.join('\n')).toContain('features/a.feature > Scenario A [10ms]')
 
-  reporter.finish([run], 10)
+  finishReporter(reporter, [run], 10)
   expect(
     lines.filter((line) => line.includes('features/a.feature')),
   ).toHaveLength(1)
@@ -262,14 +263,58 @@ test('uses a visible failure symbol with color only as supplemental information'
   })
 
   colorReporter.start()
-  colorReporter.finish([run], 150)
+  finishReporter(colorReporter, [run], 150)
   plainReporter.start()
-  plainReporter.finish([run], 150)
+  finishReporter(plainReporter, [run], 150)
 
   expect(colorLines.join('\n')).toContain('\u001b[31m×\u001b[39m')
   expect(plainLines.join('\n')).not.toContain('\u001b[')
   expect(plainLines.join('\n')).toContain(
     '× src/google.feature > Visit main page [150ms] (failed)',
+  )
+})
+
+test('gives flaky metadata its own readable symbol and supplemental color', () => {
+  const run = passedRun({
+    specificationUri: 'src/google.feature',
+    specificationName: 'Search',
+    scenarioId: 'scenario-visit',
+    scenarioName: 'Visit main page',
+    profileId: 'web',
+    durationMs: 150,
+  })
+  run.result.flaky = true
+  run.result.attempts = 2
+  const colorLines: string[] = []
+  const plainLines: string[] = []
+  const sharedOptions = {
+    projectRoot: '/workspace/project',
+    version: '1.0.2',
+    columns: 120,
+    now: () => new Date(2026, 7, 20, 14, 32, 7),
+  }
+  const colorReporter = createRunReporter('default', {
+    ...sharedOptions,
+    color: true,
+    write: (line) => colorLines.push(line),
+  })
+  const plainReporter = createRunReporter('default', {
+    ...sharedOptions,
+    color: false,
+    write: (line) => plainLines.push(line),
+  })
+
+  colorReporter.start()
+  finishReporter(colorReporter, [run], 150)
+  plainReporter.start()
+  finishReporter(plainReporter, [run], 150)
+
+  expect(colorLines.join('\n')).toContain(
+    '\u001b[32m✓\u001b[39m\u001b[36m↻\u001b[39m src/google.feature > Visit main page [150ms] (passed; flaky, 2 attempts)',
+  )
+  expect(plainLines.join('\n')).not.toContain('\u001b[')
+  expect(plainLines.join('\n')).toContain(
+    '✓↻ src/google.feature > Visit main page [150ms] (passed; flaky, 2 attempts)',
   )
 })
 
@@ -288,7 +333,8 @@ test('wraps long paths and Scenario names without truncating them', () => {
   })
 
   reporter.start()
-  reporter.finish(
+  finishReporter(
+    reporter,
     [
       passedRun({
         specificationUri,
@@ -329,7 +375,8 @@ test('wraps non-BMP Unicode names without corrupting their characters', () => {
   })
 
   reporter.start()
-  reporter.finish(
+  finishReporter(
+    reporter,
     [
       passedRun({
         specificationUri: 'a.feature',
@@ -383,30 +430,80 @@ test('counts Test result states as mutually exclusive summary outcomes', () => {
       specificationName: 'Search',
       scenarioId: `scenario-${index}`,
       scenarioName: `Scenario ${index}`,
-      profileId: 'web',
+      profileId: index % 2 === 0 ? 'web' : 'android',
       durationMs: 150,
     })
-    return { ...run, result: { ...run.result, state } }
+    return {
+      ...run,
+      result: {
+        ...run.result,
+        state,
+        ...(state === 'skipped'
+          ? { message: 'Scenario is tagged @ignore' }
+          : {}),
+        ...(state === 'passed' ? { flaky: true, attempts: index + 2 } : {}),
+      },
+    }
   })
 
   reporter.start()
-  reporter.finish(runs, 150)
+  finishReporter(reporter, runs, 150)
 
   expect(lines).toContain(
     ' Test results    1 failed | 1 infrastructure error | 2 passed | 1 skipped | 1 cancelled (6)',
   )
+  expect(lines).toContain(' Flaky results   2')
   expect(lines.join('\n')).toContain(
-    '× src/google.feature > Scenario 2 [150ms] (failed)',
+    '✓↻ [android] src/google.feature > Scenario 1 [150ms] (passed; flaky, 3 attempts)',
   )
   expect(lines.join('\n')).toContain(
-    '! src/google.feature > Scenario 3 [150ms] (infrastructure error)',
+    '✓↻ [web] src/google.feature > Scenario 0 [150ms] (passed; flaky, 2 attempts)',
   )
   expect(lines.join('\n')).toContain(
-    '↓ src/google.feature > Scenario 4 [150ms] (skipped)',
+    '× [web] src/google.feature > Scenario 2 [150ms] (failed)',
   )
   expect(lines.join('\n')).toContain(
-    '○ src/google.feature > Scenario 5 [150ms] (cancelled)',
+    '! [android] src/google.feature > Scenario 3 [150ms] (infrastructure error)',
   )
+  expect(lines.join('\n')).toContain(
+    '↓ [web] src/google.feature > Scenario 4 [150ms] (skipped: Scenario is tagged @ignore)',
+  )
+  expect(lines.join('\n')).toContain(
+    '○ [android] src/google.feature > Scenario 5 [150ms] (cancelled)',
+  )
+})
+
+test('labels an interrupted non-interactive report as a partial summary', () => {
+  const lines: string[] = []
+  const reporter = createRunReporter('default', {
+    write: (line) => lines.push(line),
+    projectRoot: '/workspace/project',
+    version: '1.0.2',
+    color: false,
+    columns: 120,
+    now: () => new Date(2026, 7, 20, 14, 32, 7),
+  })
+  const run = passedRun({
+    specificationUri: 'features/checkout.feature',
+    specificationName: 'Checkout',
+    scenarioId: 'scenario-cancelled',
+    scenarioName: 'Interrupted checkout',
+    profileId: 'web',
+    durationMs: 10,
+  })
+  run.result.state = 'cancelled'
+
+  reporter.start()
+  reporter.finish([run], 10, {
+    exitCode: 130,
+    interrupted: true,
+  })
+
+  expect(lines).toContain(' ! Run interrupted')
+  expect(lines).toContain(
+    '   Partial summary: every Test result materialized before interruption is included.',
+  )
+  expect(lines).toContain(' Test results    1 cancelled (1)')
 })
 
 test('renders execution mode, Cache outcome, and inference count independently from state', () => {
@@ -455,17 +552,17 @@ test('renders execution mode, Cache outcome, and inference count independently f
   uncacheable.result.inferenceCount = 3
 
   reporter.start()
-  reporter.finish([replay, fallback, uncacheable], 67)
+  finishReporter(reporter, [replay, fallback, uncacheable], 67)
 
   const output = lines.join('\n')
   expect(output).toContain(
-    'Replay checkout [12ms] (mode Replay; cache hit; 0 inferences)',
+    'Replay checkout [12ms] (passed; mode Replay; cache hit; 0 inferences)',
   )
   expect(output).toContain(
-    'Recover checkout [25ms] (mode Adaptive; cache fallback; 2 inferences)',
+    'Recover checkout [25ms] (passed; mode Adaptive; cache fallback; 2 inferences)',
   )
   expect(output).toContain(
-    'Inspect checkout [30ms] (mode Adaptive; cache uncacheable: non-deterministic-assertion; 3 inferences)',
+    'Inspect checkout [30ms] (passed; mode Adaptive; cache uncacheable: non-deterministic-assertion; 3 inferences)',
   )
   expect(output).toContain(' Test results    3 passed (3)')
 })
@@ -516,7 +613,7 @@ test('preserves result-level failure messages when no executed step owns them', 
     'Expected results, but the page remained empty\nScreenshot captured'
 
   reporter.start()
-  reporter.finish([run], 150)
+  finishReporter(reporter, [run], 150)
 
   expect(lines.join('\n')).toContain(
     '   Message\n' +
@@ -569,7 +666,7 @@ test('renders functional failure diagnostics from executed Gherkin steps without
   ]
 
   reporter.start()
-  reporter.finish([run], 150)
+  finishReporter(reporter, [run], 150)
 
   const output = lines.join('\n')
   expect(output).toContain(` Failures
@@ -670,7 +767,7 @@ test('separates infrastructure diagnostics and renders profiles, messages, and a
   ]
 
   reporter.start()
-  reporter.finish([infrastructureRun, failedRun], 390)
+  finishReporter(reporter, [infrastructureRun, failedRun], 390)
 
   const output = lines.join('\n')
   expect(output).toContain(` Failures

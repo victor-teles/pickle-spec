@@ -1,5 +1,7 @@
 import type { ScenarioRun } from '@pickle-spec/runner'
+import type { RunReporter } from './run-reporter'
 import type { InteractiveTerminalSurface } from './terminal-surface'
+import { evaluateTestRunExitStatus } from './test-run-exit-status'
 
 type TerminalOperation = {
   type: 'commit' | 'finish' | 'update'
@@ -59,4 +61,16 @@ export function passedRun(input: PassedRunInput): ScenarioRun {
       durationMs: input.durationMs,
     },
   }
+}
+
+export function finishReporter(
+  reporter: RunReporter,
+  runs: readonly ScenarioRun[],
+  durationMs: number,
+): void {
+  reporter.finish(
+    runs,
+    durationMs,
+    evaluateTestRunExitStatus(runs.map(({ result }) => result)),
+  )
 }

@@ -100,15 +100,37 @@ test('moves unrelated process output above the live region without erasing it', 
   surface.finish(['summary'])
 
   expect(output).toEqual([
+    '\u001b[?25l',
     'live progress',
     '\r\u001b[2K',
     'adapter log\n',
     'live progress',
     '\r\u001b[2K',
     'summary\n',
+    '\u001b[0m\u001b[?25h',
   ])
   expect(stream.write('after finish\n')).toBe(true)
   expect(output.at(-1)).toBe('after finish\n')
   expect(stream.write).toBe(originalWrite)
   expect(errorStream.write).toBe(originalErrorWrite)
+})
+
+test('restores process streams and terminal state when final rendering throws', () => {
+  const output: string[] = []
+  const stream = {
+    columns: 80,
+    write(chunk: string) {
+      output.push(chunk)
+      if (chunk === 'summary\n') throw new Error('terminal write failed')
+      return true
+    },
+  }
+  const originalWrite = stream.write
+  const surface = createProcessTerminalSurface(stream)
+
+  surface.activate?.()
+
+  expect(() => surface.finish(['summary'])).toThrow('terminal write failed')
+  expect(stream.write).toBe(originalWrite)
+  expect(output.at(-1)).toBe('\u001b[0m\u001b[?25h')
 })

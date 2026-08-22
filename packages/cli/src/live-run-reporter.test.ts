@@ -1,6 +1,10 @@
 import { expect, test } from 'bun:test'
 import { createRunReporter } from './run-reporter'
-import { passedRun, recordingTerminal } from './run-reporter.test-support'
+import {
+  finishReporter,
+  passedRun,
+  recordingTerminal,
+} from './run-reporter.test-support'
 
 test('shows completed and running Gherkin steps beneath an active Scenario', () => {
   const run = passedRun({
@@ -243,7 +247,7 @@ test('updates active Specifications and commits each completed result once', () 
   )
 
   reporter.complete?.(runs[4]!.result)
-  reporter.finish(runs, 50)
+  finishReporter(reporter, runs, 50)
 
   const finishes = terminal.operations.filter(
     (operation) => operation.type === 'finish',
@@ -294,7 +298,7 @@ test('finishes live progress with actionable diagnostics and a compact result tr
   })
 
   reporter.start()
-  reporter.finish([run], 10)
+  finishReporter(reporter, [run], 10)
 
   const committedOutput = terminal.operations
     .filter((operation) => operation.type === 'commit')

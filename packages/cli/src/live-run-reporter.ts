@@ -1,19 +1,21 @@
 import type {
   RunEvent,
-  ScenarioRun,
   ScheduledTestResult,
   TestResult,
 } from '@pickle-spec/runner'
+import { withRecoveryFailure } from './command-error'
 import {
   clockLabel,
   diagnosticLines,
   groupResults,
+  interruptionLines,
   renderTestResult,
   renderTestStepResult,
   summaryLines,
   wrappedLines,
   writeWrapped,
 } from './run-report'
+import type { RunReporter } from './run-reporter'
 import {
   claimScheduleIndex,
   createScheduleIndexQueues,
@@ -28,6 +30,7 @@ import {
   type InteractiveTerminalSurface,
   renderedTerminalRows,
 } from './terminal-surface'
+import type { TestRunExitStatus } from './test-run-exit-status'
 
 type LiveRunReporterOptions = {
   terminal: InteractiveTerminalSurface
@@ -36,16 +39,6 @@ type LiveRunReporterOptions = {
   color: boolean
   now(): Date
   scheduleRefresh?: (refresh: () => void) => () => void
-}
-
-interface LiveRunReporter {
-  start(): void
-  prepare(schedule: readonly ScheduledTestResult[]): void
-  event(event: RunEvent): void
-  complete(result: TestResult): void
-  fail(error: unknown, durationMs: number): void
-  refresh(): void
-  finish(runs: readonly ScenarioRun[], durationMs: number): void
 }
 
 type StepStartedEvent = Extract<RunEvent, { type: 'step-started' }>
@@ -67,7 +60,7 @@ function schedulePagedRefresh(refresh: () => void): () => void {
 
 export function createLiveRunReporter(
   options: LiveRunReporterOptions,
-): LiveRunReporter {
+): RunReporter {
   const { terminal } = options
   let startTime = ''
   let schedule: readonly ScheduledTestResult[] = []
@@ -253,10 +246,10 @@ export function createLiveRunReporter(
     )
   }
 
-  function finish(
+  function finishOutput(
     results: readonly TestResult[],
     durationMs: number,
-    error?: unknown,
+    summaryNotice: readonly string[],
   ): void {
     if (finished) return
     setPagedRefresh(false)
@@ -268,21 +261,42 @@ export function createLiveRunReporter(
       multipleProfiles,
     })
     const summary = summaryLines(specifications, results, startTime, durationMs)
-    if (error !== undefined) {
-      const message = error instanceof Error ? error.message : String(error)
-      summary.splice(
-        1,
-        0,
-        ...wrappedLines(
-          ' Run failed      ',
-          message,
-          '                 ',
-          columns(),
-        ),
-      )
-    }
-    terminal.finish([...diagnostics, ...summary])
+    summary.splice(1, 0, ...summaryNotice)
     finished = true
+    terminal.finish([...diagnostics, ...summary])
+  }
+
+  function finishFailure(
+    results: readonly TestResult[],
+    durationMs: number,
+    error: unknown,
+  ): void {
+    const message = error instanceof Error ? error.message : String(error)
+    finishOutput(
+      results,
+      durationMs,
+      wrappedLines(
+        ' Run failed      ',
+        message,
+        '                 ',
+        columns(),
+      ),
+    )
+  }
+
+  function finishWithoutOutput(): void {
+    if (finished) return
+    setPagedRefresh(false)
+    finished = true
+    terminal.finish([])
+  }
+
+  function finishTestRun(
+    results: readonly TestResult[],
+    durationMs: number,
+    exitStatus: TestRunExitStatus,
+  ): void {
+    finishOutput(results, durationMs, interruptionLines(exitStatus, columns()))
   }
 
   function complete(result: TestResult): void {
@@ -357,16 +371,33 @@ export function createLiveRunReporter(
       const results = completedResults.flatMap((result) =>
         result ? [result] : [],
       )
-      finish(results, durationMs, error)
+      if (results.length === 0) {
+        finishWithoutOutput()
+        return
+      }
+      try {
+        finishFailure(results, durationMs, error)
+      } catch (renderError) {
+        try {
+          finishWithoutOutput()
+        } catch (restoreError) {
+          throw withRecoveryFailure(
+            renderError,
+            'Failed to restore terminal output',
+            restoreError,
+          )
+        }
+        throw renderError
+      }
     },
     refresh: updateDynamicRegion,
-    finish(runs, durationMs) {
+    finish(runs, durationMs, exitStatus) {
       const results = runs.map((run) => run.result)
       if (schedule.length === 0) prepare(orderedScheduleFromResults(results))
       if (completedResults.some((result) => !result)) {
         for (const result of results) complete(result)
       }
-      finish(results, durationMs)
+      finishTestRun(results, durationMs, exitStatus)
     },
   }
 }

@@ -18,6 +18,11 @@ describe('public CLI workspace seam', () => {
     specifications: 'features/**/*.feature',
     web: { baseUrl: 'https://example.com' },
   }
+  const deterministicRunConfig = {
+    schemaVersion: 1,
+    specifications: 'features/**/*.feature',
+    executionTargetProfile: { id: 'deterministic' },
+  }
   const validSpecification = {
     path: 'features/example.feature',
     source: `@pickle:id:specaaaaaaaaaaaa @pickle:state:active
@@ -57,6 +62,14 @@ Feature: Example
     })
   }
 
+  function runProject(project: string, env: Record<string, string> = {}) {
+    return Bun.spawnSync({
+      cmd: [pickleCommand, 'run'],
+      cwd: project,
+      env: { ...Bun.env, ...env },
+    })
+  }
+
   beforeAll(async () => {
     workspace = await mkdtemp(join(tmpdir(), 'pickle-spec-workspace-'))
     const packageDirectory = resolve(import.meta.dir, '..')
@@ -90,45 +103,54 @@ Feature: Purchase
     await Bun.write(
       join(workspace, 'pickle.extensions.ts'),
       `
-const state = process.env.PICKLE_TEST_OUTCOME ?? 'passed'
+const states = (
+  process.env.PICKLE_TEST_OUTCOMES ??
+  process.env.PICKLE_TEST_OUTCOME ??
+  'passed'
+).split(',')
+let attempt = 0
+
+const adapter = {
+  async openSession() {
+    const state = states[attempt++] ?? states.at(-1) ?? 'passed'
+    return {
+      async executeStep(step, signal) {
+        if (process.env.PICKLE_TEST_STEP_MARKER) {
+          await Bun.write(process.env.PICKLE_TEST_STEP_MARKER, 'started')
+        }
+        if (process.env.PICKLE_TEST_WAIT_FOR_ABORT === 'true') {
+          await new Promise((resolve, reject) => {
+            const onAbort = () => {
+              signal?.removeEventListener('abort', onAbort)
+              reject(new DOMException('Scenario cancelled', 'AbortError'))
+            }
+            signal?.addEventListener('abort', onAbort, { once: true })
+          })
+        }
+        const message = process.env.PICKLE_TEST_MESSAGE
+        const artifactPath = process.env.PICKLE_TEST_ARTIFACT
+        const artifacts = artifactPath
+          ? [{ kind: 'trace', path: artifactPath, mediaType: 'text/plain' }]
+          : undefined
+        return {
+          state,
+          resolvedActions: [{ description: \`Deterministic action: \${step.text}\` }],
+          message,
+          artifacts,
+        }
+      },
+      async close() {
+        if (process.env.PICKLE_TEST_CLOSE_MARKER) {
+          await Bun.write(process.env.PICKLE_TEST_CLOSE_MARKER, 'closed')
+        }
+      },
+    }
+  },
+}
 
 export default {
-  adapter: {
-    async openSession() {
-      return {
-        async executeStep(step, signal) {
-          if (process.env.PICKLE_TEST_STEP_MARKER) {
-            await Bun.write(process.env.PICKLE_TEST_STEP_MARKER, 'started')
-          }
-          if (process.env.PICKLE_TEST_WAIT_FOR_ABORT === 'true') {
-            await new Promise((resolve, reject) => {
-              const onAbort = () => {
-                signal?.removeEventListener('abort', onAbort)
-                reject(new DOMException('Scenario cancelled', 'AbortError'))
-              }
-              signal?.addEventListener('abort', onAbort, { once: true })
-            })
-          }
-          const message = process.env.PICKLE_TEST_MESSAGE
-          const artifactPath = process.env.PICKLE_TEST_ARTIFACT
-          const artifacts = artifactPath
-            ? [{ kind: 'trace', path: artifactPath, mediaType: 'text/plain' }]
-            : undefined
-          return {
-            state,
-            resolvedActions: [{ description: \`Deterministic action: \${step.text}\` }],
-            message,
-            artifacts,
-          }
-        },
-        async close() {
-          if (process.env.PICKLE_TEST_CLOSE_MARKER) {
-            await Bun.write(process.env.PICKLE_TEST_CLOSE_MARKER, 'closed')
-          }
-        },
-      }
-    },
-  },
+  adapter,
+  adapters: { custom: adapter },
 }
 `,
     )
@@ -176,7 +198,7 @@ export default {
     expect(stdout).not.toContain('"kind":"test-result"')
     expect(stdout).not.toContain('gherkinDocument')
     expect(stdout).not.toContain('Stagehand')
-  })
+  }, 15_000)
 
   test('initializes a project without overwriting files and checks it without opening a session', async () => {
     const project = join(workspace, 'initialized-project')
@@ -457,9 +479,101 @@ export default {}
     })
 
     expect(run.exitCode).toBe(2)
+    expect(run.stderr.toString()).toStartWith('ERROR ')
     expect(run.stderr.toString()).toContain('Parser errors')
+    expect(run.stderr.toString()).not.toContain('\n    at ')
+    expect(run.stdout.toString()).not.toContain('Test results    ')
     expect(await Bun.file(marker).exists()).toBe(false)
     expect(await Bun.file(extensionMarker).exists()).toBe(false)
+  })
+
+  test('run reports invalid configuration as a concise command error', async () => {
+    const project = await createCheckProject('run-invalid-configuration', {
+      config: { schemaVersion: 99 },
+      specification: validSpecification,
+    })
+
+    const run = runProject(project)
+    const stderr = run.stderr.toString()
+
+    expect(run.exitCode).toBe(2)
+    expect(stderr).toStartWith('ERROR Invalid configuration')
+    expect(stderr).toContain('Unsupported configuration schemaVersion: 99')
+    expect(stderr).not.toContain('\n    at ')
+    expect(run.stdout.toString()).toBe('')
+  })
+
+  test('run reports missing Specifications without a Test result summary', async () => {
+    const project = await createCheckProject('run-missing-specifications', {
+      config: {
+        ...deterministicRunConfig,
+        specifications: 'features/**/*.feature',
+      },
+      extensions: await Bun.file(
+        join(workspace, 'pickle.extensions.ts'),
+      ).text(),
+    })
+
+    const run = runProject(project)
+    const stderr = run.stderr.toString()
+    const stdout = run.stdout.toString()
+
+    expect(run.exitCode).toBe(2)
+    expect(stderr).toStartWith('ERROR No specifications found matching:')
+    expect(stderr).not.toContain('\n    at ')
+    expect(stdout).not.toContain('Specifications  ')
+    expect(stdout).not.toContain('Test results    ')
+  })
+
+  test('run treats an empty Scenario selection as a command error', async () => {
+    const project = await createCheckProject('run-empty-selection', {
+      config: deterministicRunConfig,
+      specification: validSpecification,
+      extensions: await Bun.file(
+        join(workspace, 'pickle.extensions.ts'),
+      ).text(),
+    })
+
+    const run = Bun.spawnSync({
+      cmd: [pickleCommand, 'run', '--scenario', 'Missing Scenario'],
+      cwd: project,
+      env: { ...Bun.env },
+    })
+    const stderr = run.stderr.toString()
+    const stdout = run.stdout.toString()
+
+    expect(run.exitCode).toBe(2)
+    expect(stderr).toBe('ERROR No Scenarios match the current selection\n')
+    expect(stdout).not.toContain('Specifications  ')
+    expect(stdout).not.toContain('Test results    ')
+  })
+
+  test('run reports an application server startup failure as a command error', async () => {
+    const project = await createCheckProject('run-server-start-failure', {
+      config: {
+        ...deterministicRunConfig,
+        server: {
+          command: 'exit 9',
+          url: 'http://127.0.0.1:1',
+          startupTimeoutMs: 20,
+          pollIntervalMs: 5,
+        },
+      },
+      specification: validSpecification,
+      extensions: await Bun.file(
+        join(workspace, 'pickle.extensions.ts'),
+      ).text(),
+    })
+
+    const run = runProject(project)
+    const stderr = run.stderr.toString()
+    const stdout = run.stdout.toString()
+
+    expect(run.exitCode).toBe(2)
+    expect(stderr).toStartWith('ERROR Server failed to start within 20ms')
+    expect(stderr).not.toContain('\n    at ')
+    expect(stdout).not.toContain('Specifications  ')
+    expect(stdout).not.toContain('Test results    ')
   })
 
   test('check rejects an empty Specification path set', async () => {
@@ -681,6 +795,87 @@ Feature: Checkout
         },
       })
     }
+  })
+
+  test('default run output reports flaky, skipped, and cancelled results truthfully', async () => {
+    const extensions = await Bun.file(
+      join(workspace, 'pickle.extensions.ts'),
+    ).text()
+    const flakyProject = await createCheckProject('flaky-result-output', {
+      config: {
+        ...deterministicRunConfig,
+        execution: { functionalRetries: 1 },
+      },
+      specification: validSpecification,
+      extensions,
+    })
+
+    const flaky = runProject(flakyProject, {
+      PICKLE_TEST_OUTCOMES: 'failed,passed',
+    })
+    const flakyOutput = flaky.stdout.toString()
+
+    expect(flaky.exitCode).toBe(0)
+    expect(flaky.stderr.toString()).toBe('')
+    expect(flakyOutput).toContain(
+      '✓↻ features/example.feature > Validate project',
+    )
+    expect(flakyOutput).toContain('(passed; flaky, 2 attempts; mode Adaptive)')
+    expect(flakyOutput).toContain(' Test results    1 passed (1)')
+    expect(flakyOutput).toContain(' Flaky results   1')
+
+    const skippedProject = await createCheckProject('skipped-result-output', {
+      config: deterministicRunConfig,
+      specification: {
+        path: 'features/ignored.feature',
+        source: `@pickle:id:specignoredaaaaaa @pickle:state:active
+Feature: Ignored
+  @pickle:id:scnignoredbbbbbb @ignore
+  Scenario: Ignore this Scenario
+    Then validation succeeds`,
+      },
+      extensions,
+    })
+
+    const skipped = runProject(skippedProject)
+    const skippedOutput = skipped.stdout.toString()
+
+    expect(skipped.exitCode).toBe(0)
+    expect(skipped.stderr.toString()).toBe('')
+    expect(skippedOutput).toContain(
+      '↓ features/ignored.feature > Ignore this Scenario',
+    )
+    expect(skippedOutput).toContain(
+      '(skipped: Scenario is tagged @ignore; mode Adaptive)',
+    )
+    expect(skippedOutput).toContain(' Specifications  1')
+    expect(skippedOutput).toContain(' Scenarios       1')
+    expect(skippedOutput).toContain(' Test results    1 skipped (1)')
+    expect(skippedOutput).not.toContain(' Failures')
+    expect(skippedOutput).not.toContain(' Infrastructure errors')
+
+    const cancelledProject = await createCheckProject(
+      'cancelled-result-output',
+      {
+        config: deterministicRunConfig,
+        specification: validSpecification,
+        extensions,
+      },
+    )
+
+    const cancelled = runProject(cancelledProject, {
+      PICKLE_TEST_OUTCOME: 'cancelled',
+    })
+    const cancelledOutput = cancelled.stdout.toString()
+
+    expect(cancelled.exitCode).toBe(130)
+    expect(cancelled.stderr.toString()).toBe('')
+    expect(cancelledOutput).toContain(
+      '○ features/example.feature > Validate project',
+    )
+    expect(cancelledOutput).toContain('(cancelled; mode Adaptive)')
+    expect(cancelledOutput).not.toContain(' Failures')
+    expect(cancelledOutput).not.toContain(' Infrastructure errors')
   })
 
   test('default run output keeps actionable result diagnostics on stdout', async () => {
@@ -1177,9 +1372,14 @@ export default {
     })
 
     expect(run.exitCode).toBe(2)
+    expect(run.stderr.toString()).toStartWith(
+      'ERROR Execution target profile "web"',
+    )
     expect(run.stderr.toString()).toContain(
       'Execution target profile "web" lacks required capabilities for Scenario "Show stores near the customer": geolocation',
     )
+    expect(run.stderr.toString()).not.toContain('\n    at ')
+    expect(run.stdout.toString()).not.toContain('Test results    ')
     expect(await Bun.file(marker).exists()).toBe(false)
   })
 

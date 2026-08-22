@@ -5,9 +5,6 @@ import {
   compareTestRuns,
   defaultRetention,
   formatHtml,
-  formatJson,
-  formatJunit,
-  formatNdjson,
   importRunArchive,
   openTestRunStore,
   writeRunArchive,
@@ -22,6 +19,7 @@ import {
 } from '@pickle-spec/web'
 import cliPackage from '../package.json' with { type: 'json' }
 import { runCacheCommand } from './cache'
+import { errorMessage, withRecoveryFailure } from './command-error'
 import { defaultSpecificationGlob, loadConfig } from './config'
 import {
   loadExtensions,
@@ -30,11 +28,13 @@ import {
   startProjectRun,
 } from './execute-run'
 import { checkProject, initializeProject, migrateProject } from './project'
+import { finalizeMaterializedEvidence, writeRunOutputs } from './run-outputs'
 import {
   createRunReporter,
   type RunReporterName,
   terminalReporterCapabilities,
 } from './run-reporter'
+import { createRunReportingSession } from './run-reporting-session'
 import { createStudioExecutionCacheGateway } from './studio-cache'
 import { createStudioHistoryGateway } from './studio-history'
 import {
@@ -45,6 +45,7 @@ import {
   studioRunReadiness,
   studioRunSelection,
 } from './studio-project'
+import { evaluateTestRunExitStatus } from './test-run-exit-status'
 
 interface RunArguments {
   pattern?: string
@@ -229,10 +230,11 @@ function parseRunArguments(argv: string[]): RunArguments {
 async function run(argv: string[]): Promise<number> {
   const args = parseRunArguments(argv)
   const config = await loadConfig(args.configPath)
+  const root = process.cwd()
   const controller = new AbortController()
   const onSigint = () => controller.abort()
   const reporter = createRunReporter(args.reporter ?? 'default', {
-    projectRoot: process.cwd(),
+    projectRoot: root,
     version: cliPackage.version,
     ...terminalReporterCapabilities(
       process.stdout.isTTY,
@@ -241,29 +243,29 @@ async function run(argv: string[]): Promise<number> {
       process.env.TERM,
     ),
   })
-  const onResize = () => reporter.refresh?.()
+  const reporting = createRunReportingSession(reporter)
+  const onResize = reporting.refresh
   const startedAt = performance.now()
+  let startedRunId: string | undefined
+  let outputsWritten = false
   process.on('SIGINT', onSigint)
   if (process.stdout.isTTY) process.on('SIGWINCH', onResize)
   try {
     const started = await startProjectRun({
-      root: process.cwd(),
+      root,
       config,
       options: args,
       signal: controller.signal,
-      onEvent: reporter.event,
-      onSchedule: reporter.prepare,
-      onResult: reporter.complete,
+      onEvent: reporting.event,
+      onSchedule: reporting.prepare,
+      onResult: reporting.complete,
     })
-    reporter.start()
+    startedRunId = started.id
+    reporting.start()
     const { runs, manifest } = await started.done
-    const store = openTestRunStore({ root: process.cwd() })
-    if (args.junitPath) await Bun.write(args.junitPath, formatJunit(manifest))
-    if (args.jsonPath) await Bun.write(args.jsonPath, formatJson(manifest))
-    if (args.ndjsonPath) {
-      const persisted = await store.open(started.id)
-      await Bun.write(args.ndjsonPath, formatNdjson(await persisted.events()))
-    }
+    const store = openTestRunStore({ root })
+    await writeRunOutputs(args, root, started.id, manifest)
+    outputsWritten = true
     await store.applyRetention({
       maxAgeMs: config.retention?.days
         ? config.retention.days * dayMs
@@ -271,16 +273,71 @@ async function run(argv: string[]): Promise<number> {
       maxBytes: config.retention?.maxBytes,
     })
 
-    reporter.finish(runs, performance.now() - startedAt)
-    const states = runs.map(({ result }) => result.state)
-    if (states.includes('cancelled')) return 130
-    if (states.includes('failed') || states.includes('infrastructure-error')) {
-      return 1
-    }
-    return 0
+    const exitStatus = evaluateTestRunExitStatus(
+      runs.map(({ result }) => result),
+      { interrupted: controller.signal.aborted },
+    )
+    reporting.finish(runs, performance.now() - startedAt, exitStatus)
+    const reporterFailure = reporting.failure()
+    if (reporterFailure) throw reporterFailure.error
+    return exitStatus.exitCode
   } catch (error) {
-    reporter.fail?.(error, performance.now() - startedAt)
-    throw error
+    let commandError: unknown = error
+    if (
+      controller.signal.aborted &&
+      error instanceof Error &&
+      error.name === 'AbortError'
+    ) {
+      const exitStatus = evaluateTestRunExitStatus([], { interrupted: true })
+      if (startedRunId && !outputsWritten) {
+        try {
+          await finalizeMaterializedEvidence(args, root, startedRunId, {
+            includeEmptyRun: true,
+          })
+          outputsWritten = true
+        } catch (recoveryError) {
+          commandError = withRecoveryFailure(
+            commandError,
+            'Failed to finalize interrupted evidence',
+            recoveryError,
+          )
+        }
+      }
+      reporting.finish([], performance.now() - startedAt, exitStatus)
+      const reporterFailure = reporting.failure()
+      if (reporterFailure) {
+        commandError = withRecoveryFailure(
+          commandError,
+          'Failed to render interrupted summary',
+          reporterFailure.error,
+        )
+      } else if (outputsWritten) {
+        return 130
+      }
+    }
+    if (startedRunId && !outputsWritten) {
+      try {
+        await finalizeMaterializedEvidence(args, root, startedRunId)
+      } catch (recoveryError) {
+        commandError = withRecoveryFailure(
+          commandError,
+          'Failed to finalize materialized evidence',
+          recoveryError,
+        )
+      }
+    }
+    const reporterRecoveryFailure = reporting.fail(
+      commandError,
+      performance.now() - startedAt,
+    )
+    if (reporterRecoveryFailure) {
+      commandError = withRecoveryFailure(
+        commandError,
+        'Failed to restore reporter output',
+        reporterRecoveryFailure.error,
+      )
+    }
+    throw commandError
   } finally {
     process.off('SIGINT', onSigint)
     process.off('SIGWINCH', onResize)
@@ -575,6 +632,6 @@ async function main(argv: string[]): Promise<number> {
 try {
   process.exitCode = await main(Bun.argv.slice(2))
 } catch (error) {
-  console.error(error instanceof Error ? error.message : String(error))
+  console.error(`ERROR ${errorMessage(error)}`)
   process.exitCode = 2
 }
