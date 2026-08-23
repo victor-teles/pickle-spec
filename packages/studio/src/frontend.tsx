@@ -30,6 +30,7 @@ import {
   pinLiveCell,
   receiveLiveStreamEvent,
   resumeLiveFollowing,
+  selectLiveInspectorTab,
   startLiveInspection,
 } from './live-result-inspection'
 import {
@@ -43,7 +44,6 @@ import { reasonMessage, resultBadgeVariant } from './result-presentation'
 import {
   attentionCells,
   cellKey,
-  emptyRunView,
   isSelectedCell,
   type MatrixCell,
   type RunView,
@@ -131,7 +131,7 @@ function StudioApp() {
   const [specificationSection, setSpecificationSection] = useState<
     'scenarios' | 'history'
   >(initialHistoryLocation ? 'history' : 'scenarios')
-  const [view, setView] = useState<RunView>(emptyRunView)
+  const [starting, setStarting] = useState(false)
   const [live, setLive] = useState<LiveResultInspection>()
   const [authoring, setAuthoring] = useState(false)
   const [attentionOrder, setAttentionOrder] = useState<string[]>()
@@ -208,7 +208,7 @@ function StudioApp() {
     history.replaceState(null, '', historyLocationHref(live.location))
   }, [live?.location])
 
-  const cells = live ? cellsFromLiveInspection(live) : view.cells
+  const cells = live ? cellsFromLiveInspection(live) : []
   const attention = useMemo(() => attentionCells(cells), [cells])
   const selectedResult = live
     ? cells.find(
@@ -216,20 +216,20 @@ function StudioApp() {
           cell.scenarioId === live.location?.scenarioId &&
           cell.profileId === live.location?.profileId,
       )
-    : view.selected
+    : undefined
   const runPhase =
     live?.phase === 'finished'
       ? 'finished'
-      : live?.phase === 'running' || view.phase === 'running'
+      : live?.phase === 'running' || starting
         ? 'running'
         : 'idle'
   const running = runPhase === 'running'
   const composedView: RunView = {
     phase: runPhase,
-    activity: view.activity,
+    activity: [],
     cells,
     selected: selectedResult,
-    pinned: live?.pinned ?? view.pinned,
+    pinned: live?.pinned ?? false,
   }
   const displayedAttention = useMemo(() => {
     if (!attentionOrder) return attention
@@ -272,8 +272,14 @@ function StudioApp() {
     setHistoryLocation(next)
   }
 
+  function updateLive(
+    update: (inspection: LiveResultInspection) => LiveResultInspection,
+  ) {
+    setLive((current) => (current ? update(current) : current))
+  }
+
   function pinSelection(cell: MatrixCell) {
-    setLive((current) => (current ? pinLiveCell(current, cell) : current))
+    updateLive((current) => pinLiveCell(current, cell))
   }
 
   function leaveHistory() {
@@ -285,7 +291,7 @@ function StudioApp() {
     setError(undefined)
     setRunId(undefined)
     setLive(undefined)
-    setView({ ...emptyRunView(), phase: 'running' })
+    setStarting(true)
     try {
       const readiness = await api<StudioRunReadiness>('/api/run-readiness', {
         method: 'POST',
@@ -307,8 +313,9 @@ function StudioApp() {
           runId: started.id,
         }),
       )
+      setStarting(false)
     } catch (reason) {
-      setView(emptyRunView())
+      setStarting(false)
       setError(reasonMessage(reason))
     }
   }
@@ -696,23 +703,13 @@ function StudioApp() {
                         following={live.following}
                         followedEntryId={live.followedEntryId}
                         onResumeFollowing={() =>
-                          setLive((current) =>
-                            current ? resumeLiveFollowing(current) : current,
-                          )
+                          updateLive(resumeLiveFollowing)
                         }
-                        onPauseFollowing={() =>
-                          setLive((current) =>
-                            current ? pauseLiveFollowing(current) : current,
-                          )
-                        }
+                        onPauseFollowing={() => updateLive(pauseLiveFollowing)}
                         onTabChange={(tab: ResultInspectorTab) =>
-                          setLive((current) => {
-                            if (!current?.location) return current
-                            return pauseLiveFollowing({
-                              ...current,
-                              location: { ...current.location, tab },
-                            })
-                          })
+                          updateLive((current) =>
+                            selectLiveInspectorTab(current, tab),
+                          )
                         }
                       />
                     ) : null}

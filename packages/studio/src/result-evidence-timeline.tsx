@@ -30,7 +30,6 @@ export function ResultEvidenceTimeline(props: ResultEvidenceTimelineProps) {
   }, [followedId, props.follow])
   const causalPointUnavailable =
     !causalEntry &&
-    props.state !== 'running' &&
     (props.state === 'failed' || props.state === 'infrastructure-error')
   return (
     <Card
