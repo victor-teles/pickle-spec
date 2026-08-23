@@ -1049,10 +1049,17 @@ test('issue 77: coordinates appends and finalization across reopened handles', a
       scope: diagnosticEventScope,
     }),
   )
-  await finalizing
+  const [finalization, ...appendOutcomes] = await Promise.allSettled([
+    finalizing,
+    ...lateAppends,
+  ])
 
-  for (const lateAppend of lateAppends) {
-    await expect(lateAppend).rejects.toThrow('finalized')
+  expect(finalization?.status).toBe('fulfilled')
+  for (const outcome of appendOutcomes) {
+    expect(outcome.status).toBe('rejected')
+    if (outcome.status !== 'rejected') continue
+    if (!(outcome.reason instanceof Error)) throw outcome.reason
+    expect(outcome.reason.message).toContain('finalized')
   }
   expect(
     (await secondReopened.events()).map((event) => event.sequence),

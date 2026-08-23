@@ -3,6 +3,7 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { providerCredentialEnvironmentNames } from '@pickle-spec/runner/benchmarking'
+import { createControlledMobileBenchmarkDriver } from './mobile-benchmark-controlled-driver'
 
 const temporaryDirectories: string[] = []
 const cliPath = join(import.meta.dir, 'mobile-benchmark-cli.ts')
@@ -38,30 +39,12 @@ function runCli(...args: string[]) {
 
 describe('mobile benchmark executable', () => {
   test('controlled driver rejects every provider credential', async () => {
-    const controlledBenchmarkUrl = new URL(
-      './mobile-benchmark-controlled-driver.ts',
-      import.meta.url,
-    ).href
     for (const credentialName of providerCredentialEnvironmentNames) {
-      const process = Bun.spawn(
-        [
-          Bun.which('bun')!,
-          '-e',
-          `import { createControlledMobileBenchmarkDriver } from ${JSON.stringify(controlledBenchmarkUrl)}; await createControlledMobileBenchmarkDriver()`,
-        ],
-        {
-          env: { [credentialName]: 'must-not-reach-controlled-mobile' },
-          stdout: 'pipe',
-          stderr: 'pipe',
-        },
-      )
-      const [exitCode, stderr] = await Promise.all([
-        process.exited,
-        new Response(process.stderr).text(),
-      ])
-
-      expect(exitCode).not.toBe(0)
-      expect(stderr).toContain(credentialName)
+      await expect(
+        createControlledMobileBenchmarkDriver({
+          [credentialName]: 'must-not-reach-controlled-mobile',
+        }),
+      ).rejects.toThrow(credentialName)
     }
   })
 
