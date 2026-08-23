@@ -1042,16 +1042,25 @@ test('issue 77: coordinates appends and finalization across reopened handles', a
   )
 
   const finalizing = firstReopened.materialize()
-  const lateAppendAssertions = handles.map((handle, index) =>
-    expect(
-      handle.append({
-        type: 'inference-count-updated',
-        inferenceCount: 30 + index,
-        scope: diagnosticEventScope,
-      }),
-    ).rejects.toThrow('finalized'),
+  const lateAppends = handles.map((handle, index) =>
+    handle.append({
+      type: 'inference-count-updated',
+      inferenceCount: 30 + index,
+      scope: diagnosticEventScope,
+    }),
   )
-  await Promise.all([finalizing, ...lateAppendAssertions])
+  const [finalization, ...appendOutcomes] = await Promise.allSettled([
+    finalizing,
+    ...lateAppends,
+  ])
+
+  expect(finalization?.status).toBe('fulfilled')
+  for (const outcome of appendOutcomes) {
+    expect(outcome.status).toBe('rejected')
+    if (outcome.status !== 'rejected') continue
+    if (!(outcome.reason instanceof Error)) throw outcome.reason
+    expect(outcome.reason.message).toContain('finalized')
+  }
   expect(
     (await secondReopened.events()).map((event) => event.sequence),
   ).toEqual(Array.from({ length: 31 }, (_, index) => index + 1))

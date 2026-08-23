@@ -71,6 +71,8 @@ afterEach(async () => {
 
 interface LocalStoreOptions {
   waitTimeoutMs?: number
+  ttlMs?: number
+  heartbeatMs?: number
   maxBytes?: number
 }
 
@@ -83,9 +85,9 @@ async function localStore(options: LocalStoreOptions = {}) {
     cacheRoot,
     maxBytes: options.maxBytes,
     leaseTiming: {
-      ttlMs: 100,
-      heartbeatMs: 20,
-      waitTimeoutMs: options.waitTimeoutMs ?? 100,
+      ttlMs: options.ttlMs ?? 30_000,
+      heartbeatMs: options.heartbeatMs ?? 10_000,
+      waitTimeoutMs: options.waitTimeoutMs ?? 30_000,
       minPollMs: 1,
       maxPollMs: 2,
     },
@@ -449,6 +451,7 @@ describe('Execution cache lifecycle', () => {
 
   test('serializes concurrent refreshes and keeps the successful replacement', async () => {
     const cache = await localStore()
+    const { store, waiting } = observeLeaseWait(cache)
     let adaptiveExecutions = 0
     let holdRefresh = false
     let releaseRefresh: (() => void) | undefined
@@ -491,7 +494,7 @@ describe('Execution cache lifecycle', () => {
     }
     const input = cacheRunInput({
       adapter,
-      store: cache,
+      store,
       projectKey: cache.projectKey,
     })
     await runScenario(input)
@@ -508,6 +511,7 @@ describe('Execution cache lifecycle', () => {
       cachePolicy: 'refresh',
       executionCache: { ...input.executionCache, sourceRunId: 'run-3' },
     })
+    await waiting
     releaseRefresh?.()
     const [owner, waiter] = await Promise.all([ownerRun, waiterRun])
 
@@ -568,7 +572,7 @@ describe('Execution cache lifecycle', () => {
   })
 
   test('discards an Adaptive evaluation after heartbeat loses ownership', async () => {
-    const cache = await localStore()
+    const cache = await localStore({ ttlMs: 100, heartbeatMs: 20 })
     let adaptiveExecutions = 0
     const store: ExecutionCacheStore = {
       ...cache,
