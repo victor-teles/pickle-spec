@@ -90,6 +90,9 @@ export { publicRunEvent, publicTestResult } from './src/public-results'
 export type { RerunFilter } from './src/rerun'
 export { selectRerunResults } from './src/rerun'
 export type {
+  DiagnosticEntry,
+  DiagnosticLevel,
+  DiagnosticOrigin,
   EvidenceAvailability,
   EvidenceAvailabilityState,
   EvidenceKind,
@@ -123,6 +126,8 @@ export type {
   TestResult,
   TestResultState,
   TestStepResult,
+  TraceActivityKind,
+  TraceEntry,
 } from './src/run-scenario'
 export { finalScenarioAttempt, isEvidenceState } from './src/run-scenario'
 export { runScenario } from './src/run-scenario-entry'

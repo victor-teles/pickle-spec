@@ -184,6 +184,7 @@ test('live Run events update the same Overview, Timeline, Artifacts, and Diagnos
     'Run event',
     'Run event',
     'Step',
+    'Trace',
     'Run event',
     'Diagnostic entry',
     'Test artifact',

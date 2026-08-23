@@ -195,6 +195,104 @@ describe('createWebAdapter', () => {
     })
   })
 
+  test('emits a Pickle-native trace and Diagnostic entries from browser activity', async () => {
+    let consumeCalls = 0
+    const adapter = createWebAdapter(
+      { baseUrl: 'https://example.test' },
+      factoryFor(
+        stubAutomation({
+          async observe() {
+            return [
+              {
+                description: 'Click pay on chrome',
+                handle: { selector: '#pay' },
+              },
+            ]
+          },
+          async act() {
+            return { success: true }
+          },
+          async verify() {
+            return {
+              meetsExpectation: false,
+              actualState: 'Payment was declined',
+            }
+          },
+          consumeEvidence() {
+            consumeCalls += 1
+            if (consumeCalls < 3) {
+              return { diagnostics: [], activity: [] }
+            }
+            return {
+              diagnostics: [
+                {
+                  occurredAt: '2026-08-23T12:00:00.004Z',
+                  level: 'error',
+                  origin: 'console',
+                  message: 'Payment was declined',
+                },
+                {
+                  occurredAt: '2026-08-23T12:00:00.004Z',
+                  level: 'error',
+                  origin: 'network',
+                  message: 'POST https://example.test/pay failed: 402',
+                },
+              ],
+              activity: [
+                {
+                  occurredAt: '2026-08-23T12:00:00.003Z',
+                  description: 'Navigate https://example.test/checkout',
+                },
+              ],
+            }
+          },
+        }),
+      ),
+    )
+    const session = await adapter.openSession({
+      executionTargetProfile: { id: 'web' },
+      specification,
+      scenario,
+    })
+
+    await session.executeStep(scenario.steps[0]!)
+    await session.executeStep(scenario.steps[1]!)
+    const outcome = await session.executeStep(scenario.steps[2]!)
+    await session.close()
+
+    expect(outcome.state).toBe('failed')
+    expect(outcome.trace).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          kind: 'resolved-action',
+          description: 'Click pay on chrome',
+        }),
+        expect.objectContaining({
+          kind: 'browser-activity',
+          description: 'Navigate https://example.test/checkout',
+        }),
+      ]),
+    )
+    expect(outcome.diagnostics).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          origin: 'console',
+          message: 'Payment was declined',
+        }),
+        expect.objectContaining({
+          origin: 'network',
+          message: 'POST https://example.test/pay failed: 402',
+        }),
+      ]),
+    )
+    expect(outcome.evidenceAvailability).toEqual(
+      expect.arrayContaining([
+        { kind: 'diagnostics', state: 'available' },
+        { kind: 'trace', state: 'available' },
+      ]),
+    )
+  })
+
   test('isolates screenshot paths for concurrent Scenario Outline rows', async () => {
     const artifactDirectory = await mkdtemp(
       join(tmpdir(), 'pickle-web-outline-artifacts-'),

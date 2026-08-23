@@ -68,6 +68,41 @@ export interface EvidenceAvailability {
   message?: string
 }
 
+export const diagnosticLevels = ['debug', 'info', 'warning', 'error'] as const
+export type DiagnosticLevel = (typeof diagnosticLevels)[number]
+
+export const diagnosticOrigins = [
+  'console',
+  'network',
+  'runner',
+  'adapter',
+] as const
+export type DiagnosticOrigin = (typeof diagnosticOrigins)[number]
+
+export interface DiagnosticEntry {
+  occurredAt: string
+  level: DiagnosticLevel
+  origin: DiagnosticOrigin
+  message: string
+  scenarioId?: string
+  scenarioName?: string
+  stepIndex?: number
+  stepText?: string
+  executionTargetProfileId?: string
+}
+
+export const traceActivityKinds = [
+  'resolved-action',
+  'browser-activity',
+] as const
+export type TraceActivityKind = (typeof traceActivityKinds)[number]
+
+export interface TraceEntry {
+  occurredAt: string
+  kind: TraceActivityKind
+  description: string
+}
+
 export interface StepExecution {
   state: TestResultState
   resolvedActions: ResolvedAction[]
@@ -75,6 +110,8 @@ export interface StepExecution {
   message?: string
   artifacts?: TestArtifact[]
   evidenceAvailability?: EvidenceAvailability[]
+  diagnostics?: DiagnosticEntry[]
+  trace?: TraceEntry[]
 }
 
 export interface StepExecutionContext {
@@ -177,6 +214,8 @@ export interface TestStepResult {
   resolvedActions: ResolvedAction[]
   message?: string
   artifacts?: TestArtifact[]
+  diagnostics?: DiagnosticEntry[]
+  trace?: TraceEntry[]
 }
 
 export interface ScenarioAttempt {
@@ -194,6 +233,7 @@ export interface ScenarioAttempt {
   message?: string
   fidelityPolicy?: FidelityPolicy
   evidenceAvailability: EvidenceAvailability[]
+  diagnostics?: DiagnosticEntry[]
 }
 
 export interface TestResult {
