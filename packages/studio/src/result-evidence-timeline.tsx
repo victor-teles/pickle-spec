@@ -13,20 +13,29 @@ import { relativeTimeLabel, type TimelineEntry } from './result-evidence'
 type ResultEvidenceTimelineProps = {
   entries: readonly TimelineEntry[]
   startedAt: string
-  state: TestResultState
+  state: TestResultState | 'running'
+  follow?: boolean
+  followedEntryId?: string
+  onPauseFollowing?: () => void
 }
 
 export function ResultEvidenceTimeline(props: ResultEvidenceTimelineProps) {
-  const causalRef = useRef<HTMLLIElement>(null)
+  const followedRef = useRef<HTMLLIElement>(null)
   const causalEntry = props.entries.find((entry) => entry.causal)
+  const followedId =
+    props.followedEntryId ?? causalEntry?.id ?? props.entries.at(-1)?.id
   useEffect(() => {
-    causalRef.current?.scrollIntoView({ block: 'center', inline: 'nearest' })
-  }, [])
+    if (props.follow === false || !followedId) return
+    followedRef.current?.scrollIntoView({ block: 'center', inline: 'nearest' })
+  }, [followedId, props.follow])
   const causalPointUnavailable =
     !causalEntry &&
     (props.state === 'failed' || props.state === 'infrastructure-error')
   return (
-    <Card>
+    <Card
+      onWheel={props.onPauseFollowing}
+      onPointerDown={props.onPauseFollowing}
+    >
       <CardHeader>
         <CardTitle>Causal evidence timeline</CardTitle>
         <CardDescription>
@@ -48,7 +57,11 @@ export function ResultEvidenceTimeline(props: ResultEvidenceTimelineProps) {
           {props.entries.map((entry) => (
             <li
               key={entry.id}
-              ref={entry.causal ? causalRef : undefined}
+              ref={
+                entry.id === followedId || (entry.causal && !followedId)
+                  ? followedRef
+                  : undefined
+              }
               aria-current={entry.causal ? 'true' : undefined}
               className="relative grid grid-cols-[5rem_minmax(0,1fr)] gap-4 py-2 sm:grid-cols-[7rem_minmax(0,1fr)]"
             >

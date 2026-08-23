@@ -21,6 +21,19 @@ import {
 import { HistoryPanel } from './history'
 import { cn } from './lib/utils'
 import {
+  cellsFromLiveInspection,
+  disconnectLiveInspection,
+  hydrateLiveInspection,
+  type LiveResultInspection,
+  type LiveStreamEvent,
+  pauseLiveFollowing,
+  pinLiveCell,
+  receiveLiveStreamEvent,
+  resumeLiveFollowing,
+  selectLiveInspectorTab,
+  startLiveInspection,
+} from './live-result-inspection'
+import {
   historyLocationHref,
   isResultInspection,
   parseHistoryLocation,
@@ -30,14 +43,10 @@ import { ResultInspector } from './result-inspector'
 import { reasonMessage, resultBadgeVariant } from './result-presentation'
 import {
   attentionCells,
-  type ClientEvent,
   cellKey,
-  emptyRunView,
   isSelectedCell,
   type MatrixCell,
-  pinCell,
   type RunView,
-  reduceRun,
   statusLabel,
   type TestResultState,
 } from './run-view'
@@ -48,10 +57,10 @@ import type {
   StudioProject,
   StudioRunReadiness,
   StudioRunRequest,
+  StudioRunSnapshot,
   StudioScenario,
   StudioSpecification,
 } from './server'
-import { TestResultTimeline } from './test-result-timeline'
 import { useVirtualWindow } from './virtualization'
 
 const token = new URLSearchParams(location.search).get('token') ?? ''
@@ -122,10 +131,10 @@ function StudioApp() {
   const [specificationSection, setSpecificationSection] = useState<
     'scenarios' | 'history'
   >(initialHistoryLocation ? 'history' : 'scenarios')
-  const [view, setView] = useState<RunView>(emptyRunView)
+  const [starting, setStarting] = useState(false)
+  const [live, setLive] = useState<LiveResultInspection>()
   const [authoring, setAuthoring] = useState(false)
   const [attentionOrder, setAttentionOrder] = useState<string[]>()
-  const running = view.phase === 'running'
 
   useEffect(() => {
     let cancelled = false
@@ -157,18 +166,71 @@ function StudioApp() {
 
   useEffect(() => {
     if (!runId) return
+    let closedByClient = false
     const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:'
     const socket = new WebSocket(
       `${protocol}//${location.host}/api/runs/${runId}/events`,
     )
     socket.onmessage = (message) => {
-      const event = JSON.parse(String(message.data)) as ClientEvent
-      setView((current) => reduceRun(current, event))
+      const event = JSON.parse(String(message.data)) as LiveStreamEvent
+      setLive((current) =>
+        current ? receiveLiveStreamEvent(current, event) : current,
+      )
+      if (event.type === 'run-finished') {
+        void api<StudioRunSnapshot>(
+          `/api/runs/${encodeURIComponent(runId)}`,
+        ).then(
+          (snapshot) => {
+            setLive((current) =>
+              current ? hydrateLiveInspection(current, snapshot) : current,
+            )
+          },
+          (reason: unknown) => setError(reasonMessage(reason)),
+        )
+      }
     }
-    return () => socket.close()
+    socket.onclose = () => {
+      if (closedByClient) return
+      setLive((current) =>
+        current?.phase === 'running'
+          ? disconnectLiveInspection(current, 'The live event stream closed.')
+          : current,
+      )
+    }
+    return () => {
+      closedByClient = true
+      socket.close()
+    }
   }, [runId])
 
-  const attention = useMemo(() => attentionCells(view.cells), [view.cells])
+  useEffect(() => {
+    if (!live?.location) return
+    history.replaceState(null, '', historyLocationHref(live.location))
+  }, [live?.location])
+
+  const cells = live ? cellsFromLiveInspection(live) : []
+  const attention = useMemo(() => attentionCells(cells), [cells])
+  const selectedResult = live
+    ? cells.find(
+        (cell) =>
+          cell.scenarioId === live.location?.scenarioId &&
+          cell.profileId === live.location?.profileId,
+      )
+    : undefined
+  const runPhase =
+    live?.phase === 'finished'
+      ? 'finished'
+      : live?.phase === 'running' || starting
+        ? 'running'
+        : 'idle'
+  const running = runPhase === 'running'
+  const composedView: RunView = {
+    phase: runPhase,
+    activity: [],
+    cells,
+    selected: selectedResult,
+    pinned: live?.pinned ?? false,
+  }
   const displayedAttention = useMemo(() => {
     if (!attentionOrder) return attention
     const positions = new Map(
@@ -184,7 +246,7 @@ function StudioApp() {
       return leftPosition - rightPosition
     })
   }, [attention, attentionOrder])
-  const aggregate = statusLabel(view)
+  const aggregate = statusLabel(composedView)
   const selected =
     project?.specifications.find(
       (item) => item.uri === historyLocation?.specificationUri,
@@ -210,6 +272,16 @@ function StudioApp() {
     setHistoryLocation(next)
   }
 
+  function updateLive(
+    update: (inspection: LiveResultInspection) => LiveResultInspection,
+  ) {
+    setLive((current) => (current ? update(current) : current))
+  }
+
+  function pinSelection(cell: MatrixCell) {
+    updateLive((current) => pinLiveCell(current, cell))
+  }
+
   function leaveHistory() {
     if (historyLocation) navigateHistory(undefined)
   }
@@ -218,7 +290,8 @@ function StudioApp() {
     if (running) return
     setError(undefined)
     setRunId(undefined)
-    setView({ ...emptyRunView(), phase: 'running' })
+    setLive(undefined)
+    setStarting(true)
     try {
       const readiness = await api<StudioRunReadiness>('/api/run-readiness', {
         method: 'POST',
@@ -234,8 +307,15 @@ function StudioApp() {
         body: JSON.stringify(request),
       })
       setRunId(started.id)
+      setLive(
+        startLiveInspection({
+          specificationUri: request.paths?.[0] ?? selected?.uri ?? '',
+          runId: started.id,
+        }),
+      )
+      setStarting(false)
     } catch (reason) {
-      setView(emptyRunView())
+      setStarting(false)
       setError(reasonMessage(reason))
     }
   }
@@ -526,7 +606,7 @@ function StudioApp() {
                         ? historyLocation.runId
                         : undefined
                     }
-                    runPhase={view.phase}
+                    runPhase={runPhase}
                     specification={selected}
                     onReviewRun={(reviewedRunId) =>
                       navigateHistory({
@@ -542,12 +622,10 @@ function StudioApp() {
                     <ScenarioTable
                       profiles={project.profiles}
                       scenarios={selected.scenarios}
-                      cells={view.cells}
-                      selected={view.selected}
+                      cells={cells}
+                      selected={selectedResult}
                       running={running}
-                      onSelect={(cell) =>
-                        setView((current) => pinCell(current, cell))
-                      }
+                      onSelect={pinSelection}
                       onRun={(scenarioName) =>
                         void startRun({
                           paths: [selected.uri],
@@ -589,13 +667,11 @@ function StudioApp() {
                                 variant="outline"
                                 className={cn(
                                   'h-auto w-full min-w-0 flex-col items-stretch gap-1 bg-card px-3 py-2 text-left',
-                                  isSelectedCell(view.selected, cell)
+                                  isSelectedCell(selectedResult, cell)
                                     ? 'border-foreground/25'
                                     : 'border-border',
                                 )}
-                                onClick={() =>
-                                  setView((current) => pinCell(current, cell))
-                                }
+                                onClick={() => pinSelection(cell)}
                               >
                                 <span className="flex min-w-0 items-center gap-2">
                                   <span className="min-w-0 flex-1 truncate">
@@ -610,7 +686,7 @@ function StudioApp() {
                                   </Badge>
                                 </span>
                                 <span className="text-xs text-muted-foreground">
-                                  {cell.profileId} · Open step timeline
+                                  {cell.profileId} · Inspect result
                                 </span>
                               </Button>
                             </li>
@@ -618,8 +694,24 @@ function StudioApp() {
                         </ul>
                       </div>
                     ) : null}
-                    {view.selected?.result ? (
-                      <TestResultTimeline result={view.selected.result} />
+                    {live?.location && live.snapshot ? (
+                      <ResultInspector
+                        api={api}
+                        location={live.location}
+                        snapshot={live.snapshot}
+                        connection={live.connection}
+                        following={live.following}
+                        followedEntryId={live.followedEntryId}
+                        onResumeFollowing={() =>
+                          updateLive(resumeLiveFollowing)
+                        }
+                        onPauseFollowing={() => updateLive(pauseLiveFollowing)}
+                        onTabChange={(tab: ResultInspectorTab) =>
+                          updateLive((current) =>
+                            selectLiveInspectorTab(current, tab),
+                          )
+                        }
+                      />
                     ) : null}
                   </div>
                 )}

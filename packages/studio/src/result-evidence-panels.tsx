@@ -75,15 +75,17 @@ function EvidenceAvailabilityCard(props: {
   )
 }
 
-export function ResultOverview(props: InspectedResult) {
-  const { result, attempt } = props
+type ResultOverviewProps = InspectedResult & { inProgress?: boolean }
+
+export function ResultOverview(props: ResultOverviewProps) {
+  const { result, attempt, inProgress } = props
   return (
     <div className="grid gap-3 lg:grid-cols-[minmax(0,2fr)_minmax(16rem,1fr)]">
       <Card>
         <CardHeader>
           <CardTitle>Scenario attempt</CardTitle>
           <CardDescription>
-            Canonical result evidence persisted with this test run.
+            Canonical result evidence for this Scenario attempt.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -94,9 +96,16 @@ export function ResultOverview(props: InspectedResult) {
             />
             <Metadata
               label="Finished"
-              value={new Date(attempt.finishedAt).toLocaleString()}
+              value={
+                inProgress
+                  ? 'In progress'
+                  : new Date(attempt.finishedAt).toLocaleString()
+              }
             />
-            <Metadata label="Duration" value={`${attempt.durationMs} ms`} />
+            <Metadata
+              label="Duration"
+              value={inProgress ? 'In progress' : `${attempt.durationMs} ms`}
+            />
             <Metadata label="Attempt" value={String(attempt.attempt)} />
             <Metadata
               label="Execution mode"

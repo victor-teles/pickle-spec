@@ -5,6 +5,11 @@ import { LoadingState } from './components/ui/loading-state'
 import { ResultMark } from './components/ui/result-mark'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './components/ui/tabs'
 import {
+  displayedAttemptState,
+  isAttemptInProgress,
+  type LiveConnectionStatus,
+} from './live-result-inspection'
+import {
   artifactsFor,
   defaultResultInspectorTab,
   diagnosticsFor,
@@ -29,17 +34,24 @@ type StudioApi = <Value>(path: string, init?: RequestInit) => Promise<Value>
 type ResultInspectorProps = {
   api: StudioApi
   location: ResultInspectionLocation
-  onBack: () => void
+  onBack?: () => void
   onTabChange: (tab: ResultInspectorTab) => void
+  snapshot?: StudioRunSnapshot
+  connection?: LiveConnectionStatus
+  following?: boolean
+  followedEntryId?: string
+  onResumeFollowing?: () => void
+  onPauseFollowing?: () => void
 }
 
 export function ResultInspector(props: ResultInspectorProps) {
-  const [snapshot, setSnapshot] = useState<StudioRunSnapshot>()
+  const [fetched, setFetched] = useState<StudioRunSnapshot>()
   const [error, setError] = useState<string>()
 
   useEffect(() => {
+    if (props.snapshot) return
     let cancelled = false
-    setSnapshot(undefined)
+    setFetched(undefined)
     setError(undefined)
     props
       .api<StudioRunSnapshot>(
@@ -47,7 +59,7 @@ export function ResultInspector(props: ResultInspectorProps) {
       )
       .then(
         (value) => {
-          if (!cancelled) setSnapshot(value)
+          if (!cancelled) setFetched(value)
         },
         (reason: unknown) => {
           if (!cancelled) setError(reasonMessage(reason))
@@ -56,8 +68,9 @@ export function ResultInspector(props: ResultInspectorProps) {
     return () => {
       cancelled = true
     }
-  }, [props.api, props.location.runId])
+  }, [props.api, props.location.runId, props.snapshot])
 
+  const snapshot = props.snapshot ?? fetched
   const inspected = snapshot
     ? findInspectedResult(snapshot, props.location)
     : undefined
@@ -84,13 +97,17 @@ export function ResultInspector(props: ResultInspectorProps) {
         <p role="alert" className="text-sm text-destructive">
           This Scenario attempt is not available in test run {snapshot.id}.
         </p>
-        <Button type="button" variant="outline" onClick={props.onBack}>
-          Back to run
-        </Button>
+        {props.onBack ? (
+          <Button type="button" variant="outline" onClick={props.onBack}>
+            Back to run
+          </Button>
+        ) : null}
       </div>
     )
   }
 
+  const displayState = displayedAttemptState(inspected.attempt)
+  const inProgress = isAttemptInProgress(inspected.attempt)
   const activeTab =
     props.location.tab ?? defaultResultInspectorTab(inspected.attempt.state)
   const artifacts = artifactsFor(inspected.attempt)
@@ -107,28 +124,47 @@ export function ResultInspector(props: ResultInspectorProps) {
     >
       <header className="sticky top-0 z-10 -mx-4 mb-4 flex flex-wrap items-start justify-between gap-3 border-b border-border bg-background px-4 pb-4 sm:-mx-6 sm:px-6">
         <div className="min-w-0 space-y-2">
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            onClick={props.onBack}
-          >
-            Back to run
-          </Button>
+          {props.onBack ? (
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={props.onBack}
+            >
+              Back to run
+            </Button>
+          ) : null}
           <div className="flex min-w-0 flex-wrap items-center gap-2">
             <h3 id="result-inspector-title" className="text-lg font-medium">
-              {inspected.result.scenario.name} · {inspected.attempt.state} ·{' '}
+              {inspected.result.scenario.name} · {displayState} ·{' '}
               {inspected.result.executionTargetProfile.id}
             </h3>
-            <Badge variant={resultBadgeVariant(inspected.attempt.state)}>
-              <ResultMark state={inspected.attempt.state} />
-              {inspected.attempt.state}
+            <Badge
+              variant={
+                displayState === 'running'
+                  ? 'running'
+                  : resultBadgeVariant(displayState)
+              }
+            >
+              <ResultMark state={displayState} />
+              {displayState}
             </Badge>
           </div>
           <p className="font-mono text-xs text-muted-foreground">
             Test run {snapshot.id} · Attempt {inspected.attempt.attempt}
           </p>
+          <ConnectionStatus connection={props.connection} />
         </div>
+        {props.following === false && props.onResumeFollowing ? (
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={props.onResumeFollowing}
+          >
+            Resume following
+          </Button>
+        ) : null}
       </header>
       <Tabs
         value={activeTab}
@@ -143,20 +179,27 @@ export function ResultInspector(props: ResultInspectorProps) {
           <TabsTrigger value="diagnostics">Diagnostics</TabsTrigger>
         </TabsList>
         <TabsContent value="overview">
-          <ResultOverview {...inspected} />
+          <ResultOverview {...inspected} inProgress={inProgress} />
         </TabsContent>
         <TabsContent value="timeline">
           <ResultEvidenceTimeline
             entries={timeline}
             startedAt={inspected.attempt.startedAt}
-            state={inspected.attempt.state}
+            state={displayState}
+            follow={props.following}
+            followedEntryId={props.followedEntryId}
+            onPauseFollowing={props.onPauseFollowing}
           />
         </TabsContent>
         <TabsContent value="artifacts">
           <ResultArtifacts
             artifacts={artifacts}
             scenarioName={inspected.result.scenario.name}
-            resultState={inspected.attempt.state}
+            resultState={
+              displayState === 'running'
+                ? inspected.attempt.state
+                : displayState
+            }
           />
         </TabsContent>
         <TabsContent value="diagnostics">
@@ -168,4 +211,25 @@ export function ResultInspector(props: ResultInspectorProps) {
       </Tabs>
     </section>
   )
+}
+
+function ConnectionStatus(props: { connection?: LiveConnectionStatus }) {
+  if (props.connection?.kind === 'disconnected') {
+    return (
+      <p role="alert" className="text-sm text-destructive">
+        Disconnected from the live event stream. {props.connection.message}{' '}
+        Evidence received so far is still shown.
+      </p>
+    )
+  }
+  if (props.connection?.kind === 'event-loss') {
+    return (
+      <p role="alert" className="text-sm text-destructive">
+        Run events after sequence {props.connection.lastReceivedSequence} were
+        not received before sequence {props.connection.receivedSequence}. Later
+        evidence is still shown.
+      </p>
+    )
+  }
+  return null
 }

@@ -516,10 +516,23 @@ export default {
       expect(await items.count()).toBe(1)
       expect(await items.nth(0).textContent()).toContain('Pay for the order')
       expect(await items.nth(0).textContent()).toContain('failed')
-      expect(await items.nth(0).textContent()).toContain('Open step timeline')
-      const timeline = page.getByRole('list', { name: 'Step timeline' })
+      expect(await items.nth(0).textContent()).toContain('Inspect result')
+      await page
+        .getByRole('heading', {
+          name: 'Pay for the order · failed · chrome',
+        })
+        .waitFor()
+      expect(
+        await page
+          .getByRole('tab', { name: 'Timeline' })
+          .getAttribute('aria-selected'),
+      ).toBe('true')
+      const timeline = page.getByRole('list', {
+        name: 'Causal evidence timeline',
+      })
       expect(await timeline.textContent()).toContain('Then payment is captured')
       expect(await timeline.textContent()).toContain('Payment was declined')
+      expect(await timeline.textContent()).toContain('Run event')
       const scenarios = page.getByRole('table', { name: 'Scenarios' })
       expect(
         await scenarios.getByRole('columnheader', { name: 'chrome' }).count(),
@@ -546,10 +559,18 @@ export default {
         .getByRole('button', { name: 'Pay for the order chrome failed' })
         .click()
       expect(await timeline.textContent()).toContain('Then payment is captured')
-      expect(await timeline.textContent()).toContain('Click pay on chrome')
       expect(await timeline.textContent()).toContain('Payment was declined')
+      await page.getByRole('tab', { name: 'Artifacts' }).click()
       expect(await page.getByRole('img', { name: /screenshot/ }).count()).toBe(
         1,
+      )
+      await page.getByRole('tab', { name: 'Diagnostics' }).click()
+      expect(
+        await page.getByText('Payment was declined').count(),
+      ).toBeGreaterThan(0)
+      await page.getByRole('tab', { name: 'Overview' }).click()
+      expect(await page.getByText('Scenario attempt').count()).toBeGreaterThan(
+        0,
       )
     } finally {
       await page.close()
@@ -744,11 +765,15 @@ export default {
       await scenarios
         .getByRole('button', { name: 'Pay for the order android passed' })
         .click()
-      const timeline = page.getByRole('list', { name: 'Step timeline' })
-      expect(await timeline.textContent()).toContain('Tap checkout on android')
-      expect(
-        await timeline.getByRole('img', { name: /screenshot/ }).count(),
-      ).toBe(1)
+      await page.getByRole('tab', { name: 'Timeline' }).click()
+      const timeline = page.getByRole('list', {
+        name: 'Causal evidence timeline',
+      })
+      expect(await timeline.textContent()).toContain('Then payment is captured')
+      await page.getByRole('tab', { name: 'Artifacts' }).click()
+      expect(await page.getByRole('img', { name: /screenshot/ }).count()).toBe(
+        1,
+      )
     } finally {
       await page.close()
       child.kill()

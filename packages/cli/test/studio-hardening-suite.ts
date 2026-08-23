@@ -257,7 +257,9 @@ Feature: Checkout
         .getByRole('status')
         .filter({ hasText: 'failed' })
         .waitFor({ timeout: 20_000 })
-      const timeline = page.getByRole('list', { name: 'Step timeline' })
+      const timeline = page.getByRole('list', {
+        name: 'Causal evidence timeline',
+      })
       expect(await timeline.textContent()).toContain('Payment was declined')
       const scenarioLayout = await page
         .getByRole('table', { name: 'Scenarios' })
