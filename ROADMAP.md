@@ -1,156 +1,77 @@
-# pickle-spec Roadmap
+# Pickle Spec Roadmap
 
-This roadmap is based on the current repository state in March 2026: the published README, the Bun CLI package, the parser/config/runner implementation, the HTML report flow, and the existing test suite.
+This roadmap reflects the repository state in August 2026 and focuses on one goal: evolve Studio from a local diagnostic instrument into the flagship visual experience for AI-driven autonomous testing, powered by Stagehand on the web and agent-device on mobile.
 
-## Current State
+## Where the platform stands
 
-pickle-spec already has the core shape of a usable AI-native E2E runner:
+The engine is ahead of the face. Shipped and tested today:
 
-- CLI commands for `pickle run` and `pickle init`
-- Gherkin parsing with support for tags, scenario outlines, backgrounds, and i18n
-- AI-driven execution through Stagehand with direct navigation heuristics
-- Local and Browserbase browser modes
-- Per-feature scenario concurrency
-- Dev server lifecycle management
-- Failure screenshots, step traces, and HTML report generation
-- Basic unit tests for config, parser, reporter, and server modules
+- **Specs** — Gherkin with `@pickle` tags, durable identities, tag-expression selection, duration-aware sharding
+- **Runner** — event-sourced runs (`events.ndjson` + manifest under `~/.pickle`), worker-pool concurrency, retries, flake marking, Adaptive/Replay execution cache
+- **Web** — Stagehand adapter with observe/act/extract/verify routing, screenshots, local and Browserbase environments
+- **Mobile** — agent-device adapter for Android emulator and iOS simulator via a Node worker, with screenshot, device-log, recording, and trace evidence
+- **CLI** — `run`, `studio`, `cache`, `check`, `migrate`, `compare`, `export`, `import`; JUnit/JSON/NDJSON outputs; `--cache-only` for keyless CI
+- **Studio** — the Dark Spec Ledger: Specification catalog, Monaco Gherkin editing with optional AI propose, live scenario-by-profile matrix over WebSockets, result inspector with step timeline and artifacts, history with compare/export/rerun, settings with git integration and mobile target discovery
+What does not exist yet: a global Runs area, deep-linkable routes, live browser or device video, web traces and recordings, visual diffing, built-in AI authoring, trend analytics, and any hosted or multi-user surface.
 
-The next stage is less about inventing the product and more about hardening it into something teams can trust in CI and adopt on real projects.
+## The core bet
 
-## Product Direction
+No product today lets an operator watch an AI agent test their app live, see its reasoning at each step, and replay the evidence afterward. Phase 2 (Live Execution Theater) is the differentiator. Phase 1 makes Studio navigable enough to carry it; Phase 3 makes what it shows trustworthy.
+Every phase inherits the design law in `DESIGN.md`: flat plates, spelled result states, Bone for the primary action, teal/oxide/amber only as labeled state ink, and shadcn Mira primitives for every control.
 
-pickle-spec should become the fastest way to turn plain-language product behavior into reliable browser checks, with a strong emphasis on:
+## Phase 1: Command Center (weeks 1–6)
 
-- Low setup: no step definitions, minimal config, good defaults
-- High trust: stable execution, debuggable failures, predictable CI output
-- Team adoption: reports, docs, examples, and workflows that fit real delivery teams
+Goal: make Studio navigable, addressable, and shareable as a full application. Runs become a first-class global area instead of history nested under each Specification.
+- Global Runs area: a cross-Specification dashboard with live progress and a filterable run list backed by the existing `index.sqlite` projection, plus a unified run detail page that joins the manifest and the event stream
+- Real URL routing and deep links: replace the query-param history location so every Specification, scenario, run, result, and artifact has a shareable URL
+- Command palette (Cmd+K): jump to any Specification, scenario, or run; start and cancel runs; switch profiles
+- First-run onboarding: a visual readiness checklist built on the existing run-readiness API, guiding a new user to a first green run
+- Design-system fill-in: add the missing shadcn Mira primitives (toast, tooltip, dropdown menu, command, skeleton)
+Exit criteria: any state in Studio has a URL, and a new user goes from `pickle studio` to a first green run without reading docs.
 
-## Roadmap
+## Phase 2: Live Execution Theater (weeks 5–14)
 
-## Phase 1: Stabilize The Core
+Goal: watching the AI test your app becomes the signature experience. Studio currently shows live state chips and after-the-fact screenshots; this phase adds the moving picture.
+- Live browser viewport: stream CDP screencast frames from the local Stagehand browser over the existing per-run WebSocket; embed the Browserbase session live view for remote runs
+- Live device mirror: frame streaming from agent-device for Android emulator and iOS simulator through the existing Node worker protocol, rendered beside the step timeline
+- AI decision feed: extend run events with model-decision payloads so Studio renders observe, act, and verify reasoning per step in real time — what the model saw, the candidate actions, and the chosen action
+- Follow mode and picture-in-picture: auto-follow the worst cell or a pinned scenario across the matrix, with a filmstrip of concurrent viewports for parallel workers
+- Live step timeline: steps appear as events arrive with inline screenshots, execution mode, and cache annotations
+Exit criteria: a full run is watchable end-to-end without opening a terminal.
 
-Goal: make the current feature set dependable enough for repeated local use and early CI adoption.
+## Phase 3: Evidence and Diagnosis (weeks 12–20)
 
-Priority outcomes:
+Goal: every failure is diagnosable from Studio without a rerun. Evidence kinds already exist in the result schema; this phase makes them rich and universal.
+- Web traces and recordings as first-class evidence, captured through the browser under Stagehand, with an embedded viewer in the result inspector
+- Visual screenshot diff between two runs, extending `pickle compare` and the History compare UI with pixel and region diffing
+- Replay divergence explainer: visualize the exact step where cached Replay diverged and what Adaptive did instead (the `replay-diverged` and `adaptive-fallback-started` events already carry the data)
+- AI failure triage: a model-generated root-cause summary per failed scenario, classified as spec wording, app regression, or infrastructure, with a suggested fix
+- Network and console capture for web runs, surfaced in the diagnostics tab
+Exit criteria: at least 80% of failures on the example suite explain themselves from evidence in the inspector.
 
-- Lock down install and test reproducibility
-  - Ensure dependency installation and test execution work cleanly from a fresh checkout
-  - Add CI for `bun test` and `bunx tsc --noEmit`
-- Expand test coverage around the highest-risk paths
-  - Runner execution flow
-  - CLI option handling
-  - HTML report generation
-  - Cancellation and parallel execution behavior
-- Tighten runtime validation
-  - Clear errors for missing model credentials
-  - Clear errors for invalid screenshot modes, config values, and server setup
-  - Better handling when browser startup or initial navigation fails
-- Improve report ergonomics
-  - Avoid auto-opening the HTML report in CI/headless environments
-  - Persist report path in run results
-  - Make failed-step diagnostics easier to scan
+## Phase 4: Authoring Intelligence (weeks 18–26)
 
-Exit criteria:
+Goal: the fastest path from product intent to a running Specification. AI propose exists today only as an optional extension hook; this phase makes authoring intelligence built-in.
+- Explore mode: point the Stagehand agent at a URL; it explores the app and proposes draft Specifications (`@pickle:state:draft`) into the workspace for review
+- Built-in default `authorSpecification` so AI propose works out of the box with any configured model key, with no `pickle.extensions.ts` required
+- Step-level live preview: run a single step from the Monaco editor against a live session and see the result inline before saving
+- Grounded autocomplete: step suggestions from observed page state plus the project's existing step vocabulary, layered onto the current Gherkin completions
+- Spec health lints in the editor gutter (ambiguous steps, uncacheable patterns, unreachable states) and a tag and coverage map per Specification
+Exit criteria: a new scenario for an existing app in under 5 minutes, with propose working with zero extension code.
 
-- Fresh-clone setup is reliable
-- Core tests run in CI
-- Common misconfiguration cases fail with actionable messages
-- Local runs feel stable on small real-world suites
+## Phase 5: Insight and Scale (weeks 24+)
 
-## Phase 2: CI And Team Workflow Readiness
+Goal: from a diagnostic instrument to a suite-health platform. The raw data already lands in the run index; this phase turns it into trends and team workflows.
+- Trends from the run index: pass and flake rate, duration, cache hit rate, and inference count and cost per scenario over time, shown as sparklines in the ledger
+- Suite health view: attention-ranked Specifications and a flake quarantine workflow that keeps flaky scenarios visible without blocking runs
+- CI surface: PR-annotation-friendly output, cache-only playbooks for keyless CI, and archive import deep links so a CI failure opens directly in local Studio
+- Physical mobile devices via agent-device when supported, and Browserbase parity for scale-out web execution
+- Decision gate: hosted sync and multi-user collaboration, explicitly out of scope until this point and then decided deliberately
+Exit criteria: teams choose Studio over raw CI logs to understand suite health.
 
-Goal: make pickle-spec practical for product teams running suites in pull requests and deployment pipelines.
-
-Priority outcomes:
-
-- Add machine-readable outputs
-  - JUnit output for CI systems
-  - JSON output for custom tooling and dashboards
-- Improve test selection and execution controls
-  - Scenario name filtering
-  - Better tag expressions beyond single-tag filtering
-  - Feature-level parallelism and sharding support
-- Introduce retry and flake controls
-  - Scenario retries
-  - Per-step/per-scenario timeout controls
-  - Better distinction between assertion failures and infrastructure failures
-- Improve server integration
-  - Reuse existing running servers when appropriate
-  - Better readiness checks and startup diagnostics
-
-Exit criteria:
-
-- A team can run pickle-spec in CI and consume structured results
-- Flaky behavior is easier to manage without hiding real regressions
-- Large suites have a path to run faster than a single machine/browser loop
-
-## Phase 3: Authoring And Debugging Experience
-
-Goal: make writing and fixing specs meaningfully easier than traditional browser E2E tooling.
-
-Priority outcomes:
-
-- Improve authoring workflows
-  - `pickle init` should scaffold features/examples, not just config
-  - Add `pickle doctor` or `pickle check` to validate environment and config
-  - Add `pickle list` or `pickle dry-run` to inspect discovered scenarios without executing them
-- Deepen debugging tools
-  - Better trace playback controls
-  - Attach prompt/action logs per step
-  - Capture richer context when verification fails
-- Make AI execution more controllable
-  - Configurable prompt strategy knobs
-  - Safer fallbacks between `observe/act` and direct agent execution
-  - Better guidance for ambiguous natural-language steps
-
-Exit criteria:
-
-- New users can get from install to first useful spec quickly
-- Failed runs produce enough context to fix issues without rerunning repeatedly
-- Teams can tune execution behavior without forking the tool
-
-## Phase 4: Platform Expansion
-
-Goal: broaden the product from a promising runner into a larger testing platform.
-
-Priority outcomes:
-
-- Support richer assertion and workflow primitives
-  - File download verification
-  - Multi-tab flows
-  - Auth/session helpers
-  - API-assisted setup and teardown
-- Add collaboration features
-  - Better artifact organization per run
-  - Historical run storage hooks
-  - Shareable hosted report workflows
-- Strengthen ecosystem fit
-  - Better compatibility guidance for Playwright-heavy apps
-  - Templates for common frameworks
-  - Versioned docs and migration guides
-
-Exit criteria:
-
-- pickle-spec supports broader real-world browser workflows
-- Teams can adopt it as part of a longer-lived QA strategy, not just ad hoc smoke checks
-
-## Suggested Immediate Backlog
-
-If we want the next 4-6 weeks to be concrete, this is the order I’d recommend:
-
-1. Add CI for install, typecheck, and tests
-2. Add runner and CLI tests for the main execution paths
-3. Add structured output formats (`json`, `junit`)
-4. Make report opening conditional for local interactive runs only
-5. Add retry/timeouts and better failure classification
-6. Add `pickle check` for environment/config validation
-
-## Success Metrics
-
-The roadmap is working if we can improve these over time:
-
-- Time from install to first passing feature
-- Percentage of failed runs with enough artifacts to debug immediately
-- Median runtime for small and medium suites
-- CI adoption success without custom glue code
-- Reduction in flaky reruns caused by infrastructure or prompt ambiguity
+## Success metrics
+- Time from install to first green run (Phase 1)
+- Live-view engagement during runs (Phase 2)
+- Share of failures diagnosed without a rerun, targeting 80% or more (Phase 3)
+- Time to author a new passing scenario, targeting under 5 minutes (Phase 4)
+- Cache hit rate and inference cost per CI run (Phase 5)
