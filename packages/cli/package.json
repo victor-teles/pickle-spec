@@ -18,7 +18,9 @@
   ],
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "test": "bun test"
+    "test": "bun run test:confidentiality && bun run test:remaining",
+    "test:confidentiality": "bun test --preload ./test/test-environment.ts --max-concurrency 1 src/execution-cache-confidentiality.test.ts",
+    "test:remaining": "bun test --preload ./test/test-environment.ts --max-concurrency 1 --path-ignore-patterns '**/execution-cache-confidentiality.test.ts'"
   },
   "dependencies": {
     "@pickle-spec/mobile": "workspace:*",
