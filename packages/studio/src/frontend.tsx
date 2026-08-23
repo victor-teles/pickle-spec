@@ -21,6 +21,14 @@ import {
 import { HistoryPanel } from './history'
 import { cn } from './lib/utils'
 import {
+  historyLocationHref,
+  isResultInspection,
+  parseHistoryLocation,
+  type ResultInspectorTab,
+} from './result-inspection'
+import { ResultInspector } from './result-inspector'
+import { reasonMessage, resultBadgeVariant } from './result-presentation'
+import {
   attentionCells,
   type ClientEvent,
   cellKey,
@@ -56,6 +64,7 @@ if (token) {
     `${address.pathname}${address.search}${address.hash}`,
   )
 }
+const initialHistoryLocation = parseHistoryLocation(location.search)
 const areas = ['Specifications', 'Settings'] as const
 const specificationRowHeight = 32
 
@@ -73,10 +82,9 @@ async function api<T>(path: string, init?: RequestInit): Promise<T> {
 type StatusBadgeState = TestResultState | 'idle' | 'running'
 
 function badgeVariant(state: StatusBadgeState) {
-  if (state === 'failed' || state === 'infrastructure-error') return 'failed'
-  if (state === 'passed') return 'passed'
   if (state === 'running') return 'running'
-  return 'default'
+  if (state === 'idle') return 'default'
+  return resultBadgeVariant(state)
 }
 
 function statusText(state: StatusBadgeState) {
@@ -103,20 +111,17 @@ function matrixCellVariant(state: MatrixCell['state']) {
   return 'outline'
 }
 
-function reasonMessage(reason: unknown) {
-  return reason instanceof Error ? reason.message : String(reason)
-}
-
 function StudioApp() {
   const [project, setProject] = useState<StudioProject>()
   const [error, setError] = useState<string>()
   const [runId, setRunId] = useState<string>()
   const [selectedId, setSelectedId] = useState<string>()
+  const [historyLocation, setHistoryLocation] = useState(initialHistoryLocation)
   const [currentArea, setCurrentArea] =
     useState<(typeof areas)[number]>('Specifications')
   const [specificationSection, setSpecificationSection] = useState<
     'scenarios' | 'history'
-  >('scenarios')
+  >(initialHistoryLocation ? 'history' : 'scenarios')
   const [view, setView] = useState<RunView>(emptyRunView)
   const [authoring, setAuthoring] = useState(false)
   const [attentionOrder, setAttentionOrder] = useState<string[]>()
@@ -135,6 +140,19 @@ function StudioApp() {
     return () => {
       cancelled = true
     }
+  }, [])
+
+  useEffect(() => {
+    function restoreLocation() {
+      const next = parseHistoryLocation(location.search)
+      setHistoryLocation(next)
+      if (next) {
+        setCurrentArea('Specifications')
+        setSpecificationSection('history')
+      }
+    }
+    addEventListener('popstate', restoreLocation)
+    return () => removeEventListener('popstate', restoreLocation)
   }, [])
 
   useEffect(() => {
@@ -168,6 +186,9 @@ function StudioApp() {
   }, [attention, attentionOrder])
   const aggregate = statusLabel(view)
   const selected =
+    project?.specifications.find(
+      (item) => item.uri === historyLocation?.specificationUri,
+    ) ??
     project?.specifications.find((item) => item.id === selectedId) ??
     project?.specifications[0]
   const canRunAll = Boolean(project?.readiness?.ready ?? true)
@@ -178,6 +199,19 @@ function StudioApp() {
     const value = await api<StudioProject>('/api/project')
     setProject(value)
     return value
+  }
+
+  function navigateHistory(next: typeof historyLocation) {
+    history.pushState(
+      null,
+      '',
+      next ? historyLocationHref(next) : location.pathname,
+    )
+    setHistoryLocation(next)
+  }
+
+  function leaveHistory() {
+    if (historyLocation) navigateHistory(undefined)
   }
 
   async function startRun(request: StudioRunRequest) {
@@ -270,7 +304,10 @@ function StudioApp() {
               key={area}
               variant={area === currentArea ? 'secondary' : 'ghost'}
               aria-current={area === currentArea ? 'page' : undefined}
-              onClick={() => setCurrentArea(area)}
+              onClick={() => {
+                setCurrentArea(area)
+                if (area === 'Settings') leaveHistory()
+              }}
             >
               {area}
             </Button>
@@ -300,6 +337,7 @@ function StudioApp() {
               running={running}
               canRun={canRunAll}
               onSelect={(id) => {
+                leaveHistory()
                 setSelectedId(id)
                 setSpecificationSection('scenarios')
               }}
@@ -370,7 +408,10 @@ function StudioApp() {
                               ? 'page'
                               : undefined
                           }
-                          onClick={() => setSpecificationSection('scenarios')}
+                          onClick={() => {
+                            leaveHistory()
+                            setSpecificationSection('scenarios')
+                          }}
                         >
                           Scenarios
                         </Button>
@@ -461,12 +502,39 @@ function StudioApp() {
                     </div>
                   </div>
                 </header>
-                {authoring ? null : specificationSection === 'history' ? (
+                {authoring ? null : isResultInspection(historyLocation) &&
+                  historyLocation.specificationUri === selected.uri ? (
+                  <ResultInspector
+                    api={api}
+                    location={historyLocation}
+                    onBack={() =>
+                      navigateHistory({
+                        specificationUri: selected.uri,
+                        runId: historyLocation.runId,
+                      })
+                    }
+                    onTabChange={(tab: ResultInspectorTab) =>
+                      navigateHistory({ ...historyLocation, tab })
+                    }
+                  />
+                ) : specificationSection === 'history' ? (
                   <HistoryPanel
                     key={selected.uri}
                     api={api}
+                    initialRunId={
+                      historyLocation?.specificationUri === selected.uri
+                        ? historyLocation.runId
+                        : undefined
+                    }
                     runPhase={view.phase}
                     specification={selected}
+                    onReviewRun={(reviewedRunId) =>
+                      navigateHistory({
+                        specificationUri: selected.uri,
+                        runId: reviewedRunId,
+                      })
+                    }
+                    onInspectResult={navigateHistory}
                     onRerun={startRun}
                   />
                 ) : (

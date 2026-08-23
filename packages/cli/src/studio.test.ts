@@ -863,6 +863,70 @@ Feature: Search
       expect(
         await results.getByRole('button', { name: 'Rerun target' }).count(),
       ).toBeGreaterThan(0)
+      const failedResult = results
+        .getByRole('row')
+        .filter({ hasText: 'Pay for the order' })
+        .filter({ hasText: 'chrome' })
+        .first()
+      await failedResult.getByRole('button', { name: 'Inspect result' }).click()
+      await page
+        .getByRole('heading', {
+          name: 'Pay for the order · failed · chrome',
+        })
+        .waitFor()
+      expect(new URL(page.url()).searchParams.get('run')).toBeTruthy()
+      expect(new URL(page.url()).searchParams.get('scenario')).toBe(
+        'scnpaybbbbbbbbbb',
+      )
+      expect(
+        await page
+          .getByRole('tab', { name: 'Timeline' })
+          .getAttribute('aria-selected'),
+      ).toBe('true')
+      const evidenceTimeline = page.getByRole('list', {
+        name: 'Causal evidence timeline',
+      })
+      const timelineText = await evidenceTimeline.textContent()
+      expect(timelineText).toContain('Step')
+      expect(timelineText).toContain('Run event')
+      expect(timelineText).toContain('Diagnostic entry')
+      expect(timelineText).toContain('Test artifact')
+      expect(timelineText).toContain('Causal point')
+      await page.getByRole('tab', { name: 'Artifacts' }).click()
+      expect(
+        await page
+          .getByRole('img', {
+            name: 'screenshot from failed result for Pay for the order: Then payment is captured',
+          })
+          .count(),
+      ).toBe(1)
+      expect(
+        await page.getByRole('link', { name: 'Download screenshot' }).count(),
+      ).toBe(1)
+      expect(await page.getByText('image/png').count()).toBeGreaterThan(0)
+      const deepLink = page.url()
+      await page.reload()
+      await page
+        .getByRole('heading', {
+          name: 'Pay for the order · failed · chrome',
+        })
+        .waitFor()
+      expect(page.url()).toBe(deepLink)
+      await page.getByRole('button', { name: 'Back to run' }).click()
+      await results.waitFor()
+      const passedResult = results
+        .getByRole('row')
+        .filter({ hasText: 'Complete a purchase' })
+        .filter({ hasText: 'chrome' })
+        .first()
+      await passedResult.getByRole('button', { name: 'Inspect result' }).click()
+      expect(
+        await page
+          .getByRole('tab', { name: 'Overview' })
+          .getAttribute('aria-selected'),
+      ).toBe('true')
+      await page.getByRole('button', { name: 'Back to run' }).click()
+      await results.waitFor()
       await results
         .getByRole('button', { name: 'Rerun Scenario' })
         .first()

@@ -18,6 +18,8 @@ import {
   TableHeader,
   TableRow,
 } from './components/ui/table'
+import type { HistoryLocation } from './result-inspection'
+import { reasonMessage, resultBadgeVariant } from './result-presentation'
 import type {
   StudioHistory,
   StudioRunRequest,
@@ -31,7 +33,10 @@ const resultRowHeight = 56
 
 interface HistoryPanelProps {
   api: StudioApi
+  initialRunId?: string
   runPhase: 'idle' | 'running' | 'finished'
+  onInspectResult: (location: HistoryLocation) => void
+  onReviewRun: (runId: string) => void
   onRerun: (request: StudioRunRequest) => Promise<void>
   specification: { name: string; uri: string }
 }
@@ -66,16 +71,6 @@ function bytesLabel(bytes: number): string {
   return `${(bytes / 1_024 ** 3).toFixed(1)} GB`
 }
 
-function stateVariant(state: TestRunSummary['state']) {
-  if (state === 'failed' || state === 'infrastructure-error') return 'failed'
-  if (state === 'passed') return 'passed'
-  return 'default'
-}
-
-function reasonMessage(reason: unknown): string {
-  return reason instanceof Error ? reason.message : String(reason)
-}
-
 function sortedRuns(history: StudioHistory | undefined): TestRunSummary[] {
   return [...(history?.runs ?? [])].sort(
     (left, right) =>
@@ -92,6 +87,7 @@ export function HistoryPanel(props: HistoryPanelProps) {
   const [comparison, setComparison] = useState<TestRunComparison>()
   const [reviewed, setReviewed] = useState<TestRunManifest>()
   const reviewedSectionRef = useRef<HTMLElement>(null)
+  const autoReviewedRunId = useRef<string | undefined>(undefined)
   const [includeAllArtifacts, setIncludeAllArtifacts] = useState(false)
   const runs = useMemo(
     () =>
@@ -105,12 +101,22 @@ export function HistoryPanel(props: HistoryPanelProps) {
     itemSize: historyRowHeight,
   })
   const visibleRuns = runs.slice(runWindow.start, runWindow.end)
-  const reviewedResults = reviewed?.results ?? []
+  const reviewedAttempts = useMemo(
+    () =>
+      (reviewed?.results ?? [])
+        .filter(
+          (result) => result.specification.uri === props.specification.uri,
+        )
+        .flatMap((result) =>
+          result.attempts.map((attempt) => ({ result, attempt })),
+        ),
+    [props.specification.uri, reviewed?.results],
+  )
   const resultWindow = useVirtualWindow<HTMLDivElement>({
-    count: reviewedResults.length,
+    count: reviewedAttempts.length,
     itemSize: resultRowHeight,
   })
-  const visibleResults = reviewedResults.slice(
+  const visibleAttempts = reviewedAttempts.slice(
     resultWindow.start,
     resultWindow.end,
   )
@@ -118,6 +124,27 @@ export function HistoryPanel(props: HistoryPanelProps) {
   const loadHistory = useCallback(async () => {
     setHistory(await props.api<StudioHistory>('/api/history'))
   }, [props.api])
+
+  const loadReviewedRun = useCallback(
+    async (runId: string) => {
+      setError(undefined)
+      try {
+        const snapshot = await props.api<StudioRunSnapshot>(
+          `/api/runs/${encodeURIComponent(runId)}`,
+        )
+        setReviewed(snapshot.manifest)
+        return true
+      } catch (reason) {
+        setError(reasonMessage(reason))
+        return false
+      }
+    },
+    [props.api],
+  )
+
+  async function reviewRun(runId: string) {
+    if (await loadReviewedRun(runId)) props.onReviewRun(runId)
+  }
 
   const shouldLoadHistory =
     props.runPhase !== 'running' || history === undefined
@@ -137,6 +164,18 @@ export function HistoryPanel(props: HistoryPanelProps) {
     if (reviewed) reviewedSectionRef.current?.focus()
   }, [reviewed])
 
+  useEffect(() => {
+    if (
+      !props.initialRunId ||
+      props.initialRunId === autoReviewedRunId.current ||
+      reviewed?.id === props.initialRunId
+    ) {
+      return
+    }
+    autoReviewedRunId.current = props.initialRunId
+    void loadReviewedRun(props.initialRunId)
+  }, [loadReviewedRun, props.initialRunId, reviewed?.id])
+
   async function compareSelected() {
     if (selectedRunIds.length !== 2) return
     setError(undefined)
@@ -151,18 +190,6 @@ export function HistoryPanel(props: HistoryPanelProps) {
           }),
         }),
       )
-    } catch (reason) {
-      setError(reasonMessage(reason))
-    }
-  }
-
-  async function reviewRun(runId: string) {
-    setError(undefined)
-    try {
-      const snapshot = await props.api<StudioRunSnapshot>(
-        `/api/runs/${encodeURIComponent(runId)}`,
-      )
-      setReviewed(snapshot.manifest)
     } catch (reason) {
       setError(reasonMessage(reason))
     }
@@ -321,7 +348,7 @@ export function HistoryPanel(props: HistoryPanelProps) {
                   <TableCell>{run.applicationRevision ?? 'Not set'}</TableCell>
                   <TableCell>{durationLabel(run.durationMs)}</TableCell>
                   <TableCell>
-                    <Badge variant={stateVariant(run.state)}>
+                    <Badge variant={resultBadgeVariant(run.state)}>
                       <ResultMark state={run.state} />
                       {run.state}
                     </Badge>
@@ -447,31 +474,27 @@ export function HistoryPanel(props: HistoryPanelProps) {
                   <TableHead>Scenario</TableHead>
                   <TableHead>Target</TableHead>
                   <TableHead>State</TableHead>
+                  <TableHead>Attempt</TableHead>
                   <TableHead>Execution mode</TableHead>
                   <TableHead>Cache outcome</TableHead>
                   <TableHead>Uncacheable reason</TableHead>
                   <TableHead>Inferences</TableHead>
                   <TableHead>Duration</TableHead>
-                  <TableHead>Rerun</TableHead>
+                  <TableHead>Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                <VirtualTableSpacer height={resultWindow.before} colSpan={9} />
-                {visibleResults.map((result) => {
-                  const attempt = result.attempts.at(-1)
-                  if (!attempt) {
-                    throw new Error(
-                      'A Test result requires at least one Scenario attempt',
-                    )
-                  }
+                <VirtualTableSpacer height={resultWindow.before} colSpan={10} />
+                {visibleAttempts.map(({ result, attempt }) => {
                   return (
                     <TableRow
-                      key={`${result.scenario.id ?? result.scenario.name}:${result.executionTargetProfile.id}`}
+                      key={`${result.scenario.id ?? result.scenario.name}:${result.scenario.examplesRowId ?? ''}:${result.executionTargetProfile.id}:${attempt.attempt}`}
                       style={{ height: resultRowHeight }}
                     >
                       <TableCell>{result.scenario.name}</TableCell>
                       <TableCell>{result.executionTargetProfile.id}</TableCell>
-                      <TableCell>{result.state}</TableCell>
+                      <TableCell>{attempt.state}</TableCell>
+                      <TableCell>{attempt.attempt}</TableCell>
                       <TableCell>
                         {attempt.executionMode ?? 'Not recorded'}
                       </TableCell>
@@ -484,9 +507,27 @@ export function HistoryPanel(props: HistoryPanelProps) {
                       <TableCell>
                         {inferenceCountLabel(attempt.inferenceCount)}
                       </TableCell>
-                      <TableCell>{durationLabel(result.durationMs)}</TableCell>
+                      <TableCell>{durationLabel(attempt.durationMs)}</TableCell>
                       <TableCell>
                         <div className="flex gap-2">
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            onClick={() =>
+                              props.onInspectResult({
+                                specificationUri: result.specification.uri,
+                                runId: reviewed.id,
+                                scenarioId:
+                                  result.scenario.id ?? result.scenario.name,
+                                examplesRowId: result.scenario.examplesRowId,
+                                profileId: result.executionTargetProfile.id,
+                                attempt: attempt.attempt,
+                              })
+                            }
+                          >
+                            Inspect result
+                          </Button>
                           <Button
                             type="button"
                             size="sm"
@@ -522,7 +563,7 @@ export function HistoryPanel(props: HistoryPanelProps) {
                     </TableRow>
                   )
                 })}
-                <VirtualTableSpacer height={resultWindow.after} colSpan={9} />
+                <VirtualTableSpacer height={resultWindow.after} colSpan={10} />
               </TableBody>
             </Table>
           </section>
