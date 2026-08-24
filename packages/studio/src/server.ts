@@ -2,11 +2,13 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { basename, join, resolve, sep } from 'node:path'
 import type {
+  DiagnosticEntry,
   ExecutionCacheEntryMetadata,
   HtmlArtifactMode,
   RunEvent,
   TestRunComparison,
   TestRunManifest,
+  TestRunStorageInspection,
   TestRunSummary,
 } from '@pickle-spec/runner'
 import { resolveLocalProjectStorage } from '@pickle-spec/runner'
@@ -157,10 +159,22 @@ export interface StudioRunSnapshot {
   manifest?: TestRunManifest
 }
 
+export type StudioLiveDiagnosticEvent = {
+  type: 'diagnostic-recorded'
+  profileId: string
+  scope?: Extract<RunEvent, { type: 'scenario-started' }>['scope']
+  diagnostic: DiagnosticEntry
+}
+
+export type StudioRunStreamEvent =
+  | RunEvent
+  | StudioLiveDiagnosticEvent
+  | { type: 'run-finished'; run: { id: string } }
+
 export interface StudioRunGateway {
   start(
     request: StudioRunRequest | undefined,
-    onEvent: (event: RunEvent) => void,
+    onEvent: (event: StudioRunStreamEvent) => void,
   ): Promise<{ id: string; done: Promise<unknown> }>
   snapshot(id: string): Promise<StudioRunSnapshot>
   cancel(id: string): Promise<void>
@@ -175,17 +189,25 @@ export interface StudioHistoryGateway {
   importArchive(bytes: Uint8Array): Promise<TestRunManifest>
   exportArchive(runId: string): Promise<string>
   exportHtml(runId: string, artifacts: HtmlArtifactMode): Promise<string>
-  deleteEligible(): Promise<{ removed: string[] }>
+  exportAllure(runId: string): Promise<Uint8Array>
+  deleteEligible(): Promise<{
+    removed: string[]
+    beforeBytes: number
+    afterBytes: number
+  }>
+  pin(runId: string): Promise<void>
+  unpin(runId: string): Promise<void>
 }
 
 export interface StudioRetentionPolicy {
-  maxAgeMs: number
-  maxBytes: number
+  maxAgeMs?: number
+  maxBytes?: number
 }
 
 export interface StudioHistory {
   runs: readonly TestRunSummary[]
   retention: StudioRetentionPolicy
+  storage: TestRunStorageInspection
 }
 
 export interface StudioExecutionCacheInspection {
@@ -248,9 +270,7 @@ type HtmlAsset = {
   outdir: string
 }
 
-type StudioStreamEvent =
-  | RunEvent
-  | { type: 'run-finished'; run: { id: string } }
+type StudioStreamEvent = StudioRunStreamEvent
 
 type WorkspaceStreamEvent = DiskChangeEvent & { type: 'disk-changed' }
 
@@ -567,8 +587,25 @@ export async function startStudio(
           }
           return Response.json(await options.history.deleteEligible())
         }
+        const historyPinMatch = url.pathname.match(
+          /^\/api\/history\/([^/]+)\/pin$/,
+        )
+        if (
+          historyPinMatch &&
+          (request.method === 'POST' || request.method === 'DELETE')
+        ) {
+          if (!options.history) {
+            return new Response('Test run history is unavailable', {
+              status: 501,
+            })
+          }
+          const runId = decodeURIComponent(historyPinMatch[1]!)
+          if (request.method === 'POST') await options.history.pin(runId)
+          else await options.history.unpin(runId)
+          return Response.json({ runId, pinned: request.method === 'POST' })
+        }
         const historyExportMatch = url.pathname.match(
-          /^\/api\/history\/([^/]+)\/(html|archive)$/,
+          /^\/api\/history\/([^/]+)\/(html|archive|allure)$/,
         )
         if (historyExportMatch && request.method === 'GET') {
           if (!options.history) {
@@ -583,6 +620,15 @@ export async function startStudio(
               headers: {
                 'content-type': 'application/json; charset=utf-8',
                 'content-disposition': `attachment; filename="${runId}.pickle-run.json"`,
+              },
+            })
+          }
+          if (kind === 'allure') {
+            const bytes = await options.history.exportAllure(runId)
+            return new Response(bytes.buffer as ArrayBuffer, {
+              headers: {
+                'content-type': 'application/zip',
+                'content-disposition': `attachment; filename="${runId}-allure-results.zip"`,
               },
             })
           }
@@ -852,7 +898,10 @@ export async function startStudio(
             return new Response(message, { status: 500 })
           }
         }
-        if (url.pathname === '/api/artifact' && request.method === 'GET') {
+        if (
+          url.pathname === '/api/artifact' &&
+          (request.method === 'GET' || request.method === 'HEAD')
+        ) {
           const filePath = url.searchParams.get('path')
           if (!filePath) return new Response('Missing path', { status: 400 })
           const resolved = resolve(filePath)
@@ -868,7 +917,24 @@ export async function startStudio(
           const file = Bun.file(resolved)
           if (!(await file.exists()))
             return new Response('Not found', { status: 404 })
-          return new Response(file)
+          const headers = {
+            'content-type': file.type || 'application/octet-stream',
+            'content-length': String(file.size),
+          }
+          if (request.method === 'HEAD') return new Response(null, { headers })
+          if (url.searchParams.get('download') !== 'true') {
+            return new Response(file, { headers })
+          }
+          const requestedName = url.searchParams.get('name')
+          const downloadName = basename(requestedName || resolved).replace(
+            /["\r\n]/g,
+            '_',
+          )
+          return new Response(file, {
+            headers: {
+              'content-disposition': `attachment; filename="${downloadName}"`,
+            },
+          })
         }
         const cancelMatch = url.pathname.match(/^\/api\/runs\/([^/]+)\/cancel$/)
         if (cancelMatch && request.method === 'POST') {

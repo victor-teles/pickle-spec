@@ -123,6 +123,7 @@ function publicArtifacts(
     mediaType: artifact.mediaType
       ? redactString(artifact.mediaType, bindings)
       : undefined,
+    name: artifact.name ? redactString(artifact.name, bindings) : undefined,
   }))
 }
 

@@ -12,6 +12,7 @@ import {
 } from './agent-device-client'
 import {
   finishScenarioEvidence,
+  type MobileEvidenceAvailability,
   startScenarioEvidence,
 } from './agent-device-evidence'
 import { executePrivateAgentDeviceReplay } from './agent-device-replay'
@@ -64,9 +65,11 @@ interface GatewaySession {
   compiled: CompiledMobileScenario
   deviceLogPath?: string
   execution?: WorkerScenarioExecution
+  evidenceAvailability: MobileEvidenceAvailability[]
   logsStarted: boolean
   mode: 'adaptive' | 'replay'
   redactions: readonly MobileTextRedaction[]
+  requestedArtifacts: readonly MobileArtifactKind[]
   selection?: MobileSelection
 }
 
@@ -289,6 +292,8 @@ export class AgentDeviceGateway {
       logsStarted: false,
       mode: input.mode,
       redactions: evidenceRedactions(input),
+      requestedArtifacts,
+      evidenceAvailability: [],
     }
     this.sessions.set(input.sessionId, session)
     const ensureSessionOwned = () => {
@@ -330,11 +335,16 @@ export class AgentDeviceGateway {
               artifactCommands[artifact],
             ),
         )
-        if (unsupportedArtifacts.length > 0) {
-          throw new Error(
-            `${policy.targetName} does not support requested evidence: ${unsupportedArtifacts.join(', ')}`,
-          )
-        }
+        session.artifacts = new Set(
+          requestedArtifacts.filter(
+            (artifact) => !unsupportedArtifacts.includes(artifact),
+          ),
+        )
+        session.evidenceAvailability = unsupportedArtifacts.map((kind) => ({
+          kind,
+          state: 'not-supported',
+          message: `${policy.targetName} does not support ${kind} evidence`,
+        }))
         const targetCapabilities = normalizedCapabilities(
           platform,
           capabilityResult.availableCommands,
@@ -440,9 +450,29 @@ export class AgentDeviceGateway {
         replayDiverged: true,
       }
     } finally {
-      const artifacts = await finishScenarioEvidence(session, activeEvidence)
+      const finishedEvidence = await finishScenarioEvidence(
+        session,
+        activeEvidence,
+      )
       const finalStep = session.execution?.stepExecutions.at(-1)
-      if (finalStep && artifacts.length > 0) finalStep.artifacts = artifacts
+      if (finalStep) {
+        if (finishedEvidence.artifacts.length > 0) {
+          finalStep.artifacts = finishedEvidence.artifacts
+        }
+        const availability = [
+          ...session.evidenceAvailability,
+          ...finishedEvidence.availability,
+        ]
+        if (availability.length > 0) {
+          const byKind = new Map(availability.map((item) => [item.kind, item]))
+          finalStep.evidenceAvailability = session.requestedArtifacts.flatMap(
+            (kind) => {
+              const item = byKind.get(kind)
+              return item ? [item] : []
+            },
+          )
+        }
+      }
     }
     return session.execution
   }

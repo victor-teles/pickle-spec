@@ -261,14 +261,24 @@ test('keeps Agent Device infrastructure failures out of divergence fallback', as
 test('captures Scenario-wide evidence around the exact Replay', async () => {
   const artifactDirectory = await mkdtemp(join(tmpdir(), 'pickle-evidence-'))
   const record = mock(
-    async (_options: { action: 'start' | 'stop'; path?: string }) => {},
+    async (options: { action: 'start' | 'stop'; path?: string }) => {
+      if (options.action === 'stop' && options.path) {
+        await Bun.write(options.path, 'recording')
+      }
+    },
   )
   const trace = mock(
-    async (_options: { action: 'start' | 'stop'; path?: string }) => {},
+    async (options: { action: 'start' | 'stop'; path?: string }) => {
+      if (options.action === 'stop' && options.path) {
+        await Bun.write(options.path, 'trace')
+      }
+    },
   )
-  const screenshot = mock(async (options: { path?: string }) => ({
-    path: options.path ?? '',
-  }))
+  const screenshot = mock(async (options: { path?: string }) => {
+    const path = options.path ?? ''
+    await Bun.write(path, 'screenshot')
+    return { path }
+  })
   const gateway = new AgentDeviceGateway(() =>
     client({
       recording: { record, trace },
@@ -292,13 +302,36 @@ test('captures Scenario-wide evidence around the exact Replay', async () => {
         {
           state: 'passed',
           artifacts: [
-            { kind: 'recording', mediaType: 'video/mp4' },
-            { kind: 'trace' },
-            { kind: 'screenshot', mediaType: 'image/png' },
+            {
+              kind: 'recording',
+              mediaType: 'video/mp4',
+              name: 'scenario.mp4',
+            },
+            { kind: 'trace', name: 'scenario.trace' },
+            {
+              kind: 'screenshot',
+              mediaType: 'image/png',
+              name: 'scenario.png',
+            },
+          ],
+          evidenceAvailability: [
+            { kind: 'recording', state: 'available' },
+            { kind: 'trace', state: 'available' },
+            { kind: 'screenshot', state: 'available' },
           ],
         },
       ],
     })
+    const artifacts = (
+      await gateway.executeScenario('session-1')
+    ).stepExecutions.at(-1)?.artifacts
+    expect(
+      artifacts?.every((artifact) =>
+        artifact.capturedAt
+          ? /^\d{4}-\d{2}-\d{2}T/.test(artifact.capturedAt)
+          : false,
+      ),
+    ).toBe(true)
     expect(record.mock.calls.map(([options]) => options.action)).toEqual([
       'start',
       'stop',
@@ -311,6 +344,195 @@ test('captures Scenario-wide evidence around the exact Replay', async () => {
   } finally {
     await gateway.dispose()
     await rm(artifactDirectory, { recursive: true, force: true })
+  }
+})
+
+test('retains successful Mobile artifacts when a sibling capture fails', async () => {
+  const artifactDirectory = await mkdtemp(join(tmpdir(), 'pickle-evidence-'))
+  const gateway = new AgentDeviceGateway(() =>
+    client({
+      recording: {
+        async record(options) {
+          if (options.action === 'stop' && options.path) {
+            await Bun.write(options.path, 'recording')
+          }
+        },
+        async trace() {},
+      },
+      capture: {
+        async screenshot() {
+          throw new Error('Screenshot transport closed')
+        },
+      },
+    }),
+  )
+
+  try {
+    await gateway.openSession({
+      sessionId: 'session-partial-evidence',
+      application,
+      artifactDirectory,
+      artifacts: ['recording', 'screenshot'],
+      mode: 'adaptive',
+      scenario,
+    })
+
+    const finalStep = (
+      await gateway.executeScenario('session-partial-evidence')
+    ).stepExecutions.at(-1)
+
+    expect(finalStep?.artifacts).toEqual([
+      expect.objectContaining({ kind: 'recording', name: 'scenario.mp4' }),
+    ])
+    expect(finalStep?.evidenceAvailability).toEqual([
+      { kind: 'recording', state: 'available' },
+      {
+        kind: 'screenshot',
+        state: 'capture-failed',
+        message: 'Screenshot transport closed',
+      },
+    ])
+  } finally {
+    await gateway.dispose()
+    await rm(artifactDirectory, { recursive: true, force: true })
+  }
+})
+
+test('reports unsupported requested Mobile evidence without failing the Scenario', async () => {
+  const artifactDirectory = await mkdtemp(join(tmpdir(), 'pickle-evidence-'))
+  const gateway = new AgentDeviceGateway(() =>
+    client({
+      devices: {
+        async list() {
+          return [androidEmulator, iosSimulator]
+        },
+        async capabilities() {
+          return {
+            device: androidEmulator,
+            availableCommands: ['screenshot'],
+          }
+        },
+      },
+      capture: {
+        async screenshot(options) {
+          const path = options.path ?? ''
+          await Bun.write(path, 'screenshot')
+          return { path }
+        },
+      },
+    }),
+  )
+
+  try {
+    await gateway.openSession({
+      sessionId: 'session-unsupported-evidence',
+      application,
+      artifactDirectory,
+      artifacts: ['recording', 'screenshot'],
+      mode: 'adaptive',
+      scenario,
+    })
+
+    const finalStep = (
+      await gateway.executeScenario('session-unsupported-evidence')
+    ).stepExecutions.at(-1)
+
+    expect(finalStep?.artifacts).toEqual([
+      expect.objectContaining({ kind: 'screenshot', name: 'scenario.png' }),
+    ])
+    expect(finalStep?.evidenceAvailability).toEqual([
+      {
+        kind: 'recording',
+        state: 'not-supported',
+        message: 'Android Emulator does not support recording evidence',
+      },
+      { kind: 'screenshot', state: 'available' },
+    ])
+  } finally {
+    await gateway.dispose()
+    await rm(artifactDirectory, { recursive: true, force: true })
+  }
+})
+
+test('reports a missing Mobile artifact when capture returns no file', async () => {
+  const artifactDirectory = await mkdtemp(join(tmpdir(), 'pickle-evidence-'))
+  const gateway = new AgentDeviceGateway(() =>
+    client({
+      capture: {
+        async screenshot(options) {
+          return { path: options.path ?? '' }
+        },
+      },
+    }),
+  )
+
+  try {
+    await gateway.openSession({
+      sessionId: 'session-missing-evidence',
+      application,
+      artifactDirectory,
+      artifacts: ['screenshot'],
+      mode: 'adaptive',
+      scenario,
+    })
+
+    const finalStep = (
+      await gateway.executeScenario('session-missing-evidence')
+    ).stepExecutions.at(-1)
+
+    expect(finalStep?.artifacts).toBeUndefined()
+    expect(finalStep?.evidenceAvailability).toEqual([
+      {
+        kind: 'screenshot',
+        state: 'missing',
+        message: 'Captured screenshot file is missing',
+      },
+    ])
+  } finally {
+    await gateway.dispose()
+    await rm(artifactDirectory, { recursive: true, force: true })
+  }
+})
+
+test('rejects a screenshot path outside the requested evidence directory', async () => {
+  const artifactDirectory = await mkdtemp(join(tmpdir(), 'pickle-evidence-'))
+  const outsidePath = join(artifactDirectory, '..', 'outside-screenshot.png')
+  await Bun.write(outsidePath, 'private')
+  const gateway = new AgentDeviceGateway(() =>
+    client({
+      capture: {
+        async screenshot() {
+          return { path: outsidePath }
+        },
+      },
+    }),
+  )
+
+  try {
+    await gateway.openSession({
+      sessionId: 'session-outside-evidence',
+      application,
+      artifactDirectory,
+      artifacts: ['screenshot'],
+      mode: 'adaptive',
+      scenario,
+    })
+
+    const finalStep = (
+      await gateway.executeScenario('session-outside-evidence')
+    ).stepExecutions.at(-1)
+
+    expect(finalStep?.artifacts).toBeUndefined()
+    expect(finalStep?.evidenceAvailability).toEqual([
+      expect.objectContaining({
+        kind: 'screenshot',
+        state: 'capture-failed',
+      }),
+    ])
+  } finally {
+    await gateway.dispose()
+    await rm(artifactDirectory, { recursive: true, force: true })
+    await rm(outsidePath, { force: true })
   }
 })
 

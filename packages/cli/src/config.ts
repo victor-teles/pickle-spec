@@ -2,6 +2,7 @@ import { join, resolve } from 'node:path'
 import type { MobileAdapterOptions } from '@pickle-spec/mobile'
 import {
   type ArtifactCapturePolicy,
+  type EvidencePersistencePolicy,
   type ExecutionSettings,
   type ExecutionTargetProfile,
   executionSettingsSchema,
@@ -29,11 +30,20 @@ export interface ServerConfig {
   pollIntervalMs?: number
   readinessPath?: string
   reuseExisting?: boolean
+  output?: {
+    stdout?: boolean
+    stderr?: boolean
+  }
 }
 
 export interface ProjectExecutionTargetProfile {
   adapter: string
   capabilities?: readonly string[]
+  applicationOutput?: {
+    stdout?: boolean
+    stderr?: boolean
+  }
+  evidence?: ProjectEvidence
   web?: WebAdapterOptions
   mobile?: MobileAdapterOptions
 }
@@ -49,6 +59,10 @@ export interface ProjectCache {
 
 export interface ProjectArtifacts {
   capture?: ArtifactCapturePolicy
+}
+
+export interface ProjectEvidence {
+  persistence?: EvidencePersistencePolicy
 }
 
 export interface ProjectSecretRef {
@@ -70,6 +84,7 @@ export interface PickleConfig {
   server?: ServerConfig
   retention?: ProjectRetention
   cache?: ProjectCache
+  evidence?: ProjectEvidence
   artifacts?: ProjectArtifacts
   links?: Record<string, string>
   secrets?: Record<string, ProjectSecretRef>
@@ -209,6 +224,28 @@ const projectProfileSchema = strictObject('executionTargetProfiles', {
     )
     .min(1, { error: 'capabilities must contain at least one capability' })
     .optional(),
+  applicationOutput: strictObject('executionTargetProfiles.applicationOutput', {
+    stdout: z
+      .boolean({
+        error:
+          'executionTargetProfiles.applicationOutput.stdout must be a boolean',
+      })
+      .optional(),
+    stderr: z
+      .boolean({
+        error:
+          'executionTargetProfiles.applicationOutput.stderr must be a boolean',
+      })
+      .optional(),
+  }).optional(),
+  evidence: strictObject('executionTargetProfiles.evidence', {
+    persistence: z
+      .enum(['off', 'on-failure', 'always'], {
+        error:
+          'executionTargetProfiles.evidence.persistence must be off, on-failure, or always',
+      })
+      .optional(),
+  }).optional(),
   web: webAdapterOptionsSchema.optional(),
   mobile: strictObject('executionTargetProfiles.mobile', {
     executionTarget: z.enum(['android-emulator', 'ios-simulator']).optional(),
@@ -340,6 +377,14 @@ const pickleConfigSchema = strictObject('configuration', {
     reuseExisting: z
       .boolean({ error: 'server.reuseExisting must be a boolean' })
       .optional(),
+    output: strictObject('server.output', {
+      stdout: z
+        .boolean({ error: 'server.output.stdout must be a boolean' })
+        .optional(),
+      stderr: z
+        .boolean({ error: 'server.output.stderr must be a boolean' })
+        .optional(),
+    }).optional(),
   })
     .superRefine((server, context) => {
       if (server.command && !server.url && !server.port) {
@@ -372,6 +417,13 @@ const pickleConfigSchema = strictObject('configuration', {
   }).optional(),
   cache: strictObject('cache', {
     maxBytes: optionalPositiveInteger('cache.maxBytes'),
+  }).optional(),
+  evidence: strictObject('evidence', {
+    persistence: z
+      .enum(['off', 'on-failure', 'always'], {
+        error: 'evidence.persistence must be off, on-failure, or always',
+      })
+      .optional(),
   }).optional(),
   artifacts: strictObject('artifacts', {
     capture: z

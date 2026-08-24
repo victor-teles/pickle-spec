@@ -1,13 +1,13 @@
 #!/usr/bin/env bun
 
 import { resolve } from 'node:path'
+import type { EvidencePersistencePolicy } from '@pickle-spec/runner'
 import {
   compareTestRuns,
-  defaultRetention,
-  formatHtml,
   importRunArchive,
   openTestRunStore,
-  writeRunArchive,
+  publishTestRunExports,
+  type TestRunExportRequest,
 } from '@pickle-spec/runner'
 import type { SelectionOptions, SpecificationState } from '@pickle-spec/spec'
 import type { StudioAuthoringModel } from '@pickle-spec/studio'
@@ -18,6 +18,7 @@ import {
   type WebAdapterOptions,
 } from '@pickle-spec/web'
 import cliPackage from '../package.json' with { type: 'json' }
+import type { ApplicationOutputOptions } from './application-output'
 import { runCacheCommand } from './cache'
 import { errorMessage, withRecoveryFailure } from './command-error'
 import { defaultSpecificationGlob, loadConfig } from './config'
@@ -27,8 +28,14 @@ import {
   loadProjectSpecifications,
   startProjectRun,
 } from './execute-run'
+import { parseTestRunOutput } from './output-arguments'
 import { checkProject, initializeProject, migrateProject } from './project'
-import { finalizeMaterializedEvidence, writeRunOutputs } from './run-outputs'
+import {
+  finalizeMaterializedEvidence,
+  reportTestRunExportOutcomes,
+  testRunExportFailed,
+  writeRunOutputs,
+} from './run-outputs'
 import {
   createRunReporter,
   type RunReporterName,
@@ -67,15 +74,17 @@ interface RunArguments {
   headed?: boolean
   screenshotMode?: NonNullable<WebAdapterOptions['screenshots']>['mode']
   applicationRevision?: string
-  junitPath?: string
-  jsonPath?: string
-  ndjsonPath?: string
+  outputs?: TestRunExportRequest[]
+  force?: boolean
+  allArtifacts?: boolean
   rerunId?: string
   failures?: boolean
   fast?: boolean
   refreshCache?: boolean
   cacheOnly?: boolean
   reporter?: RunReporterName
+  applicationOutput?: ApplicationOutputOptions
+  evidencePersistence?: EvidencePersistencePolicy
 }
 
 interface StudioArguments {
@@ -188,14 +197,40 @@ function parseRunArguments(argv: string[]): RunArguments {
       case '--application-revision':
         args.applicationRevision = valueAfter(argv, index++)
         break
-      case '--junit':
-        args.junitPath = valueAfter(argv, index++)
+      case '--application-output': {
+        const stream = valueAfter(argv, index++)
+        if (stream !== 'stdout' && stream !== 'stderr') {
+          throw new Error('--application-output requires stdout or stderr')
+        }
+        args.applicationOutput = {
+          ...args.applicationOutput,
+          [stream]: true,
+        }
         break
-      case '--json':
-        args.jsonPath = valueAfter(argv, index++)
+      }
+      case '--evidence': {
+        const persistence = valueAfter(argv, index++)
+        if (
+          persistence !== 'off' &&
+          persistence !== 'on-failure' &&
+          persistence !== 'always'
+        ) {
+          throw new Error('--evidence requires off, on-failure, or always')
+        }
+        args.evidencePersistence = persistence
         break
-      case '--ndjson':
-        args.ndjsonPath = valueAfter(argv, index++)
+      }
+      case '--output':
+        args.outputs = [
+          ...(args.outputs ?? []),
+          parseTestRunOutput(valueAfter(argv, index++)),
+        ]
+        break
+      case '--force':
+        args.force = true
+        break
+      case '--all-artifacts':
+        args.allArtifacts = true
         break
       case '--rerun':
         args.rerunId = valueAfter(argv, index++)
@@ -268,14 +303,20 @@ async function run(argv: string[]): Promise<number> {
     reporting.start()
     const { runs } = await started.done
     const store = openTestRunStore({ root })
-    await writeRunOutputs(args, root, started.id)
+    const outputOutcomes = await writeRunOutputs(args, root, started.id)
     outputsWritten = true
-    await store.applyRetention({
+    reportTestRunExportOutcomes(outputOutcomes, console.error)
+    const retention = await store.applyRetention({
       maxAgeMs: config.retention?.days
         ? config.retention.days * dayMs
         : undefined,
       maxBytes: config.retention?.maxBytes,
     })
+    if (config.retention?.days || config.retention?.maxBytes) {
+      console.error(
+        `RETENTION removed ${retention.removed.length} Test runs (${retention.beforeBytes} → ${retention.afterBytes} bytes)${retention.removed.length > 0 ? `: ${retention.removed.join(', ')}` : ''}`,
+      )
+    }
 
     const exitStatus = evaluateTestRunExitStatus(
       runs.map(({ result }) => result),
@@ -284,7 +325,7 @@ async function run(argv: string[]): Promise<number> {
     reporting.finish(runs, performance.now() - startedAt, exitStatus)
     const reporterFailure = reporting.failure()
     if (reporterFailure) throw reporterFailure.error
-    return exitStatus.exitCode
+    return testRunExportFailed(outputOutcomes) ? 2 : exitStatus.exitCode
   } catch (error) {
     let commandError: unknown = error
     if (
@@ -295,9 +336,13 @@ async function run(argv: string[]): Promise<number> {
       const exitStatus = evaluateTestRunExitStatus([], { interrupted: true })
       if (startedRunId && !outputsWritten) {
         try {
-          await finalizeMaterializedEvidence(args, root, startedRunId, {
-            includeEmptyRun: true,
-          })
+          const outcomes = await finalizeMaterializedEvidence(
+            args,
+            root,
+            startedRunId,
+            { includeEmptyRun: true },
+          )
+          reportTestRunExportOutcomes(outcomes, console.error)
           outputsWritten = true
         } catch (recoveryError) {
           commandError = withRecoveryFailure(
@@ -321,7 +366,12 @@ async function run(argv: string[]): Promise<number> {
     }
     if (startedRunId && !outputsWritten) {
       try {
-        await finalizeMaterializedEvidence(args, root, startedRunId)
+        const outcomes = await finalizeMaterializedEvidence(
+          args,
+          root,
+          startedRunId,
+        )
+        reportTestRunExportOutcomes(outcomes, console.error)
       } catch (recoveryError) {
         commandError = withRecoveryFailure(
           commandError,
@@ -412,48 +462,50 @@ async function importArchive(argv: string[]): Promise<number> {
 async function exportRun(argv: string[]): Promise<number> {
   if (argv[0] !== 'export' || !argv[1]) {
     throw new Error(
-      'Usage: pickle export <id> (--archive <path> | --html <path>) [--all-artifacts]',
+      'Usage: pickle export <id> --output format=path [--output format=path] [--force] [--all-artifacts]',
     )
   }
   const runId = argv[1]
-  let archivePath: string | undefined
-  let htmlPath: string | undefined
+  const outputs: TestRunExportRequest[] = []
   let allArtifacts = false
+  let force = false
   for (let index = 2; index < argv.length; index++) {
     const flag = argv[index]!
-    if (flag === '--archive') archivePath = valueAfter(argv, index++)
-    else if (flag === '--html') htmlPath = valueAfter(argv, index++)
+    if (flag === '--output') {
+      const output = parseTestRunOutput(valueAfter(argv, index++))
+      outputs.push({ ...output, path: resolve(output.path) })
+    } else if (flag === '--force') force = true
     else if (flag === '--all-artifacts') allArtifacts = true
     else throw new Error(`Unknown option: ${flag}`)
   }
-  if (!archivePath && !htmlPath) {
-    throw new Error('pickle export requires --archive or --html')
+  if (outputs.length === 0) {
+    throw new Error('pickle export requires at least one --output format=path')
   }
-  if (archivePath && htmlPath) {
-    throw new Error('pickle export accepts either --archive or --html')
-  }
-  if (archivePath) {
-    await writeRunArchive({
-      root: process.cwd(),
-      runId,
-      outputPath: resolve(archivePath),
-    })
-    return 0
-  }
-
-  const { manifest } = await loadPersistedRun(process.cwd(), runId)
-  const html = await formatHtml(manifest, {
-    artifacts: allArtifacts ? 'all' : 'failures',
+  const outcomes = await publishTestRunExports({
+    root: process.cwd(),
+    runId,
+    outputs,
+    force,
+    htmlArtifacts: allArtifacts ? 'all' : 'failures',
   })
-  const htmlBytes = Buffer.byteLength(html, 'utf8')
+  reportTestRunExportOutcomes(outcomes, console.log)
+
   const warningThreshold = 10 * 1024 * 1024
-  if (allArtifacts && htmlBytes > warningThreshold) {
-    console.error(
-      `Warning: HTML export includes every available test artifact and is larger than 10 MB (${htmlBytes} bytes).`,
-    )
+  if (allArtifacts) {
+    for (const output of outputs) {
+      const file = Bun.file(output.path)
+      if (
+        output.format === 'html' &&
+        (await file.exists()) &&
+        file.size > warningThreshold
+      ) {
+        console.error(
+          `Warning: HTML export includes every available test artifact and is larger than 10 MB (${file.size} bytes).`,
+        )
+      }
+    }
   }
-  await Bun.write(resolve(htmlPath!), html)
-  return 0
+  return testRunExportFailed(outcomes) ? 2 : 0
 }
 
 function parseStudioArguments(argv: string[]): StudioArguments {
@@ -566,8 +618,8 @@ async function studio(argv: string[]): Promise<number> {
       return {
         maxAgeMs: current.retention?.days
           ? current.retention.days * dayMs
-          : defaultRetention.maxAgeMs,
-        maxBytes: current.retention?.maxBytes ?? defaultRetention.maxBytes,
+          : undefined,
+        maxBytes: current.retention?.maxBytes,
       }
     }),
     gateway: {
@@ -603,6 +655,9 @@ async function studio(argv: string[]): Promise<number> {
           },
           signal: runController.signal,
           onEvent,
+          onApplicationDiagnostic(event) {
+            onEvent({ type: 'diagnostic-recorded', ...event })
+          },
         })
         activeRuns.set(started.id, runController)
         void started.done

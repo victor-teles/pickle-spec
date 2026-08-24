@@ -1,6 +1,7 @@
 import type {
   DiagnosticLevel,
   DiagnosticOrigin,
+  EvidenceAvailability,
   RunEvent,
   ScenarioAttempt,
   TestArtifact,
@@ -26,6 +27,8 @@ export type ArtifactEvidence = {
   capturedAt: string
 }
 
+export type ArtifactViewerKind = 'image' | 'video' | 'text' | 'download'
+
 export type DiagnosticEvidence = {
   id: string
   occurredAt: string
@@ -34,6 +37,7 @@ export type DiagnosticEvidence = {
   source: 'Scenario attempt' | 'Step'
   level: DiagnosticLevel
   origin: DiagnosticOrigin
+  stream?: 'stdout' | 'stderr'
   scenarioId?: string
   scenarioName?: string
   stepIndex?: number
@@ -42,11 +46,46 @@ export type DiagnosticEvidence = {
 }
 
 export type DiagnosticFilter = {
+  query?: string
   level?: DiagnosticLevel
   origin?: DiagnosticOrigin
   scenarioId?: string
   stepIndex?: number
   executionTargetProfileId?: string
+}
+
+export type DiagnosticPage = {
+  entries: readonly DiagnosticEvidence[]
+  page: number
+  pageCount: number
+  first: number
+  last: number
+}
+
+export type ArtifactLoadFailure = 'missing' | 'corrupt' | 'load-failed'
+
+const evidenceRecoveryGuidance: Record<
+  Exclude<EvidenceAvailability['state'], 'available'>,
+  string
+> = {
+  'not-requested': 'Request this evidence before the next Test run.',
+  'not-supported':
+    'Choose an execution target that supports this evidence, then run the Scenario again.',
+  'not-retained':
+    'Change the evidence retention policy, then run the Scenario again.',
+  'capture-failed':
+    'Review Diagnostics for the capture error, then run the Scenario again.',
+  missing:
+    'Restore or re-import the archived artifact, or run the Scenario again.',
+}
+
+const artifactLoadGuidance: Record<ArtifactLoadFailure, string> = {
+  missing:
+    'The retained file could not be found. Restore or re-import the archive, or run the Scenario again.',
+  corrupt:
+    'The retained file could not be decoded and may be corrupt. Download the original file or run the Scenario again.',
+  'load-failed':
+    'The preview could not be loaded. Retry the preview, then download the original file if the problem continues.',
 }
 
 export type TimelineEntry = {
@@ -119,9 +158,24 @@ export function artifactsFor(attempt: ScenarioAttempt): ArtifactEvidence[] {
       artifact,
       stepIndex: step.index,
       stepText: `${step.step.keyword.trim()} ${step.step.text}`,
-      capturedAt: step.finishedAt,
+      capturedAt: artifact.capturedAt ?? step.finishedAt,
     })),
   )
+}
+
+export function artifactViewerKind(
+  artifact: Pick<TestArtifact, 'kind' | 'mediaType'>,
+): ArtifactViewerKind {
+  if (
+    artifact.mediaType?.startsWith('image/') ||
+    artifact.kind === 'screenshot'
+  )
+    return 'image'
+  if (artifact.mediaType?.startsWith('video/') || artifact.kind === 'recording')
+    return 'video'
+  if (artifact.mediaType?.startsWith('text/') || artifact.kind === 'device-log')
+    return 'text'
+  return 'download'
 }
 
 export function diagnosticsFor(attempt: ScenarioAttempt): DiagnosticEvidence[] {
@@ -188,8 +242,27 @@ export function filterDiagnostics(
   diagnostics: readonly DiagnosticEvidence[],
   filter: DiagnosticFilter,
 ): DiagnosticEvidence[] {
+  const query = filter.query?.trim().toLocaleLowerCase()
   return diagnostics.filter(
     (entry) =>
+      (!query ||
+        [
+          entry.message,
+          entry.source,
+          entry.occurredAt,
+          entry.level,
+          entry.origin,
+          entry.stream,
+          entry.scenarioId,
+          entry.scenarioName,
+          entry.stepIndex,
+          entry.stepText,
+          entry.executionTargetProfileId,
+        ]
+          .filter(Boolean)
+          .join('\n')
+          .toLocaleLowerCase()
+          .includes(query)) &&
       (filter.level === undefined || entry.level === filter.level) &&
       (filter.origin === undefined || entry.origin === filter.origin) &&
       (filter.scenarioId === undefined ||
@@ -199,6 +272,37 @@ export function filterDiagnostics(
       (filter.executionTargetProfileId === undefined ||
         entry.executionTargetProfileId === filter.executionTargetProfileId),
   )
+}
+
+export function diagnosticPage(
+  diagnostics: readonly DiagnosticEvidence[],
+  requestedPage: number,
+  pageSize = 100,
+): DiagnosticPage {
+  const safePageSize = Math.max(1, Math.floor(pageSize))
+  const pageCount = Math.max(1, Math.ceil(diagnostics.length / safePageSize))
+  const page = Math.min(Math.max(0, Math.floor(requestedPage)), pageCount - 1)
+  const start = page * safePageSize
+  const entries = diagnostics.slice(start, start + safePageSize)
+  return {
+    entries,
+    page,
+    pageCount,
+    first: entries.length === 0 ? 0 : start + 1,
+    last: start + entries.length,
+  }
+}
+
+export function recoveryGuidance(
+  state: Exclude<EvidenceAvailability['state'], 'available'>,
+): string {
+  return evidenceRecoveryGuidance[state]
+}
+
+export function artifactLoadFailureGuidance(
+  failure: ArtifactLoadFailure,
+): string {
+  return artifactLoadGuidance[failure]
 }
 
 export function timelineFor(
@@ -297,4 +401,10 @@ export function timelineFor(
 
 export function artifactUrl(path: string): string {
   return `/api/artifact?path=${encodeURIComponent(path)}`
+}
+
+export function artifactDownloadUrl(path: string, name?: string): string {
+  const query = new URLSearchParams({ path, download: 'true' })
+  if (name) query.set('name', name)
+  return `/api/artifact?${query.toString()}`
 }

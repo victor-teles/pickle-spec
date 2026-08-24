@@ -194,6 +194,7 @@ export function ResultInspector(props: ResultInspectorProps) {
         <TabsContent value="artifacts">
           <ResultArtifacts
             artifacts={artifacts}
+            availability={inspected.attempt.evidenceAvailability}
             scenarioName={inspected.result.scenario.name}
             resultState={
               displayState === 'running'
@@ -206,6 +207,9 @@ export function ResultInspector(props: ResultInspectorProps) {
           <ResultDiagnostics
             diagnostics={diagnostics}
             availability={inspected.attempt.evidenceAvailability}
+            applicationOutputAvailability={
+              inspected.attempt.applicationOutputAvailability
+            }
           />
         </TabsContent>
       </Tabs>

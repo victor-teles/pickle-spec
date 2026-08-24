@@ -122,7 +122,16 @@ function failedResultWithArtifact(path: string): TestResult {
     state: 'failed' as const,
     resolvedActions: [{ description: 'Click pay on chrome' }],
     message: 'Payment was declined',
-    artifacts: [{ kind: 'screenshot' as const, path, mediaType: 'image/png' }],
+    artifacts: [
+      {
+        kind: 'screenshot' as const,
+        path,
+        mediaType: 'image/png',
+        name: 'failure.png',
+        capturedAt: attempt.finishedAt,
+        sizeBytes: 16,
+      },
+    ],
   }
   return {
     ...result,
@@ -678,6 +687,14 @@ test('issue 77: exports and imports a schema-v2 archive with contained artifact 
     })
     const importedPath =
       imported.manifest.results[0]!.attempts[0]!.steps[0]!.artifacts![0]!.path
+    expect(
+      imported.manifest.results[0]!.attempts[0]!.steps[0]!.artifacts![0],
+    ).toMatchObject({
+      name: 'failure.png',
+      capturedAt: '2026-08-15T12:00:00.012Z',
+      sizeBytes: 16,
+      mediaType: 'image/png',
+    })
     const targetArtifacts = join(
       storageFor(targetRoot).runsDirectory,
       run.id,

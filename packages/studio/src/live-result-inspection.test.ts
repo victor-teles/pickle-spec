@@ -216,6 +216,44 @@ test('live Run events update the same Overview, Timeline, Artifacts, and Diagnos
   ).toEqual(['Payment was declined'])
 })
 
+test('shows managed application output while a step is still running', () => {
+  let inspection = startLiveInspection({
+    specificationUri,
+    runId: 'run-live-output',
+  })
+  for (const event of [runStarted(), scenarioStarted(), stepStarted()]) {
+    inspection = receiveLiveStreamEvent(inspection, event)
+  }
+  inspection = receiveLiveStreamEvent(inspection, {
+    type: 'diagnostic-recorded',
+    profileId: 'chrome',
+    scope: scope(1),
+    diagnostic: {
+      occurredAt: '2026-08-23T12:00:00.0035Z',
+      level: 'info',
+      origin: 'application',
+      stream: 'stdout',
+      message: 'server is still working',
+      scenarioId: scenario.id,
+      scenarioName: scenario.name,
+      stepIndex: 0,
+      stepText: 'Then payment is captured',
+      executionTargetProfileId: 'chrome',
+    },
+  })
+
+  const inspected = findInspectedResult(
+    inspection.snapshot!,
+    inspection.location!,
+  )
+  expect(
+    diagnosticsFor(inspected!.attempt).map((entry) => entry.message),
+  ).toEqual(['server is still working'])
+  expect(inspected?.attempt.steps[0]?.finishedAt).toBe(
+    '2026-08-23T12:00:00.0035Z',
+  )
+})
+
 test('follows the newest causal activity until the user intervenes', () => {
   let inspection = startLiveInspection({
     specificationUri,

@@ -1,4 +1,19 @@
 export type {
+  AllureArchiveOptions,
+  AllureAttachment,
+  AllureAttachmentFile,
+  AllureResultFile,
+  AllureResultsProjection,
+  AllureStatusDetails,
+  AllureStep,
+  AllureTestResult,
+} from './src/allure-results'
+export {
+  assertAllureArtifactPath,
+  createAllureResultsZip,
+  projectAllureResults,
+} from './src/allure-results'
+export type {
   ImportedRunArchive,
   ImportRunArchiveInput,
   RunArchive,
@@ -91,6 +106,7 @@ export { publicRunEvent, publicTestResult } from './src/public-results'
 export type { RerunFilter } from './src/rerun'
 export { selectRerunResults } from './src/rerun'
 export type {
+  ApplicationOutputEvidenceAvailability,
   DiagnosticEntry,
   DiagnosticLevel,
   DiagnosticOrigin,
@@ -151,14 +167,31 @@ export {
   validateTargetSelection,
 } from './src/run-scenarios'
 export type {
+  PublishTestRunExportsInput,
+  TestRunExportFormat,
+  TestRunExportOutcome,
+  TestRunExportRequest,
+} from './src/test-run-exports'
+export {
+  publishTestRunExports,
+  testRunExportFormats,
+} from './src/test-run-exports'
+export type {
   ArtifactCapturePolicy,
   CreateTestRunOptions,
+  EvidencePersistencePolicy,
   PersistedTestRun,
   RetentionPolicy,
   RetentionResult,
   TestRunManifest,
+  TestRunStorageInspection,
   TestRunStore,
   TestRunStoreOptions,
   TestRunSummary,
 } from './src/test-run-store'
-export { defaultRetention, openTestRunStore, slug } from './src/test-run-store'
+export {
+  defaultRetention,
+  defaultRunStorageWarningBytes,
+  openTestRunStore,
+  slug,
+} from './src/test-run-store'

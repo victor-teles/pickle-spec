@@ -141,7 +141,18 @@ pickle run "features/**/*.feature" --state draft
 pickle run "features/**/*.feature" --shard 1/3
 pickle run "features/**/*.feature" --concurrency 5 --retries 1
 pickle run "features/**/*.feature" --screenshot on-step
+pickle run --application-output stdout --application-output stderr
+pickle run --evidence always
 ```
+
+Evidence persistence defaults to `on-failure`. Configure
+`evidence.persistence` for every run, override it with
+`executionTargetProfiles.<id>.evidence.persistence`, or use `--evidence` for
+one run. The supported policies are `off`, `on-failure`, and `always`; results
+and run events are persisted under every policy. Managed application stdout and
+stderr are independent diagnostic streams. Enable them under `server.output`,
+per profile under `applicationOutput`, or for one run with repeatable
+`--application-output` flags.
 
 The default reporter is for people. It groups every Test result by Specification
 URI, Specification, and Scenario, then reports the selected counts and timing:
@@ -209,6 +220,11 @@ web/mobile benchmark, budgets, and rerun protocol.
 
 Every `pickle run` writes an immutable test run under `~/.pickle/projects/<project-name>-<project-key>/runs/`. Pickle Spec does not create runtime folders inside the project.
 
+Test runs have no deletion policy by default. Studio shows total local storage,
+warns at 5 GB, and lets you pin complete runs before applying an explicitly
+configured age or size limit. Active and pinned runs are never retention
+candidates.
+
 To create a selective rerun from an earlier test run, use:
 
 ```bash
@@ -223,7 +239,7 @@ A rerun creates a new test run and records `sourceRunId`. It never changes the s
 To move a test run between machines, export and import a run archive:
 
 ```bash
-pickle export <run-id> --archive run.archive.json
+pickle export <run-id> --output archive=run.archive.json
 pickle import run.archive.json
 ```
 
@@ -240,11 +256,25 @@ Comparison matches results by Scenario identifier and execution target profile i
 To create a self-contained HTML export, use:
 
 ```bash
-pickle export <run-id> --html report.html
-pickle export <run-id> --html report.html --all-artifacts
+pickle export <run-id> --output html=report.html
+pickle export <run-id> --output html=report.html --all-artifacts
 ```
 
 HTML export includes failure artifacts by default. Successful Adaptive fallback uses the normal artifact policy rather than a special category. The manifest includes execution mode, Cache outcome, and inference count. `--all-artifacts` embeds every available test artifact and prints a size warning when the export exceeds 10 MB.
+
+Both `pickle run` and `pickle export` accept repeatable `--output format=path`
+requests for `json`, `ndjson`, `junit`, `html`, `archive`, and `allure`.
+Each destination is published independently after the complete output is staged.
+Existing destinations are preserved unless `--force` is explicit. For example:
+
+```bash
+pickle run --output junit=results.xml --output allure=allure-results
+pickle export <run-id> --output json=run.json --output html=report.html
+```
+
+Allure output is a raw `allure-results` directory that can be consumed by
+Allure 2 or Allure 3. Pickle Spec does not bundle an Allure report renderer,
+history manager, categories configuration, or runtime dependency.
 
 ## Add a custom adapter
 

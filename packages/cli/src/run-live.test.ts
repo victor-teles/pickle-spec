@@ -234,7 +234,14 @@ Feature: Interrupt safely
   )
 
   const interactiveRun = spawnInteractiveRun({
-    cmd: [pickleCommand, 'run', '--json', jsonPath, '--ndjson', ndjsonPath],
+    cmd: [
+      pickleCommand,
+      'run',
+      '--output',
+      `json=${jsonPath}`,
+      '--output',
+      `ndjson=${ndjsonPath}`,
+    ],
     cwd: project,
     env: {
       ...Bun.env,
@@ -383,7 +390,14 @@ Feature: Reporter failure
   )
 
   const interactiveRun = spawnInteractiveRun({
-    cmd: [pickleCommand, 'run', '--json', jsonPath, '--ndjson', ndjsonPath],
+    cmd: [
+      pickleCommand,
+      'run',
+      '--output',
+      `json=${jsonPath}`,
+      '--output',
+      `ndjson=${ndjsonPath}`,
+    ],
     cwd: project,
     env: { ...Bun.env, NO_COLOR: '1', TERM: 'xterm-256color' },
   })
@@ -457,12 +471,12 @@ Feature: Startup interruption
     cmd: [
       pickleCommand,
       'run',
-      '--json',
-      jsonPath,
-      '--junit',
-      junitPath,
-      '--ndjson',
-      ndjsonPath,
+      '--output',
+      `json=${jsonPath}`,
+      '--output',
+      `junit=${junitPath}`,
+      '--output',
+      `ndjson=${ndjsonPath}`,
     ],
     cwd: project,
     env: { ...Bun.env, NO_COLOR: '1', TERM: 'xterm-256color' },
