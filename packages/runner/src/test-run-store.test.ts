@@ -787,6 +787,36 @@ test('persists Diagnostic entries for failed runs by default and drops them for 
   )
   const passedAttempt = passed.attempts[0]!
   const failedAttempt = failed.attempts[0]!
+  const liveStep = {
+    ...passedAttempt.steps[0]!,
+    artifacts: undefined,
+    diagnostics: [diagnostic],
+    trace: [trace],
+  }
+  const liveEvent = await run.append({
+    type: 'step-finished',
+    result: liveStep,
+    scenario: passed.scenario,
+    executionTargetProfile: passed.executionTargetProfile,
+    scope: {
+      scenarioId: passed.scenario.id!,
+      executionTargetProfileId: passed.executionTargetProfile.id,
+      attempt: passedAttempt.attempt,
+      stepIndex: liveStep.index,
+    },
+  })
+
+  expect(liveEvent).toMatchObject({
+    type: 'step-finished',
+    result: { diagnostics: [diagnostic], trace: [trace] },
+  })
+  const persistedLiveStep = (await run.events()).at(-1)
+  expect(persistedLiveStep?.type).toBe('step-finished')
+  if (persistedLiveStep?.type !== 'step-finished') {
+    throw new Error('Expected a persisted step-finished event')
+  }
+  expect(persistedLiveStep.result.diagnostics).toBeUndefined()
+  expect(persistedLiveStep.result.trace).toBeUndefined()
 
   await run.append(
     scenarioFinished({
@@ -794,11 +824,16 @@ test('persists Diagnostic entries for failed runs by default and drops them for 
       attempts: [
         {
           ...passedAttempt,
+          diagnostics: [diagnostic],
           evidenceAvailability: passedAttempt.evidenceAvailability.map(
-            (item) =>
-              item.kind === 'diagnostics' || item.kind === 'trace'
+            (item) => {
+              if (item.kind === 'screenshot') {
+                return { kind: item.kind, state: 'not-requested' as const }
+              }
+              return item.kind === 'diagnostics' || item.kind === 'trace'
                 ? { kind: item.kind, state: 'available' as const }
-                : item,
+                : item
+            },
           ),
           steps: passedAttempt.steps.map((step) => ({
             ...step,
@@ -816,11 +851,16 @@ test('persists Diagnostic entries for failed runs by default and drops them for 
       attempts: [
         {
           ...failedAttempt,
+          diagnostics: [diagnostic],
           evidenceAvailability: failedAttempt.evidenceAvailability.map(
-            (item) =>
-              item.kind === 'diagnostics' || item.kind === 'trace'
+            (item) => {
+              if (item.kind === 'screenshot') {
+                return { kind: item.kind, state: 'not-requested' as const }
+              }
+              return item.kind === 'diagnostics' || item.kind === 'trace'
                 ? { kind: item.kind, state: 'available' as const }
-                : item,
+                : item
+            },
           ),
           steps: failedAttempt.steps.map((step) => ({
             ...step,
@@ -842,6 +882,7 @@ test('persists Diagnostic entries for failed runs by default and drops them for 
   )
 
   expect(passedPersisted?.attempts[0]?.steps[0]?.diagnostics).toBeUndefined()
+  expect(passedPersisted?.attempts[0]?.diagnostics).toBeUndefined()
   expect(passedPersisted?.attempts[0]?.steps[0]?.trace).toBeUndefined()
   expect(
     passedPersisted?.attempts[0]?.evidenceAvailability.find(
@@ -856,6 +897,7 @@ test('persists Diagnostic entries for failed runs by default and drops them for 
   expect(failedPersisted?.attempts[0]?.steps[0]?.diagnostics).toEqual([
     diagnostic,
   ])
+  expect(failedPersisted?.attempts[0]?.diagnostics).toEqual([diagnostic])
   expect(failedPersisted?.attempts[0]?.steps[0]?.trace).toEqual([trace])
 })
 

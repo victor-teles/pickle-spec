@@ -31,6 +31,7 @@ export {
   validateProjectRunConfiguration,
   validateRunConfiguration,
 } from './src/configuration'
+export { persistedEvidenceKinds } from './src/evidence'
 export type {
   CacheOutcome,
   DeserializeExecutionCacheEnvelopeInput,
@@ -129,7 +130,13 @@ export type {
   TraceActivityKind,
   TraceEntry,
 } from './src/run-scenario'
-export { finalScenarioAttempt, isEvidenceState } from './src/run-scenario'
+export {
+  diagnosticLevels,
+  diagnosticOrigins,
+  finalScenarioAttempt,
+  isEvidenceState,
+  traceActivityKinds,
+} from './src/run-scenario'
 export { runScenario } from './src/run-scenario-entry'
 export type {
   RunScenariosInput,

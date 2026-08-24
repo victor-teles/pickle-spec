@@ -158,6 +158,8 @@ test('round-trips durable result identity through a deep link', () => {
 
 test('correlates the failed step, resolved action, and Diagnostic entry at the same instant', () => {
   const occurredAt = '2026-08-22T12:00:01.100Z'
+  const actionOccurredAt = '2026-08-22T12:00:01.050Z'
+  const diagnosticOccurredAt = '2026-08-22T12:00:01.090Z'
   const inspectedAttempt: ScenarioAttempt = {
     ...attempt(1, 'failed'),
     finishedAt: occurredAt,
@@ -178,7 +180,8 @@ test('correlates the failed step, resolved action, and Diagnostic entry at the s
         message: 'Payment was declined',
         diagnostics: [
           {
-            occurredAt,
+            occurredAt: diagnosticOccurredAt,
+            causalAt: occurredAt,
             level: 'error',
             origin: 'console',
             message: 'Payment was declined',
@@ -191,7 +194,8 @@ test('correlates the failed step, resolved action, and Diagnostic entry at the s
         ],
         trace: [
           {
-            occurredAt,
+            occurredAt: actionOccurredAt,
+            causalAt: occurredAt,
             kind: 'resolved-action',
             description: 'Click pay on chrome',
           },

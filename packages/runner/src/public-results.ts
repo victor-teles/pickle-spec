@@ -119,6 +119,8 @@ export function withoutPrivateStepResultData(
     })),
     message: result.message,
     artifacts: result.artifacts?.map(publicArtifact),
+    diagnostics: result.diagnostics?.map((entry) => ({ ...entry })),
+    trace: result.trace?.map((entry) => ({ ...entry })),
   }
 }
 
@@ -143,6 +145,7 @@ function projectAttempt(
     evidenceAvailability: attempt.evidenceAvailability.map(
       publicEvidenceAvailability,
     ),
+    diagnostics: attempt.diagnostics?.map((entry) => ({ ...entry })),
   }
 }
 

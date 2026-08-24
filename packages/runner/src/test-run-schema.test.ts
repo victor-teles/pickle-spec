@@ -89,6 +89,7 @@ test('treats Diagnostic entries as persisted diagnostics evidence', () => {
   attempt.diagnostics = [
     {
       occurredAt,
+      causalAt: occurredAt,
       level: 'error',
       origin: 'console',
       message: 'Payment was declined',
@@ -123,6 +124,7 @@ test('treats Pickle-native trace entries as persisted trace evidence', () => {
       trace: [
         {
           occurredAt,
+          causalAt: occurredAt,
           kind: 'resolved-action',
           description: 'Click pay on chrome',
         },

@@ -6,9 +6,11 @@ import {
   type Specification,
 } from '@pickle-spec/spec'
 import type {
+  DiagnosticEntry,
   ScenarioIdentity,
   StepExecution,
   TestArtifact,
+  TraceEntry,
 } from './run-scenario'
 
 export interface PublicStepExecution {
@@ -134,6 +136,8 @@ export function publicStepExecution(
       message: execution.message,
       artifacts: execution.artifacts,
       evidenceAvailability: execution.evidenceAvailability,
+      diagnostics: execution.diagnostics,
+      trace: execution.trace,
     },
     bindings,
   )
@@ -154,6 +158,10 @@ export function publicStepExecution(
         ? redactString(execution.message, bindings)
         : undefined,
       artifacts: publicArtifacts(execution.artifacts, bindings),
+      diagnostics: execution.diagnostics?.map((diagnostic) =>
+        publicDiagnostic(diagnostic, bindings),
+      ),
+      trace: execution.trace?.map((entry) => publicTrace(entry, bindings)),
       evidenceAvailability: execution.evidenceAvailability?.map(
         (availability) => ({
           ...availability,
@@ -163,5 +171,37 @@ export function publicStepExecution(
         }),
       ),
     },
+  }
+}
+
+function publicDiagnostic(
+  diagnostic: DiagnosticEntry,
+  bindings: readonly ScenarioVariableBinding[],
+): DiagnosticEntry {
+  return {
+    ...diagnostic,
+    message: redactString(diagnostic.message, bindings),
+    scenarioId: diagnostic.scenarioId
+      ? redactString(diagnostic.scenarioId, bindings)
+      : undefined,
+    scenarioName: diagnostic.scenarioName
+      ? redactString(diagnostic.scenarioName, bindings)
+      : undefined,
+    stepText: diagnostic.stepText
+      ? redactString(diagnostic.stepText, bindings)
+      : undefined,
+    executionTargetProfileId: diagnostic.executionTargetProfileId
+      ? redactString(diagnostic.executionTargetProfileId, bindings)
+      : undefined,
+  }
+}
+
+function publicTrace(
+  entry: TraceEntry,
+  bindings: readonly ScenarioVariableBinding[],
+): TraceEntry {
+  return {
+    ...entry,
+    description: redactString(entry.description, bindings),
   }
 }

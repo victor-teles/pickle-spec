@@ -15,6 +15,8 @@ describe('stagehandFactory', () => {
     const context = {
       activePage: mock(async () => null),
       cookies: mock(async () => []),
+      pages: mock(async () => []),
+      addInitScript: mock(async () => {}),
     }
     const browser = {
       get context() {
@@ -72,6 +74,8 @@ describe('stagehandFactory', () => {
     const context = {
       activePage: mock(async () => page),
       cookies: mock(async () => []),
+      pages: mock(async () => [page]),
+      addInitScript: mock(async () => {}),
     }
     const browser = {
       get context() {

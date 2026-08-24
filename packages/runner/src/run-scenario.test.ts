@@ -371,6 +371,10 @@ describe('runScenario', () => {
 
   test('copies Pickle-native trace and Diagnostic entries onto the step result and stamps Scenario identity', async () => {
     const occurredAt = '2026-08-23T12:00:00.004Z'
+    const paymentScenario: Scenario = {
+      ...scenario,
+      steps: [scenario.steps[1]!],
+    }
     const executeStep = mock(async () => ({
       state: 'failed' as const,
       resolvedActions: [{ description: 'Click pay on chrome' }],
@@ -404,7 +408,7 @@ describe('runScenario', () => {
 
     const run = await runScenario({
       specification,
-      scenario,
+      scenario: paymentScenario,
       executionTargetProfile: { id: 'chrome' },
       adapter,
     })

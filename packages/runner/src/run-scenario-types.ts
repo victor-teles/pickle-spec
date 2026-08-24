@@ -81,6 +81,7 @@ export type DiagnosticOrigin = (typeof diagnosticOrigins)[number]
 
 export interface DiagnosticEntry {
   occurredAt: string
+  causalAt?: string
   level: DiagnosticLevel
   origin: DiagnosticOrigin
   message: string
@@ -99,6 +100,7 @@ export type TraceActivityKind = (typeof traceActivityKinds)[number]
 
 export interface TraceEntry {
   occurredAt: string
+  causalAt?: string
   kind: TraceActivityKind
   description: string
 }

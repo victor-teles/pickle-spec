@@ -23,6 +23,11 @@ import type {
   WebScreenshotCapture,
 } from './web-adapter'
 import {
+  createWebEvidenceCollector,
+  installWebEvidenceScript,
+  instrumentWebEvidencePages,
+} from './web-evidence'
+import {
   defaultWebActionTimeoutMs,
   defaultWebNavigationTimeoutMs,
   type WebAssertionDraft,
@@ -174,18 +179,29 @@ async function applyFidelity(
   }
 }
 
-function createStagehandAutomation(
+async function createStagehandAutomation(
   browser: StagehandBrowser,
   stagehand: Stagehand,
   timeouts: StagehandTimeouts,
-): WebAutomation {
+  evidence: ReturnType<typeof createWebEvidenceCollector>,
+): Promise<WebAutomation> {
   const direct = createDirectBrowser(browser.context, {
     actionTimeoutMs: timeouts.actTimeoutMs,
     navigationTimeoutMs: timeouts.navigationTimeoutMs,
   })
+  const instrumentPages = async () => {
+    const pages = await browser.context.pages()
+    return instrumentWebEvidencePages(pages, evidence)
+  }
+  await instrumentPages()
   return {
-    navigate: direct.navigate,
+    async navigate(url, signal) {
+      await instrumentPages()
+      await direct.navigate(url, signal)
+      await instrumentPages()
+    },
     async observe(prompt, signal) {
+      await instrumentPages()
       const result = await withAbort(
         stagehand.observe(prompt, {
           timeout: timeouts.observeTimeoutMs,
@@ -198,6 +214,7 @@ function createStagehandAutomation(
       }))
     },
     async act(action, signal) {
+      await instrumentPages()
       const result = await withAbort(
         stagehand.act(action.handle as Parameters<Stagehand['act']>[0], {
           timeout: timeouts.actTimeoutMs,
@@ -210,6 +227,7 @@ function createStagehandAutomation(
       }
     },
     async verify(prompt, signal) {
+      await instrumentPages()
       const result = await withAbort(
         stagehand.extract(
           `Verify the following condition on the current page: "${prompt}". ` +
@@ -221,6 +239,7 @@ function createStagehandAutomation(
       return result.data
     },
     async compileAssertion(prompt, signal) {
+      await instrumentPages()
       const result = await withAbort(
         stagehand.extract(
           'Compile the following Scenario outcome into exactly one deterministic ' +
@@ -232,7 +251,10 @@ function createStagehandAutomation(
       )
       return result.data as WebAssertionDraft
     },
-    executeInstruction: direct.execute,
+    async executeInstruction(instruction, bindings, signal) {
+      await instrumentPages()
+      return direct.execute(instruction, bindings, signal)
+    },
     async screenshot(options: WebScreenshotCapture) {
       const page = await activePage(browser.context)
       return new Uint8Array(
@@ -243,6 +265,9 @@ function createStagehandAutomation(
       )
     },
     readIsolationState: () => readStagehandIsolation(browser.context),
+    async consumeEvidence() {
+      return evidence.collect(await instrumentPages())
+    },
     async close() {},
   }
 }
@@ -262,6 +287,7 @@ export const stagehandFactory: WebAutomationFactory = {
         : await localBrowser.launch({ headless: options.headless ?? true })
 
     let stagehand: Stagehand | undefined
+    let evidenceScriptInstalled = false
 
     async function ensureStagehand(
       context: WebClientContext,
@@ -301,20 +327,37 @@ export const stagehandFactory: WebAutomationFactory = {
         if (context.signal?.aborted) throw abortError()
         const activeStagehand = await ensureStagehand(context)
         await applyFidelity(browser.context, context.fidelity)
-        return createStagehandAutomation(browser, activeStagehand, {
-          navigationTimeoutMs:
-            context.browser.navigationTimeoutMs ??
-            options.navigationTimeoutMs ??
-            defaultWebNavigationTimeoutMs,
-          observeTimeoutMs:
-            context.browser.observeTimeoutMs ??
-            options.observeTimeoutMs ??
-            defaultObserveTimeoutMs,
-          actTimeoutMs:
-            context.browser.actTimeoutMs ??
-            options.actTimeoutMs ??
-            defaultWebActionTimeoutMs,
-        })
+        const evidence = createWebEvidenceCollector()
+        if (!evidenceScriptInstalled) {
+          try {
+            await browser.context.addInitScript(installWebEvidenceScript)
+            evidenceScriptInstalled = true
+          } catch (error) {
+            evidence.recordAdapterFailure(
+              'Browser evidence initialization failed',
+              error,
+            )
+          }
+        }
+        return createStagehandAutomation(
+          browser,
+          activeStagehand,
+          {
+            navigationTimeoutMs:
+              context.browser.navigationTimeoutMs ??
+              options.navigationTimeoutMs ??
+              defaultWebNavigationTimeoutMs,
+            observeTimeoutMs:
+              context.browser.observeTimeoutMs ??
+              options.observeTimeoutMs ??
+              defaultObserveTimeoutMs,
+            actTimeoutMs:
+              context.browser.actTimeoutMs ??
+              options.actTimeoutMs ??
+              defaultWebActionTimeoutMs,
+          },
+          evidence,
+        )
       },
       async close() {
         try {

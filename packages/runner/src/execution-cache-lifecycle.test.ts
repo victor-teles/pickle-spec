@@ -1441,6 +1441,23 @@ describe('Execution cache lifecycle', () => {
                 },
               ],
               message: 'Used secret@example.com',
+              diagnostics: [
+                {
+                  occurredAt: '2026-08-23T12:00:00.001Z',
+                  level: 'error' as const,
+                  origin: 'console' as const,
+                  message: 'Console exposed secret@example.com',
+                  scenarioName: 'Use secret@example.com',
+                  stepText: 'When the customer enters secret@example.com',
+                },
+              ],
+              trace: [
+                {
+                  occurredAt: '2026-08-23T12:00:00.001Z',
+                  kind: 'resolved-action' as const,
+                  description: 'Fill secret@example.com',
+                },
+              ],
               artifacts: [
                 {
                   kind: 'trace' as const,
@@ -1481,6 +1498,16 @@ describe('Execution cache lifecycle', () => {
         path: '/tmp/<email>.trace',
         mediaType: '<email>/type',
       },
+    ])
+    expect(finalScenarioAttempt(run.result).steps[0]?.diagnostics).toEqual([
+      expect.objectContaining({
+        message: 'Console exposed <email>',
+        scenarioName: 'Use <email>',
+        stepText: 'When the customer enters <email>',
+      }),
+    ])
+    expect(finalScenarioAttempt(run.result).steps[0]?.trace).toEqual([
+      expect.objectContaining({ description: 'Fill <email>' }),
     ])
     expect(writes).toEqual([])
   })

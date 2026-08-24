@@ -283,6 +283,11 @@ describe('createWebAdapter', () => {
           origin: 'network',
           message: 'POST https://example.test/pay failed: 402',
         }),
+        expect.objectContaining({
+          origin: 'adapter',
+          message:
+            'Expected: "pickle results are visible" | Actual: Payment was declined',
+        }),
       ]),
     )
     expect(outcome.evidenceAvailability).toEqual(

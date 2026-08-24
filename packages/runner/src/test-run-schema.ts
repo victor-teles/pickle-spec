@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { persistedEvidenceKinds } from './evidence'
 import type {
   RunEvent,
   ScenarioAttempt,
@@ -73,6 +74,7 @@ const artifactSchema = z.object({
 
 const diagnosticEntrySchema = z.object({
   occurredAt: timestampSchema,
+  causalAt: timestampSchema.optional(),
   level: z.enum(diagnosticLevels),
   origin: z.enum(diagnosticOrigins),
   message: z.string(),
@@ -85,6 +87,7 @@ const diagnosticEntrySchema = z.object({
 
 const traceEntrySchema = z.object({
   occurredAt: timestampSchema,
+  causalAt: timestampSchema.optional(),
   kind: z.enum(traceActivityKinds),
   description: z.string(),
 })
@@ -151,29 +154,17 @@ function validateEvidenceAvailability(
     }
   }
 
-  const artifactKinds = new Set(
-    attempt.steps.flatMap((step) =>
-      (step.artifacts ?? []).map((artifact) => artifact.kind),
-    ),
+  const availableKinds = persistedEvidenceKinds(
+    attempt.steps,
+    attempt.diagnostics,
   )
-  const hasDiagnostics =
-    Boolean(attempt.diagnostics?.length) ||
-    attempt.steps.some((step) => Boolean(step.diagnostics?.length))
-  const hasTrace =
-    artifactKinds.has('trace') ||
-    attempt.steps.some((step) => Boolean(step.trace?.length))
   for (const [kind, availability] of availabilityByKind) {
-    const hasPersistedEvidence =
-      kind === 'diagnostics'
-        ? hasDiagnostics
-        : kind === 'trace'
-          ? hasTrace
-          : artifactKinds.has(kind)
+    const hasPersistedEvidence = availableKinds.has(kind)
     if (hasPersistedEvidence && availability.state !== 'available') {
       context.addIssue({
         code: 'custom',
         path: ['evidenceAvailability'],
-        message: `Evidence availability for "${kind}" must be available when an artifact exists`,
+        message: `Evidence availability for "${kind}" must be available when persisted evidence exists`,
       })
     }
     if (!hasPersistedEvidence && availability.state === 'available') {

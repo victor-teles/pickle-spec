@@ -1,5 +1,11 @@
-import type { EvidenceAvailability, TestResultState } from '@pickle-spec/runner'
-import { ButtonLink } from './components/ui/button'
+import type {
+  DiagnosticLevel,
+  DiagnosticOrigin,
+  EvidenceAvailability,
+  TestResultState,
+} from '@pickle-spec/runner'
+import { useState } from 'react'
+import { Button, ButtonLink } from './components/ui/button'
 import {
   Card,
   CardContent,
@@ -7,12 +13,28 @@ import {
   CardHeader,
   CardTitle,
 } from './components/ui/card'
+import { Input } from './components/ui/input'
+import { Label } from './components/ui/label'
 import {
   type ArtifactEvidence,
   artifactUrl,
   type DiagnosticEvidence,
+  filterDiagnostics,
   type InspectedResult,
 } from './result-evidence'
+
+const diagnosticLevels = [
+  'debug',
+  'info',
+  'warning',
+  'error',
+] as const satisfies readonly DiagnosticLevel[]
+const diagnosticOrigins = [
+  'console',
+  'network',
+  'runner',
+  'adapter',
+] as const satisfies readonly DiagnosticOrigin[]
 
 type MetadataProps = {
   label: string
@@ -207,12 +229,25 @@ export function ResultArtifacts(props: ResultArtifactsProps) {
 }
 
 export function ResultDiagnostics(props: ResultDiagnosticsProps) {
+  const [level, setLevel] = useState<DiagnosticLevel>()
+  const [origin, setOrigin] = useState<DiagnosticOrigin>()
+  const [scenarioId, setScenarioId] = useState('')
+  const [stepIndex, setStepIndex] = useState('')
+  const [executionTargetProfileId, setExecutionTargetProfileId] = useState('')
   const diagnosticsAvailability = props.availability.find(
     (item) => item.kind === 'diagnostics',
   )
   const availabilityDescription = diagnosticsAvailability?.message
     ? `${diagnosticsAvailability.state} · ${diagnosticsAvailability.message}`
     : (diagnosticsAvailability?.state ?? 'Not recorded')
+  const parsedStepIndex = stepIndex === '' ? undefined : Number(stepIndex)
+  const diagnostics = filterDiagnostics(props.diagnostics, {
+    level,
+    origin,
+    scenarioId: scenarioId || undefined,
+    stepIndex: Number.isInteger(parsedStepIndex) ? parsedStepIndex : undefined,
+    executionTargetProfileId: executionTargetProfileId || undefined,
+  })
   return (
     <div className="space-y-3">
       <Card>
@@ -221,17 +256,62 @@ export function ResultDiagnostics(props: ResultDiagnosticsProps) {
           <CardDescription>{availabilityDescription}</CardDescription>
         </CardHeader>
       </Card>
+      {props.diagnostics.length > 0 ? (
+        <Card>
+          <CardHeader>
+            <CardTitle>Filter Diagnostic entries</CardTitle>
+            <CardDescription>
+              Filters preserve the original chronological order.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <DiagnosticChoice
+              label="Level"
+              values={diagnosticLevels}
+              selected={level}
+              onSelect={setLevel}
+            />
+            <DiagnosticChoice
+              label="Origin"
+              values={diagnosticOrigins}
+              selected={origin}
+              onSelect={setOrigin}
+            />
+            <div className="grid gap-3 sm:grid-cols-3">
+              <DiagnosticInput
+                label="Scenario identifier"
+                value={scenarioId}
+                onChange={setScenarioId}
+              />
+              <DiagnosticInput
+                label="Step index"
+                value={stepIndex}
+                onChange={setStepIndex}
+                type="number"
+              />
+              <DiagnosticInput
+                label="Target profile"
+                value={executionTargetProfileId}
+                onChange={setExecutionTargetProfileId}
+              />
+            </div>
+          </CardContent>
+        </Card>
+      ) : null}
       {props.diagnostics.length === 0 ? (
         <EmptyEvidence message="No Diagnostic entries were retained for this Scenario attempt." />
+      ) : diagnostics.length === 0 ? (
+        <EmptyEvidence message="No Diagnostic entries match these filters." />
       ) : (
         <ol className="space-y-3" aria-label="Diagnostic entries">
-          {props.diagnostics.map((diagnostic) => (
+          {diagnostics.map((diagnostic) => (
             <li key={diagnostic.id}>
               <Card>
                 <CardHeader>
                   <CardTitle>{diagnostic.source}</CardTitle>
                   <CardDescription>
                     {new Date(diagnostic.occurredAt).toLocaleString()}
+                    {` · ${diagnostic.level} · ${diagnostic.origin}`}
                     {diagnostic.stepText ? ` · ${diagnostic.stepText}` : ''}
                   </CardDescription>
                 </CardHeader>
@@ -243,6 +323,69 @@ export function ResultDiagnostics(props: ResultDiagnosticsProps) {
           ))}
         </ol>
       )}
+    </div>
+  )
+}
+
+type DiagnosticChoiceProps<Value extends string> = {
+  label: string
+  values: readonly Value[]
+  selected?: Value
+  onSelect: (value: Value | undefined) => void
+}
+
+function DiagnosticChoice<Value extends string>(
+  props: DiagnosticChoiceProps<Value>,
+) {
+  return (
+    <fieldset className="space-y-2">
+      <legend className="text-sm font-medium">{props.label}</legend>
+      <div className="flex flex-wrap gap-2">
+        <Button
+          type="button"
+          size="sm"
+          variant={props.selected === undefined ? 'default' : 'outline'}
+          aria-pressed={props.selected === undefined}
+          onClick={() => props.onSelect(undefined)}
+        >
+          All
+        </Button>
+        {props.values.map((value) => (
+          <Button
+            key={value}
+            type="button"
+            size="sm"
+            variant={props.selected === value ? 'default' : 'outline'}
+            aria-pressed={props.selected === value}
+            onClick={() => props.onSelect(value)}
+          >
+            {value}
+          </Button>
+        ))}
+      </div>
+    </fieldset>
+  )
+}
+
+type DiagnosticInputProps = {
+  label: string
+  value: string
+  onChange: (value: string) => void
+  type?: 'text' | 'number'
+}
+
+function DiagnosticInput(props: DiagnosticInputProps) {
+  const id = `diagnostic-${props.label.toLowerCase().replaceAll(' ', '-')}`
+  return (
+    <div className="space-y-2">
+      <Label htmlFor={id}>{props.label}</Label>
+      <Input
+        id={id}
+        type={props.type ?? 'text'}
+        min={props.type === 'number' ? 0 : undefined}
+        value={props.value}
+        onChange={(event) => props.onChange(event.currentTarget.value)}
+      />
     </div>
   )
 }

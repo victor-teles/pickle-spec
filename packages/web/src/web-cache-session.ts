@@ -12,7 +12,10 @@ import { createWebReplaySession } from './web-cache-replay-session'
 import type { WebAdapterOptions } from './web-options'
 import { errorMessage, promptFor } from './web-step'
 
-type FinishStep = (execution: StepExecution) => Promise<StepExecution>
+type FinishStep = (
+  execution: StepExecution,
+  step: ScenarioStep,
+) => Promise<StepExecution>
 
 interface CreateWebCacheSessionInput {
   input: OpenSessionInput
@@ -58,7 +61,7 @@ export function createWebCacheSession({
           executionContext(step, context),
           operationSignal,
         )
-        return finish(result)
+        return finish(result, step)
       } catch (error) {
         if (
           operationSignal?.aborted ||
@@ -66,11 +69,14 @@ export function createWebCacheSession({
         ) {
           throw abortError()
         }
-        return finish({
-          state: 'infrastructure-error',
-          resolvedActions: [],
-          message: errorMessage(error),
-        })
+        return finish(
+          {
+            state: 'infrastructure-error',
+            resolvedActions: [],
+            message: errorMessage(error),
+          },
+          step,
+        )
       }
     },
     complete: runtime.complete,
