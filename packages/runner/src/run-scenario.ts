@@ -1,6 +1,12 @@
-import { ignoreTag, type ScenarioVariableBinding } from '@pickle-spec/spec'
+import {
+  ignoreTag,
+  type ScenarioStep,
+  type ScenarioVariableBinding,
+} from '@pickle-spec/spec'
+import { persistedEvidenceKinds } from './evidence'
 import type { ExecutionCacheEnvelope } from './execution-cache'
 import type {
+  DiagnosticEntry,
   EvidenceAvailability,
   ExecutionMode,
   ExecutionTimeouts,
@@ -124,6 +130,47 @@ export interface AttemptScenarioRun extends ScenarioRun {
   runtimeValueExposed: boolean
 }
 
+function stampDiagnostic(
+  entry: DiagnosticEntry,
+  input: ScenarioAttemptInput,
+  stepIndex?: number,
+  step?: ScenarioStep,
+): DiagnosticEntry {
+  return {
+    ...entry,
+    scenarioId:
+      entry.scenarioId ??
+      scenarioDefinitionId(input.specification, input.scenario),
+    scenarioName: entry.scenarioName ?? input.scenario.name,
+    stepIndex: entry.stepIndex ?? stepIndex,
+    stepText:
+      entry.stepText ??
+      (step ? `${step.keyword.trim()} ${step.text}` : undefined),
+    executionTargetProfileId:
+      entry.executionTargetProfileId ?? input.executionTargetProfile.id,
+  }
+}
+
+function runnerDiagnostic(
+  input: ScenarioAttemptInput,
+  message: string,
+  occurredAt: string,
+  stepIndex?: number,
+  step?: ScenarioStep,
+): DiagnosticEntry {
+  return stampDiagnostic(
+    {
+      occurredAt,
+      level: 'error',
+      origin: 'runner',
+      message,
+    },
+    input,
+    stepIndex,
+    step,
+  )
+}
+
 const evidenceCapabilities = {
   screenshot: 'screenshots',
   trace: 'traces',
@@ -136,15 +183,14 @@ function attemptEvidence(
   input: ScenarioAttemptInput,
   steps: readonly TestStepResult[],
   reported: readonly EvidenceAvailability[] = [],
+  diagnostics: readonly DiagnosticEntry[] = [],
 ): EvidenceAvailability[] {
-  const available = new Set(
-    steps.flatMap((step) => (step.artifacts ?? []).map((item) => item.kind)),
-  )
+  const available = persistedEvidenceKinds(steps, diagnostics)
   const capabilities = new Set(
     input.executionTargetProfile.capabilities ?? input.adapter.capabilities,
   )
   return evidenceKinds.map((kind) => {
-    if (kind !== 'diagnostics' && available.has(kind)) {
+    if (available.has(kind)) {
       return { kind, state: 'available' }
     }
     const adapterAvailability = reported.findLast(
@@ -283,6 +329,7 @@ interface AttemptProgress {
   replayDiverged: boolean
   runtimeValueExposed: boolean
   evidenceAvailability: EvidenceAvailability[]
+  diagnostics: DiagnosticEntry[]
 }
 
 type EmitAttemptEvent = (
@@ -308,6 +355,7 @@ interface SessionExecutionContext {
   input: ScenarioAttemptInput
   bindings: readonly ScenarioVariableBinding[]
   progress: AttemptProgress
+  latestOccurredAt: () => string
   emit: EmitAttemptEvent
   recordExecution: RecordExecution
   recordStep: RecordStep
@@ -317,7 +365,10 @@ function recordExecutionError(
   progress: AttemptProgress,
   error: unknown,
   bindings: readonly ScenarioVariableBinding[],
+  input: ScenarioAttemptInput,
+  occurredAt: string,
   signal?: AbortSignal,
+  stepIndex?: number,
 ): void {
   const rawMessage = errorMessage(error)
   progress.runtimeValueExposed ||= stringContainsBinding(rawMessage, bindings)
@@ -325,6 +376,17 @@ function recordExecutionError(
     ? 'cancelled'
     : 'infrastructure-error'
   progress.message = redactString(rawMessage, bindings)
+  progress.diagnostics.push(
+    runnerDiagnostic(
+      input,
+      progress.message,
+      occurredAt,
+      stepIndex,
+      stepIndex === undefined
+        ? undefined
+        : templateStepAt(input.scenario, stepIndex),
+    ),
+  )
 }
 
 async function executeScenarioSession(
@@ -366,7 +428,14 @@ async function executeScenarioSession(
       progress.message ??= 'Replay diverged from the deterministic Scenario'
     }
   } catch (error) {
-    recordExecutionError(progress, error, bindings, input.signal)
+    recordExecutionError(
+      progress,
+      error,
+      bindings,
+      input,
+      context.latestOccurredAt(),
+      input.signal,
+    )
   }
 }
 
@@ -405,7 +474,15 @@ async function executeStepSession(
         deadline.timeoutMessage,
       )
     } catch (error) {
-      recordExecutionError(progress, error, bindings, input.signal)
+      recordExecutionError(
+        progress,
+        error,
+        bindings,
+        input,
+        started.occurredAt,
+        input.signal,
+        stepIndex,
+      )
       await recordStep(stepIndex, started.occurredAt, {
         step: templateStep,
         state: progress.state,
@@ -447,6 +524,7 @@ export async function runScenarioAttempt(
     replayDiverged: false,
     runtimeValueExposed: false,
     evidenceAvailability: [],
+    diagnostics: [],
   }
   const started = await emit({
     type: 'scenario-started',
@@ -473,10 +551,14 @@ export async function runScenarioAttempt(
         ? { fidelityPolicy: input.adapter.fidelityPolicy }
         : {}),
       ...(message !== undefined ? { message } : {}),
+      ...(progress.diagnostics.length > 0
+        ? { diagnostics: progress.diagnostics }
+        : {}),
       evidenceAvailability: attemptEvidence(
         input,
         steps,
         progress.evidenceAvailability,
+        progress.diagnostics,
       ),
     }
     const result = createTestResult(input, [attempt])
@@ -522,15 +604,15 @@ export async function runScenarioAttempt(
     })
   } catch (error) {
     const bindings = nonemptyBindings(input.scenario.runtimeBindings)
-    const rawMessage = errorMessage(error)
-    progress.runtimeValueExposed ||= stringContainsBinding(rawMessage, bindings)
-    return finish(
-      isCancellation(error, input.signal)
-        ? 'cancelled'
-        : 'infrastructure-error',
-      [],
-      redactString(rawMessage, bindings),
+    recordExecutionError(
+      progress,
+      error,
+      bindings,
+      input,
+      scenarioStartedAt,
+      input.signal,
     )
+    return finish(progress.state, [], progress.message)
   }
 
   const steps: TestStepResult[] = []
@@ -589,6 +671,14 @@ export async function runScenarioAttempt(
       artifacts: projected.execution.artifacts?.length
         ? projected.execution.artifacts
         : undefined,
+      diagnostics: projected.execution.diagnostics?.length
+        ? projected.execution.diagnostics.map((entry) =>
+            stampDiagnostic(entry, input, stepIndex, templateStep),
+          )
+        : undefined,
+      trace: projected.execution.trace?.length
+        ? projected.execution.trace
+        : undefined,
     })
 
     if (execution.replayDiverged) {
@@ -609,6 +699,7 @@ export async function runScenarioAttempt(
     input,
     bindings,
     progress,
+    latestOccurredAt: () => events.at(-1)?.occurredAt ?? scenarioStartedAt,
     emit,
     recordExecution,
     recordStep,
@@ -616,9 +707,16 @@ export async function runScenarioAttempt(
 
   try {
     if (Boolean(session.executeScenario) === Boolean(session.executeStep)) {
-      progress.state = 'infrastructure-error'
-      progress.message =
-        'Target session must provide exactly one of executeStep or executeScenario'
+      recordExecutionError(
+        progress,
+        new Error(
+          'Target session must provide exactly one of executeStep or executeScenario',
+        ),
+        bindings,
+        input,
+        executionContext.latestOccurredAt(),
+        undefined,
+      )
     } else if (session.executeScenario) {
       await executeScenarioSession(session, executionContext)
     } else {
@@ -632,27 +730,28 @@ export async function runScenarioAttempt(
       try {
         completion = validateCompletion(await session.complete())
       } catch (error) {
-        const rawMessage = errorMessage(error)
-        progress.runtimeValueExposed ||= stringContainsBinding(
-          rawMessage,
+        recordExecutionError(
+          progress,
+          error,
           bindings,
+          input,
+          executionContext.latestOccurredAt(),
+          undefined,
         )
-        progress.state = 'infrastructure-error'
-        progress.message = redactString(rawMessage, bindings)
       }
     }
   } finally {
     try {
       await session.close()
     } catch (error) {
-      const bindings = nonemptyBindings(input.scenario.runtimeBindings)
-      const rawMessage = errorMessage(error)
-      progress.runtimeValueExposed ||= stringContainsBinding(
-        rawMessage,
+      recordExecutionError(
+        progress,
+        error,
         bindings,
+        input,
+        executionContext.latestOccurredAt(),
+        undefined,
       )
-      progress.state = 'infrastructure-error'
-      progress.message = redactString(rawMessage, bindings)
     }
   }
 

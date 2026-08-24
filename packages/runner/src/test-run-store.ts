@@ -342,20 +342,27 @@ function persistedTestRun(
           throw new Error(`Test run "${id}" is finalized and cannot be changed`)
         }
         const current = await readEvents(eventsPath, incompatibleSchema)
-        const versioned = {
-          ...(await persistEventArtifacts(
-            recordableRunEventPayloadData(eventPayload(event)),
-            current,
-            artifactCapture,
-            artifactsDirectory,
-          )),
+        const recordable = recordableRunEventPayloadData(eventPayload(event))
+        const envelope = {
           schemaVersion: testRunSchemaVersion,
           sequence: current.length + 1,
           occurredAt:
             'occurredAt' in event ? event.occurredAt : now().toISOString(),
+        } as const
+        const versioned = {
+          ...(await persistEventArtifacts(
+            recordable,
+            current,
+            artifactCapture,
+            artifactsDirectory,
+          )),
+          ...envelope,
         } as RunEvent
         await appendFile(eventsPath, `${JSON.stringify(versioned)}\n`)
-        return versioned
+        return event.type === 'step-finished' &&
+          !shouldCapture(artifactCapture, event.result.state)
+          ? ({ ...recordable, ...envelope } as RunEvent)
+          : versioned
       })
     },
     async events() {
@@ -779,7 +786,7 @@ async function persistAttemptArtifacts(
   artifactsDirectory: string,
 ): Promise<ScenarioAttempt> {
   if (!shouldCapture(policy, attempt.state)) {
-    return withoutAttemptArtifacts(attempt)
+    return withoutAttemptEvidence(attempt)
   }
   const steps = await Promise.all(
     attempt.steps.map(async (step) => {
@@ -835,29 +842,36 @@ async function persistStepArtifacts(
   artifactsDirectory: string,
   name: string,
 ): Promise<TestStepResult> {
+  if (!shouldCapture(policy, step.state)) return withoutStepEvidence(step)
   if (!step.artifacts?.length) return step
-  if (!shouldCapture(policy, step.state)) return withoutArtifacts(step)
   return copyStepArtifacts(step, artifactsDirectory, name)
 }
 
-function withoutArtifacts(step: TestStepResult): TestStepResult {
-  if (!step.artifacts) return step
-  const { artifacts: _artifacts, ...rest } = step
+function withoutStepEvidence(step: TestStepResult): TestStepResult {
+  const {
+    artifacts: _artifacts,
+    diagnostics: _diagnostics,
+    trace: _trace,
+    ...rest
+  } = step
   return rest
 }
 
-function withoutAttemptArtifacts(attempt: ScenarioAttempt): ScenarioAttempt {
+function withoutAttemptEvidence(attempt: ScenarioAttempt): ScenarioAttempt {
   const kinds = new Set(
-    attempt.steps.flatMap((step) =>
-      (step.artifacts ?? []).map((artifact) => artifact.kind),
-    ),
+    attempt.steps.flatMap((step) => [
+      ...(step.artifacts ?? []).map((artifact) => artifact.kind),
+      ...(step.diagnostics?.length ? ['diagnostics' as const] : []),
+      ...(step.trace?.length ? ['trace' as const] : []),
+    ]),
   )
+  if (attempt.diagnostics?.length) kinds.add('diagnostics')
+  const { diagnostics: _diagnostics, ...attemptWithoutDiagnostics } = attempt
   return {
-    ...attempt,
-    steps: attempt.steps.map(withoutArtifacts),
+    ...attemptWithoutDiagnostics,
+    steps: attempt.steps.map(withoutStepEvidence),
     evidenceAvailability: attempt.evidenceAvailability.map((availability) => {
-      const wasCaptured =
-        availability.kind !== 'diagnostics' && kinds.has(availability.kind)
+      const wasCaptured = kinds.has(availability.kind)
       return wasCaptured && availability.state === 'available'
         ? { ...availability, state: 'not-retained' }
         : availability

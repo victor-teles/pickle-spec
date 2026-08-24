@@ -753,6 +753,154 @@ test('captures only failure artifacts under the default evidence policy', async 
   expect(await Bun.file(screenshot).exists()).toBe(true)
 })
 
+test('persists Diagnostic entries for failed runs by default and drops them for passed runs', async () => {
+  const root = await tempRoot()
+  const store = openTestRunStore({
+    root,
+    createId: () => 'run-diagnostics',
+  })
+  const run = await store.create()
+  const diagnostic = {
+    occurredAt: '2026-08-23T12:00:00.004Z',
+    level: 'error' as const,
+    origin: 'console' as const,
+    message: 'Payment was declined',
+    scenarioName: 'Complete a purchase',
+    stepIndex: 0,
+    stepText: 'Then the purchase succeeds',
+    executionTargetProfileId: 'deterministic',
+  }
+  const trace = {
+    occurredAt: '2026-08-23T12:00:00.004Z',
+    kind: 'resolved-action' as const,
+    description: 'Click pay on chrome',
+  }
+  const passed = resultWithArtifact(
+    'Passed purchase',
+    'passed',
+    join(root, 'unused.png'),
+  )
+  const failed = resultWithArtifact(
+    'Failed purchase',
+    'failed',
+    join(root, 'unused.png'),
+  )
+  const passedAttempt = passed.attempts[0]!
+  const failedAttempt = failed.attempts[0]!
+  const liveStep = {
+    ...passedAttempt.steps[0]!,
+    artifacts: undefined,
+    diagnostics: [diagnostic],
+    trace: [trace],
+  }
+  const liveEvent = await run.append({
+    type: 'step-finished',
+    result: liveStep,
+    scenario: passed.scenario,
+    executionTargetProfile: passed.executionTargetProfile,
+    scope: {
+      scenarioId: passed.scenario.id!,
+      executionTargetProfileId: passed.executionTargetProfile.id,
+      attempt: passedAttempt.attempt,
+      stepIndex: liveStep.index,
+    },
+  })
+
+  expect(liveEvent).toMatchObject({
+    type: 'step-finished',
+    result: { diagnostics: [diagnostic], trace: [trace] },
+  })
+  const persistedLiveStep = (await run.events()).at(-1)
+  expect(persistedLiveStep?.type).toBe('step-finished')
+  if (persistedLiveStep?.type !== 'step-finished') {
+    throw new Error('Expected a persisted step-finished event')
+  }
+  expect(persistedLiveStep.result.diagnostics).toBeUndefined()
+  expect(persistedLiveStep.result.trace).toBeUndefined()
+
+  await run.append(
+    scenarioFinished({
+      ...passed,
+      attempts: [
+        {
+          ...passedAttempt,
+          diagnostics: [diagnostic],
+          evidenceAvailability: passedAttempt.evidenceAvailability.map(
+            (item) => {
+              if (item.kind === 'screenshot') {
+                return { kind: item.kind, state: 'not-requested' as const }
+              }
+              return item.kind === 'diagnostics' || item.kind === 'trace'
+                ? { kind: item.kind, state: 'available' as const }
+                : item
+            },
+          ),
+          steps: passedAttempt.steps.map((step) => ({
+            ...step,
+            artifacts: undefined,
+            diagnostics: [diagnostic],
+            trace: [trace],
+          })),
+        },
+      ],
+    }),
+  )
+  await run.append(
+    scenarioFinished({
+      ...failed,
+      attempts: [
+        {
+          ...failedAttempt,
+          diagnostics: [diagnostic],
+          evidenceAvailability: failedAttempt.evidenceAvailability.map(
+            (item) => {
+              if (item.kind === 'screenshot') {
+                return { kind: item.kind, state: 'not-requested' as const }
+              }
+              return item.kind === 'diagnostics' || item.kind === 'trace'
+                ? { kind: item.kind, state: 'available' as const }
+                : item
+            },
+          ),
+          steps: failedAttempt.steps.map((step) => ({
+            ...step,
+            artifacts: undefined,
+            diagnostics: [diagnostic],
+            trace: [trace],
+          })),
+        },
+      ],
+    }),
+  )
+
+  const manifest = await run.materialize()
+  const passedPersisted = manifest.results.find(
+    (result) => result.scenario.name === 'Passed purchase',
+  )
+  const failedPersisted = manifest.results.find(
+    (result) => result.scenario.name === 'Failed purchase',
+  )
+
+  expect(passedPersisted?.attempts[0]?.steps[0]?.diagnostics).toBeUndefined()
+  expect(passedPersisted?.attempts[0]?.diagnostics).toBeUndefined()
+  expect(passedPersisted?.attempts[0]?.steps[0]?.trace).toBeUndefined()
+  expect(
+    passedPersisted?.attempts[0]?.evidenceAvailability.find(
+      (item) => item.kind === 'diagnostics',
+    )?.state,
+  ).toBe('not-retained')
+  expect(
+    passedPersisted?.attempts[0]?.evidenceAvailability.find(
+      (item) => item.kind === 'trace',
+    )?.state,
+  ).toBe('not-retained')
+  expect(failedPersisted?.attempts[0]?.steps[0]?.diagnostics).toEqual([
+    diagnostic,
+  ])
+  expect(failedPersisted?.attempts[0]?.diagnostics).toEqual([diagnostic])
+  expect(failedPersisted?.attempts[0]?.steps[0]?.trace).toEqual([trace])
+})
+
 test('retention removes eligible local data without changing retained test runs', async () => {
   const root = await tempRoot()
   let clock = new Date('2026-07-01T00:00:00.000Z')

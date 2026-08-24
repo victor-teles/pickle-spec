@@ -8,11 +8,12 @@ import {
   type StepExecutionTargetAdapter,
   type TestArtifact,
 } from '@pickle-spec/runner'
-import type { ScenarioVariableBinding } from '@pickle-spec/spec'
+import type { ScenarioStep, ScenarioVariableBinding } from '@pickle-spec/spec'
 import { abortError } from './abort'
 import { type ResolvedFidelity, resolveFidelityPolicy } from './fidelity'
 import { stagehandFactory } from './stagehand-factory'
 import { createWebCacheSession } from './web-cache-session'
+import type { CollectedWebEvidence } from './web-evidence'
 import {
   parseWebExecutionCachePayload,
   type WebAssertionDraft,
@@ -32,6 +33,7 @@ import {
   navigationUrl,
   promptFor,
 } from './web-step'
+import { projectWebStepEvidence } from './web-step-evidence'
 
 export type {
   BrowserOptions,
@@ -98,6 +100,7 @@ export interface WebAutomation {
   ): Promise<WebDirectExecutionResult>
   screenshot(options: WebScreenshotCapture): Promise<Uint8Array>
   readIsolationState(): Promise<WebIsolationState>
+  consumeEvidence?(): CollectedWebEvidence | Promise<CollectedWebEvidence>
   close(): Promise<void>
 }
 
@@ -209,7 +212,7 @@ export function createWebAdapter(
   })
 
   return {
-    capabilities: ['web', 'screenshots'],
+    capabilities: ['web', 'screenshots', 'traces', 'diagnostics'],
     executionCache: {
       adapterKind: 'web',
       adapterCacheSchemaVersion: '1',
@@ -252,6 +255,7 @@ export function createWebAdapter(
       let closePromise: Promise<void> | undefined
       let navigated = false
       let stepIndex = 0
+      let previousResolvedActionTrace: StepExecution['trace'] = []
       const specificationArtifactId = screenshotIdentity(
         'specification',
         input.specification.id ?? input.specification.source.uri,
@@ -346,15 +350,28 @@ export function createWebAdapter(
         }
       }
 
-      async function finish(result: StepExecution): Promise<StepExecution> {
+      async function finishStep(
+        result: StepExecution,
+        step: ScenarioStep,
+      ): Promise<StepExecution> {
+        const collected = automation.consumeEvidence
+          ? await automation.consumeEvidence()
+          : { diagnostics: [], activity: [] }
+        const projected = projectWebStepEvidence({
+          execution: result,
+          step,
+          collected,
+          previousResolvedActionTrace: previousResolvedActionTrace ?? [],
+        })
+        previousResolvedActionTrace = projected.nextResolvedActionTrace
         const capture = await screenshot(result.state)
         return {
-          ...result,
+          ...projected.execution,
           artifacts: capture.artifact
-            ? [...(result.artifacts ?? []), capture.artifact]
-            : result.artifacts,
+            ? [...(projected.execution.artifacts ?? []), capture.artifact]
+            : projected.execution.artifacts,
           evidenceAvailability: [
-            ...(result.evidenceAvailability ?? []),
+            ...(projected.execution.evidenceAvailability ?? []),
             capture.availability,
           ],
         }
@@ -407,7 +424,7 @@ export function createWebAdapter(
           input,
           options,
           automation,
-          finish,
+          finish: finishStep,
         })
         return {
           ...cacheSession,
@@ -432,10 +449,13 @@ export function createWebAdapter(
               const url = navigationUrl(options.baseUrl, target)
               await automation.navigate(url, operationSignal)
               navigated = true
-              return finish({
-                state: 'passed',
-                resolvedActions: [{ description: `Navigate to ${url}` }],
-              })
+              return finishStep(
+                {
+                  state: 'passed',
+                  resolvedActions: [{ description: `Navigate to ${url}` }],
+                },
+                step,
+              )
             }
 
             await ensureNavigation(operationSignal)
@@ -445,19 +465,28 @@ export function createWebAdapter(
                 operationSignal,
               )
               if (!verification.meetsExpectation) {
-                return finish({
-                  state: 'failed',
-                  resolvedActions: [{ description: `Verify: ${prompt}` }],
-                  message: `Expected: "${prompt}" | Actual: ${verification.actualState}`,
-                })
+                return finishStep(
+                  {
+                    state: 'failed',
+                    resolvedActions: [{ description: `Verify: ${prompt}` }],
+                    message: `Expected: "${prompt}" | Actual: ${verification.actualState}`,
+                  },
+                  step,
+                )
               }
-              return finish({
-                state: 'passed',
-                resolvedActions: [{ description: `Verify: ${prompt}` }],
-              })
+              return finishStep(
+                {
+                  state: 'passed',
+                  resolvedActions: [{ description: `Verify: ${prompt}` }],
+                },
+                step,
+              )
             }
 
-            return finish(await resolveByObservation(prompt, operationSignal))
+            return finishStep(
+              await resolveByObservation(prompt, operationSignal),
+              step,
+            )
           } catch (error) {
             if (
               operationSignal?.aborted ||
@@ -465,11 +494,14 @@ export function createWebAdapter(
             ) {
               throw abortError()
             }
-            return finish({
-              state: 'infrastructure-error',
-              resolvedActions: [],
-              message: errorMessage(error),
-            })
+            return finishStep(
+              {
+                state: 'infrastructure-error',
+                resolvedActions: [],
+                message: errorMessage(error),
+              },
+              step,
+            )
           }
         },
         close,

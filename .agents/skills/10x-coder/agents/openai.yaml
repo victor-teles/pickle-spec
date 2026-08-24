@@ -1,4 +1,4 @@
 interface:
   display_name: "10x-coder"
-  short_description: "Polish with Clean Code and SOLID"
-  default_prompt: "Use $clean to polish my current diff without expanding its scope."
+  short_description: "Keep code small, clean, and composable"
+  default_prompt: "Use $10x-coder to simplify my current diff without expanding its scope."

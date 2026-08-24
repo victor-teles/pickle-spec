@@ -1,11 +1,18 @@
 import { z } from 'zod'
+import { persistedEvidenceKinds } from './evidence'
 import type {
   RunEvent,
   ScenarioAttempt,
   TestResult,
   TestStepResult,
 } from './run-scenario'
-import { evidenceKinds, testRunSchemaVersion } from './run-scenario'
+import {
+  diagnosticLevels,
+  diagnosticOrigins,
+  evidenceKinds,
+  testRunSchemaVersion,
+  traceActivityKinds,
+} from './run-scenario'
 import type { TestRunManifest } from './test-run-store'
 
 type IncompatibleSchema = (version: unknown) => never
@@ -65,6 +72,26 @@ const artifactSchema = z.object({
   mediaType: z.string().optional(),
 })
 
+const diagnosticEntrySchema = z.object({
+  occurredAt: timestampSchema,
+  causalAt: timestampSchema.optional(),
+  level: z.enum(diagnosticLevels),
+  origin: z.enum(diagnosticOrigins),
+  message: z.string(),
+  scenarioId: z.string().optional(),
+  scenarioName: z.string().optional(),
+  stepIndex: nonNegativeIntegerSchema.optional(),
+  stepText: z.string().optional(),
+  executionTargetProfileId: z.string().optional(),
+})
+
+const traceEntrySchema = z.object({
+  occurredAt: timestampSchema,
+  causalAt: timestampSchema.optional(),
+  kind: z.enum(traceActivityKinds),
+  description: z.string(),
+})
+
 const testStepResultSchema: z.ZodType<TestStepResult> = z
   .object({
     index: nonNegativeIntegerSchema,
@@ -76,6 +103,8 @@ const testStepResultSchema: z.ZodType<TestStepResult> = z
     resolvedActions: z.array(resolvedActionSchema),
     message: z.string().optional(),
     artifacts: z.array(artifactSchema).optional(),
+    diagnostics: z.array(diagnosticEntrySchema).optional(),
+    trace: z.array(traceEntrySchema).optional(),
   })
   .superRefine(validateTiming)
 
@@ -125,21 +154,20 @@ function validateEvidenceAvailability(
     }
   }
 
-  const artifactKinds = new Set(
-    attempt.steps.flatMap((step) =>
-      (step.artifacts ?? []).map((artifact) => artifact.kind),
-    ),
+  const availableKinds = persistedEvidenceKinds(
+    attempt.steps,
+    attempt.diagnostics,
   )
   for (const [kind, availability] of availabilityByKind) {
-    const hasArtifact = kind !== 'diagnostics' && artifactKinds.has(kind)
-    if (hasArtifact && availability.state !== 'available') {
+    const hasPersistedEvidence = availableKinds.has(kind)
+    if (hasPersistedEvidence && availability.state !== 'available') {
       context.addIssue({
         code: 'custom',
         path: ['evidenceAvailability'],
-        message: `Evidence availability for "${kind}" must be available when an artifact exists`,
+        message: `Evidence availability for "${kind}" must be available when persisted evidence exists`,
       })
     }
-    if (!hasArtifact && availability.state === 'available') {
+    if (!hasPersistedEvidence && availability.state === 'available') {
       context.addIssue({
         code: 'custom',
         path: ['evidenceAvailability'],
@@ -176,6 +204,7 @@ const scenarioAttemptSchema: z.ZodType<ScenarioAttempt> = z
     message: z.string().optional(),
     fidelityPolicy: fidelityPolicySchema.optional(),
     evidenceAvailability: z.array(evidenceAvailabilitySchema),
+    diagnostics: z.array(diagnosticEntrySchema).optional(),
   })
   .superRefine((attempt, context) => {
     validateTiming(attempt, context)

@@ -4,6 +4,14 @@ Use these as judgment, not as a mandate to introduce the "after" shape.
 Apply a rewrite only when the touched code already has the "before" problem.
 Examples are JavaScript; follow the repository's language and conventions.
 
+## Contents
+
+- [Clean Code](#clean-code)
+- [KISS](#kiss)
+- [Separation of concerns and file size](#separation-of-concerns-and-file-size)
+- [DRY](#dry)
+- [SOLID](#solid)
+
 ## Clean Code
 
 ### Names and domain language
@@ -199,6 +207,55 @@ const isValid = allowedRoles.includes(user.role)
 
 function calculatePrice(price, quantity) {
   return price * quantity
+}
+```
+
+Repeated contextual transformations deserve one local name. Keep assignments
+explicit when a dynamic field mapper would require casts or obscure the output
+shape.
+
+```ts
+// ❌ the same operation and optional guard repeated for every field
+function publicDiagnostic(
+  diagnostic: DiagnosticEntry,
+  bindings: readonly ScenarioVariableBinding[],
+): DiagnosticEntry {
+  return {
+    ...diagnostic,
+    message: redactString(diagnostic.message, bindings),
+    scenarioId: diagnostic.scenarioId
+      ? redactString(diagnostic.scenarioId, bindings)
+      : undefined,
+    scenarioName: diagnostic.scenarioName
+      ? redactString(diagnostic.scenarioName, bindings)
+      : undefined,
+    stepText: diagnostic.stepText
+      ? redactString(diagnostic.stepText, bindings)
+      : undefined,
+    executionTargetProfileId: diagnostic.executionTargetProfileId
+      ? redactString(diagnostic.executionTargetProfileId, bindings)
+      : undefined,
+  }
+}
+
+// ✅ bind the shared context once; preserve an explicit, typed result shape
+function publicDiagnostic(
+  diagnostic: DiagnosticEntry,
+  bindings: readonly ScenarioVariableBinding[],
+): DiagnosticEntry {
+  const redactOptional = (value: string | undefined) =>
+    value ? redactString(value, bindings) : undefined
+
+  return {
+    ...diagnostic,
+    message: redactString(diagnostic.message, bindings),
+    scenarioId: redactOptional(diagnostic.scenarioId),
+    scenarioName: redactOptional(diagnostic.scenarioName),
+    stepText: redactOptional(diagnostic.stepText),
+    executionTargetProfileId: redactOptional(
+      diagnostic.executionTargetProfileId,
+    ),
+  }
 }
 ```
 

@@ -80,3 +80,57 @@ test('requires available artifact evidence to match persisted artifacts', () => 
     'Available evidence for "screenshot" requires persisted evidence',
   )
 })
+
+test('treats Diagnostic entries as persisted diagnostics evidence', () => {
+  const input = manifest()
+  const attempt = input.results[0]!.attempts[0]!
+  const occurredAt = attempt.startedAt
+  attempt.evidenceAvailability[4] = { kind: 'diagnostics', state: 'available' }
+  attempt.diagnostics = [
+    {
+      occurredAt,
+      causalAt: occurredAt,
+      level: 'error',
+      origin: 'console',
+      message: 'Payment was declined',
+      scenarioName: 'Capture evidence',
+      stepIndex: 0,
+      stepText: 'Then the purchase succeeds',
+      executionTargetProfileId: 'web',
+    },
+  ]
+
+  expect(() => parseTestRunManifest(input, incompatibleSchema)).not.toThrow()
+})
+
+test('treats Pickle-native trace entries as persisted trace evidence', () => {
+  const input = manifest()
+  const attempt = input.results[0]!.attempts[0]!
+  const occurredAt = attempt.startedAt
+  attempt.evidenceAvailability[1] = { kind: 'trace', state: 'available' }
+  attempt.steps = [
+    {
+      index: 0,
+      startedAt: occurredAt,
+      finishedAt: occurredAt,
+      durationMs: 0,
+      step: {
+        keyword: 'Then',
+        text: 'the purchase succeeds',
+        type: 'outcome',
+      },
+      state: 'failed',
+      resolvedActions: [{ description: 'Click pay on chrome' }],
+      trace: [
+        {
+          occurredAt,
+          causalAt: occurredAt,
+          kind: 'resolved-action',
+          description: 'Click pay on chrome',
+        },
+      ],
+    },
+  ]
+
+  expect(() => parseTestRunManifest(input, incompatibleSchema)).not.toThrow()
+})

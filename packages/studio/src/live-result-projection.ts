@@ -116,15 +116,26 @@ function isIncompleteLiveEvidence(item: EvidenceAvailability): boolean {
 function liveEvidenceAvailability(
   steps: readonly TestStepResult[],
 ): ScenarioAttempt['evidenceAvailability'] {
-  const artifactKinds = new Set(
-    steps.flatMap((step) =>
-      (step.artifacts ?? []).map((artifact) => artifact.kind),
-    ),
+  const persistedKinds = new Set(
+    steps.flatMap((step) => [
+      ...(step.artifacts ?? []).map((artifact) => artifact.kind),
+      ...(step.diagnostics?.length ? ['diagnostics' as const] : []),
+      ...(step.trace?.length ? ['trace' as const] : []),
+    ]),
   )
-  const diagnosticsAvailable = steps.some((step) => Boolean(step.message))
+  const diagnosticsAvailable =
+    persistedKinds.has('diagnostics') ||
+    steps.some((step) => Boolean(step.message))
+  const traceAvailable = steps.some(
+    (step) => Boolean(step.trace?.length) || step.resolvedActions.length > 0,
+  )
   return liveEvidenceKinds.map((kind) => {
     const available =
-      kind === 'diagnostics' ? diagnosticsAvailable : artifactKinds.has(kind)
+      kind === 'diagnostics'
+        ? diagnosticsAvailable
+        : kind === 'trace'
+          ? traceAvailable || persistedKinds.has(kind)
+          : persistedKinds.has(kind)
     return available
       ? { kind, state: 'available' as const }
       : {

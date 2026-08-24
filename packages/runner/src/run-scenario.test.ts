@@ -369,6 +369,116 @@ describe('runScenario', () => {
     expect(executeStep).toHaveBeenCalledTimes(1)
   })
 
+  test('copies Pickle-native trace and Diagnostic entries onto the step result and stamps Scenario identity', async () => {
+    const occurredAt = '2026-08-23T12:00:00.004Z'
+    const paymentScenario: Scenario = {
+      ...scenario,
+      steps: [scenario.steps[1]!],
+    }
+    const executeStep = mock(async () => ({
+      state: 'failed' as const,
+      resolvedActions: [{ description: 'Click pay on chrome' }],
+      message: 'Payment was declined',
+      diagnostics: [
+        {
+          occurredAt,
+          level: 'error' as const,
+          origin: 'console' as const,
+          message: 'Payment was declined',
+        },
+      ],
+      trace: [
+        {
+          occurredAt,
+          kind: 'resolved-action' as const,
+          description: 'Click pay on chrome',
+        },
+        {
+          occurredAt,
+          kind: 'browser-activity' as const,
+          description: 'Navigate https://example.test/checkout',
+        },
+      ],
+    }))
+    const adapter: ExecutionTargetAdapter = {
+      async openSession() {
+        return { executeStep, close: async () => {} }
+      },
+    }
+
+    const run = await runScenario({
+      specification,
+      scenario: paymentScenario,
+      executionTargetProfile: { id: 'chrome' },
+      adapter,
+    })
+
+    const step = finalAttempt(run.result).steps[0]!
+    expect(step.diagnostics).toEqual([
+      {
+        occurredAt,
+        level: 'error',
+        origin: 'console',
+        message: 'Payment was declined',
+        scenarioId: expect.any(String),
+        scenarioName: 'Complete a purchase',
+        stepIndex: 0,
+        stepText: 'Then the purchase succeeds',
+        executionTargetProfileId: 'chrome',
+      },
+    ])
+    expect(step.trace).toEqual([
+      {
+        occurredAt,
+        kind: 'resolved-action',
+        description: 'Click pay on chrome',
+      },
+      {
+        occurredAt,
+        kind: 'browser-activity',
+        description: 'Navigate https://example.test/checkout',
+      },
+    ])
+    expect(run.events.map((event) => event.type)).toEqual([
+      'scenario-started',
+      'step-started',
+      'step-finished',
+      'scenario-finished',
+    ])
+    expect(
+      run.events.some((event) =>
+        Object.values(event).includes('Diagnostic entry'),
+      ),
+    ).toBe(false)
+  })
+
+  test('records a runner Diagnostic entry when a logical session cannot be opened', async () => {
+    const run = await runScenario({
+      specification,
+      scenario,
+      executionTargetProfile: { id: 'unavailable' },
+      adapter: {
+        async openSession() {
+          throw new Error('Execution target is unavailable')
+        },
+      },
+    })
+
+    expect(finalAttempt(run.result).diagnostics).toEqual([
+      expect.objectContaining({
+        level: 'error',
+        origin: 'runner',
+        message: 'Execution target is unavailable',
+        scenarioName: 'Complete a purchase',
+        executionTargetProfileId: 'unavailable',
+      }),
+    ])
+    expect(run.events.map((event) => event.type)).toEqual([
+      'scenario-started',
+      'scenario-finished',
+    ])
+  })
+
   test('materializes cancellation without opening a logical session when already aborted', async () => {
     const openSession = mock(async () => {
       throw new Error('must not open')

@@ -1,9 +1,12 @@
 import type {
+  DiagnosticLevel,
+  DiagnosticOrigin,
   RunEvent,
   ScenarioAttempt,
   TestArtifact,
   TestResult,
   TestResultState,
+  TraceEntry,
 } from '@pickle-spec/runner'
 import type {
   ResultInspectionLocation,
@@ -26,15 +29,30 @@ export type ArtifactEvidence = {
 export type DiagnosticEvidence = {
   id: string
   occurredAt: string
+  causalAt?: string
   message: string
   source: 'Scenario attempt' | 'Step'
+  level: DiagnosticLevel
+  origin: DiagnosticOrigin
+  scenarioId?: string
+  scenarioName?: string
+  stepIndex?: number
   stepText?: string
+  executionTargetProfileId?: string
+}
+
+export type DiagnosticFilter = {
+  level?: DiagnosticLevel
+  origin?: DiagnosticOrigin
+  scenarioId?: string
+  stepIndex?: number
+  executionTargetProfileId?: string
 }
 
 export type TimelineEntry = {
   id: string
   occurredAt: string
-  kind: 'Step' | 'Run event' | 'Diagnostic entry' | 'Test artifact'
+  kind: 'Step' | 'Trace' | 'Run event' | 'Diagnostic entry' | 'Test artifact'
   title: string
   detail?: string
   causal?: boolean
@@ -107,31 +125,80 @@ export function artifactsFor(attempt: ScenarioAttempt): ArtifactEvidence[] {
 }
 
 export function diagnosticsFor(attempt: ScenarioAttempt): DiagnosticEvidence[] {
-  const diagnostics: DiagnosticEvidence[] = attempt.steps.flatMap((step) =>
-    step.message
-      ? [
-          {
-            id: `step-${step.index}`,
-            occurredAt: step.finishedAt,
-            message: step.message,
-            source: 'Step' as const,
-            stepText: `${step.step.keyword.trim()} ${step.step.text}`,
-          },
-        ]
-      : [],
+  const attemptDiagnostics: DiagnosticEvidence[] = (
+    attempt.diagnostics ?? []
+  ).map((entry, index) => ({
+    ...entry,
+    id: `attempt-${index}`,
+    source: 'Scenario attempt',
+  }))
+  const stepDiagnostics: DiagnosticEvidence[] = attempt.steps.flatMap((step) =>
+    (step.diagnostics ?? []).map((entry, index) => ({
+      ...entry,
+      id: `step-${step.index}-${index}`,
+      source: 'Step' as const,
+      stepIndex: entry.stepIndex ?? step.index,
+      stepText:
+        entry.stepText ?? `${step.step.keyword.trim()} ${step.step.text}`,
+    })),
   )
+  const diagnostics = [...attemptDiagnostics, ...stepDiagnostics]
+  for (const step of attempt.steps) {
+    if (
+      step.message &&
+      !diagnostics.some(
+        (diagnostic) =>
+          diagnostic.message === step.message &&
+          diagnostic.stepIndex === step.index,
+      )
+    ) {
+      diagnostics.push({
+        id: `step-${step.index}-message`,
+        occurredAt: step.finishedAt,
+        level: 'error',
+        origin: 'adapter',
+        message: step.message,
+        source: 'Step',
+        stepIndex: step.index,
+        stepText: `${step.step.keyword.trim()} ${step.step.text}`,
+      })
+    }
+  }
   if (
     attempt.message &&
     !diagnostics.some((diagnostic) => diagnostic.message === attempt.message)
   ) {
     diagnostics.push({
-      id: 'attempt',
+      id: 'attempt-message',
       occurredAt: attempt.finishedAt,
+      level: 'error',
+      origin: 'runner',
       message: attempt.message,
       source: 'Scenario attempt',
     })
   }
-  return diagnostics
+  return diagnostics.sort(
+    (left, right) =>
+      Date.parse(left.occurredAt) - Date.parse(right.occurredAt) ||
+      left.id.localeCompare(right.id),
+  )
+}
+
+export function filterDiagnostics(
+  diagnostics: readonly DiagnosticEvidence[],
+  filter: DiagnosticFilter,
+): DiagnosticEvidence[] {
+  return diagnostics.filter(
+    (entry) =>
+      (filter.level === undefined || entry.level === filter.level) &&
+      (filter.origin === undefined || entry.origin === filter.origin) &&
+      (filter.scenarioId === undefined ||
+        entry.scenarioId === filter.scenarioId) &&
+      (filter.stepIndex === undefined ||
+        entry.stepIndex === filter.stepIndex) &&
+      (filter.executionTargetProfileId === undefined ||
+        entry.executionTargetProfileId === filter.executionTargetProfileId),
+  )
 }
 
 export function timelineFor(
@@ -143,9 +210,16 @@ export function timelineFor(
     (step) => step.state === 'failed' || step.state === 'infrastructure-error',
   )
   const causalStepId = failedStep ? `step-${failedStep.index}` : undefined
+  const causalAt = failedStep
+    ? (failedStep.diagnostics?.findLast((entry) => entry.causalAt)?.causalAt ??
+      failedStep.trace?.findLast((entry) => entry.causalAt)?.causalAt)
+    : undefined
   const stepEntries: TimelineEntry[] = attempt.steps.map((step) => ({
     id: `step-${step.index}`,
-    occurredAt: step.finishedAt,
+    occurredAt:
+      causalStepId === `step-${step.index}` && causalAt
+        ? causalAt
+        : step.finishedAt,
     kind: 'Step',
     title: `${step.step.keyword.trim()} ${step.step.text}`,
     detail: `${step.state} · ${step.durationMs} ms`,
@@ -160,10 +234,30 @@ export function timelineFor(
       detail: `Sequence ${event.sequence}`,
     }),
   )
+  const traceEntries: TimelineEntry[] = attempt.steps.flatMap((step) => {
+    const trace: TraceEntry[] =
+      step.trace ??
+      step.resolvedActions.map((action) => ({
+        occurredAt: step.finishedAt,
+        kind: 'resolved-action' as const,
+        description: action.description,
+      }))
+    return trace.map((entry, index) => ({
+      id: `trace-${step.index}-${index}`,
+      occurredAt: entry.causalAt ?? entry.occurredAt,
+      kind: 'Trace' as const,
+      title: entry.description,
+      detail:
+        entry.kind === 'resolved-action'
+          ? `${step.step.keyword.trim()} ${step.step.text}`
+          : 'Browser activity',
+      causal: causalStepId === `step-${step.index}`,
+    }))
+  })
   const diagnosticEntries: TimelineEntry[] = diagnosticsFor(attempt).map(
     (diagnostic) => ({
       id: `diagnostic-${diagnostic.id}`,
-      occurredAt: diagnostic.occurredAt,
+      occurredAt: diagnostic.causalAt ?? diagnostic.occurredAt,
       kind: 'Diagnostic entry',
       title: diagnostic.message,
       detail: diagnostic.stepText ?? diagnostic.source,
@@ -181,12 +275,14 @@ export function timelineFor(
   )
   const kindOrder: Record<TimelineEntry['kind'], number> = {
     Step: 0,
-    'Run event': 1,
-    'Diagnostic entry': 2,
-    'Test artifact': 3,
+    Trace: 1,
+    'Run event': 2,
+    'Diagnostic entry': 3,
+    'Test artifact': 4,
   }
   const entries = [
     ...stepEntries,
+    ...traceEntries,
     ...eventEntries,
     ...diagnosticEntries,
     ...artifactEntries,

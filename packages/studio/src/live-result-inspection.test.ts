@@ -87,6 +87,26 @@ function failedStep(): TestStepResult {
     state: 'failed',
     resolvedActions: [{ description: 'Click pay on chrome' }],
     message: 'Payment was declined',
+    diagnostics: [
+      {
+        occurredAt: '2026-08-23T12:00:00.004Z',
+        level: 'error',
+        origin: 'console',
+        message: 'Payment was declined',
+        scenarioId: scenario.id,
+        scenarioName: scenario.name,
+        stepIndex: 0,
+        stepText: 'Then payment is captured',
+        executionTargetProfileId: 'chrome',
+      },
+    ],
+    trace: [
+      {
+        occurredAt: '2026-08-23T12:00:00.004Z',
+        kind: 'resolved-action',
+        description: 'Click pay on chrome',
+      },
+    ],
     artifacts: [
       {
         kind: 'screenshot',
@@ -118,7 +138,7 @@ function failedAttempt(): ScenarioAttempt {
     steps: [failedStep()],
     evidenceAvailability: [
       { kind: 'screenshot', state: 'available' },
-      { kind: 'trace', state: 'not-requested' },
+      { kind: 'trace', state: 'available' },
       { kind: 'recording', state: 'not-requested' },
       { kind: 'device-log', state: 'not-requested' },
       { kind: 'diagnostics', state: 'available' },
@@ -184,6 +204,7 @@ test('live Run events update the same Overview, Timeline, Artifacts, and Diagnos
     'Run event',
     'Run event',
     'Step',
+    'Trace',
     'Run event',
     'Diagnostic entry',
     'Test artifact',
@@ -408,11 +429,7 @@ test('represents incomplete evidence while a Scenario attempt is still running',
       .evidenceAvailability,
   ).toEqual([
     { kind: 'screenshot', state: 'available' },
-    {
-      kind: 'trace',
-      state: 'missing',
-      message: 'This Scenario attempt is still running.',
-    },
+    { kind: 'trace', state: 'available' },
     {
       kind: 'recording',
       state: 'missing',
