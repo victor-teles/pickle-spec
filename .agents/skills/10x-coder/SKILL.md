@@ -1,9 +1,11 @@
 ---
 name: 10x-coder
 description: >-
-  A skill for appling coding best practices using KISS, DRY, Clean Code, SOLID, and
-  the repository's local conventions. This is a focused code-quality pass, not a request to run the
-  test suite, type checker, or linter.
+  Apply coding best practices using KISS, DRY, Clean Code, SOLID, small units,
+  and the repository's local conventions. Use for every code change or review,
+  especially when code is repetitive, overlong, difficult to scan, or written
+  in React. This is a focused code-quality pass, not an automatic request to run
+  the full test suite, type checker, or linter.
 ---
 
 # 10x coder
@@ -18,6 +20,9 @@ needs less code, fewer concepts, and less explanation. A small file with one
 job beats a large file that does many.
 
 For concrete before/after patterns, see [examples.md](examples.md).
+
+If the touched code includes React or JSX, read and apply
+[the React quality guide](references/react.md) before editing.
 
 ## Keep the contract narrow
 
@@ -36,20 +41,48 @@ For concrete before/after patterns, see [examples.md](examples.md).
 ## Perform the pass
 
 1. Read repository instructions, `git status`, and the complete relevant diff.
-2. Remove dead code, stale comments, debug logging, commented-out code,
+2. Set a size budget before editing: identify the smallest behavior change and
+   the fewest units that should need to change. Treat substantial growth as a
+   design signal, not an inevitable cost.
+3. Remove dead code, stale comments, debug logging, commented-out code,
    accidental exports, unused branches, and temporary workarounds.
-3. Reuse or extend an existing helper before adding another implementation.
-4. Simplify control flow, names, data movement, and module boundaries.
+4. Reuse or extend an existing helper before adding another implementation.
+5. Run a compression pass over repeated expressions and structural noise.
+   Bind repeated context once, remove repeated guards and fallbacks, and prefer
+   a small typed local helper when the same operation appears three or more
+   times. Do not replace readable repetition with dynamic key loops, casts, or
+   metaprogramming.
+6. Simplify control flow, names, data movement, and module boundaries.
    Name inline parameter types. Resolve config fallbacks before the object.
    If the touched file mixes unrelated concerns or is too large to scan,
    split by concern into neighboring files and keep public exports stable.
-5. Apply Clean Code, KISS, DRY, SOLID, and separation of concerns
+7. Apply Clean Code, KISS, DRY, SOLID, and separation of concerns
    proportionally to the actual problem. Read [examples.md](examples.md)
    when a rewrite could grow a class hierarchy, a new abstraction, a
    shared helper, a config object, or a file split.
-6. Re-read the resulting diff for scope creep, behavioral drift, needless
-   churn, and inconsistent style.
-7. Report what changed and any focused verification performed.
+8. If React or JSX changed, apply the React guide and check component API,
+   state ownership, effects, accessibility, and composition.
+9. Re-read the resulting diff for scope creep, behavioral drift, needless
+   churn, inconsistent style, and avoidable line growth.
+10. Report what changed and any focused verification performed.
+
+## Enforce the simplicity gate
+
+Do not accept code merely because it is correct, typed, and formatted. Before
+finishing, ask these questions against every touched unit:
+
+- Can repeated context, guards, or transformations be expressed once without
+  weakening types or hiding behavior?
+- Did a helper remove duplicated knowledge, or only move one line elsewhere?
+- Is the happy path visible without scrolling through setup, fallbacks, or JSX?
+- Does each function, component, hook, and file have one coherent reason to
+  change?
+- Did the solution add more code, props, state, effects, types, or layers than
+  the behavior requires?
+- Would a future maintainer understand the public contract from the call site?
+
+If the answer exposes avoidable structure, simplify again before reporting the
+task complete.
 
 ## Apply Clean Code
 
@@ -90,6 +123,10 @@ the code.
   ceremony without benefit.
 - Separate domain rules from infrastructure. A policy like `canWithdraw`
   should not query the database.
+- When three or more fields repeat the same contextual transformation, prefer
+  one typed local operation and explicit field assignments. This keeps the
+  type checker useful without repeating the transformation and guard at every
+  property.
 
 ## Apply KISS and DRY
 
@@ -97,6 +134,9 @@ If two solutions solve the same problem correctly, prefer the one that
 requires less code, fewer concepts, and less explanation.
 
 - Prefer the smallest readable solution that satisfies the current behavior.
+- Optimize for semantic density: every line should express behavior, policy,
+  or a name that materially improves comprehension. Formatting a repeated
+  expression across many lines does not make it clean.
 - Do not create a class, helper, or options bag for a one-line transformation.
 - Do not make everything configurable. Add a parameter only when a second
   real caller needs it.
@@ -116,12 +156,22 @@ requires less code, fewer concepts, and less explanation.
   framework-like helpers, and abstractions with only one caller.
 - Accept a little repetition when extraction would hide intent or couple
   unrelated behavior.
+- Compare the final diff with the size budget. Net growth is fine for new
+  behavior, but cleanup or a small behavior change should not multiply the
+  amount of code without a concrete reason.
 
 ## Keep units small and configs obvious
 
 A function is too large when the reader has to reconstruct types, fallbacks,
 and the call at the same time. Extract names first. Do not add a factory or
 class to "fix" size.
+
+Use line count as a review trigger, not a target. Around 40 lines for a
+function or 200 lines for a TypeScript/TSX module, pause and identify the
+distinct responsibilities. Keep a larger unit only when it is cohesive data or
+straight-line behavior that becomes harder to understand when split. Do not
+game the trigger with dense expressions, tiny passthrough helpers, or
+one-function files.
 
 ### Named types
 
@@ -322,6 +372,13 @@ plans, or other untrusted input. They exist so cleanup does not reintroduce
   cleanup or introduce a parallel primitive.
 - Avoid formatting or import churn outside the touched area.
 
+## React
+
+For any React or JSX change, read [the React quality guide](references/react.md)
+and apply its checklist. Its core rule is the same as this skill: keep state
+minimal, rendering pure, effects limited to external synchronization, and
+component APIs composable instead of accumulating boolean modes.
+
 ## Do not
 
 - Change behavior under the label of cleanup.
@@ -335,3 +392,10 @@ plans, or other untrusted input. They exist so cleanup does not reintroduce
 - Use conditional object spreads to omit `undefined` keys.
 - Leave mixed concerns in a large file the diff already touched.
 - Split a cohesive module into one-function files or speculative folders.
+- Repeat the same guard or contextual transformation across several fields
+  when a small typed local operation would state it once.
+- Build a React megacomponent whose data loading, workflow state, event logic,
+  and several independently meaningful UI regions all change for different
+  reasons.
+- Mirror props or derived values into React state, use an Effect for a user
+  event, or add memoization without a measured reason.
