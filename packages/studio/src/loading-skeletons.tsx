@@ -78,25 +78,25 @@ function StudioShellSkeleton() {
       role="status"
       aria-busy="true"
       aria-label="Opening project"
-      className="flex h-screen flex-col overflow-hidden"
+      className="studio-shell flex h-screen flex-col overflow-hidden"
     >
       <span className="sr-only">Opening project…</span>
-      <header className="flex items-center justify-between border-b border-border bg-card px-6 py-3">
-        <Skeleton className="h-6 w-40" />
-        <Skeleton className="h-5 w-16 rounded-full" />
+      <header className="studio-topbar flex min-h-16 flex-wrap items-center justify-between gap-3 border-b border-border px-4 py-3 sm:flex-nowrap sm:px-8 sm:py-2">
+        <Skeleton className="h-7 w-44" />
+        <div className="flex items-center gap-2 max-sm:order-3 max-sm:w-full">
+          <Skeleton className="h-8 w-24 rounded-full" />
+          <Skeleton className="h-8 w-20 rounded-full" />
+          <Skeleton className="h-6 w-16 rounded-full" />
+        </div>
       </header>
-      <div className="flex gap-2 border-b border-border px-2 py-1">
-        <Skeleton className="h-7 w-24" />
-        <Skeleton className="h-7 w-20" />
-      </div>
-      <div className="grid min-h-0 flex-1 lg:grid-cols-[16rem_1fr]">
-        <aside className="hidden space-y-2 border-r border-border p-3 lg:block">
-          <Skeleton className="mb-4 h-3 w-24" />
+      <div className="studio-stage grid min-h-0 flex-1 lg:grid-cols-[18rem_1fr]">
+        <aside className="specification-rail hidden space-y-2 border-r border-border p-3 lg:block">
+          <Skeleton className="mb-4 h-6 w-28" />
           {railRows.map((row) => (
-            <Skeleton key={row} className="h-8 w-full" />
+            <Skeleton key={row} className="h-11 w-full rounded-full" />
           ))}
         </aside>
-        <div className="space-y-3 p-6">
+        <div className="space-y-5 p-8">
           <LedgerSkeleton />
         </div>
       </div>

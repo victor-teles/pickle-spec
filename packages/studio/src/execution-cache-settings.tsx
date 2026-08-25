@@ -93,10 +93,13 @@ export function ExecutionCacheSettings(props: ExecutionCacheSettingsProps) {
     0
 
   return (
-    <section className="space-y-3" aria-labelledby="execution-cache-heading">
+    <section
+      className="space-y-5 border-t border-border pt-8"
+      aria-labelledby="execution-cache-heading"
+    >
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="space-y-1">
-          <h2 id="execution-cache-heading" className="text-lg font-medium">
+          <h2 id="execution-cache-heading" className="studio-display text-2xl">
             Execution cache
           </h2>
           <p className="max-w-2xl text-sm text-muted-foreground">

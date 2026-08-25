@@ -1,274 +1,220 @@
 ---
 name: Pickle Spec Studio
-description: Dark Spec Ledger — a clinical local instrument for diagnosing test runs.
+description: Editorial test journal — a warm, precise workspace for authoring Specifications and reading test evidence.
 colors:
-  night-ledger: "oklch(0.145 0.012 250)"
-  raised-plate: "oklch(0.18 0.012 250)"
-  bone: "oklch(0.93 0.01 250)"
-  ink: "oklch(0.145 0.012 250)"
-  mute: "oklch(0.72 0.015 250)"
-  hairline: "oklch(0.72 0.008 250 / 0.16)"
-  well: "oklch(0.22 0.012 250)"
-  brine-tint: "oklch(0.24 0.025 185)"
-  brine-teal: "oklch(0.74 0.08 185)"
-  brine-ink: "oklch(0.16 0.03 185)"
-  cache-amber: "oklch(0.8 0.11 85)"
-  cache-ink: "oklch(0.22 0.05 85)"
-  failure-oxide: "oklch(0.7 0.14 32)"
-  failure-ink: "oklch(0.16 0.03 32)"
-  focus-ring: "oklch(0.72 0.008 250 / 0.4)"
+  primary: "#292524"
+  primary-active: "#0c0a09"
+  ink: "#0c0a09"
+  body: "#4e4e4e"
+  muted: "#66615b"
+  muted-soft: "#a8a29e"
+  hairline: "#e7e5e4"
+  hairline-soft: "#f0efed"
+  hairline-strong: "#d6d3d1"
+  canvas: "#f5f5f5"
+  canvas-soft: "#fafafa"
+  surface-card: "#ffffff"
+  surface-strong: "#f0efed"
+  gradient-mint: "#a7e5d3"
+  gradient-peach: "#f4c5a8"
+  gradient-lavender: "#c8b8e0"
+  gradient-sky: "#a8c8e8"
+  gradient-rose: "#e8b8c4"
+  semantic-error: "#dc2626"
+  semantic-success: "#15803d"
 typography:
-  headline:
-    fontFamily: "Inter, ui-sans-serif, system-ui, sans-serif"
-    fontSize: "1.25rem"
-    fontWeight: 600
-    lineHeight: 1.25
+  display:
+    fontFamily: "'EB Garamond Variable', 'Times New Roman', serif"
+    fontSize: "2.25rem"
+    fontWeight: 400
+    lineHeight: 1
     letterSpacing: "-0.025em"
-  title:
-    fontFamily: "Inter, ui-sans-serif, system-ui, sans-serif"
-    fontSize: "1.125rem"
-    fontWeight: 500
-    lineHeight: 1.4
-    letterSpacing: "normal"
+  section:
+    fontFamily: "'EB Garamond Variable', 'Times New Roman', serif"
+    fontSize: "1.5rem"
+    fontWeight: 400
+    lineHeight: 1.2
+    letterSpacing: "-0.015em"
   body:
-    fontFamily: "Inter, ui-sans-serif, system-ui, sans-serif"
-    fontSize: "0.875rem"
+    fontFamily: "'Inter Variable', sans-serif"
+    fontSize: "1rem"
     fontWeight: 400
     lineHeight: 1.5
-    letterSpacing: "normal"
+    letterSpacing: "0.01em"
   label:
-    fontFamily: "Inter, ui-sans-serif, system-ui, sans-serif"
-    fontSize: "0.875rem"
+    fontFamily: "'Inter Variable', sans-serif"
+    fontSize: "0.9375rem"
     fontWeight: 500
     lineHeight: 1.4
     letterSpacing: "normal"
+  caption:
+    fontFamily: "'Inter Variable', sans-serif"
+    fontSize: "0.75rem"
+    fontWeight: 600
+    lineHeight: 1.4
+    letterSpacing: "0.08em"
+    textTransform: uppercase
   mono:
-    fontFamily: "JetBrains Mono, ui-monospace, monospace"
-    fontSize: "0.625rem"
-    fontWeight: 500
-    lineHeight: 1.4
-    letterSpacing: "normal"
+    fontFamily: "'JetBrains Mono Variable', monospace"
+    fontSize: "0.75rem"
+    fontWeight: 400
+    lineHeight: 1.5
 rounded:
-  sm: "0.25rem"
-  md: "0.375rem"
-  lg: "0.5rem"
+  sm: "0.375rem"
+  md: "0.5rem"
+  lg: "0.75rem"
+  xl: "1rem"
   pill: "9999px"
 spacing:
-  sm: "0.5rem"
-  md: "0.75rem"
-  lg: "1rem"
-  xl: "1.5rem"
+  xxs: "0.25rem"
+  xs: "0.5rem"
+  sm: "0.75rem"
+  base: "1rem"
+  md: "1.25rem"
+  lg: "1.5rem"
+  xl: "2rem"
+  section: "3rem"
 components:
   button-primary:
-    backgroundColor: "{colors.bone}"
-    textColor: "{colors.ink}"
-    rounded: "{rounded.md}"
-    padding: "0 0.5rem"
-    height: "1.75rem"
-    typography: "{typography.label}"
-  button-primary-hover:
-    backgroundColor: "oklch(0.93 0.01 250 / 0.8)"
-    textColor: "{colors.ink}"
-    rounded: "{rounded.md}"
-    padding: "0 0.5rem"
-    height: "1.75rem"
+    backgroundColor: "{colors.primary}"
+    textColor: "#ffffff"
+    rounded: "{rounded.pill}"
+    padding: "0.625rem 1.25rem"
+    height: "2.5rem"
   button-outline:
-    backgroundColor: "oklch(0.72 0.008 250 / 0.08)"
-    textColor: "{colors.bone}"
-    rounded: "{rounded.md}"
-    padding: "0 0.5rem"
-    height: "1.5rem"
-  button-destructive:
-    backgroundColor: "oklch(0.7 0.14 32 / 0.2)"
-    textColor: "{colors.failure-oxide}"
-    rounded: "{rounded.md}"
-    padding: "0 0.5rem"
-    height: "1.75rem"
-  button-passed:
-    backgroundColor: "oklch(0.74 0.08 185 / 0.2)"
-    textColor: "{colors.brine-teal}"
-    rounded: "{rounded.md}"
-    padding: "0 0.5rem"
-    height: "1.5rem"
-  badge-default:
-    backgroundColor: "{colors.well}"
-    textColor: "{colors.bone}"
+    backgroundColor: transparent
+    textColor: "{colors.ink}"
     rounded: "{rounded.pill}"
-    padding: "0.125rem 0.5rem"
-    typography: "{typography.mono}"
-  badge-failed:
-    backgroundColor: "oklch(0.7 0.14 32 / 0.2)"
-    textColor: "{colors.failure-oxide}"
+    padding: "0.5625rem 1.1875rem"
+    height: "2.5rem"
+  badge:
+    backgroundColor: "{colors.surface-strong}"
+    textColor: "{colors.ink}"
     rounded: "{rounded.pill}"
-    padding: "0.125rem 0.5rem"
-    typography: "{typography.mono}"
-  badge-cache-outcome:
-    backgroundColor: "oklch(0.8 0.11 85 / 0.2)"
-    textColor: "{colors.cache-amber}"
-    rounded: "{rounded.pill}"
-    padding: "0.125rem 0.5rem"
-    typography: "{typography.mono}"
-  badge-passed:
-    backgroundColor: "oklch(0.74 0.08 185 / 0.2)"
-    textColor: "{colors.brine-teal}"
-    rounded: "{rounded.pill}"
-    padding: "0.125rem 0.5rem"
-    typography: "{typography.mono}"
-  badge-running:
-    backgroundColor: "{colors.brine-tint}"
-    textColor: "{colors.bone}"
-    rounded: "{rounded.pill}"
-    padding: "0.125rem 0.5rem"
-    typography: "{typography.mono}"
-  nav-active:
-    backgroundColor: "{colors.brine-tint}"
-    textColor: "{colors.bone}"
-    rounded: "{rounded.md}"
-    padding: "0.375rem 0.75rem"
-    typography: "{typography.body}"
+    padding: "0.25rem 0.625rem"
   card:
-    backgroundColor: "{colors.raised-plate}"
-    textColor: "{colors.bone}"
-    rounded: "{rounded.lg}"
+    backgroundColor: "{colors.surface-card}"
+    textColor: "{colors.ink}"
+    rounded: "{rounded.xl}"
+    padding: "1.5rem"
+  input:
+    backgroundColor: "{colors.surface-card}"
+    textColor: "{colors.ink}"
+    rounded: "{rounded.md}"
     padding: "0.75rem 1rem"
+    height: "2.75rem"
 ---
 
 # Design System: Pickle Spec Studio
 
 ## Overview
 
-**Creative North Star: "The Spec Ledger"**
+**Creative North Star: “The Editorial Test Journal”**
 
-Studio is a bound technical ledger that happens to run on a screen. Feature files are the page; test results are the ink; execution mode and Cache outcome are explicit annotations, never hidden state. The operator sits in a dark room with a local project, reading live state the way one reads a night-shift instrument — not a marketing dashboard.
+Studio makes an executable Specification feel like a carefully edited working document. The feature file is the manuscript, Scenarios are its sections, and test evidence is the annotated record of what actually happened. The interface is quiet enough to read for hours but structured enough to operate quickly.
 
-The atmosphere is clinical lab, executed at the craft level of dark developer tools (Vercel, Cursor): near-black cool field, hairline plates, one light primary action, and color reserved for result state. Density is high. Chrome is thin. Empty space is leftover work, not a lifestyle.
+The visual world is a warm off-white editorial canvas with near-black ink, white sheets, fine rules, and generous but deliberate space. Soft pastel atmospheric blooms provide the only non-semantic brand color. This is an operator surface, not a marketing page: editorial character appears in titles, pacing, material, and transitions while controls remain direct and data stays dense.
 
-**Key Characteristics:**
-- Dark cool field with one-step raised plates, never a drop shadow
-- Bone-white primary action; teal and oxide name result state, while amber labels cache behavior
-- Inter for UI, JetBrains Mono for measurements and resolved actions
-- Compact 8px corners, 9px controls, hairline borders
-- Status is a labeled chip, never a color-only dot
+Key characteristics:
 
-## Colors
+- Warm off-white canvas and white paper surfaces; never a developer-tool dark canvas.
+- EB Garamond is the bundled open-source display substitute for licensed Waldenburg Light. Inter carries UI copy; JetBrains Mono carries paths, code, identifiers, and measurements.
+- Near-black pill actions, transparent outlined secondary actions, and pill badges.
+- Pastel mint, peach, lavender, sky, and rose appear only as atmospheric decoration.
+- Success green and error red appear only with a written state or recovery message.
+- Hairline rules and one restrained hover shadow tier provide depth.
 
-A restrained night palette: cool neutrals plus one light action, with semantic inks for failed and passed plus an amber cache annotation.
+## Color rules
 
-### Primary
-- **Bone**: The only large action fill. Used on "Start test run" so the operator can find the next move without scanning for teal.
+**The Ink Action Rule.** The near-black fill identifies the most important available action. Do not introduce a saturated product accent or fill navigation with semantic color.
 
-### Secondary
-- **Brine Teal**: Passed results and the selected nav tint. It is not the product accent for chrome.
+**The Atmospheric Color Rule.** Pastel gradient tokens belong only to soft radial blooms behind headings or in empty decorative space. Never use them as button fills, text color, table status, or syntax highlighting.
 
-### Tertiary
-- **Cache Amber**: Cache outcome labels such as `adaptive fallback` and `uncacheable`. It never replaces the result-state label.
+**The Semantic State Rule.** Green means a spelled successful result. Red means a spelled failed or destructive state. Color never stands alone, and passing, failing, running, cache, and execution-mode labels remain distinct concepts.
 
-### Neutral
-- **Night Ledger**: Canvas behind the whole Studio.
-- **Raised Plate**: Header, cards, matrix, timeline entries.
-- **Well**: Secondary fills and idle chips.
-- **Hairline**: Thin light-gray borders and table rules.
-- **Mute**: Secondary text on Night Ledger (must remain ≥4.5:1).
-
-### Named Rules
-**The Bone Rule.** The light fill is the primary action. Do not paint navigation, tables, or idle chips with Bone.
-
-**The State Ink Rule.** Teal and oxide appear only on labeled result chips or result cells. Amber appears only on a labeled Cache outcome annotation. They do not tint the page.
+**The Reading Contrast Rule.** Body copy uses Body or Ink on Canvas/Card. Muted copy uses Muted, never Muted Soft, when it carries instructions or other required information.
 
 ## Typography
 
-**Display Font:** Inter (with ui-sans-serif, system-ui)
-**Body Font:** Inter (with ui-sans-serif, system-ui)
-**Label/Mono Font:** JetBrains Mono (with ui-monospace)
+Display type is editorial, restrained, and light in impression. EB Garamond’s lightest available variable cut is used at 400; never synthesize bold display headings. Display tracking stays between -0.015em and -0.025em.
 
-**Character:** Inter carries the ledger at developer-tool density. JetBrains Mono is reserved for values — resolved actions, status chips, identifiers — not for atmosphere.
+Inter carries navigation, controls, labels, tables, and prose at 400/500. Body text receives subtle positive tracking for the editorial cadence. JetBrains Mono is reserved for Gherkin, file paths, identifiers, timestamps, resolved actions, and measurements.
 
-### Hierarchy
-- **Headline** (600, 1.25rem, tight tracking): Project name in the header. There is no display size.
-- **Title** (500, 1.125rem): Section titles such as "Test run".
-- **Label** (500, 0.875rem): Table headers, timeline headings, attention items.
-- **Body** (400, 0.875rem, 1.5): Activity lists, empty-state copy, nav items.
-- **Mono** (500, 0.625rem): Status chips. Resolved-action lines stay JetBrains Mono at 0.75rem. Gherkin source in the editor is JetBrains Mono at 13px / 20px line-height.
+Hierarchy:
 
-### Named Rules
-**The Measurement Mono Rule.** Monospace is for data and Gherkin source. Do not set headings, nav, or body copy in JetBrains Mono to look technical.
+- Project/specification display: 36px Garamond, 400, 1.0 line height.
+- Section title: 24px Garamond, 400, 1.2 line height.
+- Card title: 18px Inter, 500.
+- Body: 16px Inter, 400, 1.5 line height.
+- Compact table/control label: 14–15px Inter, 500.
+- Badge: 12px Inter, 600, uppercase, 0.08em tracking.
+- Code and measurement: 12–13px JetBrains Mono.
 
 ## Layout
 
-A full-height column: header, then a single-row area nav, then a master-detail ledger. The left rail (16rem) lists Specifications. The main pane holds the selected Specification, contextual Scenarios / History navigation, the Scenario table (profile columns plus a per-row Run), Needs attention, and the step timeline. Run Specification and Edit Specification form one right-aligned action group in view mode and remain adjacent when the row wraps. Gherkin source and metadata appear only after Edit Specification. Padding is 1.5rem in the main stage, 0.75rem in the header, 0.25rem in the nav. Rhythm is 1rem inside a rail, 1.5rem between table and timeline.
+Studio remains a full-height app shell. The 64px top bar contains the Pickle Spec wordmark, local project name, global areas, and the current run state. Below it, Specifications uses an 18rem master rail and a flexible detail pane.
 
-There is no marketing container or max-width. Studio is an app shell. Specifications is the current room. History belongs to the selected Specification; Runs and Settings remain global areas.
+The selected Specification begins with an editorial heading band. A restrained atmospheric bloom sits behind its right edge without carrying content. Scenarios and History share a pill-shaped contextual switcher. Primary run actions stay together on the right and wrap as one group.
 
-### Named Rules
-**The Scenario-First Rule.** A selected Specification opens directly on its Scenario table. Gherkin source and metadata appear only after Edit Specification.
+The detail pane uses 32px desktop gutters and 16px mobile gutters. Major regions are separated by 32px. Cards use 16–24px internal padding. Tables remain dense enough for comparison but give every interactive row a 40–44px target.
 
-## Elevation & Depth
+On viewports below 1024px the master rail stacks above the detail pane. The top bar preserves global navigation, drops the project subtitle first, and never turns into an icon-only mystery menu. Horizontal data tables scroll inside their own surface.
 
-No shadows. Depth is Night Ledger behind Raised Plate, separated by a 1px light-gray Hairline. Selected nav is a Brine Tint well, not a lift.
+## Depth and material
 
-### Named Rules
-**The Flat Ledger Rule.** Surfaces are flat at rest and in motion. Do not add drop shadows, glows, or stacked cards to fake hierarchy.
+Canvas is `#f5f5f5`; cards and form controls are white. Default cards use a 1px Hairline border with no shadow. Hoverable cards may use the single shadow tier `0 4px 16px rgba(0, 0, 0, 0.04)`. Dialogs may use a larger neutral shadow because they interrupt and protect focus.
 
-## Shapes
-
-Mira density: small instrument corners, 0.5rem on plates and the Scenario table, `rounded-md` on buttons, pills only on status chips. Borders are 1px Hairline. No clipped hero shapes. Tables share the plate radius; inner rows use only a bottom hairline.
+Do not add glass, neon glow, hard offset shadows, nested cards, or gradient borders.
 
 ## Components
 
-Quiet Mira instrument controls. Color names a result; geometry stays compact so the Scenario table can carry the screen.
-
 ### Buttons
-- **Style:** shadcn Mira (`base-mira`). `text-xs/relaxed`, height 1.75rem default / 1.5rem small, `rounded-md`, no shadow. Pressed state scales to 0.98 in 100ms. Focus is a 1px current-color hairline, never a ring.
-- **Primary:** Bone fill, Ink text. Hover is Bone at 80% opacity. Used for Run Specification on the selected file, and for Save Specification while Gherkin is dirty.
-- **Outline:** Hairline border, translucent input fill. Used for pending and running matrix cells, per-Scenario Run, Run all Specifications, Edit Specification, View Specification, Edit metadata, and Propose Specification.
-- **Passed:** Brine Teal tint and ink, with a Tick. Used for a passed matrix cell.
-- **Destructive:** Failure Oxide tint and ink (not a solid fill). Used for a failed matrix cell and for Cancel during a live run.
 
-### Chips
-- **Style:** Mira pills, JetBrains Mono 0.625rem, height 1.25rem. Result variants are Ready Well, failed Oxide tint, passed Teal tint, and running Brine Tint. Cache outcome uses a separate Cache Amber label.
-- **State:** The result chip text is the domain state word (`failed`, `passed`, `running`) except idle, which reads Ready. Color never stands alone. A live run uses Beautiful UI’s Loading State Drive grid: a 3×3 pixel wavefront, a shimmering `running` label, and a mono elapsed timer in the header. Matrix cells carry the same grid beside the spelled state. A finished chip or matrix cell adds a Brine Teal Tick or Failure Oxide Cancel mark. `prefers-reduced-motion` freezes the grid and shimmer; the timer still ticks. Execution mode and Cache outcome appear as adjacent labeled metadata rather than result variants.
+All buttons are shadcn Mira primitives with pill geometry. Primary actions are 40px-high Ink pills with white text. Outline buttons are transparent with Hairline Strong borders. Small table controls may be 32px high. Pressed controls scale to 0.98 over 100ms; reduced motion removes the transform. Focus uses a 2px Ink outline with a 3px offset.
 
-### Cards / Containers
-- **Corner Style:** 0.5rem
-- **Background:** Raised Plate
-- **Shadow Strategy:** none (see Flat Ledger Rule)
-- **Border:** 1px Hairline
-- **Internal Padding:** 0.75rem–1rem
+### Badges and results
+
+Badges use compact uppercase Inter. Ready uses Surface Strong, running uses Ink, passed uses a pale success tint with green text, and failed uses a pale error tint with red text. Every state remains spelled out and may include the existing Mira result mark or loading grid.
 
 ### Navigation
-- Mira-sized buttons: height 1.75rem, `text-xs/relaxed`, `rounded-md`. Active is Brine Tint with Bone text. No icons. Global areas are Specifications, Runs, and Settings. Scenarios and History switch context within the selected Specification.
 
-### Specification list
-Left rail, 16rem. Group label is 2rem tall at `text-xs`. Each Specification is a Mira sidebar menu item (`h-8`, `text-xs`, `p-2`) with the Scenario count in JetBrains Mono. The selected item is a Brine Tint well.
-
-### Gherkin editor
-Opt-in after Edit Specification. Metadata controls belong to this mode and apply changes to the same unsaved source buffer. Monaco sits on a Well plate with the `pickle-ledger` theme (Night Ledger field, Bone text, Mute comments, no brine / amber / oxide on tokens). Completions cover Gherkin keywords, Specification state tags, and project steps. AI assistance (prompt, optional new path, Propose Specification) sits under the editor, never in view mode. The configured model remains in Settings instead of repeating on the Specification screen. Unsaved Gherkin is a Mute mono status; leaving edit with a dirty buffer opens a discard dialog.
+Global and contextual navigation use ghost or Surface Strong pill buttons. Active navigation is neutral; it never borrows green, red, or atmospheric pastel color. The Specification rail uses 44px rows, generous truncation behavior, and an explicit Scenario count.
 
 ### Scenario table
-Signature component: a bordered plate table for the selected Specification. Row headers are Scenario names; columns are execution target profiles, then a per-row Run. Before a run, profile cells read pending. A result cell is a small button whose label is the result state, with the Drive pixel grid while running and a Tick or Cancel mark when finished. The selected cell uses a stronger hairline, not a ring; the timeline follows the worst Needs attention cell until the operator pins one.
 
-### Needs attention
-Hidden until a failed or infrastructure-error cell exists. Each row is a plate button with the Scenario name, a state chip, the profile, and “Open step timeline.” Adaptive fallback stays visible in the selected result metadata without turning a passing result into an attention item.
+The Scenario matrix is the signature white paper surface: 16px corners, a Hairline outline, editorial row spacing, and no decorative tint. Profile results are labeled buttons. A selected result gains a stronger neutral border. The table remains horizontally scrollable and keeps Scenario names readable before profile columns.
 
-### Step timeline
-A vertical list of Hairline plates. Step intent in Sans; deterministic actions and assertions in Mono; execution mode and Cache outcome in labeled metadata; errors in Failure Oxide text; screenshots as bordered images, max height 16rem.
+### Cards, timelines, and evidence
 
-## Do's and Don'ts
+Settings groups, run summaries, evidence panels, and timeline entries use the same white sheet family rather than inventing sub-themes. Dense diagnostic values remain mono; titles and explanations remain sans. Screenshot and video evidence keeps its own aspect ratio inside a bordered neutral frame.
 
-### Do:
-- **Do** keep the canvas dark and cool (Night Ledger) with one-step Raised Plates.
-- **Do** put the next operator action on a Bone button (Run Specification, or Save Specification while editing), and swap Run for Cancel while a test run is live.
-- **Do** keep view mode focused on Scenarios and History; Gherkin and metadata stay behind Edit Specification.
-- **Do** spell the test-result state on every chip and matrix cell, with the Drive pixel grid while running and a Tick or Cancel mark when the cell finishes.
-- **Do** use JetBrains Mono for resolved actions, status, tags, and Gherkin source; Inter for everything else.
-- **Do** keep Mira density on controls (compact type, no shadow) and Hairline plates on the ledger.
+### Gherkin editor
 
-### Don't:
-- **Don't** add a tracked uppercase kicker above the project name.
-- **Don't** introduce drop shadows, glass, or neon status dots.
-- **Don't** use a focus ring on buttons. Focus is a 1px current-color hairline.
-- **Don't** replace a spelled result state with a color-only icon.
-- **Don't** spend Brine Teal on chrome, marketing blocks, or Gherkin syntax highlighting.
-- **Don't** split authoring into Structured and Source tabs.
-- **Don't** invent a second source of truth in the UI — feature files and Git remain off-canvas systems of record.
-- **Don't** use Cucumber, Playwright, or "self-healing" visual language.
+The editor is a white document well using the `pickle-editorial` Monaco theme. Ink carries keywords and source, Muted carries comments and secondary tokens, and no pastel or semantic color is used as syntax decoration. Focus, selection, suggestions, scrollbars, and the caret follow the same neutral palette.
+
+### Empty, loading, and error states
+
+Empty states use direct product language and the next available action. Loading skeletons mirror the final editorial shell rather than flashing a different chrome. Error messages name the problem and preserve the recovery action; red is never the only signal.
+
+## Motion
+
+Motion is quiet and functional. The existing live-run pixel wave remains the authored state moment. Hover and surface transitions use the shared exponential ease-out and complete in 150–200ms. The atmospheric bloom is static. `prefers-reduced-motion` removes shimmer, transforms, and animated transitions while timers and written states continue updating.
+
+## Do and don’t
+
+Do:
+
+- Use the bundled editorial serif for page and section titles.
+- Keep the most important action as the one Ink-filled pill.
+- Let white space separate tasks while keeping tables and evidence operationally dense.
+- Keep every run state, execution mode, and cache outcome written in domain language.
+- Theme selection, focus, scrollbars, dialogs, loading, and editor chrome from this palette.
+
+Don’t:
+
+- Reintroduce a dark developer-tools canvas.
+- Add a tracked kicker above a heading.
+- Use pastel blooms inside controls, tables, status chips, or syntax.
+- Bold display copy or replace the serif with a system display face.
+- Use icons without labels for primary navigation or run state.
+- Invent cloud, collaboration, or approval concepts that are not part of the local-first product.

@@ -282,7 +282,7 @@ export function HistoryPanel(props: HistoryPanelProps) {
 
   if (history === undefined && error === undefined) {
     return (
-      <section className="min-h-0 flex-1 overflow-auto px-6 py-4">
+      <section className="min-h-0 flex-1 overflow-auto px-4 py-8 sm:px-8">
         <LedgerLoadingSkeleton label="Loading Test run history" />
       </section>
     )
@@ -303,11 +303,11 @@ export function HistoryPanel(props: HistoryPanelProps) {
   return (
     <section
       aria-labelledby="run-history-title"
-      className="min-h-0 flex-1 space-y-5 overflow-auto px-6 py-4"
+      className="min-h-0 flex-1 space-y-8 overflow-auto px-4 py-8 sm:px-8"
     >
       <header className="flex flex-wrap items-start justify-between gap-3">
         <div className="space-y-1">
-          <h3 id="run-history-title" className="text-sm font-medium">
+          <h3 id="run-history-title" className="studio-display text-2xl">
             Test run history
           </h3>
           <p className="text-sm text-muted-foreground">
@@ -494,7 +494,9 @@ export function HistoryPanel(props: HistoryPanelProps) {
         >
           <header className="flex flex-wrap items-center justify-between gap-3">
             <div>
-              <h3 className="text-sm font-medium">Test run {reviewed.id}</h3>
+              <h3 className="studio-display text-2xl">
+                Test run {reviewed.id}
+              </h3>
               <p className="text-xs text-muted-foreground">
                 {reviewed.sourceRunId
                   ? `Rerun of ${reviewed.sourceRunId}`
@@ -676,11 +678,11 @@ export function HistoryPanel(props: HistoryPanelProps) {
 
       {history ? (
         <section
-          className="flex flex-wrap items-center justify-between gap-4 rounded-lg border border-border bg-card p-4"
+          className="flex flex-wrap items-center justify-between gap-5 rounded-xl border border-border bg-card p-6"
           aria-labelledby="run-storage-title"
         >
           <div className="min-w-0 space-y-1">
-            <h3 id="run-storage-title" className="text-sm font-medium">
+            <h3 id="run-storage-title" className="studio-display text-2xl">
               Local test run storage
             </h3>
             <p className="text-xs text-muted-foreground">
@@ -768,8 +770,8 @@ function RunComparison(props: { comparison: TestRunComparison }) {
 
   return (
     <section className="space-y-2">
-      <h3 className="text-sm font-medium">Run comparison</h3>
-      <div className="rounded-lg border border-border bg-card">
+      <h3 className="studio-display text-2xl">Run comparison</h3>
+      <div className="rounded-xl border border-border bg-card">
         <Table aria-label="Run comparison">
           <TableHeader>
             <TableRow>

@@ -4,30 +4,31 @@ import type { ComponentProps } from 'react'
 import { cn } from '../../lib/utils'
 
 const buttonVariants = cva(
-  "group/button inline-flex shrink-0 items-center justify-center rounded-md border border-transparent bg-clip-padding text-xs/relaxed font-medium whitespace-nowrap outline-none select-none transition-[transform,background-color,border-color,color,opacity] duration-150 ease-[cubic-bezier(0.23,1,0.32,1)] hover:duration-150 active:not-aria-[haspopup]:scale-[0.98] active:duration-100 disabled:pointer-events-none disabled:opacity-50 focus-visible:border-current/35 aria-pressed:border-foreground/25 aria-invalid:border-destructive [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4 motion-reduce:transition-none motion-reduce:active:scale-100",
+  "group/button inline-flex shrink-0 items-center justify-center rounded-full border border-transparent bg-clip-padding text-[0.9375rem] font-medium leading-none whitespace-nowrap outline-none select-none transition-[transform,background-color,border-color,color,opacity,box-shadow] duration-150 ease-[cubic-bezier(0.23,1,0.32,1)] active:not-aria-[haspopup]:scale-[0.98] active:duration-100 disabled:pointer-events-none disabled:opacity-45 focus-visible:border-current/40 aria-pressed:border-foreground/30 aria-invalid:border-destructive [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4 motion-reduce:transition-none motion-reduce:active:scale-100",
   {
     variants: {
       variant: {
-        default: 'bg-primary text-primary-foreground hover:bg-primary/80',
+        default:
+          'bg-primary text-primary-foreground hover:bg-primary/90 hover:shadow-[0_4px_16px_rgb(0_0_0/0.08)]',
         outline:
-          'border-border hover:border-foreground/20 hover:bg-input/40 hover:text-foreground aria-expanded:bg-muted aria-expanded:text-foreground dark:bg-input/20',
+          'border-input bg-transparent text-foreground hover:border-foreground/35 hover:bg-card aria-expanded:bg-muted aria-expanded:text-foreground',
         secondary:
-          'bg-secondary text-secondary-foreground hover:bg-[color-mix(in_oklch,var(--secondary),var(--foreground)_5%)] aria-expanded:bg-secondary aria-expanded:text-secondary-foreground',
+          'bg-secondary text-secondary-foreground hover:bg-[color-mix(in_srgb,var(--secondary),var(--foreground)_6%)] aria-expanded:bg-secondary aria-expanded:text-secondary-foreground',
         ghost:
-          'hover:bg-muted hover:text-foreground aria-expanded:bg-muted aria-expanded:text-foreground dark:hover:bg-muted/50',
+          'text-muted-foreground hover:bg-muted hover:text-foreground aria-expanded:bg-muted aria-expanded:text-foreground',
         destructive:
-          'border-destructive/20 bg-destructive/10 text-destructive hover:border-destructive/35 hover:bg-destructive/20 dark:bg-destructive/20 dark:hover:bg-destructive/30',
+          'border-destructive/15 bg-destructive/8 text-destructive hover:border-destructive/30 hover:bg-destructive/14',
         link: 'text-primary underline-offset-4 hover:underline',
         passed:
-          'border-passed/20 bg-passed/10 text-passed hover:border-passed/35 hover:bg-passed/20 dark:bg-passed/20 dark:hover:bg-passed/30',
+          'border-passed/15 bg-passed/8 text-passed hover:border-passed/30 hover:bg-passed/14',
       },
       size: {
         default:
-          "h-7 gap-1 px-2 text-xs/relaxed has-data-[icon=inline-end]:pr-1.5 has-data-[icon=inline-start]:pl-1.5 [&_svg:not([class*='size-'])]:size-3.5",
-        xs: "h-5 gap-1 rounded-sm px-2 text-[0.625rem] has-data-[icon=inline-end]:pr-1.5 has-data-[icon=inline-start]:pl-1.5 [&_svg:not([class*='size-'])]:size-2.5",
-        sm: "h-6 gap-1 px-2 text-xs/relaxed has-data-[icon=inline-end]:pr-1.5 has-data-[icon=inline-start]:pl-1.5 [&_svg:not([class*='size-'])]:size-3",
-        lg: "h-8 gap-1 px-2.5 text-xs/relaxed has-data-[icon=inline-end]:pr-2 has-data-[icon=inline-start]:pl-2 [&_svg:not([class*='size-'])]:size-4",
-        icon: "size-7 [&_svg:not([class*='size-'])]:size-3.5",
+          "h-10 gap-1.5 px-5 has-data-[icon=inline-end]:pr-4 has-data-[icon=inline-start]:pl-4 [&_svg:not([class*='size-'])]:size-4",
+        xs: "h-6 gap-1 px-2.5 text-xs has-data-[icon=inline-end]:pr-2 has-data-[icon=inline-start]:pl-2 [&_svg:not([class*='size-'])]:size-3",
+        sm: "h-8 gap-1 px-3 text-sm has-data-[icon=inline-end]:pr-2.5 has-data-[icon=inline-start]:pl-2.5 [&_svg:not([class*='size-'])]:size-3.5",
+        lg: "h-11 gap-1.5 px-5 has-data-[icon=inline-end]:pr-4 has-data-[icon=inline-start]:pl-4 [&_svg:not([class*='size-'])]:size-4",
+        icon: "size-10 [&_svg:not([class*='size-'])]:size-4",
       },
     },
     defaultVariants: {

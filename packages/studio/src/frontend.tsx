@@ -78,7 +78,7 @@ if (token) {
 }
 const initialHistoryLocation = parseHistoryLocation(location.search)
 const areas = ['Specifications', 'Settings'] as const
-const specificationRowHeight = 32
+const specificationRowHeight = 44
 
 async function api<T>(path: string, init?: RequestInit): Promise<T> {
   const headers = new Headers(init?.headers)
@@ -342,9 +342,9 @@ function StudioApp() {
 
   if (error && !project) {
     return (
-      <main className="flex min-h-screen items-start p-6">
-        <div className="max-w-lg space-y-3 rounded-md border border-border bg-card px-4 py-3">
-          <p role="alert" className="text-sm text-destructive">
+      <main className="studio-shell flex min-h-screen items-center justify-center p-6">
+        <div className="max-w-lg space-y-5 rounded-xl border border-border bg-card p-6 shadow-[0_4px_16px_rgb(0_0_0/0.04)]">
+          <p role="alert" className="text-base text-destructive">
             {error}
           </p>
           <Button
@@ -368,33 +368,40 @@ function StudioApp() {
   }
 
   return (
-    <div className="flex h-screen flex-col overflow-hidden">
-      <header className="flex items-center justify-between border-b border-border bg-card px-6 py-3">
-        <h1 className="text-xl font-semibold tracking-tight">{project.name}</h1>
+    <div className="studio-shell flex h-screen flex-col overflow-hidden">
+      <header className="studio-topbar flex min-h-16 shrink-0 flex-wrap items-center gap-3 border-b border-border px-4 py-3 sm:flex-nowrap sm:gap-4 sm:px-8 sm:py-2">
+        <div className="flex min-w-0 items-center gap-3">
+          <span className="studio-wordmark shrink-0">Pickle Spec</span>
+          <span aria-hidden="true" className="h-5 w-px bg-border" />
+          <span className="studio-project-name hidden truncate sm:block">
+            {project.name}
+          </span>
+        </div>
+        {authoring ? null : (
+          <nav
+            aria-label="Studio"
+            className="order-3 flex w-full items-center gap-1 sm:order-none sm:ml-auto sm:w-auto"
+          >
+            {areas.map((area) => (
+              <Button
+                key={area}
+                size="sm"
+                variant={area === currentArea ? 'secondary' : 'ghost'}
+                aria-current={area === currentArea ? 'page' : undefined}
+                onClick={() => {
+                  setCurrentArea(area)
+                  if (area === 'Settings') leaveHistory()
+                }}
+              >
+                {area}
+              </Button>
+            ))}
+          </nav>
+        )}
         <StatusBadge state={aggregate} />
       </header>
-      {authoring ? null : (
-        <nav
-          aria-label="Studio"
-          className="flex gap-px border-b border-border px-2 py-1"
-        >
-          {areas.map((area) => (
-            <Button
-              key={area}
-              variant={area === currentArea ? 'secondary' : 'ghost'}
-              aria-current={area === currentArea ? 'page' : undefined}
-              onClick={() => {
-                setCurrentArea(area)
-                if (area === 'Settings') leaveHistory()
-              }}
-            >
-              {area}
-            </Button>
-          ))}
-        </nav>
-      )}
       {currentArea === 'Settings' ? (
-        <div className="min-h-0 flex-1 overflow-auto">
+        <div className="studio-stage min-h-0 flex-1 overflow-auto">
           <SettingsPanel
             project={project}
             api={api}
@@ -405,8 +412,8 @@ function StudioApp() {
       ) : (
         <div
           className={cn(
-            'min-h-0 flex-1',
-            authoring ? 'flex' : 'grid lg:grid-cols-[16rem_1fr]',
+            'studio-stage min-h-0 flex-1',
+            authoring ? 'flex' : 'grid lg:grid-cols-[18rem_1fr]',
           )}
         >
           {authoring ? null : (
@@ -435,16 +442,19 @@ function StudioApp() {
             {selected ? (
               <>
                 <header
-                  className={
+                  className={cn(
+                    'specification-heading border-b border-border px-4 py-6 sm:px-8 sm:py-8',
                     authoring
-                      ? 'flex min-h-0 flex-1 flex-col space-y-3 border-b border-border px-6 py-4'
-                      : 'shrink-0 space-y-3 border-b border-border px-6 py-4'
-                  }
+                      ? 'flex min-h-0 flex-1 flex-col space-y-5'
+                      : 'shrink-0 space-y-5',
+                  )}
                 >
-                  <div className="flex shrink-0 flex-wrap items-start justify-between gap-3">
-                    <div className="min-w-0 space-y-1">
-                      <h2 className="text-lg font-medium">{selected.name}</h2>
-                      <p className="truncate font-mono text-xs text-muted-foreground">
+                  <div className="flex shrink-0 flex-wrap items-start justify-between gap-5">
+                    <div className="min-w-0 space-y-2">
+                      <h1 className="studio-display text-3xl leading-none sm:text-4xl">
+                        {selected.name}
+                      </h1>
+                      <p className="truncate font-mono text-xs text-muted-foreground sm:text-sm">
                         {selected.uri}
                       </p>
                     </div>
@@ -467,13 +477,13 @@ function StudioApp() {
                     className={cn(
                       authoring
                         ? 'flex min-h-0 flex-1 flex-col'
-                        : 'flex flex-wrap items-center gap-2',
+                        : 'flex flex-wrap items-center gap-3',
                     )}
                   >
                     {authoring ? null : (
                       <nav
                         aria-label="Specification"
-                        className="flex w-fit gap-px rounded-md bg-muted/50 p-0.5"
+                        className="flex w-fit gap-1 rounded-full bg-muted p-1"
                       >
                         <Button
                           type="button"
@@ -516,7 +526,7 @@ function StudioApp() {
                       className={cn(
                         authoring
                           ? 'flex min-h-0 flex-1 flex-col'
-                          : 'ml-auto flex shrink-0 items-center gap-2',
+                          : 'flex w-full flex-wrap items-center gap-2 sm:ml-auto sm:w-auto sm:shrink-0 sm:justify-end',
                       )}
                     >
                       {authoring ? null : running ? (
@@ -617,7 +627,7 @@ function StudioApp() {
                     onRerun={startRun}
                   />
                 ) : (
-                  <div className="min-h-0 flex-1 space-y-6 overflow-auto px-6 py-4">
+                  <div className="min-h-0 flex-1 space-y-8 overflow-auto px-4 py-8 sm:px-8">
                     <ScenarioTable
                       profiles={project.profiles}
                       scenarios={selected.scenarios}
@@ -634,7 +644,7 @@ function StudioApp() {
                     />
                     {attention.length > 0 ? (
                       <div>
-                        <h3 className="mb-2 text-sm font-medium">
+                        <h3 className="studio-display mb-3 text-2xl">
                           Needs attention
                         </h3>
                         <ul
@@ -665,7 +675,7 @@ function StudioApp() {
                                 type="button"
                                 variant="outline"
                                 className={cn(
-                                  'h-auto w-full min-w-0 flex-col items-stretch gap-1 bg-card px-3 py-2 text-left',
+                                  'h-auto w-full min-w-0 flex-col items-stretch gap-1.5 rounded-xl bg-card px-4 py-3 text-left',
                                   isSelectedCell(selectedResult, cell)
                                     ? 'border-foreground/25'
                                     : 'border-border',
@@ -716,7 +726,7 @@ function StudioApp() {
                 )}
               </>
             ) : (
-              <p className="p-6 text-sm text-muted-foreground">
+              <p className="p-8 text-base text-muted-foreground">
                 No Specifications found. Add a feature file matching the project
                 configuration.
               </p>
@@ -782,19 +792,19 @@ function SpecificationList(props: {
   return (
     <nav
       aria-label="Specifications"
-      className="flex min-h-0 flex-col border-b border-border lg:border-r lg:border-b-0"
+      className="specification-rail flex min-h-0 flex-col border-b border-border lg:border-r lg:border-b-0"
     >
-      <div className="flex h-8 shrink-0 items-center px-2">
-        <h2 className="text-xs text-muted-foreground">Specifications</h2>
+      <div className="flex h-14 shrink-0 items-center px-4">
+        <h2 className="studio-display text-xl">Specifications</h2>
       </div>
       {props.specifications.length === 0 ? (
-        <p className="px-2 pb-3 text-xs/relaxed text-muted-foreground">
+        <p className="px-4 pb-4 text-sm/relaxed text-muted-foreground">
           None in this project.
         </p>
       ) : (
         <ul
           ref={virtual.containerRef}
-          className="flex min-h-0 flex-1 flex-col overflow-auto px-2 pb-2"
+          className="flex min-h-0 flex-1 flex-col overflow-auto px-3 pb-3"
         >
           {virtual.before > 0 ? (
             <li
@@ -820,7 +830,7 @@ function SpecificationList(props: {
                   aria-label={specification.name}
                   aria-current={current ? 'true' : undefined}
                   className={cn(
-                    'h-full w-full min-w-0 justify-between p-2 text-left',
+                    'h-full w-full min-w-0 justify-between px-3 text-left text-sm',
                     current && 'bg-accent font-medium text-accent-foreground',
                   )}
                   onClick={() => props.onSelect(specification.id)}
@@ -843,7 +853,7 @@ function SpecificationList(props: {
           ) : null}
         </ul>
       )}
-      <div className="border-t border-border p-2">
+      <div className="border-t border-border p-3">
         {props.canRun ? (
           <Button
             type="button"
@@ -876,7 +886,7 @@ function ScenarioTable(props: {
   }
 
   return (
-    <div className="w-full min-w-0 max-w-full overflow-auto rounded-lg border border-border bg-card">
+    <div className="scenario-table w-full min-w-0 max-w-full overflow-auto rounded-xl border border-border bg-card">
       <Table
         aria-label="Scenarios"
         className="text-sm"
@@ -884,13 +894,13 @@ function ScenarioTable(props: {
       >
         <TableHeader>
           <TableRow>
-            <TableHead className="px-3 py-2">Scenario</TableHead>
+            <TableHead>Scenario</TableHead>
             {props.profiles.map((profile) => (
-              <TableHead key={profile} className="w-24 px-3 py-2">
+              <TableHead key={profile} className="w-32">
                 {profile}
               </TableHead>
             ))}
-            <TableHead className="w-16 px-3 py-2 text-right">
+            <TableHead className="w-20 text-right">
               <span className="sr-only">Run</span>
             </TableHead>
           </TableRow>
@@ -900,7 +910,7 @@ function ScenarioTable(props: {
             <TableRow>
               <TableCell
                 colSpan={2 + props.profiles.length}
-                className="px-3 py-6 text-muted-foreground"
+                className="py-8 text-muted-foreground"
               >
                 This Specification has no Scenarios.
               </TableCell>
@@ -910,7 +920,7 @@ function ScenarioTable(props: {
               <TableRow key={scenario.id}>
                 <TableHead
                   scope="row"
-                  className="max-w-0 truncate px-3 py-2"
+                  className="max-w-0 truncate"
                   title={scenario.name}
                 >
                   {scenario.name}
@@ -922,7 +932,7 @@ function ScenarioTable(props: {
                     ? isSelectedCell(props.selected, cell)
                     : false
                   return (
-                    <TableCell key={profile} className="w-24 px-3 py-2">
+                    <TableCell key={profile} className="w-32">
                       {cell ? (
                         <Button
                           type="button"
@@ -942,7 +952,7 @@ function ScenarioTable(props: {
                     </TableCell>
                   )
                 })}
-                <TableCell className="w-16 px-3 py-2 text-right">
+                <TableCell className="w-20 text-right">
                   {scenario.canRun !== false ? (
                     <Button
                       type="button"

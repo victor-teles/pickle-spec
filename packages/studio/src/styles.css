@@ -1,11 +1,16 @@
+@import "@fontsource-variable/eb-garamond";
+@import "@fontsource-variable/inter";
+@import "@fontsource-variable/jetbrains-mono";
 @import "tailwindcss";
 @import "tw-animate-css";
 
 @custom-variant dark (&:is(.dark *));
 
 @theme inline {
-  --font-sans: Inter, ui-sans-serif, system-ui, sans-serif;
-  --font-mono: "JetBrains Mono", ui-monospace, monospace;
+  --font-sans: "Inter Variable", Inter, ui-sans-serif, system-ui, sans-serif;
+  --font-serif: "EB Garamond Variable", "Times New Roman", serif;
+  --font-mono:
+    "JetBrains Mono Variable", "JetBrains Mono", ui-monospace, monospace;
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-card: var(--card);
@@ -34,48 +39,139 @@
 }
 
 :root {
-  color-scheme: dark;
-  --radius: 0.5rem;
+  color-scheme: light;
+  --radius: 1rem;
   --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
-  --background: oklch(0.145 0.012 250);
-  --foreground: oklch(0.93 0.01 250);
-  --card: oklch(0.18 0.012 250);
-  --card-foreground: oklch(0.93 0.01 250);
-  --popover: oklch(0.18 0.012 250);
-  --popover-foreground: oklch(0.93 0.01 250);
-  --primary: oklch(0.93 0.01 250);
-  --primary-foreground: oklch(0.145 0.012 250);
-  --secondary: oklch(0.22 0.012 250);
-  --secondary-foreground: oklch(0.88 0.01 250);
-  --muted: oklch(0.22 0.01 250);
-  --muted-foreground: oklch(0.72 0.015 250);
-  --accent: oklch(0.24 0.025 185);
-  --accent-foreground: oklch(0.93 0.02 185);
-  --destructive: oklch(0.7 0.14 32);
-  --destructive-foreground: oklch(0.16 0.03 32);
-  --border: oklch(0.72 0.008 250 / 0.16);
-  --input: oklch(0.72 0.008 250 / 0.16);
-  --ring: oklch(0.72 0.008 250 / 0.28);
-  --passed: oklch(0.74 0.08 185);
-  --passed-foreground: oklch(0.16 0.03 185);
+  --background: #f5f5f5;
+  --foreground: #0c0a09;
+  --card: #ffffff;
+  --card-foreground: #0c0a09;
+  --popover: #ffffff;
+  --popover-foreground: #0c0a09;
+  --primary: #292524;
+  --primary-foreground: #ffffff;
+  --secondary: #f0efed;
+  --secondary-foreground: #292524;
+  --muted: #f0efed;
+  --muted-foreground: #66615b;
+  --accent: #ebe9e6;
+  --accent-foreground: #0c0a09;
+  --destructive: #dc2626;
+  --destructive-foreground: #ffffff;
+  --border: #e7e5e4;
+  --input: #d6d3d1;
+  --ring: #292524;
+  --passed: #15803d;
+  --passed-foreground: #ffffff;
+  --gradient-mint: #a7e5d3;
+  --gradient-peach: #f4c5a8;
+  --gradient-lavender: #c8b8e0;
+  --gradient-sky: #a8c8e8;
+  --gradient-rose: #e8b8c4;
 }
 
 @layer base {
   * {
     @apply border-border;
-    scrollbar-color: oklch(0.72 0.008 250 / 0.22) transparent;
+    scrollbar-color: #c7c3be transparent;
+  }
+  html,
+  body,
+  #root {
+    min-height: 100%;
   }
   body {
     @apply bg-background text-foreground font-sans antialiased;
+    letter-spacing: 0.01em;
   }
   ::selection {
-    background: oklch(0.74 0.08 185 / 0.35);
-    color: oklch(0.93 0.01 250);
+    background: color-mix(in srgb, var(--gradient-sky), white 25%);
+    color: var(--foreground);
   }
   :focus-visible {
-    outline: 1px solid oklch(0.72 0.008 250 / 0.4);
-    outline-offset: 2px;
+    outline: 2px solid var(--ring);
+    outline-offset: 3px;
   }
+  a {
+    text-underline-offset: 0.2em;
+  }
+  input::placeholder,
+  textarea::placeholder {
+    color: #777169;
+  }
+}
+
+.studio-shell {
+  isolation: isolate;
+  background:
+    radial-gradient(
+      circle at 87% 11%,
+      color-mix(in srgb, var(--gradient-lavender), transparent 76%) 0,
+      transparent 25rem
+    ),
+    var(--background);
+}
+
+.studio-topbar {
+  background: color-mix(in srgb, var(--background), white 22%);
+}
+
+.studio-wordmark,
+.studio-display {
+  font-family: var(--font-serif);
+  font-weight: 400;
+  letter-spacing: -0.025em;
+}
+
+.studio-wordmark {
+  font-size: 1.5rem;
+  line-height: 1;
+}
+
+.studio-project-name {
+  color: var(--muted-foreground);
+  font-size: 0.875rem;
+}
+
+.studio-stage {
+  background: color-mix(in srgb, var(--background), transparent 12%);
+}
+
+.specification-rail {
+  background: color-mix(in srgb, var(--card), transparent 34%);
+}
+
+.specification-heading {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  background: color-mix(in srgb, var(--background), white 20%);
+}
+
+.specification-heading::after {
+  position: absolute;
+  z-index: -1;
+  right: -7rem;
+  bottom: -10rem;
+  width: 26rem;
+  height: 26rem;
+  border-radius: 9999px;
+  background:
+    radial-gradient(circle at 35% 38%, var(--gradient-mint), transparent 48%),
+    radial-gradient(circle at 65% 52%, var(--gradient-peach), transparent 52%),
+    radial-gradient(
+      circle at 48% 74%,
+      var(--gradient-lavender),
+      transparent 54%
+    );
+  content: "";
+  filter: blur(30px);
+  opacity: 0.48;
+  pointer-events: none;
+}
+
+.scenario-table {
+  box-shadow: 0 1px 3px rgb(12 10 9 / 0.025);
 }
 
 @keyframes pixel-on {
@@ -136,7 +232,7 @@
 
 .monaco-editor,
 .monaco-editor .overflow-guard {
-  border-radius: 0.5rem;
+  border-radius: 1rem;
 }
 
 .monaco-editor .suggest-widget {

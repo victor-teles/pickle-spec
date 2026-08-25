@@ -49,7 +49,7 @@ test('renders input groups with one visible focus boundary', () => {
   expect(markup).toContain('data-slot="input-group"')
   expect(markup).toContain('data-slot="input-group-addon"')
   expect(markup).toContain('data-slot="input-group-control"')
-  expect(markup).toContain('focus-within:border-foreground/30')
+  expect(markup).toContain('focus-within:border-foreground')
   expect(markup).not.toContain('focus-visible:ring')
 })
 

@@ -344,11 +344,21 @@ export function SettingsPanel<
   const suites: readonly StudioSuite[] = props.project.suiteDetails ?? []
 
   return (
-    <main className="min-w-0 space-y-8 p-6">
+    <main className="mx-auto min-w-0 max-w-6xl space-y-10 p-6 sm:p-8">
+      <header className="space-y-2">
+        <h1 className="studio-display text-4xl">Project settings</h1>
+        <p className="max-w-2xl text-base text-muted-foreground">
+          Configure execution, credentials, and the local repository for this
+          project.
+        </p>
+      </header>
       <ExecutionCacheSettings api={props.api} />
 
-      <section className="space-y-3" aria-labelledby="suites-heading">
-        <h2 id="suites-heading" className="text-lg font-medium">
+      <section
+        className="space-y-5 border-t border-border pt-8"
+        aria-labelledby="suites-heading"
+      >
+        <h2 id="suites-heading" className="studio-display text-2xl">
           Test suites
         </h2>
         <div className="flex flex-wrap gap-1">
@@ -435,8 +445,11 @@ export function SettingsPanel<
         </Button>
       </section>
 
-      <section className="space-y-3" aria-labelledby="profiles-heading">
-        <h2 id="profiles-heading" className="text-lg font-medium">
+      <section
+        className="space-y-5 border-t border-border pt-8"
+        aria-labelledby="profiles-heading"
+      >
+        <h2 id="profiles-heading" className="studio-display text-2xl">
           Execution target profiles
         </h2>
         <div className="flex flex-wrap gap-1">
@@ -496,8 +509,11 @@ export function SettingsPanel<
         </Button>
       </section>
 
-      <section className="space-y-3" aria-labelledby="credentials-heading">
-        <h2 id="credentials-heading" className="text-lg font-medium">
+      <section
+        className="space-y-5 border-t border-border pt-8"
+        aria-labelledby="credentials-heading"
+      >
+        <h2 id="credentials-heading" className="studio-display text-2xl">
           Credentials
         </h2>
         {secrets.length === 0 ? (
@@ -540,8 +556,11 @@ export function SettingsPanel<
         </Button>
       </section>
 
-      <section className="space-y-3" aria-labelledby="git-heading">
-        <h2 id="git-heading" className="text-lg font-medium">
+      <section
+        className="space-y-5 border-t border-border pt-8"
+        aria-labelledby="git-heading"
+      >
+        <h2 id="git-heading" className="studio-display text-2xl">
           Repository
         </h2>
         <p className="font-mono text-xs text-muted-foreground" role="status">
