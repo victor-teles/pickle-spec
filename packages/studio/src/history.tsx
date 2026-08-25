@@ -5,8 +5,16 @@ import type {
 } from '@pickle-spec/runner'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Badge } from './components/ui/badge'
-import { Button } from './components/ui/button'
+import { Button, buttonVariants } from './components/ui/button'
 import { Checkbox } from './components/ui/checkbox'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuGroup,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuTrigger,
+} from './components/ui/dropdown-menu'
 import { Input } from './components/ui/input'
 import { Label } from './components/ui/label'
 import { ResultMark } from './components/ui/result-mark'
@@ -18,6 +26,13 @@ import {
   TableHeader,
   TableRow,
 } from './components/ui/table'
+import { toast } from './components/ui/toast'
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from './components/ui/tooltip'
+import { LedgerLoadingSkeleton } from './loading-skeletons'
 import type { HistoryLocation } from './result-inspection'
 import { reasonMessage, resultBadgeVariant } from './result-presentation'
 import type {
@@ -82,7 +97,6 @@ function sortedRuns(history: StudioHistory | undefined): TestRunSummary[] {
 export function HistoryPanel(props: HistoryPanelProps) {
   const [history, setHistory] = useState<StudioHistory>()
   const [error, setError] = useState<string>()
-  const [notice, setNotice] = useState<string>()
   const [selectedRunIds, setSelectedRunIds] = useState<string[]>([])
   const [comparison, setComparison] = useState<TestRunComparison>()
   const [reviewed, setReviewed] = useState<TestRunManifest>()
@@ -198,14 +212,17 @@ export function HistoryPanel(props: HistoryPanelProps) {
   async function importArchive(file: File | undefined) {
     if (!file) return
     setError(undefined)
-    setNotice(undefined)
     try {
       const manifest = await props.api<TestRunManifest>('/api/history/import', {
         method: 'POST',
         body: file,
       })
       await loadHistory()
-      setNotice(`Imported test run ${manifest.id}`)
+      toast.add({
+        type: 'success',
+        title: 'Test run imported',
+        description: `Test run ${manifest.id} is now available in History.`,
+      })
     } catch (reason) {
       setError(reasonMessage(reason))
     }
@@ -213,7 +230,6 @@ export function HistoryPanel(props: HistoryPanelProps) {
 
   async function deleteEligible() {
     setError(undefined)
-    setNotice(undefined)
     try {
       const result = await props.api<{
         removed: string[]
@@ -230,11 +246,16 @@ export function HistoryPanel(props: HistoryPanelProps) {
         setComparison(undefined)
       }
       await loadHistory()
-      setNotice(
-        result.removed.length === 0
-          ? 'No local test runs matched the configured retention policy'
-          : `Deleted ${result.removed.length} local test runs · ${bytesLabel(result.beforeBytes)} → ${bytesLabel(result.afterBytes)}`,
-      )
+      const noRunsRemoved = result.removed.length === 0
+      toast.add({
+        type: noRunsRemoved ? 'info' : 'success',
+        title: noRunsRemoved
+          ? 'No Test runs deleted'
+          : 'History retention applied',
+        description: noRunsRemoved
+          ? 'No local Test runs matched the configured retention policy.'
+          : `Deleted ${result.removed.length} local Test runs · ${bytesLabel(result.beforeBytes)} → ${bytesLabel(result.afterBytes)}.`,
+      })
     } catch (reason) {
       setError(reasonMessage(reason))
     }
@@ -242,16 +263,29 @@ export function HistoryPanel(props: HistoryPanelProps) {
 
   async function setPinned(runId: string, pinned: boolean) {
     setError(undefined)
-    setNotice(undefined)
     try {
       await props.api(`/api/history/${encodeURIComponent(runId)}/pin`, {
         method: pinned ? 'POST' : 'DELETE',
       })
       await loadHistory()
-      setNotice(`${pinned ? 'Pinned' : 'Unpinned'} test run ${runId}`)
+      toast.add({
+        type: 'success',
+        title: `Test run ${pinned ? 'pinned' : 'unpinned'}`,
+        description: pinned
+          ? `${runId} is protected from retention deletion.`
+          : `${runId} can be deleted by the retention policy.`,
+      })
     } catch (reason) {
       setError(reasonMessage(reason))
     }
+  }
+
+  if (history === undefined && error === undefined) {
+    return (
+      <section className="min-h-0 flex-1 overflow-auto px-6 py-4">
+        <LedgerLoadingSkeleton label="Loading Test run history" />
+      </section>
+    )
   }
 
   const reviewedRun = reviewed
@@ -303,11 +337,6 @@ export function HistoryPanel(props: HistoryPanelProps) {
       {error ? (
         <p role="alert" className="text-sm text-destructive">
           {error}
-        </p>
-      ) : null}
-      {notice ? (
-        <p role="status" className="text-sm text-muted-foreground">
-          {notice}
         </p>
       ) : null}
       {runs.length === 0 ? (
@@ -364,17 +393,26 @@ export function HistoryPanel(props: HistoryPanelProps) {
                     />
                   </TableCell>
                   <TableCell>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      aria-pressed={pinnedRunIds.has(run.id)}
-                      onClick={() =>
-                        void setPinned(run.id, !pinnedRunIds.has(run.id))
-                      }
-                    >
-                      {pinnedRunIds.has(run.id) ? 'Unpin' : 'Pin'}
-                    </Button>
+                    <Tooltip>
+                      <TooltipTrigger
+                        type="button"
+                        className={buttonVariants({
+                          variant: 'outline',
+                          size: 'sm',
+                        })}
+                        aria-pressed={pinnedRunIds.has(run.id)}
+                        onClick={() =>
+                          void setPinned(run.id, !pinnedRunIds.has(run.id))
+                        }
+                      >
+                        {pinnedRunIds.has(run.id) ? 'Unpin' : 'Pin'}
+                      </TooltipTrigger>
+                      <TooltipContent side="right">
+                        {pinnedRunIds.has(run.id)
+                          ? 'Allow retention to delete this Test run.'
+                          : 'Protect this Test run from retention deletion.'}
+                      </TooltipContent>
+                    </Tooltip>
                   </TableCell>
                   <TableCell>
                     <span className="block">
@@ -464,48 +502,52 @@ export function HistoryPanel(props: HistoryPanelProps) {
               </p>
             </div>
             <div className="flex flex-wrap items-center gap-2">
-              <Button
-                variant="outline"
-                nativeButton={false}
-                render={
-                  <a
-                    href={`/api/history/${encodeURIComponent(reviewed.id)}/archive`}
-                    // biome-ignore lint/a11y/noRedundantRoles: override Base UI's injected button role
-                    role="link"
-                    download
-                  />
-                }
-              >
-                Export archive
-              </Button>
-              <Button
-                variant="outline"
-                nativeButton={false}
-                render={
-                  <a
-                    href={`/api/history/${encodeURIComponent(reviewed.id)}/html?artifacts=${artifactMode}`}
-                    // biome-ignore lint/a11y/noRedundantRoles: override Base UI's injected button role
-                    role="link"
-                    download
-                  />
-                }
-              >
-                Export HTML
-              </Button>
-              <Button
-                variant="outline"
-                nativeButton={false}
-                render={
-                  <a
-                    href={`/api/history/${encodeURIComponent(reviewed.id)}/allure`}
-                    // biome-ignore lint/a11y/noRedundantRoles: override Base UI's injected button role
-                    role="link"
-                    download
-                  />
-                }
-              >
-                Export Allure results
-              </Button>
+              <DropdownMenu>
+                <DropdownMenuTrigger
+                  type="button"
+                  className={buttonVariants({ variant: 'outline' })}
+                >
+                  Export
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuGroup>
+                    <DropdownMenuLabel>Test run export</DropdownMenuLabel>
+                    <DropdownMenuItem
+                      nativeButton={false}
+                      render={
+                        <a
+                          href={`/api/history/${encodeURIComponent(reviewed.id)}/archive`}
+                          download
+                        />
+                      }
+                    >
+                      Run archive
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      nativeButton={false}
+                      render={
+                        <a
+                          href={`/api/history/${encodeURIComponent(reviewed.id)}/html?artifacts=${artifactMode}`}
+                          download
+                        />
+                      }
+                    >
+                      HTML report
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      nativeButton={false}
+                      render={
+                        <a
+                          href={`/api/history/${encodeURIComponent(reviewed.id)}/allure`}
+                          download
+                        />
+                      }
+                    >
+                      Allure results
+                    </DropdownMenuItem>
+                  </DropdownMenuGroup>
+                </DropdownMenuContent>
+              </DropdownMenu>
               <span className="flex items-center gap-2">
                 <Checkbox
                   id="complete-artifacts"

@@ -69,8 +69,10 @@ async function saveExecutionTargetProfile(
     throw new Error(`Profile update failed with status ${response.status()}`)
   }
   await page
-    .getByRole('status')
-    .filter({ hasText: `Execution target profile ${profileId} saved` })
+    .getByRole('dialog')
+    .filter({ hasText: 'Execution target profile saved' })
+    .filter({ hasText: `${profileId} is ready for Test runs.` })
+    .last()
     .waitFor({ timeout: 10_000 })
 }
 
@@ -104,7 +106,12 @@ Feature: Search
     const { child, url } = await startStudio(project)
     const page = await browser.newPage()
     try {
+      await page.route('**/api/project', async (route) => {
+        await Bun.sleep(500)
+        await route.continue()
+      })
       await page.goto(url)
+      await page.getByRole('status', { name: 'Opening project' }).waitFor()
       expect(
         await page.evaluate(async () => (await fetch('/api/plans')).status),
       ).toBe(404)
@@ -424,6 +431,11 @@ export default {
       await page
         .getByRole('status')
         .filter({ hasText: 'No cached replay revisions' })
+        .waitFor()
+      await page
+        .getByRole('dialog')
+        .filter({ hasText: 'Execution cache cleared' })
+        .filter({ hasText: 'Cleared 1 cache revision.' })
         .waitFor()
       expect(await cache.inspect()).toEqual([])
     } finally {
@@ -803,14 +815,9 @@ Feature: Search
     )
     const { child, url } = await startStudio(project)
     const page = await browser.newPage()
+    const pageErrors: string[] = []
+    page.on('pageerror', (error) => pageErrors.push(error.message))
     try {
-      let historyRequestCount = 0
-      await page.route('**/api/history', async (route) => {
-        if (route.request().method() === 'GET' && historyRequestCount++ === 1) {
-          await Bun.sleep(100)
-        }
-        await route.continue()
-      })
       await page.goto(url)
       await page.getByRole('button', { name: 'Run Specification' }).click()
       await page
@@ -827,7 +834,18 @@ Feature: Search
       expect(indexedHistory.runs[0]?.specificationUris).toEqual([
         'features/checkout.feature',
       ])
+      await page.route(
+        '**/api/history',
+        async (route) => {
+          await Bun.sleep(500)
+          await route.continue()
+        },
+        { times: 1 },
+      )
       await page.getByRole('button', { name: 'History' }).click()
+      await page
+        .getByRole('status', { name: 'Loading Test run history' })
+        .waitFor()
 
       const history = page.getByRole('table', { name: 'Test run history' })
       await history.waitFor()
@@ -930,12 +948,18 @@ Feature: Search
       ).toBe(1)
       expect(await page.getByText('image/png').count()).toBeGreaterThan(0)
       const deepLink = page.url()
+      await page.route('**/api/runs/*', async (route) => {
+        if (route.request().method() === 'GET') await Bun.sleep(500)
+        await route.continue()
+      })
       await page.reload()
+      await page.getByRole('status', { name: 'Opening Test result' }).waitFor()
       await page
         .getByRole('heading', {
           name: 'Pay for the order · failed · chrome',
         })
         .waitFor()
+      await page.unroute('**/api/runs/*')
       expect(page.url()).toBe(deepLink)
       await page.getByRole('button', { name: 'Back to run' }).click()
       await results.waitFor()
@@ -972,12 +996,34 @@ Feature: Search
       )
 
       expect(await page.getByText('14 days · 1 B').count()).toBe(1)
-      expect(
-        await page.getByRole('link', { name: 'Export HTML' }).count(),
-      ).toBe(1)
-      const allureHref = await page
-        .getByRole('link', { name: 'Export Allure results' })
+      const exportButton = page.locator('[data-slot="dropdown-menu-trigger"]')
+      await exportButton.click()
+      await Bun.sleep(100)
+      expect(pageErrors).toEqual([])
+      const exportMenu = page.locator('[data-slot="dropdown-menu-content"]')
+      await exportMenu.waitFor()
+      expect(await exportMenu.getAttribute('role')).toBe('menu')
+      const defaultHtmlHref = await exportMenu
+        .getByRole('menuitem', { name: 'HTML report' })
         .getAttribute('href')
+      const allureHref = await page
+        .getByRole('menuitem', { name: 'Allure results' })
+        .getAttribute('href')
+      const archiveHref = await page
+        .getByRole('menuitem', { name: 'Run archive' })
+        .getAttribute('href')
+      await page.keyboard.press('Home')
+      expect(
+        await exportMenu
+          .getByRole('menuitem', { name: 'Run archive' })
+          .getAttribute('data-highlighted'),
+      ).not.toBeNull()
+      await page.keyboard.press('ArrowDown')
+      expect(
+        await exportMenu
+          .getByRole('menuitem', { name: 'HTML report' })
+          .getAttribute('data-highlighted'),
+      ).not.toBeNull()
       const allureResponse = await page.evaluate(async (href) => {
         const response = await fetch(href!)
         return {
@@ -991,28 +1037,25 @@ Feature: Search
         contentType: 'application/zip',
         signature: [0x50, 0x4b, 0x03, 0x04],
       })
-      const defaultHtmlHref = await page
-        .getByRole('link', { name: 'Export HTML' })
-        .getAttribute('href')
       const defaultHtml = await page.evaluate(
         async (href) => (await fetch(href!)).text(),
         defaultHtmlHref,
       )
       expect(defaultHtml).toContain('<!DOCTYPE html>')
       expect(defaultHtml).toContain('data:image/png;base64,')
+      await page.keyboard.press('Escape')
       await page
         .getByRole('checkbox', { name: 'Include all artifacts' })
         .click()
+      await exportButton.click()
       expect(
         await page
-          .getByRole('link', { name: 'Export HTML' })
+          .getByRole('menuitem', { name: 'HTML report' })
           .getAttribute('href'),
       ).toContain('artifacts=all')
+      await page.keyboard.press('Escape')
 
       const archivePath = join(project, 'importable-run.json')
-      const archiveHref = await page
-        .getByRole('link', { name: 'Export archive' })
-        .getAttribute('href')
       const archive = JSON.parse(
         await page.evaluate(
           async (href) => (await fetch(href!)).text(),
@@ -1027,6 +1070,11 @@ Feature: Search
       await Bun.write(archivePath, importBytes)
       await page.getByLabel('Import run archive').setInputFiles(archivePath)
       await history.getByText('run-imported').waitFor({ timeout: 20_000 })
+      await page
+        .getByRole('dialog')
+        .filter({ hasText: 'Test run imported' })
+        .filter({ hasText: 'run-imported is now available in History.' })
+        .waitFor()
       expect(
         await Bun.file(
           join(
@@ -1036,13 +1084,25 @@ Feature: Search
         ).text(),
       ).toBe(importBytes)
 
-      await history.getByRole('button', { name: 'Pin' }).first().click()
+      const pin = history.getByRole('button', { name: 'Pin' }).first()
+      await pin.focus()
+      await page
+        .getByRole('tooltip')
+        .filter({ hasText: 'Protect this Test run from retention deletion.' })
+        .waitFor()
+      await page.keyboard.press('Space')
       await history.getByRole('button', { name: 'Unpin' }).waitFor()
+      const pinnedToast = page
+        .getByRole('dialog')
+        .filter({ hasText: 'Test run pinned' })
+        .filter({ hasText: 'protected from retention deletion.' })
+      await pinnedToast.waitFor()
+      await pinnedToast.waitFor({ state: 'detached' })
 
       await page
         .getByRole('button', { name: 'Delete eligible history' })
         .click()
-      await page.getByText(/Deleted \d+ local test runs/).waitFor()
+      await page.getByText(/Deleted \d+ local Test runs/).waitFor()
       expect(
         await Bun.file(
           join(

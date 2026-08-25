@@ -9,7 +9,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from './components/ui/dialog'
-import { LoadingState } from './components/ui/loading-state'
 import {
   Table,
   TableBody,
@@ -18,6 +17,8 @@ import {
   TableHeader,
   TableRow,
 } from './components/ui/table'
+import { toast } from './components/ui/toast'
+import { LedgerRowsSkeleton } from './loading-skeletons'
 import type { StudioExecutionCacheInspection } from './server'
 
 type ExecutionCacheSettingsProps = {
@@ -46,7 +47,6 @@ export function ExecutionCacheSettings(props: ExecutionCacheSettingsProps) {
   const [loading, setLoading] = useState(true)
   const [clearing, setClearing] = useState(false)
   const [confirmOpen, setConfirmOpen] = useState(false)
-  const [notice, setNotice] = useState<string>()
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -69,17 +69,18 @@ export function ExecutionCacheSettings(props: ExecutionCacheSettingsProps) {
   async function clear() {
     setClearing(true)
     setClearError(undefined)
-    setNotice(undefined)
     try {
       const result = await props.api<{ clearedEntries: number }>(
         '/api/execution-cache',
         { method: 'DELETE' },
       )
       setConfirmOpen(false)
-      setNotice(
-        `Cleared ${result.clearedEntries} cache ${result.clearedEntries === 1 ? 'revision' : 'revisions'}.`,
-      )
       await load()
+      toast.add({
+        type: 'success',
+        title: 'Execution cache cleared',
+        description: `Cleared ${result.clearedEntries} cache ${result.clearedEntries === 1 ? 'revision' : 'revisions'}.`,
+      })
     } catch (reason) {
       setClearError(errorMessage(reason))
     } finally {
@@ -116,7 +117,7 @@ export function ExecutionCacheSettings(props: ExecutionCacheSettingsProps) {
         </Button>
       </div>
 
-      {loading ? <LoadingState label="Loading Execution cache" /> : null}
+      {loading ? <LedgerRowsSkeleton label="Loading Execution cache" /> : null}
       {!loading && error ? (
         <div className="space-y-2" role="alert">
           <p className="text-sm text-destructive">{error}</p>
@@ -125,12 +126,6 @@ export function ExecutionCacheSettings(props: ExecutionCacheSettingsProps) {
           </Button>
         </div>
       ) : null}
-      {notice ? (
-        <p className="text-sm text-muted-foreground" role="status">
-          {notice}
-        </p>
-      ) : null}
-
       {!loading && !error && inspection ? (
         inspection.entries.length === 0 ? (
           <p

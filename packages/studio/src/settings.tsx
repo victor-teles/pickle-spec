@@ -12,6 +12,7 @@ import {
 } from './components/ui/dialog'
 import { Input } from './components/ui/input'
 import { Label } from './components/ui/label'
+import { toast } from './components/ui/toast'
 import { ExecutionCacheSettings } from './execution-cache-settings'
 import { MobileProfileSettings } from './mobile-profile-settings'
 import type { StudioMobileProfile } from './server'
@@ -105,7 +106,6 @@ export function SettingsPanel<
       application: { id: '', binaryPath: '' },
     },
   )
-  const [savedProfileId, setSavedProfileId] = useState<string>()
   const [secretName, setSecretName] = useState('')
   const [secretValue, setSecretValue] = useState('')
   const [git, setGit] = useState<GitStatus>()
@@ -222,7 +222,6 @@ export function SettingsPanel<
       props.onError('An execution target profile id is required')
       return
     }
-    setSavedProfileId(undefined)
     const profiles = Object.fromEntries(
       (props.project.profileDetails ?? []).map((profile) => [
         profile.id,
@@ -263,7 +262,11 @@ export function SettingsPanel<
         body: JSON.stringify({ executionTargetProfiles: profiles }),
       })
       props.onProject(project)
-      setSavedProfileId(id)
+      toast.add({
+        type: 'success',
+        title: 'Execution target profile saved',
+        description: `${id} is ready for Test runs.`,
+      })
     } catch (reason) {
       props.onError(reasonMessage(reason))
     }
@@ -491,11 +494,6 @@ export function SettingsPanel<
         <Button type="button" onClick={() => void saveProfiles()}>
           Save execution target profile
         </Button>
-        {savedProfileId ? (
-          <p role="status" className="text-sm text-muted-foreground">
-            Execution target profile {savedProfileId} saved.
-          </p>
-        ) : null}
       </section>
 
       <section className="space-y-3" aria-labelledby="credentials-heading">

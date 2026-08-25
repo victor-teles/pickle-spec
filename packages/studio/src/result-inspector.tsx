@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Badge } from './components/ui/badge'
 import { Button } from './components/ui/button'
-import { LoadingState } from './components/ui/loading-state'
 import { ResultMark } from './components/ui/result-mark'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './components/ui/tabs'
 import {
@@ -9,6 +8,7 @@ import {
   isAttemptInProgress,
   type LiveConnectionStatus,
 } from './live-result-inspection'
+import { LedgerLoadingSkeleton } from './loading-skeletons'
 import {
   artifactsFor,
   defaultResultInspectorTab,
@@ -87,7 +87,7 @@ export function ResultInspector(props: ResultInspectorProps) {
   if (!snapshot) {
     return (
       <div className="p-6">
-        <LoadingState label="Opening Test result" />
+        <LedgerLoadingSkeleton label="Opening Test result" />
       </div>
     )
   }

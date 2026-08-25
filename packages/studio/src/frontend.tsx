@@ -18,6 +18,8 @@ import {
   TableHeader,
   TableRow,
 } from './components/ui/table'
+import { Toaster } from './components/ui/toast'
+import { TooltipProvider } from './components/ui/tooltip'
 import { HistoryPanel } from './history'
 import { cn } from './lib/utils'
 import {
@@ -33,6 +35,7 @@ import {
   selectLiveInspectorTab,
   startLiveInspection,
 } from './live-result-inspection'
+import { StudioShellSkeleton } from './loading-skeletons'
 import {
   historyLocationHref,
   isResultInspection,
@@ -361,11 +364,7 @@ function StudioApp() {
     )
   }
   if (!project) {
-    return (
-      <main className="flex min-h-screen items-start p-6">
-        <p className="text-sm text-muted-foreground">Opening project…</p>
-      </main>
-    )
+    return <StudioShellSkeleton />
   }
 
   return (
@@ -970,6 +969,10 @@ const root = document.getElementById('root')
 if (!root) throw new Error('Studio root element is missing')
 createRoot(root).render(
   <StrictMode>
-    <StudioApp />
+    <Toaster>
+      <TooltipProvider>
+        <StudioApp />
+      </TooltipProvider>
+    </Toaster>
   </StrictMode>,
 )
