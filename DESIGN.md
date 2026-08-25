@@ -2,26 +2,26 @@
 name: Pickle Spec Studio
 description: Editorial test journal — a warm, precise workspace for authoring Specifications and reading test evidence.
 colors:
-  primary: "#292524"
-  primary-active: "#0c0a09"
-  ink: "#0c0a09"
-  body: "#4e4e4e"
-  muted: "#66615b"
-  muted-soft: "#a8a29e"
-  hairline: "#e7e5e4"
-  hairline-soft: "#f0efed"
-  hairline-strong: "#d6d3d1"
-  canvas: "#f5f5f5"
-  canvas-soft: "#fafafa"
-  surface-card: "#ffffff"
-  surface-strong: "#f0efed"
-  gradient-mint: "#a7e5d3"
-  gradient-peach: "#f4c5a8"
-  gradient-lavender: "#c8b8e0"
-  gradient-sky: "#a8c8e8"
-  gradient-rose: "#e8b8c4"
-  semantic-error: "#dc2626"
-  semantic-success: "#15803d"
+  primary: "oklch(0.26848 0.00629 34.3)"
+  primary-active: "oklch(0.1469 0.00413 49.25)"
+  ink: "oklch(0.1469 0.00413 49.25)"
+  body: "oklch(0.42393 0 0)"
+  muted: "oklch(0.49533 0.01135 72.55)"
+  muted-soft: "oklch(0.71608 0.00905 56.26)"
+  hairline: "oklch(0.92318 0.00256 48.72)"
+  hairline-soft: "oklch(0.95234 0.00288 84.56)"
+  hairline-strong: "oklch(0.86866 0.00431 56.37)"
+  canvas: "oklch(0.97015 0 0)"
+  canvas-soft: "oklch(0.9851 0 0)"
+  surface-card: "oklch(1 0 0)"
+  surface-strong: "oklch(0.95234 0.00288 84.56)"
+  gradient-mint: "oklch(0.87488 0.06767 174.78)"
+  gradient-peach: "oklch(0.85746 0.06651 53.26)"
+  gradient-lavender: "oklch(0.80888 0.0581 303.31)"
+  gradient-sky: "oklch(0.82005 0.05689 248.52)"
+  gradient-rose: "oklch(0.82873 0.05738 1.76)"
+  semantic-error: "oklch(0.5771 0.21516 27.33)"
+  semantic-success: "oklch(0.5273 0.1371 150.07)"
 typography:
   display:
     fontFamily: "'EB Garamond Variable', 'Times New Roman', serif"
@@ -77,7 +77,7 @@ spacing:
 components:
   button-primary:
     backgroundColor: "{colors.primary}"
-    textColor: "#ffffff"
+    textColor: "oklch(1 0 0)"
     rounded: "{rounded.pill}"
     padding: "0.625rem 1.25rem"
     height: "2.5rem"
@@ -162,7 +162,7 @@ On viewports below 1024px the master rail stacks above the detail pane. The top 
 
 ## Depth and material
 
-Canvas is `#f5f5f5`; cards and form controls are white. Default cards use a 1px Hairline border with no shadow. Hoverable cards may use the single shadow tier `0 4px 16px rgba(0, 0, 0, 0.04)`. Dialogs may use a larger neutral shadow because they interrupt and protect focus.
+Canvas is `oklch(0.97015 0 0)`; cards and form controls are white. Default cards use a 1px Hairline border with no shadow. Hoverable cards may use the single shadow tier `0 4px 16px rgba(0, 0, 0, 0.04)`. Dialogs may use a larger neutral shadow because they interrupt and protect focus.
 
 Do not add glass, neon glow, hard offset shadows, nested cards, or gradient borders.
 

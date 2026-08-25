@@ -12,8 +12,34 @@ import {
   gherkinCompletions,
   gherkinMonarch,
 } from './gherkin-language'
+import { oklchToMonacoHex } from './monaco-theme-color'
 
 let languageReady = false
+
+const editorPalette = {
+  canvas: 'oklch(1 0 0)',
+  ink: 'oklch(0.26848 0.00629 34.30)',
+  inkStrong: 'oklch(0.14690 0.00413 49.25)',
+  body: 'oklch(0.42393 0 0)',
+  muted: 'oklch(0.55159 0.01426 75.28)',
+  mutedSoft: 'oklch(0.71608 0.00905 56.26)',
+  hairline: 'oklch(0.92318 0.00256 48.72)',
+  hairlineStrong: 'oklch(0.86866 0.00431 56.37)',
+  surfaceStrong: 'oklch(0.95234 0.00288 84.56)',
+  canvasSoft: 'oklch(0.98510 0 0)',
+  scrollbar: 'oklch(0.71608 0.00905 56.26 / 0.333)',
+  scrollbarHover: 'oklch(0.55159 0.01426 75.28 / 0.400)',
+} as const
+
+type EditorPaletteColor = keyof typeof editorPalette
+
+function editorColor(color: EditorPaletteColor) {
+  return oklchToMonacoHex(editorPalette[color])
+}
+
+function tokenColor(color: EditorPaletteColor) {
+  return oklchToMonacoHex(editorPalette[color], { omitHash: true })
+}
 
 function registerGherkinLanguage(catalogRef: { current: GherkinCatalog }) {
   if (languageReady) return
@@ -67,32 +93,51 @@ function registerGherkinLanguage(catalogRef: { current: GherkinCatalog }) {
     base: 'vs',
     inherit: false,
     colors: {
-      'editor.background': '#ffffff',
-      'editor.foreground': '#292524',
-      'editorLineNumber.foreground': '#a8a29e',
-      'editorLineNumber.activeForeground': '#4e4e4e',
-      'editorCursor.foreground': '#0c0a09',
-      'editor.selectionBackground': '#e7e5e4',
-      'editor.inactiveSelectionBackground': '#f0efed',
-      'editor.lineHighlightBackground': '#fafafa',
-      'editorWidget.background': '#ffffff',
-      'editorWidget.border': '#d6d3d1',
-      'editorSuggestWidget.background': '#ffffff',
-      'editorSuggestWidget.border': '#d6d3d1',
-      'editorSuggestWidget.foreground': '#292524',
-      'editorSuggestWidget.selectedBackground': '#f0efed',
-      'editorSuggestWidget.highlightForeground': '#0c0a09',
-      focusBorder: '#292524',
-      'scrollbarSlider.background': '#a8a29e55',
-      'scrollbarSlider.hoverBackground': '#77716966',
+      'editor.background': editorColor('canvas'),
+      'editor.foreground': editorColor('ink'),
+      'editorLineNumber.foreground': editorColor('mutedSoft'),
+      'editorLineNumber.activeForeground': editorColor('body'),
+      'editorCursor.foreground': editorColor('inkStrong'),
+      'editor.selectionBackground': editorColor('hairline'),
+      'editor.inactiveSelectionBackground': editorColor('surfaceStrong'),
+      'editor.lineHighlightBackground': editorColor('canvasSoft'),
+      'editorWidget.background': editorColor('canvas'),
+      'editorWidget.border': editorColor('hairlineStrong'),
+      'editorSuggestWidget.background': editorColor('canvas'),
+      'editorSuggestWidget.border': editorColor('hairlineStrong'),
+      'editorSuggestWidget.foreground': editorColor('ink'),
+      'editorSuggestWidget.selectedBackground': editorColor('surfaceStrong'),
+      'editorSuggestWidget.highlightForeground': editorColor('inkStrong'),
+      focusBorder: editorColor('ink'),
+      'scrollbarSlider.background': editorColor('scrollbar'),
+      'scrollbarSlider.hoverBackground': editorColor('scrollbarHover'),
     },
     rules: [
-      { token: 'keyword', foreground: '0c0a09', fontStyle: 'bold' },
-      { token: 'comment', foreground: '777169' },
-      { token: 'tag', foreground: '4e4e4e' },
-      { token: 'table', foreground: '777169' },
-      { token: 'string', foreground: '292524' },
-      { token: 'placeholder', foreground: '4e4e4e' },
+      {
+        token: 'keyword',
+        foreground: tokenColor('inkStrong'),
+        fontStyle: 'bold',
+      },
+      {
+        token: 'comment',
+        foreground: tokenColor('muted'),
+      },
+      {
+        token: 'tag',
+        foreground: tokenColor('body'),
+      },
+      {
+        token: 'table',
+        foreground: tokenColor('muted'),
+      },
+      {
+        token: 'string',
+        foreground: tokenColor('ink'),
+      },
+      {
+        token: 'placeholder',
+        foreground: tokenColor('body'),
+      },
     ],
   })
 }

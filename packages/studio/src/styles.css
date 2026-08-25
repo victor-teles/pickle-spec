@@ -42,38 +42,38 @@
   color-scheme: light;
   --radius: 1rem;
   --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
-  --background: #f5f5f5;
-  --foreground: #0c0a09;
-  --card: #ffffff;
-  --card-foreground: #0c0a09;
-  --popover: #ffffff;
-  --popover-foreground: #0c0a09;
-  --primary: #292524;
-  --primary-foreground: #ffffff;
-  --secondary: #f0efed;
-  --secondary-foreground: #292524;
-  --muted: #f0efed;
-  --muted-foreground: #66615b;
-  --accent: #ebe9e6;
-  --accent-foreground: #0c0a09;
-  --destructive: #dc2626;
-  --destructive-foreground: #ffffff;
-  --border: #e7e5e4;
-  --input: #d6d3d1;
-  --ring: #292524;
-  --passed: #15803d;
-  --passed-foreground: #ffffff;
-  --gradient-mint: #a7e5d3;
-  --gradient-peach: #f4c5a8;
-  --gradient-lavender: #c8b8e0;
-  --gradient-sky: #a8c8e8;
-  --gradient-rose: #e8b8c4;
+  --background: oklch(0.97015 0 0);
+  --foreground: oklch(0.1469 0.00413 49.25);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.1469 0.00413 49.25);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.1469 0.00413 49.25);
+  --primary: oklch(0.26848 0.00629 34.3);
+  --primary-foreground: oklch(1 0 0);
+  --secondary: oklch(0.95234 0.00288 84.56);
+  --secondary-foreground: oklch(0.26848 0.00629 34.3);
+  --muted: oklch(0.95234 0.00288 84.56);
+  --muted-foreground: oklch(0.49533 0.01135 72.55);
+  --accent: oklch(0.93473 0.00457 78.3);
+  --accent-foreground: oklch(0.1469 0.00413 49.25);
+  --destructive: oklch(0.5771 0.21516 27.33);
+  --destructive-foreground: oklch(1 0 0);
+  --border: oklch(0.92318 0.00256 48.72);
+  --input: oklch(0.86866 0.00431 56.37);
+  --ring: oklch(0.26848 0.00629 34.3);
+  --passed: oklch(0.5273 0.1371 150.07);
+  --passed-foreground: oklch(1 0 0);
+  --gradient-mint: oklch(0.87488 0.06767 174.78);
+  --gradient-peach: oklch(0.85746 0.06651 53.26);
+  --gradient-lavender: oklch(0.80888 0.0581 303.31);
+  --gradient-sky: oklch(0.82005 0.05689 248.52);
+  --gradient-rose: oklch(0.82873 0.05738 1.76);
 }
 
 @layer base {
   * {
     @apply border-border;
-    scrollbar-color: #c7c3be transparent;
+    scrollbar-color: oklch(0.81898 0.00826 73.73) transparent;
   }
   html,
   body,
@@ -97,7 +97,7 @@
   }
   input::placeholder,
   textarea::placeholder {
-    color: #777169;
+    color: oklch(0.55159 0.01426 75.28);
   }
 }
 
