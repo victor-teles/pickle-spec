@@ -1,6 +1,6 @@
 import { Database } from 'bun:sqlite'
 import { afterEach, expect, test } from 'bun:test'
-import { mkdir, mkdtemp, rm } from 'node:fs/promises'
+import { chmod, mkdir, mkdtemp, rm, truncate } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
@@ -961,6 +961,128 @@ test('retention removes eligible local data without changing retained test runs'
   ])
 })
 
+test('retention is disabled when no age or storage limit is configured', async () => {
+  const root = await tempRoot()
+  let clock = new Date('2026-07-01T00:00:00.000Z')
+  const store = openTestRunStore({
+    root,
+    createId: () => 'run-unconfigured-retention',
+    now: () => clock,
+  })
+  const run = await store.create()
+  await run.append(scenarioFinished(passedResult()))
+  await run.materialize()
+  const eventsPath = join(
+    storageFor(root).runsDirectory,
+    run.id,
+    'events.ndjson',
+  )
+  const eventsBefore = await Bun.file(eventsPath).text()
+  clock = new Date('2026-08-15T00:00:00.000Z')
+
+  const result = await store.applyRetention()
+
+  expect(result.removed).toEqual([])
+  expect(await Bun.file(eventsPath).text()).toBe(eventsBefore)
+})
+
+test('inspects total Test run storage against the default 5 GB warning threshold', async () => {
+  const root = await tempRoot()
+  const store = openTestRunStore({
+    root,
+    createId: () => 'run-storage-inspection',
+  })
+  const run = await store.create()
+  await run.append(scenarioFinished(passedResult()))
+  await run.materialize()
+
+  const inspection = await store.inspectStorage()
+
+  expect(inspection.totalBytes).toBeGreaterThan(0)
+  expect(inspection.warningThresholdBytes).toBe(5 * 1024 * 1024 * 1024)
+  expect(inspection.warning).toBe(false)
+  expect(inspection.pinnedRunIds).toEqual([])
+
+  const sparseArtifact = join(
+    storageFor(root).runsDirectory,
+    run.id,
+    'large-recording.bin',
+  )
+  await Bun.write(sparseArtifact, '')
+  await truncate(sparseArtifact, 5 * 1024 * 1024 * 1024)
+
+  expect((await store.inspectStorage()).warning).toBe(true)
+})
+
+test('persists explicit Pin state without changing the immutable Test run', async () => {
+  const root = await tempRoot()
+  const store = openTestRunStore({
+    root,
+    createId: () => 'run-pinned',
+  })
+  const run = await store.create()
+  await run.append(scenarioFinished(passedResult()))
+  await run.materialize()
+  const runDirectory = join(storageFor(root).runsDirectory, run.id)
+  const eventsBefore = await Bun.file(
+    join(runDirectory, 'events.ndjson'),
+  ).text()
+  const manifestBefore = await Bun.file(
+    join(runDirectory, 'manifest.json'),
+  ).text()
+
+  await store.pin(run.id)
+
+  const reopened = openTestRunStore({ root })
+  expect((await reopened.inspectStorage()).pinnedRunIds).toEqual([run.id])
+  expect(await Bun.file(join(runDirectory, 'events.ndjson')).text()).toBe(
+    eventsBefore,
+  )
+  expect(await Bun.file(join(runDirectory, 'manifest.json')).text()).toBe(
+    manifestBefore,
+  )
+
+  await reopened.unpin(run.id)
+  expect(
+    (await openTestRunStore({ root }).inspectStorage()).pinnedRunIds,
+  ).toEqual([])
+})
+
+test('retention removes only complete unpinned Test runs and reports storage totals', async () => {
+  const root = await tempRoot()
+  let clock = new Date('2026-07-01T00:00:00.000Z')
+  let nextId = 1
+  const store = openTestRunStore({
+    root,
+    createId: () => `run-${nextId++}`,
+    now: () => clock,
+  })
+  const expired = await store.create()
+  await expired.append(scenarioFinished(passedResult('Expired purchase')))
+  await expired.materialize()
+  const pinned = await store.create()
+  await pinned.append(scenarioFinished(passedResult('Pinned purchase')))
+  await pinned.materialize()
+  await store.pin(pinned.id)
+  const active = await store.create()
+  await active.append(scenarioFinished(passedResult('Active purchase')))
+  await active.materialize({ finished: false })
+  clock = new Date('2026-08-15T00:00:00.000Z')
+
+  const result = await store.applyRetention({
+    maxAgeMs: 14 * 24 * 60 * 60 * 1000,
+  })
+
+  expect(result.removed).toEqual([expired.id])
+  expect(result.beforeBytes).toBeGreaterThan(result.afterBytes)
+  expect(result.afterBytes).toBe((await store.inspectStorage()).totalBytes)
+  expect((await store.list()).map((run) => run.id)).toEqual([
+    pinned.id,
+    active.id,
+  ])
+  expect((await store.inspectStorage()).pinnedRunIds).toEqual([pinned.id])
+})
+
 test('a rerun creates a new test run with a source-run reference', async () => {
   const root = await tempRoot()
   let nextId = 1
@@ -1015,33 +1137,12 @@ test('retention evicts the oldest runs when stored bytes exceed the limit', asyn
   const second = await store.create()
   await second.append(scenarioFinished(passedResult('Second purchase')))
   await second.materialize()
-  const retainedEvents = await Bun.file(
-    join(storageFor(root).runsDirectory, 'run-2', 'events.ndjson'),
-  ).text()
-
   const result = await store.applyRetention({ maxBytes: 1 })
 
-  expect(result.removed).toEqual(['run-1'])
-  expect(
-    await Bun.file(
-      join(storageFor(root).runsDirectory, 'run-2', 'events.ndjson'),
-    ).text(),
-  ).toBe(retainedEvents)
-  expect(await store.list()).toEqual([
-    {
-      id: 'run-2',
-      executionTargetProfileIds: ['deterministic'],
-      specificationUris: ['features/checkout.feature'],
-      startedAt: '2026-08-15T00:00:00.000Z',
-      finishedAt: '2026-08-15T00:00:00.000Z',
-      durationMs: 0,
-      state: 'passed',
-      resultCount: 1,
-      executionModes: ['adaptive'],
-      cacheOutcomes: ['uncacheable'],
-      inferenceCount: 0,
-    },
-  ])
+  expect(result.removed).toEqual(['run-1', 'run-2'])
+  expect(result.beforeBytes).toBeGreaterThan(result.afterBytes)
+  expect(result.afterBytes).toBe(0)
+  expect(await store.list()).toEqual([])
 })
 
 function resultWithArtifact(
@@ -1085,6 +1186,277 @@ function resultWithArtifact(
     ],
   }
 }
+
+function withDiagnosticEvidence(result: TestResult): TestResult {
+  const attempt = result.attempts[0]!
+  const diagnostic = {
+    occurredAt: attempt.finishedAt,
+    level: 'error' as const,
+    origin: 'adapter' as const,
+    message: `Diagnostic for ${result.scenario.name}`,
+  }
+  return {
+    ...result,
+    attempts: [
+      {
+        ...attempt,
+        diagnostics: [diagnostic],
+        evidenceAvailability: attempt.evidenceAvailability.map((item) =>
+          item.kind === 'diagnostics'
+            ? { kind: item.kind, state: 'available' as const }
+            : item,
+        ),
+        steps: attempt.steps.map((step) => ({
+          ...step,
+          diagnostics: [diagnostic],
+        })),
+      },
+    ],
+  }
+}
+
+test('issue 83: resolves Evidence persistence per profile with a run-wide default', async () => {
+  const root = await tempRoot()
+  const persistSource = join(root, 'persist.png')
+  const dropSource = join(root, 'drop.png')
+  const defaultSource = join(root, 'default.png')
+  await Promise.all(
+    [persistSource, dropSource, defaultSource].map((path) =>
+      Bun.write(path, new Uint8Array([137, 80, 78, 71])),
+    ),
+  )
+  const store = openTestRunStore({
+    root,
+    createId: () => 'run-mixed-evidence-policy',
+    evidencePersistence: 'on-failure',
+    evidencePersistenceByProfile: {
+      persist: 'always',
+      drop: 'off',
+    },
+  })
+  const run = await store.create()
+  const forProfile = (result: TestResult, id: string): TestResult => ({
+    ...withDiagnosticEvidence(result),
+    executionTargetProfile: { id },
+  })
+
+  await run.append(
+    scenarioFinished(
+      forProfile(
+        resultWithArtifact('Persist passed evidence', 'passed', persistSource),
+        'persist',
+      ),
+    ),
+  )
+  const liveDropped = await run.append(
+    scenarioFinished(
+      forProfile(
+        resultWithArtifact('Drop failed evidence', 'failed', dropSource),
+        'drop',
+      ),
+    ),
+  )
+  await run.append(
+    scenarioFinished(
+      forProfile(
+        resultWithArtifact('Default failed evidence', 'failed', defaultSource),
+        'default',
+      ),
+    ),
+  )
+
+  expect(liveDropped).toMatchObject({
+    type: 'scenario-finished',
+    attempt: {
+      diagnostics: [{ message: 'Diagnostic for Drop failed evidence' }],
+      steps: [{ artifacts: [{ path: dropSource }] }],
+    },
+  })
+  const persisted = (await run.events()).filter(
+    (event) => event.type === 'scenario-finished',
+  )
+  expect(persisted).toHaveLength(3)
+  expect(persisted[0]).toMatchObject({
+    attempt: {
+      diagnostics: [{ message: 'Diagnostic for Persist passed evidence' }],
+      steps: [
+        { artifacts: [{ path: expect.stringContaining('/artifacts/') }] },
+      ],
+    },
+  })
+  expect(persisted[1]).toMatchObject({
+    attempt: {
+      evidenceAvailability: [
+        { kind: 'screenshot', state: 'not-retained' },
+        { kind: 'trace', state: 'not-supported' },
+        { kind: 'recording', state: 'not-supported' },
+        { kind: 'device-log', state: 'not-supported' },
+        { kind: 'diagnostics', state: 'not-retained' },
+      ],
+      steps: [{}],
+    },
+  })
+  expect(persisted[1]?.type).toBe('scenario-finished')
+  if (persisted[1]?.type !== 'scenario-finished') {
+    throw new Error('Expected persisted Scenario evidence')
+  }
+  expect(persisted[1].attempt.diagnostics).toBeUndefined()
+  expect(persisted[1].attempt.steps[0]?.artifacts).toBeUndefined()
+  expect(persisted[2]).toMatchObject({
+    attempt: {
+      diagnostics: [{ message: 'Diagnostic for Default failed evidence' }],
+      steps: [
+        { artifacts: [{ path: expect.stringContaining('/artifacts/') }] },
+      ],
+    },
+  })
+  expect((await run.materialize()).results).toHaveLength(3)
+})
+
+test('issue 83: an individual Test run overrides the profile Evidence persistence policy', async () => {
+  const root = await tempRoot()
+  const source = join(root, 'run-override.png')
+  await Bun.write(source, new Uint8Array([137, 80, 78, 71]))
+  const store = openTestRunStore({
+    root,
+    createId: () => 'run-evidence-override',
+    evidencePersistenceByProfile: { chrome: 'off' },
+  })
+  const run = await store.create({ evidencePersistence: 'always' })
+  const result = resultWithArtifact('Run override', 'passed', source)
+
+  await run.append(
+    scenarioFinished({
+      ...result,
+      executionTargetProfile: { id: 'chrome' },
+    }),
+  )
+
+  const persisted = (await run.events()).at(-1)
+  expect(persisted?.type).toBe('scenario-finished')
+  if (persisted?.type !== 'scenario-finished') {
+    throw new Error('Expected persisted Scenario evidence')
+  }
+  expect(persisted.attempt.steps[0]?.artifacts?.[0]?.path).toContain(
+    '/artifacts/',
+  )
+})
+
+test('issue 83: reopens an unfinished Test run with its Evidence persistence override', async () => {
+  const root = await tempRoot()
+  const source = join(root, 'reopened-run-override.png')
+  await Bun.write(source, new Uint8Array([137, 80, 78, 71]))
+  const store = openTestRunStore({
+    root,
+    createId: () => 'run-reopened-evidence-override',
+    evidencePersistence: 'off',
+  })
+  const created = await store.create({ evidencePersistence: 'always' })
+  const reopened = await openTestRunStoreBase({
+    root,
+    pickleHome: storageFor(root).pickleHome,
+    evidencePersistence: 'off',
+  }).open(created.id)
+
+  await reopened.append(
+    scenarioFinished(resultWithArtifact('Reopened override', 'passed', source)),
+  )
+
+  const persisted = (await reopened.events()).at(-1)
+  expect(persisted?.type).toBe('scenario-finished')
+  if (persisted?.type !== 'scenario-finished') {
+    throw new Error('Expected persisted Scenario result')
+  }
+  expect(persisted.attempt.steps[0]?.artifacts?.[0]?.path).toContain(
+    '/artifacts/',
+  )
+})
+
+test('issue 83: a missing temporary artifact records capture failure and preserves committed evidence', async () => {
+  const root = await tempRoot()
+  const source = join(root, 'committed.png')
+  const missing = join(root, 'missing.png')
+  await Bun.write(source, new Uint8Array([137, 80, 78, 71]))
+  const store = openTestRunStore({
+    root,
+    createId: () => 'run-capture-failure',
+    evidencePersistence: 'always',
+  })
+  const run = await store.create()
+  await run.append(
+    scenarioFinished(
+      resultWithArtifact('Committed evidence', 'passed', source),
+    ),
+  )
+  const firstEvent = (await run.events()).at(-1)
+  if (firstEvent?.type !== 'scenario-finished') {
+    throw new Error('Expected committed Scenario evidence')
+  }
+  const committedPath = firstEvent.attempt.steps[0]?.artifacts?.[0]?.path
+  if (!committedPath) throw new Error('Expected a committed Test artifact')
+  const committedBytes = await Bun.file(committedPath).bytes()
+
+  await run.append(
+    scenarioFinished(resultWithArtifact('Missing evidence', 'failed', missing)),
+  )
+
+  const persisted = (await run.events()).at(-1)
+  expect(persisted?.type).toBe('scenario-finished')
+  if (persisted?.type !== 'scenario-finished') {
+    throw new Error('Expected persisted Scenario result')
+  }
+  expect(persisted.attempt.steps[0]?.artifacts).toBeUndefined()
+  expect(
+    persisted.attempt.evidenceAvailability.find(
+      (item) => item.kind === 'screenshot',
+    ),
+  ).toMatchObject({
+    state: 'capture-failed',
+    message: expect.stringContaining('missing.png'),
+  })
+  expect(await Bun.file(committedPath).bytes()).toEqual(committedBytes)
+  expect(
+    await Bun.file(
+      join(storageFor(root).runsDirectory, run.id, '.evidence-staging'),
+    ).exists(),
+  ).toBe(false)
+})
+
+test('issue 83: failed event publication rolls back staged binary evidence', async () => {
+  const root = await tempRoot()
+  const source = join(root, 'rollback.png')
+  await Bun.write(source, new Uint8Array([137, 80, 78, 71]))
+  const store = openTestRunStore({
+    root,
+    createId: () => 'run-publication-rollback',
+    evidencePersistence: 'always',
+  })
+  const run = await store.create()
+  const runDirectory = join(storageFor(root).runsDirectory, run.id)
+  const eventsPath = join(runDirectory, 'events.ndjson')
+  await chmod(eventsPath, 0o444)
+  try {
+    await expect(
+      run.append(
+        scenarioFinished(
+          resultWithArtifact('Rollback evidence', 'passed', source),
+        ),
+      ),
+    ).rejects.toThrow()
+  } finally {
+    await chmod(eventsPath, 0o644)
+  }
+
+  expect([
+    ...new Bun.Glob('**/*').scanSync({
+      cwd: join(runDirectory, 'artifacts'),
+      onlyFiles: true,
+    }),
+  ]).toEqual([])
+  expect(await Bun.file(join(runDirectory, '.evidence-staging')).exists()).toBe(
+    false,
+  )
+})
 
 test('issue 77: persists and reopens only schema-v2 Test evidence', async () => {
   const root = await tempRoot()

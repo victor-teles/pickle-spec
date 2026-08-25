@@ -1,6 +1,7 @@
 import { relative, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import type {
+  EvidencePersistencePolicy,
   ExecutionTargetAdapter,
   ExecutionTargetProfile,
   RunEvent,
@@ -30,6 +31,15 @@ import {
   validateSpecificationMetadata,
 } from '@pickle-spec/spec'
 import { createWebAdapter, type WebAdapterOptions } from '@pickle-spec/web'
+import {
+  type ApplicationDiagnosticBuffer,
+  createApplicationDiagnosticBuffer,
+  type LiveApplicationDiagnostic,
+} from './application-diagnostics'
+import {
+  type ApplicationOutputOptions,
+  resolveApplicationOutput,
+} from './application-output'
 import { resolveApplicationRevision } from './application-revision'
 import {
   defaultExtensionsFile,
@@ -38,7 +48,11 @@ import {
   runConfigurationFrom,
 } from './config'
 import type { Extensions } from './extensions'
-import { startServer } from './server'
+import {
+  type ApplicationOutputAvailability,
+  type ApplicationOutputLine,
+  startServer,
+} from './server'
 import { configuredMobileAdapter } from './studio-mobile-targets'
 
 export interface ProjectRunOptions {
@@ -62,6 +76,8 @@ export interface ProjectRunOptions {
   fast?: boolean
   refreshCache?: boolean
   cacheOnly?: boolean
+  applicationOutput?: ApplicationOutputOptions
+  evidencePersistence?: EvidencePersistencePolicy
 }
 
 export interface StartedProjectRun {
@@ -78,6 +94,7 @@ type StartProjectRunInput = {
   options?: ProjectRunOptions
   signal?: AbortSignal
   onEvent?: (event: RunEvent) => void | Promise<void>
+  onApplicationDiagnostic?: (event: LiveApplicationDiagnostic) => void
   onSchedule?: (
     schedule: readonly ScheduledTestResult[],
   ) => void | Promise<void>
@@ -317,12 +334,24 @@ export async function startProjectRun(
   )
   const store = openTestRunStore({
     root,
-    artifactCapture: input.config.artifacts?.capture,
+    evidencePersistence:
+      input.config.evidence?.persistence ?? input.config.artifacts?.capture,
+    evidencePersistenceByProfile: Object.fromEntries(
+      Object.entries(input.config.executionTargetProfiles ?? {}).flatMap(
+        ([profileId, profile]) =>
+          profile.evidence?.persistence
+            ? [[profileId, profile.evidence.persistence]]
+            : [],
+      ),
+    ),
   })
   const testRun = await store.create({
     ...(args.rerunId ? { sourceRunId: args.rerunId } : {}),
     ...(args.suite ? { suite: args.suite } : {}),
     ...(applicationRevision ? { applicationRevision } : {}),
+    ...(args.evidencePersistence
+      ? { evidencePersistence: args.evidencePersistence }
+      : {}),
   })
 
   const done = new Promise<{
@@ -465,16 +494,48 @@ export async function startProjectRun(
           includeTarget,
         }),
       )
+      const applicationOutput = resolveApplicationOutput(
+        input.config,
+        resolvedConfiguration.targets.map(
+          ({ executionTargetProfile }) => executionTargetProfile,
+        ),
+        args.applicationOutput,
+      )
+      const pendingApplicationOutput: ApplicationOutputLine[] = []
+      let applicationDiagnostics: ApplicationDiagnosticBuffer | undefined
       server = await startServer(
         {
           ...input.config.server,
+          output: applicationOutput.capture,
           ...(args.reuseServer ? { reuseExisting: true } : {}),
         },
-        { signal: input.signal },
+        {
+          signal: input.signal,
+          onOutput(line) {
+            if (applicationDiagnostics) applicationDiagnostics.record(line)
+            else pendingApplicationOutput.push(line)
+          },
+        },
       )
+      const unavailableOutput: ApplicationOutputAvailability = {
+        stdout: applicationOutput.capture.stdout
+          ? 'not-supported'
+          : 'not-requested',
+        stderr: applicationOutput.capture.stderr
+          ? 'not-supported'
+          : 'not-requested',
+      }
+      applicationDiagnostics = createApplicationDiagnosticBuffer({
+        profiles: applicationOutput.profiles,
+        availability: server?.outputAvailability ?? unavailableOutput,
+        onDiagnostic: input.onApplicationDiagnostic,
+      })
+      for (const line of pendingApplicationOutput)
+        applicationDiagnostics.record(line)
       const onEvent = async (event: RunEvent) => {
-        const persisted = await testRun.append(event)
-        if (event.type === 'scenario-finished') {
+        const projected = applicationDiagnostics.project(event)
+        const persisted = await testRun.append(projected)
+        if (projected.type === 'scenario-finished') {
           await testRun.materialize({ finished: false })
         }
         await input.onEvent?.(persisted)
@@ -531,7 +592,13 @@ export async function startProjectRun(
       const manifest = await testRun.materialize()
       return { runs, manifest }
     } finally {
-      server?.stop()
+      if (server) {
+        server.stop()
+        await Promise.race([
+          server.outputComplete.catch(() => undefined),
+          Bun.sleep(1_000),
+        ])
+      }
       if (resolvedConfiguration) {
         await disposeAdapters(resolvedConfiguration.targets)
       }

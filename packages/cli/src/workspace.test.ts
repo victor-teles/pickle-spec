@@ -334,7 +334,13 @@ Feature: Release acceptance
 
     const archivePath = join(project, 'release-run.archive.json')
     const archive = Bun.spawnSync({
-      cmd: [pickleCommand, 'export', runId, '--archive', archivePath],
+      cmd: [
+        pickleCommand,
+        'export',
+        runId,
+        '--output',
+        `archive=${archivePath}`,
+      ],
       cwd: project,
       env: { ...Bun.env },
     })
@@ -373,7 +379,7 @@ Feature: Release acceptance
 
     const htmlPath = join(project, 'release-run.html')
     const html = Bun.spawnSync({
-      cmd: [pickleCommand, 'export', runId, '--html', htmlPath],
+      cmd: [pickleCommand, 'export', runId, '--output', `html=${htmlPath}`],
       cwd: project,
       env: { ...Bun.env },
     })
@@ -1327,10 +1333,10 @@ export default {
       cmd: [
         pickleCommand,
         'run',
-        '--json',
-        jsonPath,
-        '--ndjson',
-        ndjsonPath,
+        '--output',
+        `json=${jsonPath}`,
+        '--output',
+        `ndjson=${ndjsonPath}`,
         '--reporter',
         'ndjson',
       ],
@@ -1345,7 +1351,8 @@ export default {
       new Response(child.stderr).text(),
     ])
 
-    expect(stderr).toBe('')
+    expect(stderr).toContain(`OUTPUT succeeded json=${jsonPath}`)
+    expect(stderr).toContain(`OUTPUT succeeded ndjson=${ndjsonPath}`)
     expect(exitCode).toBe(1)
     expect(stdout).toContain('Payment was declined')
 
@@ -2057,12 +2064,12 @@ Feature: Purchase
       cmd: [
         pickleCommand,
         'run',
-        '--junit',
-        junitPath,
-        '--json',
-        jsonPath,
-        '--ndjson',
-        ndjsonPath,
+        '--output',
+        `junit=${junitPath}`,
+        '--output',
+        `json=${jsonPath}`,
+        '--output',
+        `ndjson=${ndjsonPath}`,
         '--reporter',
         'ndjson',
       ],
@@ -2077,9 +2084,12 @@ Feature: Purchase
       new Response(process.stderr).text(),
     ])
 
-    expect(stderr).toBe('')
+    expect(stderr).toContain(`OUTPUT succeeded junit=${junitPath}`)
+    expect(stderr).toContain(`OUTPUT succeeded json=${jsonPath}`)
+    expect(stderr).toContain(`OUTPUT succeeded ndjson=${ndjsonPath}`)
     expect(exitCode).toBe(0)
     expect(stdout).toContain('"kind":"run-event"')
+    expect(stdout).not.toContain('OUTPUT succeeded')
 
     const manifests = [
       ...new Bun.Glob('*/manifest.json').scanSync({
@@ -2371,14 +2381,77 @@ export default {
       ][0]!,
     )
     const archivePath = join(project, 'run.archive.json')
+    const allurePath = join(project, 'allure-results')
     const exported = Bun.spawnSync({
-      cmd: [pickleCommand, 'export', sourceId, '--archive', archivePath],
+      cmd: [
+        pickleCommand,
+        'export',
+        sourceId,
+        '--output',
+        `archive=${archivePath}`,
+        '--output',
+        `allure=${allurePath}`,
+      ],
       cwd: project,
       env: { ...Bun.env },
     })
     expect(exported.exitCode).toBe(0)
     expect(await Bun.file(archivePath).exists()).toBe(true)
+    const allureResultPaths = [
+      ...new Bun.Glob('*-result.json').scanSync({ cwd: allurePath }),
+    ]
+    expect(allureResultPaths).toHaveLength(1)
+    expect(
+      await Bun.file(join(allurePath, allureResultPaths[0]!)).json(),
+    ).toMatchObject({
+      testCaseId: 'scnpurchasebbbbbb',
+      status: 'failed',
+      labels: expect.arrayContaining([
+        { name: 'executionTargetProfile', value: 'deterministic' },
+      ]),
+    })
+    expect([
+      ...new Bun.Glob('*-attachment.png').scanSync({ cwd: allurePath }),
+    ]).toHaveLength(1)
     const originalArchive = await Bun.file(archivePath).text()
+
+    const siblingHtmlPath = join(project, 'sibling.html')
+    const partial = Bun.spawnSync({
+      cmd: [
+        pickleCommand,
+        'export',
+        sourceId,
+        '--output',
+        `archive=${archivePath}`,
+        '--output',
+        `html=${siblingHtmlPath}`,
+      ],
+      cwd: project,
+      env: { ...Bun.env },
+    })
+    expect(partial.exitCode).toBe(2)
+    expect(partial.stdout.toString()).toContain(
+      `OUTPUT failed archive=${archivePath}`,
+    )
+    expect(partial.stdout.toString()).toContain(
+      `OUTPUT succeeded html=${siblingHtmlPath}`,
+    )
+    expect(await Bun.file(archivePath).text()).toBe(originalArchive)
+    expect(await Bun.file(siblingHtmlPath).exists()).toBe(true)
+
+    const forced = Bun.spawnSync({
+      cmd: [
+        pickleCommand,
+        'export',
+        sourceId,
+        '--output',
+        `archive=${archivePath}`,
+        '--force',
+      ],
+      cwd: project,
+      env: { ...Bun.env },
+    })
+    expect(forced.exitCode).toBe(0)
 
     const target = await createCheckProject('import-target', {
       config: {
@@ -2424,7 +2497,7 @@ export default {
 
     const htmlPath = join(project, 'report.html')
     const html = Bun.spawnSync({
-      cmd: [pickleCommand, 'export', sourceId, '--html', htmlPath],
+      cmd: [pickleCommand, 'export', sourceId, '--output', `html=${htmlPath}`],
       cwd: project,
       env: { ...Bun.env },
     })

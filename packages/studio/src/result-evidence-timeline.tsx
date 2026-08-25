@@ -52,7 +52,7 @@ export function ResultEvidenceTimeline(props: ResultEvidenceTimelineProps) {
         ) : null}
         <ol
           aria-label="Causal evidence timeline"
-          className="relative space-y-0 before:absolute before:top-2 before:bottom-2 before:left-[5.75rem] before:w-px before:bg-border sm:before:left-[7.75rem]"
+          className="relative min-w-0 space-y-0 before:absolute before:top-2 before:bottom-2 before:left-[4.375rem] before:w-px before:bg-border sm:before:left-[7.75rem]"
         >
           {props.entries.map((entry) => (
             <li
@@ -63,14 +63,14 @@ export function ResultEvidenceTimeline(props: ResultEvidenceTimelineProps) {
                   : undefined
               }
               aria-current={entry.causal ? 'true' : undefined}
-              className="relative grid grid-cols-[5rem_minmax(0,1fr)] gap-4 py-2 sm:grid-cols-[7rem_minmax(0,1fr)]"
+              className="relative grid min-w-0 grid-cols-[4rem_minmax(0,1fr)] gap-3 py-2 sm:grid-cols-[7rem_minmax(0,1fr)] sm:gap-4"
             >
-              <time className="pr-3 text-right font-mono text-[0.625rem] text-muted-foreground tabular-nums">
+              <time className="pr-2 text-right font-mono text-[0.625rem] text-muted-foreground tabular-nums sm:pr-3">
                 {relativeTimeLabel(entry.occurredAt, props.startedAt)}
               </time>
               <span
                 aria-hidden="true"
-                className={`absolute top-[0.875rem] left-[5.5rem] size-2 rounded-full border sm:left-[7.5rem] ${
+                className={`absolute top-[0.875rem] left-[4.125rem] size-2 rounded-full border sm:left-[7.5rem] ${
                   entry.causal
                     ? 'border-foreground/35 bg-foreground'
                     : 'border-border bg-card'
@@ -91,7 +91,7 @@ export function ResultEvidenceTimeline(props: ResultEvidenceTimelineProps) {
                     </span>
                   ) : null}
                 </div>
-                <p className="mt-1 font-medium">{entry.title}</p>
+                <p className="mt-1 break-words font-medium">{entry.title}</p>
                 {entry.detail ? (
                   <p
                     className={`mt-1 break-words ${

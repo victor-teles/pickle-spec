@@ -42,6 +42,9 @@ export interface TestArtifact {
   kind: 'screenshot' | 'trace' | 'recording' | 'device-log'
   path: string
   mediaType?: string
+  name?: string
+  capturedAt?: string
+  sizeBytes?: number
 }
 
 export const evidenceKinds = [
@@ -68,6 +71,12 @@ export interface EvidenceAvailability {
   message?: string
 }
 
+export interface ApplicationOutputEvidenceAvailability {
+  stream: 'stdout' | 'stderr'
+  state: EvidenceAvailabilityState
+  message?: string
+}
+
 export const diagnosticLevels = ['debug', 'info', 'warning', 'error'] as const
 export type DiagnosticLevel = (typeof diagnosticLevels)[number]
 
@@ -76,6 +85,7 @@ export const diagnosticOrigins = [
   'network',
   'runner',
   'adapter',
+  'application',
 ] as const
 export type DiagnosticOrigin = (typeof diagnosticOrigins)[number]
 
@@ -84,6 +94,7 @@ export interface DiagnosticEntry {
   causalAt?: string
   level: DiagnosticLevel
   origin: DiagnosticOrigin
+  stream?: 'stdout' | 'stderr'
   message: string
   scenarioId?: string
   scenarioName?: string
@@ -235,6 +246,7 @@ export interface ScenarioAttempt {
   message?: string
   fidelityPolicy?: FidelityPolicy
   evidenceAvailability: EvidenceAvailability[]
+  applicationOutputAvailability?: ApplicationOutputEvidenceAvailability[]
   diagnostics?: DiagnosticEntry[]
 }
 
@@ -285,6 +297,7 @@ export type RunEventPayload =
         sourceRunId?: string
         suite?: string
         applicationRevision?: string
+        evidencePersistence?: 'off' | 'on-failure' | 'always'
       }
     }
   | {

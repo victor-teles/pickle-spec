@@ -44,7 +44,13 @@ export class StudioBrowserFixture {
     const project = join(this.workspace, name)
     const screenshot = join(project, 'failure.png')
     await mkdir(join(project, 'features'), { recursive: true })
-    await Bun.write(screenshot, Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]))
+    await Bun.write(
+      screenshot,
+      Buffer.from(
+        'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=',
+        'base64',
+      ),
+    )
     await Bun.write(
       join(project, 'pickle.config.jsonc'),
       JSON.stringify({

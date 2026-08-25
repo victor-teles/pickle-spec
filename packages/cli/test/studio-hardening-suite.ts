@@ -334,6 +334,12 @@ Feature: Fixture ${suffix}
   test('Studio virtualizes large run and reviewed-result collections', async () => {
     const project = await createStudioProject('large-run-history')
     await createLargeHistory(project)
+    const configPath = join(project, 'pickle.config.jsonc')
+    const config = await Bun.file(configPath).json()
+    await Bun.write(
+      configPath,
+      JSON.stringify({ ...config, retention: { days: 1 } }),
+    )
     const { child, url } = await startStudio(project)
     const page = await browser.newPage()
     try {

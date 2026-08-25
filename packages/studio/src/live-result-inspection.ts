@@ -1,4 +1,4 @@
-import type { RunEvent } from '@pickle-spec/runner'
+import type { DiagnosticEntry, RunEvent } from '@pickle-spec/runner'
 import { nextFollowedEntryId, nextLiveLocation } from './live-result-follow'
 import {
   cellsFromLiveSnapshot,
@@ -10,7 +10,7 @@ import type {
   ResultInspectorTab,
 } from './result-inspection'
 import type { MatrixCell } from './run-view'
-import type { StudioRunSnapshot } from './server'
+import type { StudioLiveDiagnosticEvent, StudioRunSnapshot } from './server'
 
 export {
   displayedAttemptState,
@@ -20,6 +20,7 @@ export {
 
 export type LiveStreamEvent =
   | RunEvent
+  | StudioLiveDiagnosticEvent
   | { type: 'run-finished'; run: { id: string } }
 
 export type LiveConnectionStatus =
@@ -36,6 +37,11 @@ export type LiveResultInspection = {
   runId: string
   phase: 'idle' | 'running' | 'finished'
   events: RunEvent[]
+  liveDiagnostics: Array<{
+    profileId: string
+    scope?: StudioLiveDiagnosticEvent['scope']
+    diagnostic: DiagnosticEntry
+  }>
   snapshot?: StudioRunSnapshot
   connection: LiveConnectionStatus
   following: boolean
@@ -62,6 +68,7 @@ export function startLiveInspection(
     runId: input.runId,
     phase: 'running',
     events: [],
+    liveDiagnostics: [],
     connection: { kind: 'connected' },
     following: true,
     pinned: false,
@@ -148,6 +155,7 @@ export function hydrateLiveInspection(
     {
       ...inspection,
       events: snapshot.events,
+      liveDiagnostics: [],
       phase: 'finished',
       connection: { kind: 'connected' },
     },
@@ -161,6 +169,19 @@ export function receiveLiveStreamEvent(
 ): LiveResultInspection {
   if (event.type === 'run-finished') {
     return withProjectedSnapshot({ ...inspection, phase: 'finished' })
+  }
+  if (event.type === 'diagnostic-recorded') {
+    return withProjectedSnapshot({
+      ...inspection,
+      liveDiagnostics: [
+        ...inspection.liveDiagnostics,
+        {
+          profileId: event.profileId,
+          scope: event.scope,
+          diagnostic: event.diagnostic,
+        },
+      ],
+    })
   }
   const events = insertRunEvent(inspection.events, event)
   return withProjectedSnapshot({

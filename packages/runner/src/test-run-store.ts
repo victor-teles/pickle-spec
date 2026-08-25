@@ -1,14 +1,24 @@
 import { Database } from 'bun:sqlite'
-import { appendFile, copyFile, mkdir, rm, stat } from 'node:fs/promises'
-import { dirname, extname, join } from 'node:path'
+import {
+  appendFile,
+  copyFile,
+  mkdir,
+  rename,
+  rm,
+  rmdir,
+  stat,
+} from 'node:fs/promises'
+import { basename, dirname, extname, join } from 'node:path'
 import type { CacheOutcome } from './execution-cache'
 import { resolveLocalProjectStorage } from './local-project-storage'
 import { recordableRunEventPayloadData } from './public-results'
 import type {
+  EvidenceKind,
   ExecutionMode,
   RunEvent,
   RunEventPayload,
   ScenarioAttempt,
+  TestArtifact,
   TestResult,
   TestResultState,
   TestStepResult,
@@ -16,13 +26,18 @@ import type {
 import { finalScenarioAttempt, testRunSchemaVersion } from './run-scenario'
 import { parseRunEvent, parseTestRunManifest } from './test-run-schema'
 
-export type ArtifactCapturePolicy = 'off' | 'on-failure' | 'always'
+export type EvidencePersistencePolicy = 'off' | 'on-failure' | 'always'
+export type ArtifactCapturePolicy = EvidencePersistencePolicy
 
 export interface TestRunStoreOptions {
   root: string
   pickleHome?: string
   createId?: () => string
   now?: () => Date
+  evidencePersistence?: EvidencePersistencePolicy
+  evidencePersistenceByProfile?: Readonly<
+    Record<string, EvidencePersistencePolicy>
+  >
   artifactCapture?: ArtifactCapturePolicy
 }
 
@@ -42,6 +57,7 @@ export interface CreateTestRunOptions {
   sourceRunId?: string
   suite?: string
   applicationRevision?: string
+  evidencePersistence?: EvidencePersistencePolicy
 }
 
 export interface TestRunSummary {
@@ -75,6 +91,15 @@ export interface RetentionPolicy {
 
 export interface RetentionResult {
   removed: string[]
+  beforeBytes: number
+  afterBytes: number
+}
+
+export interface TestRunStorageInspection {
+  totalBytes: number
+  warningThresholdBytes: number
+  warning: boolean
+  pinnedRunIds: string[]
 }
 
 export interface TestRunStore {
@@ -82,16 +107,16 @@ export interface TestRunStore {
   open(id: string): Promise<PersistedTestRun>
   list(): Promise<TestRunSummary[]>
   rebuildIndex(): Promise<void>
+  inspectStorage(): Promise<TestRunStorageInspection>
+  pin(id: string): Promise<void>
+  unpin(id: string): Promise<void>
   applyRetention(policy?: RetentionPolicy): Promise<RetentionResult>
 }
 
-const dayMs = 24 * 60 * 60 * 1000
 const indexSchemaVersion = 5
 
-export const defaultRetention = {
-  maxAgeMs: 30 * dayMs,
-  maxBytes: 2 * 1024 * 1024 * 1024,
-}
+export const defaultRetention: Readonly<RetentionPolicy> = {}
+export const defaultRunStorageWarningBytes = 5 * 1024 * 1024 * 1024
 
 const stateRank: Record<TestResultState, number> = {
   skipped: 0,
@@ -102,6 +127,7 @@ const stateRank: Record<TestResultState, number> = {
 }
 
 type NodeError = Error & { code?: string }
+type RunPinsFile = { schemaVersion: 1; runIds: string[] }
 type SerializeOperation = <Value>(
   operation: () => Promise<Value>,
 ) => Promise<Value>
@@ -109,11 +135,15 @@ type SerializeOperation = <Value>(
 export function openTestRunStore(options: TestRunStoreOptions): TestRunStore {
   const createId = options.createId ?? (() => crypto.randomUUID())
   const now = options.now ?? (() => new Date())
-  const artifactCapture = options.artifactCapture ?? 'on-failure'
+  const evidencePersistence =
+    options.evidencePersistence ?? options.artifactCapture ?? 'on-failure'
+  const evidencePersistenceByProfile =
+    options.evidencePersistenceByProfile ?? {}
   const storage = resolveLocalProjectStorage(options.root, options.pickleHome)
   const projectDirectory = storage.projectDirectory
   const runsDirectory = storage.runsDirectory
   const indexPath = storage.runIndexPath
+  const runPinsPath = storage.runPinsPath
   const incompatibleSchema = (version: unknown): never => {
     throw new Error(
       `Test run storage schema version ${String(version)} is unsupported. ` +
@@ -121,6 +151,7 @@ export function openTestRunStore(options: TestRunStoreOptions): TestRunStore {
     )
   }
   const runOperationQueues = new Map<string, Promise<void>>()
+  let managementOperationQueue = Promise.resolve()
 
   function serializeRunOperation<Value>(
     id: string,
@@ -139,6 +170,57 @@ export function openTestRunStore(options: TestRunStoreOptions): TestRunStore {
     return result
   }
 
+  function serializeManagementOperation<Value>(
+    operation: () => Promise<Value>,
+  ): Promise<Value> {
+    const result = managementOperationQueue.then(operation)
+    managementOperationQueue = result.then(
+      () => undefined,
+      () => undefined,
+    )
+    return result
+  }
+
+  async function readPinnedRunIds(): Promise<Set<string>> {
+    if (!(await Bun.file(runPinsPath).exists())) return new Set()
+    const source: unknown = await Bun.file(runPinsPath).json()
+    if (!isRunPinsFile(source)) {
+      throw new Error('Pinned Test run metadata is invalid')
+    }
+    source.runIds.forEach(validateRunId)
+    return new Set(source.runIds)
+  }
+
+  async function writePinnedRunIds(runIds: ReadonlySet<string>): Promise<void> {
+    await mkdir(projectDirectory, { recursive: true })
+    const temporaryPath = `${runPinsPath}.${crypto.randomUUID()}.tmp`
+    const contents: RunPinsFile = {
+      schemaVersion: 1,
+      runIds: [...runIds].sort(),
+    }
+    try {
+      await Bun.write(temporaryPath, `${JSON.stringify(contents, null, 2)}\n`)
+      await rename(temporaryPath, runPinsPath)
+    } finally {
+      await rm(temporaryPath, { force: true })
+    }
+  }
+
+  async function updatePin(id: string, pinned: boolean): Promise<void> {
+    validateRunId(id)
+    await serializeManagementOperation(async () => {
+      if (
+        !(await Bun.file(join(runsDirectory, id, 'events.ndjson')).exists())
+      ) {
+        throw new Error(`Test run "${id}" was not found`)
+      }
+      const runIds = await readPinnedRunIds()
+      if (pinned) runIds.add(id)
+      else runIds.delete(id)
+      await writePinnedRunIds(runIds)
+    })
+  }
+
   async function upsertManifest(manifest: TestRunManifest): Promise<void> {
     await mkdir(projectDirectory, { recursive: true })
     withIndex(indexPath, (db) => upsertRun(db, manifest))
@@ -154,7 +236,10 @@ export function openTestRunStore(options: TestRunStoreOptions): TestRunStore {
       join(runsDirectory, id),
       startedAt,
       now,
-      artifactCapture,
+      (executionTargetProfileId) =>
+        metadata.evidencePersistence ??
+        evidencePersistenceByProfile[executionTargetProfileId] ??
+        evidencePersistence,
       upsertManifest,
       metadata,
       incompatibleSchema,
@@ -176,10 +261,15 @@ export function openTestRunStore(options: TestRunStoreOptions): TestRunStore {
       started?.type === 'run-started'
         ? started.run.applicationRevision
         : undefined
+    const runEvidencePersistence =
+      started?.type === 'run-started'
+        ? started.run.evidencePersistence
+        : undefined
     return persistedRunFor(id, startedAtFrom(events, now().toISOString()), {
       sourceRunId,
       suite,
       applicationRevision,
+      evidencePersistence: runEvidencePersistence,
     })
   }
 
@@ -255,6 +345,9 @@ export function openTestRunStore(options: TestRunStoreOptions): TestRunStore {
             ...(options.applicationRevision
               ? { applicationRevision: options.applicationRevision }
               : {}),
+            ...(options.evidencePersistence
+              ? { evidencePersistence: options.evidencePersistence }
+              : {}),
           },
         })
         return run
@@ -280,33 +373,69 @@ export function openTestRunStore(options: TestRunStoreOptions): TestRunStore {
       return withIndex(indexPath, listRuns)
     },
     rebuildIndex: rebuild,
-    async applyRetention(policy: RetentionPolicy = {}) {
-      const maxAgeMs = policy.maxAgeMs ?? defaultRetention.maxAgeMs
-      const maxBytes = policy.maxBytes ?? defaultRetention.maxBytes
-      const cutoff = now().getTime() - maxAgeMs
-      const manifests = await loadManifests()
-      const removed: string[] = []
-      const retained: TestRunManifest[] = []
-
-      for (const manifest of manifests) {
-        if (Date.parse(manifest.startedAt) <= cutoff) {
-          await removeRun(runsDirectory, indexPath, manifest.id)
-          removed.push(manifest.id)
-        } else {
-          retained.push(manifest)
+    async inspectStorage() {
+      const totalBytes = await directorySize(runsDirectory)
+      const pinnedRunIds = [...(await readPinnedRunIds())].sort()
+      return {
+        totalBytes,
+        warningThresholdBytes: defaultRunStorageWarningBytes,
+        warning: totalBytes >= defaultRunStorageWarningBytes,
+        pinnedRunIds,
+      }
+    },
+    pin(id) {
+      return updatePin(id, true)
+    },
+    unpin(id) {
+      return updatePin(id, false)
+    },
+    applyRetention(policy: RetentionPolicy = {}) {
+      return serializeManagementOperation(async () => {
+        const beforeBytes = await directorySize(runsDirectory)
+        if (policy.maxAgeMs === undefined && policy.maxBytes === undefined) {
+          return { removed: [], beforeBytes, afterBytes: beforeBytes }
         }
-      }
+        const cutoff =
+          policy.maxAgeMs === undefined
+            ? undefined
+            : now().getTime() - policy.maxAgeMs
+        const manifests = await loadManifests()
+        const pinnedRunIds = await readPinnedRunIds()
+        const removed: string[] = []
+        const removedRunIds = new Set<string>()
+        const eligible = manifests
+          .filter(
+            (manifest) => manifest.finishedAt && !pinnedRunIds.has(manifest.id),
+          )
+          .sort(byOldest)
 
-      retained.sort(byOldest)
-      let total = await directorySize(runsDirectory)
-      while (retained.length > 1 && total > maxBytes) {
-        const oldest = retained.shift()
-        if (!oldest) break
-        await removeRun(runsDirectory, indexPath, oldest.id)
-        removed.push(oldest.id)
-        total = await directorySize(runsDirectory)
-      }
-      return { removed }
+        for (const manifest of eligible) {
+          const finishedAt = manifest.finishedAt
+          if (
+            cutoff !== undefined &&
+            finishedAt &&
+            Date.parse(finishedAt) <= cutoff
+          ) {
+            await removeRun(runsDirectory, indexPath, manifest.id)
+            removed.push(manifest.id)
+            removedRunIds.add(manifest.id)
+          }
+        }
+
+        let total = await directorySize(runsDirectory)
+        const remaining = eligible.filter(
+          (manifest) => !removedRunIds.has(manifest.id),
+        )
+        while (policy.maxBytes !== undefined && total > policy.maxBytes) {
+          const oldest = remaining.shift()
+          if (!oldest) break
+          await removeRun(runsDirectory, indexPath, oldest.id)
+          removedRunIds.add(oldest.id)
+          removed.push(oldest.id)
+          total = await directorySize(runsDirectory)
+        }
+        return { removed, beforeBytes, afterBytes: total }
+      })
     },
   }
 }
@@ -316,7 +445,9 @@ function persistedTestRun(
   directory: string,
   startedAt: string,
   now: () => Date,
-  artifactCapture: ArtifactCapturePolicy,
+  evidencePersistenceFor: (
+    executionTargetProfileId: string,
+  ) => EvidencePersistencePolicy,
   onMaterialize: (manifest: TestRunManifest) => Promise<void>,
   metadata: CreateTestRunOptions,
   incompatibleSchema: (version: unknown) => never,
@@ -343,24 +474,35 @@ function persistedTestRun(
         }
         const current = await readEvents(eventsPath, incompatibleSchema)
         const recordable = recordableRunEventPayloadData(eventPayload(event))
+        const policy =
+          'scope' in recordable
+            ? evidencePersistenceFor(recordable.scope.executionTargetProfileId)
+            : evidencePersistenceFor('')
         const envelope = {
           schemaVersion: testRunSchemaVersion,
           sequence: current.length + 1,
           occurredAt:
             'occurredAt' in event ? event.occurredAt : now().toISOString(),
         } as const
+        const persisted = await persistEventArtifacts(
+          recordable,
+          current,
+          policy,
+          artifactsDirectory,
+        )
         const versioned = {
-          ...(await persistEventArtifacts(
-            recordable,
-            current,
-            artifactCapture,
-            artifactsDirectory,
-          )),
+          ...persisted.event,
           ...envelope,
         } as RunEvent
-        await appendFile(eventsPath, `${JSON.stringify(versioned)}\n`)
-        return event.type === 'step-finished' &&
-          !shouldCapture(artifactCapture, event.result.state)
+        try {
+          await appendFile(eventsPath, `${JSON.stringify(versioned)}\n`)
+        } catch (error) {
+          await Promise.all(
+            persisted.publishedPaths.map((path) => rm(path, { force: true })),
+          )
+          throw error
+        }
+        return !shouldPersistEventEvidence(recordable, policy)
           ? ({ ...recordable, ...envelope } as RunEvent)
           : versioned
       })
@@ -749,44 +891,67 @@ async function readEvents(
 async function persistEventArtifacts(
   event: RunEventPayload,
   current: readonly RunEvent[],
-  policy: ArtifactCapturePolicy,
+  policy: EvidencePersistencePolicy,
   artifactsDirectory: string,
-): Promise<RunEventPayload> {
+): Promise<PersistedEventEvidence> {
   if (event.type === 'scenario-finished') {
+    const persisted = await persistAttemptArtifacts(
+      event.attempt,
+      event.scope,
+      current,
+      policy,
+      artifactsDirectory,
+    )
     return {
-      ...event,
-      attempt: await persistAttemptArtifacts(
-        event.attempt,
-        event.scope,
-        current,
-        policy,
-        artifactsDirectory,
-      ),
+      event: { ...event, attempt: persisted.attempt },
+      publishedPaths: persisted.publishedPaths,
     }
   }
   if (event.type === 'step-finished') {
+    const persisted = await persistStepArtifacts(
+      event.result,
+      policy,
+      artifactsDirectory,
+      artifactStepName(event.scope, event.result.index),
+    )
     return {
-      ...event,
-      result: await persistStepArtifacts(
-        event.result,
-        policy,
-        artifactsDirectory,
-        artifactStepName(event.scope, event.result.index),
-      ),
+      event: { ...event, result: persisted.step },
+      publishedPaths: persisted.publishedPaths,
     }
   }
-  return event
+  return { event, publishedPaths: [] }
+}
+
+type EvidenceCaptureFailure = {
+  kind: EvidenceKind
+  message: string
+}
+
+type PersistedEventEvidence = {
+  event: RunEventPayload
+  publishedPaths: string[]
+}
+
+type PersistedAttemptEvidence = {
+  attempt: ScenarioAttempt
+  publishedPaths: string[]
+}
+
+type PersistedStepEvidence = {
+  step: TestStepResult
+  publishedPaths: string[]
+  captureFailures: EvidenceCaptureFailure[]
 }
 
 async function persistAttemptArtifacts(
   attempt: ScenarioAttempt,
   scope: Extract<RunEventPayload, { type: 'scenario-finished' }>['scope'],
   current: readonly RunEvent[],
-  policy: ArtifactCapturePolicy,
+  policy: EvidencePersistencePolicy,
   artifactsDirectory: string,
-): Promise<ScenarioAttempt> {
-  if (!shouldCapture(policy, attempt.state)) {
-    return withoutAttemptEvidence(attempt)
+): Promise<PersistedAttemptEvidence> {
+  if (!shouldPersistEvidence(policy, attempt.state)) {
+    return { attempt: withoutAttemptEvidence(attempt), publishedPaths: [] }
   }
   const steps = await Promise.all(
     attempt.steps.map(async (step) => {
@@ -796,7 +961,31 @@ async function persistAttemptArtifacts(
           sameScope(event.scope, { ...scope, stepIndex: step.index }),
       )
       if (persisted?.type === 'step-finished' && persisted.result.artifacts) {
-        return { ...step, artifacts: persisted.result.artifacts }
+        if (persisted.result.artifacts.length === step.artifacts?.length) {
+          return {
+            step: { ...step, artifacts: persisted.result.artifacts },
+            publishedPaths: [],
+            captureFailures: [],
+          }
+        }
+        const artifacts = step.artifacts?.map((artifact, index) => {
+          const path = artifactDestination(
+            artifact,
+            index,
+            artifactsDirectory,
+            artifactStepName(scope, step.index),
+          )
+          return (
+            persisted.result.artifacts?.find(
+              (committed) => committed.path === path,
+            ) ?? artifact
+          )
+        })
+        return copyStepArtifacts(
+          { ...step, artifacts },
+          artifactsDirectory,
+          artifactStepName(scope, step.index),
+        )
       }
       return copyStepArtifacts(
         step,
@@ -805,7 +994,26 @@ async function persistAttemptArtifacts(
       )
     }),
   )
-  return { ...attempt, steps }
+  const captureFailures = steps.flatMap((step) => step.captureFailures)
+  return {
+    attempt: {
+      ...attempt,
+      steps: steps.map((step) => step.step),
+      evidenceAvailability: attempt.evidenceAvailability.map((availability) => {
+        const failures = captureFailures.filter(
+          (failure) => failure.kind === availability.kind,
+        )
+        return failures.length > 0
+          ? {
+              ...availability,
+              state: 'capture-failed' as const,
+              message: failures.map((failure) => failure.message).join('; '),
+            }
+          : availability
+      }),
+    },
+    publishedPaths: steps.flatMap((step) => step.publishedPaths),
+  }
 }
 
 function sameScope(
@@ -838,12 +1046,20 @@ function artifactStepName(
 
 async function persistStepArtifacts(
   step: TestStepResult,
-  policy: ArtifactCapturePolicy,
+  policy: EvidencePersistencePolicy,
   artifactsDirectory: string,
   name: string,
-): Promise<TestStepResult> {
-  if (!shouldCapture(policy, step.state)) return withoutStepEvidence(step)
-  if (!step.artifacts?.length) return step
+): Promise<PersistedStepEvidence> {
+  if (!shouldPersistEvidence(policy, step.state)) {
+    return {
+      step: withoutStepEvidence(step),
+      publishedPaths: [],
+      captureFailures: [],
+    }
+  }
+  if (!step.artifacts?.length) {
+    return { step, publishedPaths: [], captureFailures: [] }
+  }
   return copyStepArtifacts(step, artifactsDirectory, name)
 }
 
@@ -876,6 +1092,12 @@ function withoutAttemptEvidence(attempt: ScenarioAttempt): ScenarioAttempt {
         ? { ...availability, state: 'not-retained' }
         : availability
     }),
+    applicationOutputAvailability: attempt.applicationOutputAvailability?.map(
+      (availability) =>
+        availability.state === 'available'
+          ? { ...availability, state: 'not-retained' as const }
+          : availability,
+    ),
   }
 }
 
@@ -883,31 +1105,117 @@ async function copyStepArtifacts(
   step: TestStepResult,
   artifactsDirectory: string,
   name: string,
-): Promise<TestStepResult> {
-  if (!step.artifacts?.length) return step
-  await mkdir(artifactsDirectory, { recursive: true })
-  const artifacts = await Promise.all(
-    step.artifacts.map(async (artifact, index) => {
-      const extension = extname(artifact.path) || '.bin'
-      const filename =
-        index === 0
-          ? `${slug(name)}${extension}`
-          : `${slug(name)}-${index + 1}${extension}`
-      const path = join(artifactsDirectory, filename)
-      if (artifact.path !== path) await copyFile(artifact.path, path)
-      return { ...artifact, path }
-    }),
-  )
-  return { ...step, artifacts }
+): Promise<PersistedStepEvidence> {
+  if (!step.artifacts?.length) {
+    return { step, publishedPaths: [], captureFailures: [] }
+  }
+  const stagingRoot = join(dirname(artifactsDirectory), '.evidence-staging')
+  const stagingDirectory = join(stagingRoot, crypto.randomUUID())
+  try {
+    await Promise.all([
+      mkdir(artifactsDirectory, { recursive: true }),
+      mkdir(stagingDirectory, { recursive: true }),
+    ])
+  } catch (error) {
+    await rm(stagingDirectory, { recursive: true, force: true })
+    await rmdir(stagingRoot).catch(() => undefined)
+    return captureFailedStep(step, error)
+  }
+  const publishedPaths: string[] = []
+  const captureFailures: EvidenceCaptureFailure[] = []
+  const artifacts: TestArtifact[] = []
+  try {
+    for (const [index, artifact] of step.artifacts.entries()) {
+      const path = artifactDestination(
+        artifact,
+        index,
+        artifactsDirectory,
+        name,
+      )
+      const filename = basename(path)
+      if (artifact.path === path) {
+        artifacts.push(artifact)
+        continue
+      }
+      const stagedPath = join(stagingDirectory, filename)
+      try {
+        await copyFile(artifact.path, stagedPath)
+        if (await pathExists(path)) {
+          throw new Error(`Test artifact destination already exists: ${path}`)
+        }
+        await rename(stagedPath, path)
+        publishedPaths.push(path)
+        artifacts.push({ ...artifact, path })
+      } catch (error) {
+        captureFailures.push({
+          kind: artifact.kind,
+          message: `${artifact.path}: ${errorMessage(error)}`,
+        })
+      }
+    }
+  } finally {
+    await rm(stagingDirectory, { recursive: true, force: true })
+    await rmdir(stagingRoot).catch(() => undefined)
+  }
+  return {
+    step: {
+      ...step,
+      artifacts: artifacts.length > 0 ? artifacts : undefined,
+    },
+    publishedPaths,
+    captureFailures,
+  }
 }
 
-function shouldCapture(
-  policy: ArtifactCapturePolicy,
+function artifactDestination(
+  artifact: TestArtifact,
+  index: number,
+  artifactsDirectory: string,
+  name: string,
+): string {
+  const extension = extname(artifact.path) || '.bin'
+  const filename =
+    index === 0
+      ? `${slug(name)}${extension}`
+      : `${slug(name)}-${index + 1}${extension}`
+  return join(artifactsDirectory, filename)
+}
+
+function captureFailedStep(
+  step: TestStepResult,
+  error: unknown,
+): PersistedStepEvidence {
+  const { artifacts: _artifacts, ...stepWithoutArtifacts } = step
+  return {
+    step: stepWithoutArtifacts,
+    publishedPaths: [],
+    captureFailures: (step.artifacts ?? []).map((artifact) => ({
+      kind: artifact.kind,
+      message: `${artifact.path}: ${errorMessage(error)}`,
+    })),
+  }
+}
+
+function shouldPersistEvidence(
+  policy: EvidencePersistencePolicy,
   state: TestResultState,
 ): boolean {
   if (policy === 'always') return true
   if (policy === 'off') return false
   return state === 'failed' || state === 'infrastructure-error'
+}
+
+function shouldPersistEventEvidence(
+  event: RunEventPayload,
+  policy: EvidencePersistencePolicy,
+): boolean {
+  if (event.type === 'step-finished') {
+    return shouldPersistEvidence(policy, event.result.state)
+  }
+  if (event.type === 'scenario-finished') {
+    return shouldPersistEvidence(policy, event.attempt.state)
+  }
+  return true
 }
 
 async function removeRun(
@@ -932,8 +1240,22 @@ function validateRunId(id: string): void {
   }
 }
 
+function isRunPinsFile(value: unknown): value is RunPinsFile {
+  if (!value || typeof value !== 'object') return false
+  const candidate = value as Partial<RunPinsFile>
+  return (
+    candidate.schemaVersion === 1 &&
+    Array.isArray(candidate.runIds) &&
+    candidate.runIds.every((id: unknown) => typeof id === 'string')
+  )
+}
+
 function isAlreadyExists(error: unknown): boolean {
   return error instanceof Error && (error as NodeError).code === 'EEXIST'
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error)
 }
 
 async function pathExists(path: string): Promise<boolean> {
@@ -946,6 +1268,7 @@ async function pathExists(path: string): Promise<boolean> {
 }
 
 async function directorySize(directory: string): Promise<number> {
+  if (!(await pathExists(directory))) return 0
   let total = 0
   const files = new Bun.Glob('**/*').scan({
     cwd: directory,

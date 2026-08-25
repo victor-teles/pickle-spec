@@ -10,6 +10,7 @@ export interface LocalProjectStorage {
   runsDirectory: string
   archivesDirectory: string
   runIndexPath: string
+  runPinsPath: string
   executionCachePath: string
 }
 
@@ -80,6 +81,7 @@ export function resolveLocalProjectStorage(
     runsDirectory: join(projectDirectory, 'runs'),
     archivesDirectory: join(projectDirectory, 'archives'),
     runIndexPath: join(projectDirectory, 'index.sqlite'),
+    runPinsPath: join(projectDirectory, 'pinned-runs.json'),
     executionCachePath: join(canonicalPickleHome, 'execution-cache.sqlite'),
   }
 }

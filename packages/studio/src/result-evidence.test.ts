@@ -6,10 +6,15 @@ import type {
   TestResultState,
 } from '@pickle-spec/runner'
 import {
+  artifactLoadFailureGuidance,
+  artifactsFor,
+  artifactViewerKind,
   defaultResultInspectorTab,
+  diagnosticPage,
   diagnosticsFor,
   filterDiagnostics,
   findInspectedResult,
+  recoveryGuidance,
   timelineFor,
 } from './result-evidence'
 import { historyLocationHref, parseHistoryLocation } from './result-inspection'
@@ -270,6 +275,16 @@ test('filters Diagnostic entries without changing chronological order', () => {
         stepIndex: 0,
         executionTargetProfileId: 'chrome',
       },
+      {
+        occurredAt: '2026-08-22T12:00:01.025Z',
+        level: 'info',
+        origin: 'application',
+        stream: 'stdout',
+        message: 'Application ready',
+        scenarioId: 'scenario-pay',
+        stepIndex: 0,
+        executionTargetProfileId: 'chrome',
+      },
     ],
     steps: [
       {
@@ -310,6 +325,7 @@ test('filters Diagnostic entries without changing chronological order', () => {
 
   expect(diagnostics.map((entry) => entry.message)).toEqual([
     'Opened chrome',
+    'Application ready',
     'Retrying capture',
     'Payment was declined',
   ])
@@ -324,10 +340,109 @@ test('filters Diagnostic entries without changing chronological order', () => {
     ),
   ).toEqual(['Retrying capture'])
   expect(
+    filterDiagnostics(diagnostics, { query: 'stdout' }).map(
+      (entry) => entry.message,
+    ),
+  ).toEqual(['Application ready'])
+  expect(
     filterDiagnostics(diagnostics, {
       scenarioId: 'scenario-pay',
       stepIndex: 0,
       executionTargetProfileId: 'chrome',
     }).map((entry) => entry.message),
-  ).toEqual(['Opened chrome', 'Retrying capture', 'Payment was declined'])
+  ).toEqual([
+    'Opened chrome',
+    'Application ready',
+    'Retrying capture',
+    'Payment was declined',
+  ])
+})
+
+test('searches the complete 10,000-entry Diagnostic set before rendering is bounded', () => {
+  const diagnostics = Array.from({ length: 10_000 }, (_, index) => ({
+    id: `diagnostic-${index}`,
+    occurredAt: new Date(Date.UTC(2026, 7, 22, 12, 0, 0, index)).toISOString(),
+    level: 'info' as const,
+    origin: 'adapter' as const,
+    source: 'Scenario attempt' as const,
+    message:
+      index === 9_999
+        ? 'Deep device failure marker omega-9999'
+        : `Routine device entry ${index}`,
+    scenarioName: 'Pay for the order',
+    executionTargetProfileId: 'android-pixel',
+  }))
+
+  expect(
+    filterDiagnostics(diagnostics, { query: 'OMEGA-9999' }).map(
+      (entry) => entry.id,
+    ),
+  ).toEqual(['diagnostic-9999'])
+  expect(
+    filterDiagnostics(diagnostics, { query: 'android-pixel' }),
+  ).toHaveLength(10_000)
+  const page = diagnosticPage(filterDiagnostics(diagnostics, {}), 99)
+  expect(page.entries).toHaveLength(100)
+  expect(page.entries.at(-1)?.id).toBe('diagnostic-9999')
+  expect(page).toMatchObject({ page: 99, pageCount: 100, first: 9_901 })
+})
+
+test('gives distinct recovery actions for unavailable and unreadable evidence', () => {
+  const guidance = [
+    recoveryGuidance('not-requested'),
+    recoveryGuidance('not-supported'),
+    recoveryGuidance('not-retained'),
+    recoveryGuidance('capture-failed'),
+    recoveryGuidance('missing'),
+    artifactLoadFailureGuidance('corrupt'),
+    artifactLoadFailureGuidance('load-failed'),
+  ]
+
+  expect(guidance[0]).toContain('Request')
+  expect(guidance[1]).toContain('execution target')
+  expect(guidance[2]).toContain('retention policy')
+  expect(guidance[3]).toContain('Diagnostics')
+  expect(guidance[4]).toContain('re-import')
+  expect(guidance[5]).toContain('corrupt')
+  expect(guidance[6]).toContain('Retry')
+  expect(new Set(guidance)).toHaveLength(guidance.length)
+})
+
+test('uses canonical artifact capture time and selects viewers without adapter knowledge', () => {
+  const inspectedAttempt: ScenarioAttempt = {
+    ...attempt(1),
+    steps: [
+      {
+        index: 0,
+        startedAt: '2026-08-22T12:00:00.000Z',
+        finishedAt: '2026-08-22T12:00:01.000Z',
+        durationMs: 1_000,
+        step: { keyword: 'Then', text: 'receipt appears', type: 'outcome' },
+        state: 'passed',
+        resolvedActions: [],
+        artifacts: [
+          {
+            kind: 'recording',
+            path: '/tmp/scenario.mp4',
+            mediaType: 'video/mp4',
+            capturedAt: '2026-08-22T12:00:00.750Z',
+          },
+        ],
+      },
+    ],
+  }
+
+  expect(artifactsFor(inspectedAttempt)[0]?.capturedAt).toBe(
+    '2026-08-22T12:00:00.750Z',
+  )
+  expect(
+    artifactViewerKind({ kind: 'recording', mediaType: 'video/mp4' }),
+  ).toBe('video')
+  expect(
+    artifactViewerKind({ kind: 'device-log', mediaType: 'text/plain' }),
+  ).toBe('text')
+  expect(artifactViewerKind({ kind: 'trace' })).toBe('download')
+  expect(
+    artifactViewerKind({ kind: 'screenshot', mediaType: 'image/png' }),
+  ).toBe('image')
 })

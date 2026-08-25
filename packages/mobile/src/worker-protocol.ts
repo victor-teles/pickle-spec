@@ -42,6 +42,15 @@ const mobileArtifactKindSchema = z.enum([
   'device-log',
 ])
 
+const evidenceAvailabilityStateSchema = z.enum([
+  'available',
+  'not-requested',
+  'not-supported',
+  'not-retained',
+  'capture-failed',
+  'missing',
+])
+
 const mobileTextRedactionSchema = z.strictObject({
   match: z.string().min(1),
   replacement: z.string().optional(),
@@ -100,6 +109,18 @@ const workerStepExecutionSchema = z.strictObject({
         kind: mobileArtifactKindSchema,
         path: z.string(),
         mediaType: z.string().optional(),
+        name: z.string().min(1).optional(),
+        capturedAt: z.iso.datetime({ offset: true }).optional(),
+        sizeBytes: z.number().int().nonnegative().safe().optional(),
+      }),
+    )
+    .optional(),
+  evidenceAvailability: z
+    .array(
+      z.strictObject({
+        kind: mobileArtifactKindSchema,
+        state: evidenceAvailabilityStateSchema,
+        message: z.string().optional(),
       }),
     )
     .optional(),

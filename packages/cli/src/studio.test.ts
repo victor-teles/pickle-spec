@@ -975,6 +975,22 @@ Feature: Search
       expect(
         await page.getByRole('link', { name: 'Export HTML' }).count(),
       ).toBe(1)
+      const allureHref = await page
+        .getByRole('link', { name: 'Export Allure results' })
+        .getAttribute('href')
+      const allureResponse = await page.evaluate(async (href) => {
+        const response = await fetch(href!)
+        return {
+          contentType: response.headers.get('content-type'),
+          signature: [
+            ...new Uint8Array(await response.arrayBuffer()).slice(0, 4),
+          ],
+        }
+      }, allureHref)
+      expect(allureResponse).toEqual({
+        contentType: 'application/zip',
+        signature: [0x50, 0x4b, 0x03, 0x04],
+      })
       const defaultHtmlHref = await page
         .getByRole('link', { name: 'Export HTML' })
         .getAttribute('href')
@@ -1019,6 +1035,9 @@ Feature: Search
           ),
         ).text(),
       ).toBe(importBytes)
+
+      await history.getByRole('button', { name: 'Pin' }).first().click()
+      await history.getByRole('button', { name: 'Unpin' }).waitFor()
 
       await page
         .getByRole('button', { name: 'Delete eligible history' })

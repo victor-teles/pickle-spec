@@ -1,52 +1,32 @@
 import {
-  formatJson,
-  formatJunit,
-  formatNdjson,
   openTestRunStore,
-  type RunEvent,
-  type TestRunManifest,
+  publishTestRunExports,
+  type TestRunExportOutcome,
+  type TestRunExportRequest,
 } from '@pickle-spec/runner'
-import { loadPersistedRun } from './execute-run'
 
 export interface RunOutputOptions {
-  junitPath?: string
-  jsonPath?: string
-  ndjsonPath?: string
+  outputs?: readonly TestRunExportRequest[]
+  force?: boolean
+  allArtifacts?: boolean
 }
 
 type FinalizeEvidenceOptions = {
   includeEmptyRun?: boolean
 }
 
-interface MaterializedRunEvidence {
-  manifest: TestRunManifest
-  events: RunEvent[]
-}
-
-async function writeMaterializedRunOutputs(
-  options: RunOutputOptions,
-  evidence: MaterializedRunEvidence,
-): Promise<void> {
-  if (options.junitPath) {
-    await Bun.write(options.junitPath, formatJunit(evidence.manifest))
-  }
-  if (options.jsonPath) {
-    await Bun.write(options.jsonPath, formatJson(evidence.manifest))
-  }
-  if (options.ndjsonPath) {
-    await Bun.write(options.ndjsonPath, formatNdjson(evidence.events))
-  }
-}
-
 export async function writeRunOutputs(
   options: RunOutputOptions,
   root: string,
   runId: string,
-): Promise<void> {
-  await writeMaterializedRunOutputs(
-    options,
-    await loadPersistedRun(root, runId),
-  )
+): Promise<TestRunExportOutcome[]> {
+  return publishTestRunExports({
+    root,
+    runId,
+    outputs: options.outputs ?? [],
+    force: options.force,
+    htmlArtifacts: options.allArtifacts ? 'all' : 'failures',
+  })
 }
 
 export async function finalizeMaterializedEvidence(
@@ -54,15 +34,36 @@ export async function finalizeMaterializedEvidence(
   root: string,
   runId: string,
   finalizeOptions: FinalizeEvidenceOptions = {},
-): Promise<void> {
+): Promise<TestRunExportOutcome[]> {
   const persisted = await openTestRunStore({ root }).open(runId)
   const events = await persisted.events()
   if (
     !finalizeOptions.includeEmptyRun &&
     !events.some((event) => event.type === 'scenario-finished')
   ) {
-    return
+    return []
   }
-  const manifest = await persisted.materialize()
-  await writeMaterializedRunOutputs(options, { manifest, events })
+  await persisted.materialize()
+  return writeRunOutputs(options, root, runId)
+}
+
+export function reportTestRunExportOutcomes(
+  outcomes: readonly TestRunExportOutcome[],
+  write: (line: string) => void,
+): void {
+  for (const outcome of outcomes) {
+    if (outcome.status === 'succeeded') {
+      write(`OUTPUT succeeded ${outcome.format}=${outcome.path}`)
+    } else {
+      write(
+        `OUTPUT failed ${outcome.format}=${outcome.path}: ${outcome.message}`,
+      )
+    }
+  }
+}
+
+export function testRunExportFailed(
+  outcomes: readonly TestRunExportOutcome[],
+): boolean {
+  return outcomes.some(({ status }) => status === 'failed')
 }

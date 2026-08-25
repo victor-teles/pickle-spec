@@ -70,6 +70,9 @@ const artifactSchema = z.object({
   kind: z.enum(['screenshot', 'trace', 'recording', 'device-log']),
   path: z.string(),
   mediaType: z.string().optional(),
+  name: z.string().min(1).optional(),
+  capturedAt: timestampSchema.optional(),
+  sizeBytes: nonNegativeIntegerSchema.optional(),
 })
 
 const diagnosticEntrySchema = z.object({
@@ -77,6 +80,7 @@ const diagnosticEntrySchema = z.object({
   causalAt: timestampSchema.optional(),
   level: z.enum(diagnosticLevels),
   origin: z.enum(diagnosticOrigins),
+  stream: z.enum(['stdout', 'stderr']).optional(),
   message: z.string(),
   scenarioId: z.string().optional(),
   scenarioName: z.string().optional(),
@@ -115,6 +119,19 @@ const fidelityPolicySchema = z.object({
 
 const evidenceAvailabilitySchema = z.object({
   kind: z.enum(evidenceKinds),
+  state: z.enum([
+    'available',
+    'not-requested',
+    'not-supported',
+    'not-retained',
+    'capture-failed',
+    'missing',
+  ]),
+  message: z.string().optional(),
+})
+
+const applicationOutputEvidenceAvailabilitySchema = z.object({
+  stream: z.enum(['stdout', 'stderr']),
   state: z.enum([
     'available',
     'not-requested',
@@ -177,6 +194,52 @@ function validateEvidenceAvailability(
   }
 }
 
+function validateApplicationOutputAvailability(
+  attempt: ScenarioAttempt,
+  context: z.RefinementCtx,
+): void {
+  if (!attempt.applicationOutputAvailability) return
+  const streams = new Set<string>()
+  const persistedStreams = new Set(
+    [
+      ...(attempt.diagnostics ?? []),
+      ...attempt.steps.flatMap((step) => step.diagnostics ?? []),
+    ]
+      .filter((entry) => entry.origin === 'application' && entry.stream)
+      .map((entry) => entry.stream),
+  )
+  for (const [
+    index,
+    availability,
+  ] of attempt.applicationOutputAvailability.entries()) {
+    if (streams.has(availability.stream)) {
+      context.addIssue({
+        code: 'custom',
+        path: ['applicationOutputAvailability', index, 'stream'],
+        message: `Application output stream "${availability.stream}" must be unique`,
+      })
+    }
+    streams.add(availability.stream)
+    const hasPersistedOutput = persistedStreams.has(availability.stream)
+    if (hasPersistedOutput !== (availability.state === 'available')) {
+      context.addIssue({
+        code: 'custom',
+        path: ['applicationOutputAvailability', index, 'state'],
+        message: `Application output availability for "${availability.stream}" must match persisted Diagnostic entries`,
+      })
+    }
+  }
+  for (const stream of ['stdout', 'stderr']) {
+    if (!streams.has(stream)) {
+      context.addIssue({
+        code: 'custom',
+        path: ['applicationOutputAvailability'],
+        message: `Application output availability must include "${stream}"`,
+      })
+    }
+  }
+}
+
 const scenarioAttemptSchema: z.ZodType<ScenarioAttempt> = z
   .object({
     attempt: positiveIntegerSchema,
@@ -204,11 +267,15 @@ const scenarioAttemptSchema: z.ZodType<ScenarioAttempt> = z
     message: z.string().optional(),
     fidelityPolicy: fidelityPolicySchema.optional(),
     evidenceAvailability: z.array(evidenceAvailabilitySchema),
+    applicationOutputAvailability: z
+      .array(applicationOutputEvidenceAvailabilitySchema)
+      .optional(),
     diagnostics: z.array(diagnosticEntrySchema).optional(),
   })
   .superRefine((attempt, context) => {
     validateTiming(attempt, context)
     validateEvidenceAvailability(attempt, context)
+    validateApplicationOutputAvailability(attempt, context)
   })
 
 const specificationIdentitySchema = z.object({
@@ -328,6 +395,7 @@ const runEventSchema: z.ZodType<RunEvent> = z.discriminatedUnion('type', [
       sourceRunId: z.string().optional(),
       suite: z.string().optional(),
       applicationRevision: z.string().optional(),
+      evidencePersistence: z.enum(['off', 'on-failure', 'always']).optional(),
     }),
   }),
   z.object({

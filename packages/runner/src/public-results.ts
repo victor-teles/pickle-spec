@@ -61,6 +61,9 @@ function publicArtifact(artifact: TestArtifact): TestArtifact {
     kind: artifact.kind,
     path: artifact.path,
     mediaType: artifact.mediaType,
+    name: artifact.name,
+    capturedAt: artifact.capturedAt,
+    sizeBytes: artifact.sizeBytes,
   }
 }
 
@@ -145,6 +148,9 @@ function projectAttempt(
     evidenceAvailability: attempt.evidenceAvailability.map(
       publicEvidenceAvailability,
     ),
+    applicationOutputAvailability: attempt.applicationOutputAvailability?.map(
+      (availability) => ({ ...availability }),
+    ),
     diagnostics: attempt.diagnostics?.map((entry) => ({ ...entry })),
   }
 }
@@ -213,6 +219,7 @@ function publicEventPayload(
           sourceRunId: event.run.sourceRunId,
           suite: event.run.suite,
           applicationRevision: event.run.applicationRevision,
+          evidencePersistence: event.run.evidencePersistence,
         },
       }
     case 'scenario-started':

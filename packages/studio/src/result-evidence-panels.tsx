@@ -1,10 +1,12 @@
 import type {
+  ApplicationOutputEvidenceAvailability,
   DiagnosticLevel,
   DiagnosticOrigin,
   EvidenceAvailability,
   TestResultState,
 } from '@pickle-spec/runner'
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
+import { ArtifactViewer } from './artifact-viewer'
 import { Button, ButtonLink } from './components/ui/button'
 import {
   Card,
@@ -17,10 +19,12 @@ import { Input } from './components/ui/input'
 import { Label } from './components/ui/label'
 import {
   type ArtifactEvidence,
-  artifactUrl,
+  artifactDownloadUrl,
   type DiagnosticEvidence,
+  diagnosticPage,
   filterDiagnostics,
   type InspectedResult,
+  recoveryGuidance,
 } from './result-evidence'
 
 const diagnosticLevels = [
@@ -34,6 +38,7 @@ const diagnosticOrigins = [
   'network',
   'runner',
   'adapter',
+  'application',
 ] as const satisfies readonly DiagnosticOrigin[]
 
 type MetadataProps = {
@@ -44,6 +49,7 @@ type MetadataProps = {
 
 type ResultArtifactsProps = {
   artifacts: readonly ArtifactEvidence[]
+  availability: readonly EvidenceAvailability[]
   scenarioName: string
   resultState: TestResultState
 }
@@ -51,6 +57,7 @@ type ResultArtifactsProps = {
 type ResultDiagnosticsProps = {
   diagnostics: readonly DiagnosticEvidence[]
   availability: readonly EvidenceAvailability[]
+  applicationOutputAvailability?: readonly ApplicationOutputEvidenceAvailability[]
 }
 
 function Metadata(props: MetadataProps) {
@@ -87,6 +94,9 @@ function EvidenceAvailabilityCard(props: {
                 {item.state}
                 {item.message ? (
                   <span className="block">{item.message}</span>
+                ) : null}
+                {item.state !== 'available' ? (
+                  <span className="block">{recoveryGuidance(item.state)}</span>
                 ) : null}
               </dd>
             </div>
@@ -162,18 +172,61 @@ function EmptyEvidence(props: { message: string }) {
   )
 }
 
+type UnavailableEvidence = EvidenceAvailability & {
+  state: Exclude<EvidenceAvailability['state'], 'available'>
+}
+
+function isUnavailableArtifact(
+  item: EvidenceAvailability,
+): item is UnavailableEvidence {
+  return item.kind !== 'diagnostics' && item.state !== 'available'
+}
+
+function ArtifactAvailability(props: {
+  availability: readonly EvidenceAvailability[]
+}) {
+  const unavailable = props.availability.filter(isUnavailableArtifact)
+  if (unavailable.length === 0) return null
+  return (
+    <section
+      aria-labelledby="artifact-availability-title"
+      className="rounded-lg border border-border bg-card p-4"
+    >
+      <h4 id="artifact-availability-title" className="font-medium">
+        Artifact availability
+      </h4>
+      <dl className="mt-3 grid gap-3 sm:grid-cols-2">
+        {unavailable.map((item) => (
+          <div key={item.kind} className="min-w-0 space-y-1">
+            <dt className="font-medium">{item.kind}</dt>
+            <dd className="break-words text-muted-foreground">
+              <span>{item.state}</span>
+              {item.message ? <span> · {item.message}</span> : null}
+              <span className="block">{recoveryGuidance(item.state)}</span>
+            </dd>
+          </div>
+        ))}
+      </dl>
+    </section>
+  )
+}
+
+function formatBytes(sizeBytes: number | undefined): string {
+  if (sizeBytes === undefined) return 'Not recorded'
+  if (sizeBytes < 1_024) return `${sizeBytes} B`
+  return `${(sizeBytes / 1_024).toFixed(1)} KB`
+}
+
 export function ResultArtifacts(props: ResultArtifactsProps) {
-  if (props.artifacts.length === 0) {
-    return (
-      <EmptyEvidence message="No Test artifacts were retained for this Scenario attempt." />
-    )
-  }
   return (
     <div className="space-y-3">
+      <ArtifactAvailability availability={props.availability} />
+      {props.artifacts.length === 0 ? (
+        <EmptyEvidence message="No Test artifacts were retained for this Scenario attempt." />
+      ) : null}
       {props.artifacts.map((evidence) => {
         const { artifact } = evidence
-        const artifactHref = artifactUrl(artifact.path)
-        const isImage = artifact.mediaType?.startsWith('image/')
+        const downloadHref = artifactDownloadUrl(artifact.path, artifact.name)
         return (
           <Card key={`${artifact.path}:${evidence.stepIndex}`}>
             <CardHeader>
@@ -181,30 +234,27 @@ export function ResultArtifacts(props: ResultArtifactsProps) {
               <CardDescription>{evidence.stepText}</CardDescription>
             </CardHeader>
             <CardContent className="grid gap-4 lg:grid-cols-[minmax(0,2fr)_minmax(16rem,1fr)]">
-              {isImage ? (
-                <ButtonLink
-                  variant="ghost"
-                  href={artifactHref}
-                  className="h-auto w-full justify-start overflow-hidden border-border bg-muted/20 p-0 hover:bg-muted/30"
-                >
-                  <img
-                    alt={`${artifact.kind} from ${props.resultState} result for ${props.scenarioName}: ${evidence.stepText}`}
-                    src={artifactHref}
-                    className="max-h-[32rem] w-full object-contain"
-                  />
-                </ButtonLink>
-              ) : (
-                <div className="flex min-h-32 items-center justify-center rounded-md border border-dashed border-border text-muted-foreground">
-                  Preview is unavailable for{' '}
-                  {artifact.mediaType ?? artifact.kind}.
-                </div>
-              )}
+              <ArtifactViewer
+                artifact={artifact}
+                resultState={props.resultState}
+                scenarioName={props.scenarioName}
+                stepText={evidence.stepText}
+              />
               <div className="space-y-4">
                 <dl className="space-y-3">
                   <Metadata label="Kind" value={artifact.kind} />
                   <Metadata
+                    label="File name"
+                    value={artifact.name ?? 'Not recorded'}
+                    mono
+                  />
+                  <Metadata
                     label="Media type"
                     value={artifact.mediaType ?? 'Not recorded'}
+                  />
+                  <Metadata
+                    label="File size"
+                    value={formatBytes(artifact.sizeBytes)}
                   />
                   <Metadata
                     label="Captured"
@@ -216,7 +266,11 @@ export function ResultArtifacts(props: ResultArtifactsProps) {
                   />
                   <Metadata label="Persisted path" value={artifact.path} mono />
                 </dl>
-                <ButtonLink variant="outline" href={artifactHref} download>
+                <ButtonLink
+                  variant="outline"
+                  href={downloadHref}
+                  download={artifact.name ?? true}
+                >
                   Download {artifact.kind}
                 </ButtonLink>
               </div>
@@ -229,6 +283,7 @@ export function ResultArtifacts(props: ResultArtifactsProps) {
 }
 
 export function ResultDiagnostics(props: ResultDiagnosticsProps) {
+  const [query, setQuery] = useState('')
   const [level, setLevel] = useState<DiagnosticLevel>()
   const [origin, setOrigin] = useState<DiagnosticOrigin>()
   const [scenarioId, setScenarioId] = useState('')
@@ -240,22 +295,94 @@ export function ResultDiagnostics(props: ResultDiagnosticsProps) {
   const availabilityDescription = diagnosticsAvailability?.message
     ? `${diagnosticsAvailability.state} · ${diagnosticsAvailability.message}`
     : (diagnosticsAvailability?.state ?? 'Not recorded')
+  const availabilityRecovery =
+    diagnosticsAvailability && diagnosticsAvailability.state !== 'available'
+      ? recoveryGuidance(diagnosticsAvailability.state)
+      : undefined
   const parsedStepIndex = stepIndex === '' ? undefined : Number(stepIndex)
-  const diagnostics = filterDiagnostics(props.diagnostics, {
+  const diagnostics = useMemo(
+    () =>
+      filterDiagnostics(props.diagnostics, {
+        query,
+        level,
+        origin,
+        scenarioId: scenarioId || undefined,
+        stepIndex: Number.isInteger(parsedStepIndex)
+          ? parsedStepIndex
+          : undefined,
+        executionTargetProfileId: executionTargetProfileId || undefined,
+      }),
+    [
+      props.diagnostics,
+      query,
+      level,
+      origin,
+      scenarioId,
+      parsedStepIndex,
+      executionTargetProfileId,
+    ],
+  )
+  const filterKey = [
+    query,
     level,
     origin,
-    scenarioId: scenarioId || undefined,
-    stepIndex: Number.isInteger(parsedStepIndex) ? parsedStepIndex : undefined,
-    executionTargetProfileId: executionTargetProfileId || undefined,
-  })
+    scenarioId,
+    stepIndex,
+    executionTargetProfileId,
+  ].join(':')
+  const hasFilters = Boolean(
+    query ||
+      level ||
+      origin ||
+      scenarioId ||
+      stepIndex ||
+      executionTargetProfileId,
+  )
+
+  function clearFilters() {
+    setQuery('')
+    setLevel(undefined)
+    setOrigin(undefined)
+    setScenarioId('')
+    setStepIndex('')
+    setExecutionTargetProfileId('')
+  }
   return (
     <div className="space-y-3">
       <Card>
         <CardHeader>
           <CardTitle>Diagnostics availability</CardTitle>
-          <CardDescription>{availabilityDescription}</CardDescription>
+          <CardDescription>
+            <span>{availabilityDescription}</span>
+            {availabilityRecovery ? (
+              <span className="block">{availabilityRecovery}</span>
+            ) : null}
+          </CardDescription>
         </CardHeader>
       </Card>
+      {props.applicationOutputAvailability?.length ? (
+        <Card>
+          <CardHeader>
+            <CardTitle>Managed application streams</CardTitle>
+            <CardDescription>
+              stdout and stderr are tracked independently for this target.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <dl className="grid gap-3 sm:grid-cols-2">
+              {props.applicationOutputAvailability.map((item) => (
+                <div key={item.stream} className="space-y-1">
+                  <dt className="font-mono text-sm">{item.stream}</dt>
+                  <dd className="text-muted-foreground">
+                    {item.state}
+                    {item.message ? ` · ${item.message}` : ''}
+                  </dd>
+                </div>
+              ))}
+            </dl>
+          </CardContent>
+        </Card>
+      ) : null}
       {props.diagnostics.length > 0 ? (
         <Card>
           <CardHeader>
@@ -265,6 +392,24 @@ export function ResultDiagnostics(props: ResultDiagnosticsProps) {
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
+            <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end">
+              <DiagnosticInput
+                label="Search Diagnostic entries"
+                value={query}
+                onChange={setQuery}
+                type="search"
+                placeholder="Search messages and metadata"
+              />
+              <Button
+                type="button"
+                variant="outline"
+                className="w-full sm:w-auto"
+                disabled={!hasFilters}
+                onClick={clearFilters}
+              >
+                Clear filters
+              </Button>
+            </div>
             <DiagnosticChoice
               label="Level"
               values={diagnosticLevels}
@@ -301,29 +446,93 @@ export function ResultDiagnostics(props: ResultDiagnosticsProps) {
       {props.diagnostics.length === 0 ? (
         <EmptyEvidence message="No Diagnostic entries were retained for this Scenario attempt." />
       ) : diagnostics.length === 0 ? (
-        <EmptyEvidence message="No Diagnostic entries match these filters." />
+        <div>
+          <p role="status" aria-live="polite" className="sr-only">
+            0 of {props.diagnostics.length} Diagnostic entries match.
+          </p>
+          <EmptyEvidence message="No Diagnostic entries match these filters. Clear or change the filters to continue investigating." />
+        </div>
       ) : (
-        <ol className="space-y-3" aria-label="Diagnostic entries">
-          {diagnostics.map((diagnostic) => (
-            <li key={diagnostic.id}>
-              <Card>
-                <CardHeader>
-                  <CardTitle>{diagnostic.source}</CardTitle>
-                  <CardDescription>
-                    {new Date(diagnostic.occurredAt).toLocaleString()}
-                    {` · ${diagnostic.level} · ${diagnostic.origin}`}
-                    {diagnostic.stepText ? ` · ${diagnostic.stepText}` : ''}
-                  </CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <p className="text-destructive">{diagnostic.message}</p>
-                </CardContent>
-              </Card>
-            </li>
-          ))}
-        </ol>
+        <DiagnosticEntries
+          key={filterKey}
+          diagnostics={diagnostics}
+          total={props.diagnostics.length}
+        />
       )}
     </div>
+  )
+}
+
+function DiagnosticEntries(props: {
+  diagnostics: readonly DiagnosticEvidence[]
+  total: number
+}) {
+  const [requestedPage, setRequestedPage] = useState(0)
+  const page = diagnosticPage(props.diagnostics, requestedPage)
+  const resultLabel = `Showing ${page.first}–${page.last} of ${props.diagnostics.length} matching Diagnostic entries (${props.total} total).`
+  return (
+    <section className="space-y-3" aria-labelledby="diagnostic-results-title">
+      <div className="flex flex-col gap-3 rounded-lg border border-border bg-card p-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="min-w-0">
+          <h4 id="diagnostic-results-title" className="font-medium">
+            Diagnostic entries
+          </h4>
+          <p
+            role="status"
+            aria-live="polite"
+            className="break-words text-sm text-muted-foreground"
+          >
+            {resultLabel}
+          </p>
+        </div>
+        <nav
+          className="grid grid-cols-2 gap-2 sm:flex"
+          aria-label="Diagnostic result pages"
+        >
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            disabled={page.page === 0}
+            onClick={() => setRequestedPage(page.page - 1)}
+          >
+            Previous 100
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            disabled={page.page === page.pageCount - 1}
+            onClick={() => setRequestedPage(page.page + 1)}
+          >
+            Next 100
+          </Button>
+        </nav>
+      </div>
+      <ol className="space-y-3" aria-label="Diagnostic entries">
+        {page.entries.map((diagnostic, index) => (
+          <li
+            key={diagnostic.id}
+            aria-posinset={page.first + index}
+            aria-setsize={props.diagnostics.length}
+            className="min-w-0 rounded-lg border border-border bg-card p-4"
+          >
+            <div className="flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between sm:gap-3">
+              <h5 className="font-medium">{diagnostic.source}</h5>
+              <p className="break-words text-xs text-muted-foreground sm:text-right">
+                {new Date(diagnostic.occurredAt).toLocaleString()}
+                {` · ${diagnostic.level} · ${diagnostic.origin}`}
+                {diagnostic.stream ? ` · ${diagnostic.stream}` : ''}
+                {diagnostic.stepText ? ` · ${diagnostic.stepText}` : ''}
+              </p>
+            </div>
+            <p className="mt-3 whitespace-pre-wrap break-words text-destructive">
+              {diagnostic.message}
+            </p>
+          </li>
+        ))}
+      </ol>
+    </section>
   )
 }
 
@@ -371,7 +580,8 @@ type DiagnosticInputProps = {
   label: string
   value: string
   onChange: (value: string) => void
-  type?: 'text' | 'number'
+  type?: 'text' | 'number' | 'search'
+  placeholder?: string
 }
 
 function DiagnosticInput(props: DiagnosticInputProps) {
@@ -383,6 +593,7 @@ function DiagnosticInput(props: DiagnosticInputProps) {
         id={id}
         type={props.type ?? 'text'}
         min={props.type === 'number' ? 0 : undefined}
+        placeholder={props.placeholder}
         value={props.value}
         onChange={(event) => props.onChange(event.currentTarget.value)}
       />

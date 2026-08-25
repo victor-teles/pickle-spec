@@ -36,6 +36,11 @@ type ProjectLiveSnapshotInput = {
   specificationUri: string
   phase: 'idle' | 'running' | 'finished'
   events: RunEvent[]
+  liveDiagnostics?: Array<{
+    profileId: string
+    scope?: AttemptEventScope
+    diagnostic: import('@pickle-spec/runner').DiagnosticEntry
+  }>
 }
 
 type AttemptEventScope = Extract<
@@ -147,6 +152,7 @@ function liveEvidenceAvailability(
 }
 
 function projectResults(input: ProjectLiveSnapshotInput): TestResult[] {
+  const liveDiagnostics = input.liveDiagnostics ?? []
   const finishedKeys = new Set<string>()
   const finished = new Map<string, TestResult>()
   for (const event of input.events) {
@@ -188,7 +194,7 @@ function projectResults(input: ProjectLiveSnapshotInput): TestResult[] {
   for (const event of input.events) {
     if (event.type !== 'scenario-started') continue
     if (finishedKeys.has(attemptKey(event.scope))) continue
-    const steps = inProgressSteps(input.events, event)
+    const steps = inProgressSteps(input.events, event, liveDiagnostics)
     const latest = steps.at(-1)
     const durationMs = latest
       ? Math.max(
@@ -218,6 +224,14 @@ function projectResults(input: ProjectLiveSnapshotInput): TestResult[] {
           state: latest?.state ?? 'passed',
           steps,
           evidenceAvailability: liveEvidenceAvailability(steps),
+          diagnostics: liveDiagnostics
+            .filter(
+              (entry) =>
+                entry.scope &&
+                sameAttemptScope(entry.scope, event.scope) &&
+                entry.diagnostic.stepIndex === undefined,
+            )
+            .map((entry) => entry.diagnostic),
         },
       ],
     })
@@ -228,13 +242,48 @@ function projectResults(input: ProjectLiveSnapshotInput): TestResult[] {
 function inProgressSteps(
   events: readonly RunEvent[],
   started: Extract<RunEvent, { type: 'scenario-started' }>,
+  liveDiagnostics: NonNullable<ProjectLiveSnapshotInput['liveDiagnostics']>,
 ): TestStepResult[] {
-  return events.flatMap((event) =>
+  const completed = events.flatMap((event) =>
     event.type === 'step-finished' &&
     sameAttemptScope(event.scope, started.scope)
       ? [event.result]
       : [],
   )
+  const activeStep = events.findLast(
+    (event) =>
+      event.type === 'step-started' &&
+      sameAttemptScope(event.scope, started.scope) &&
+      !completed.some(
+        (step) => step.index === (event.scope.stepIndex ?? step.index),
+      ),
+  )
+  if (activeStep?.type !== 'step-started') return completed
+  const diagnostics = liveDiagnostics
+    .filter(
+      (entry) =>
+        entry.scope &&
+        sameAttemptScope(entry.scope, started.scope) &&
+        entry.diagnostic.stepIndex === activeStep.scope.stepIndex,
+    )
+    .map((entry) => entry.diagnostic)
+  const finishedAt = diagnostics.at(-1)?.occurredAt ?? activeStep.occurredAt
+  return [
+    ...completed,
+    {
+      index: activeStep.scope.stepIndex ?? completed.length,
+      startedAt: activeStep.occurredAt,
+      finishedAt,
+      durationMs: Math.max(
+        0,
+        Date.parse(finishedAt) - Date.parse(activeStep.occurredAt),
+      ),
+      step: activeStep.step,
+      state: 'passed',
+      resolvedActions: [],
+      diagnostics: diagnostics.length > 0 ? diagnostics : undefined,
+    },
+  ]
 }
 
 function sameAttemptScope(

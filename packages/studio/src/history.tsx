@@ -215,15 +215,40 @@ export function HistoryPanel(props: HistoryPanelProps) {
     setError(undefined)
     setNotice(undefined)
     try {
-      const result = await props.api<{ removed: string[] }>(
-        '/api/history/retention',
-        { method: 'POST' },
+      const result = await props.api<{
+        removed: string[]
+        beforeBytes: number
+        afterBytes: number
+      }>('/api/history/retention', { method: 'POST' })
+      setSelectedRunIds((current) =>
+        current.filter((runId) => !result.removed.includes(runId)),
       )
-      setSelectedRunIds([])
-      setReviewed(undefined)
-      setComparison(undefined)
+      if (reviewed && result.removed.includes(reviewed.id)) {
+        setReviewed(undefined)
+      }
+      if (selectedRunIds.some((runId) => result.removed.includes(runId))) {
+        setComparison(undefined)
+      }
       await loadHistory()
-      setNotice(`Deleted ${result.removed.length} local test runs`)
+      setNotice(
+        result.removed.length === 0
+          ? 'No local test runs matched the configured retention policy'
+          : `Deleted ${result.removed.length} local test runs · ${bytesLabel(result.beforeBytes)} → ${bytesLabel(result.afterBytes)}`,
+      )
+    } catch (reason) {
+      setError(reasonMessage(reason))
+    }
+  }
+
+  async function setPinned(runId: string, pinned: boolean) {
+    setError(undefined)
+    setNotice(undefined)
+    try {
+      await props.api(`/api/history/${encodeURIComponent(runId)}/pin`, {
+        method: pinned ? 'POST' : 'DELETE',
+      })
+      await loadHistory()
+      setNotice(`${pinned ? 'Pinned' : 'Unpinned'} test run ${runId}`)
     } catch (reason) {
       setError(reasonMessage(reason))
     }
@@ -233,9 +258,13 @@ export function HistoryPanel(props: HistoryPanelProps) {
     ? runs.find((run) => run.id === reviewed.id)
     : undefined
   const artifactMode = includeAllArtifacts ? 'all' : 'failures'
-  const retentionDays = history
+  const retentionDays = history?.retention.maxAgeMs
     ? Math.round(history.retention.maxAgeMs / (24 * 60 * 60 * 1_000))
     : undefined
+  const retentionConfigured = Boolean(
+    history?.retention.maxAgeMs || history?.retention.maxBytes,
+  )
+  const pinnedRunIds = new Set(history?.storage.pinnedRunIds ?? [])
 
   return (
     <section
@@ -299,6 +328,7 @@ export function HistoryPanel(props: HistoryPanelProps) {
             <TableHeader>
               <TableRow>
                 <TableHead>Compare</TableHead>
+                <TableHead>Retention</TableHead>
                 <TableHead>Started</TableHead>
                 <TableHead>Suite</TableHead>
                 <TableHead>Targets</TableHead>
@@ -313,7 +343,7 @@ export function HistoryPanel(props: HistoryPanelProps) {
               </TableRow>
             </TableHeader>
             <TableBody>
-              <VirtualTableSpacer height={runWindow.before} colSpan={12} />
+              <VirtualTableSpacer height={runWindow.before} colSpan={13} />
               {visibleRuns.map((run) => (
                 <TableRow key={run.id} style={{ height: historyRowHeight }}>
                   <TableCell>
@@ -332,6 +362,19 @@ export function HistoryPanel(props: HistoryPanelProps) {
                         )
                       }
                     />
+                  </TableCell>
+                  <TableCell>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      aria-pressed={pinnedRunIds.has(run.id)}
+                      onClick={() =>
+                        void setPinned(run.id, !pinnedRunIds.has(run.id))
+                      }
+                    >
+                      {pinnedRunIds.has(run.id) ? 'Unpin' : 'Pin'}
+                    </Button>
                   </TableCell>
                   <TableCell>
                     <span className="block">
@@ -396,7 +439,7 @@ export function HistoryPanel(props: HistoryPanelProps) {
                   </TableCell>
                 </TableRow>
               ))}
-              <VirtualTableSpacer height={runWindow.after} colSpan={12} />
+              <VirtualTableSpacer height={runWindow.after} colSpan={13} />
             </TableBody>
           </Table>
         </section>
@@ -448,6 +491,20 @@ export function HistoryPanel(props: HistoryPanelProps) {
                 }
               >
                 Export HTML
+              </Button>
+              <Button
+                variant="outline"
+                nativeButton={false}
+                render={
+                  <a
+                    href={`/api/history/${encodeURIComponent(reviewed.id)}/allure`}
+                    // biome-ignore lint/a11y/noRedundantRoles: override Base UI's injected button role
+                    role="link"
+                    download
+                  />
+                }
+              >
+                Export Allure results
               </Button>
               <span className="flex items-center gap-2">
                 <Checkbox
@@ -576,16 +633,41 @@ export function HistoryPanel(props: HistoryPanelProps) {
       ) : null}
 
       {history ? (
-        <section className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border bg-card p-4">
-          <div>
-            <h3 className="text-sm font-medium">Retention</h3>
+        <section
+          className="flex flex-wrap items-center justify-between gap-4 rounded-lg border border-border bg-card p-4"
+          aria-labelledby="run-storage-title"
+        >
+          <div className="min-w-0 space-y-1">
+            <h3 id="run-storage-title" className="text-sm font-medium">
+              Local test run storage
+            </h3>
             <p className="text-xs text-muted-foreground">
-              {retentionDays} days · {bytesLabel(history.retention.maxBytes)}
+              {bytesLabel(history.storage.totalBytes)} stored · Warning at{' '}
+              {bytesLabel(history.storage.warningThresholdBytes)}
             </p>
+            <p className="text-xs text-muted-foreground">
+              {retentionConfigured
+                ? [
+                    retentionDays ? `${retentionDays} days` : undefined,
+                    history.retention.maxBytes
+                      ? bytesLabel(history.retention.maxBytes)
+                      : undefined,
+                  ]
+                    .filter(Boolean)
+                    .join(' · ')
+                : 'No deletion policy configured. Test runs are retained until you configure a limit.'}
+            </p>
+            {history.storage.warning ? (
+              <p role="alert" className="text-sm text-destructive">
+                Local Test run storage reached the warning threshold. Configure
+                retention, export needed evidence, or remove eligible runs.
+              </p>
+            ) : null}
           </div>
           <Button
             type="button"
             variant="destructive"
+            disabled={!retentionConfigured}
             onClick={() => void deleteEligible()}
           >
             Delete eligible history

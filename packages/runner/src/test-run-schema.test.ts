@@ -103,6 +103,27 @@ test('treats Diagnostic entries as persisted diagnostics evidence', () => {
   expect(() => parseTestRunManifest(input, incompatibleSchema)).not.toThrow()
 })
 
+test('retains the managed application stream on Diagnostic entries', () => {
+  const input = manifest()
+  const attempt = input.results[0]!.attempts[0]!
+  attempt.evidenceAvailability[4] = { kind: 'diagnostics', state: 'available' }
+  attempt.diagnostics = [
+    {
+      occurredAt: attempt.startedAt,
+      level: 'info',
+      origin: 'application',
+      stream: 'stderr',
+      message: 'Database connection retried',
+      executionTargetProfileId: 'web',
+    },
+  ]
+
+  expect(
+    parseTestRunManifest(input, incompatibleSchema).results[0]?.attempts[0]
+      ?.diagnostics?.[0],
+  ).toMatchObject({ origin: 'application', stream: 'stderr' })
+})
+
 test('treats Pickle-native trace entries as persisted trace evidence', () => {
   const input = manifest()
   const attempt = input.results[0]!.attempts[0]!
@@ -133,4 +154,44 @@ test('treats Pickle-native trace entries as persisted trace evidence', () => {
   ]
 
   expect(() => parseTestRunManifest(input, incompatibleSchema)).not.toThrow()
+})
+
+test('retains adapter-neutral Test artifact capture metadata', () => {
+  const input = manifest()
+  const attempt = input.results[0]!.attempts[0]!
+  attempt.evidenceAvailability[0] = {
+    kind: 'screenshot',
+    state: 'available',
+  }
+  attempt.steps = [
+    {
+      index: 0,
+      startedAt: attempt.startedAt,
+      finishedAt: attempt.finishedAt,
+      durationMs: 0,
+      step: { keyword: 'Then', text: 'receipt appears', type: 'outcome' },
+      state: 'passed',
+      resolvedActions: [],
+      artifacts: [
+        {
+          kind: 'screenshot',
+          path: '/tmp/receipt.png',
+          mediaType: 'image/png',
+          name: 'receipt.png',
+          capturedAt: attempt.finishedAt,
+          sizeBytes: 4_096,
+        },
+      ],
+    },
+  ]
+
+  const parsed = parseTestRunManifest(input, incompatibleSchema)
+
+  expect(
+    parsed.results[0]?.attempts[0]?.steps[0]?.artifacts?.[0],
+  ).toMatchObject({
+    name: 'receipt.png',
+    capturedAt: attempt.finishedAt,
+    sizeBytes: 4_096,
+  })
 })

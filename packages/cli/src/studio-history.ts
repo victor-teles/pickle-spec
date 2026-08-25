@@ -4,9 +4,11 @@ import { join } from 'node:path'
 import type { RetentionPolicy } from '@pickle-spec/runner'
 import {
   compareTestRuns,
+  createAllureResultsZip,
   formatHtml,
   importRunArchive,
   openTestRunStore,
+  resolveLocalProjectStorage,
   writeRunArchive,
 } from '@pickle-spec/runner'
 import type { StudioHistoryGateway } from '@pickle-spec/studio'
@@ -14,13 +16,18 @@ import { loadPersistedRun } from './execute-run'
 
 export function createStudioHistoryGateway(
   root: string,
-  retention: () => Promise<Required<RetentionPolicy>>,
+  retention: () => Promise<RetentionPolicy>,
 ): StudioHistoryGateway {
   const store = openTestRunStore({ root })
 
   return {
     async list() {
-      return { runs: await store.list(), retention: await retention() }
+      const [runs, policy, storage] = await Promise.all([
+        store.list(),
+        retention(),
+        store.inspectStorage(),
+      ])
+      return { runs, retention: policy, storage }
     },
     async compare(baselineRunId, candidateRunId) {
       const [baseline, candidate] = await Promise.all([
@@ -45,8 +52,27 @@ export function createStudioHistoryGateway(
       const { manifest } = await loadPersistedRun(root, runId)
       return formatHtml(manifest, { artifacts })
     },
+    async exportAllure(runId) {
+      const { manifest } = await loadPersistedRun(root, runId)
+      if (!manifest.finishedAt) {
+        throw new Error(`Test run "${runId}" must be finalized before export`)
+      }
+      return createAllureResultsZip(manifest, {
+        artifactsDirectory: join(
+          resolveLocalProjectStorage(root).runsDirectory,
+          runId,
+          'artifacts',
+        ),
+      })
+    },
     async deleteEligible() {
       return store.applyRetention(await retention())
+    },
+    pin(runId) {
+      return store.pin(runId)
+    },
+    unpin(runId) {
+      return store.unpin(runId)
     },
   }
 }
