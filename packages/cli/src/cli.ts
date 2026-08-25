@@ -655,6 +655,9 @@ async function studio(argv: string[]): Promise<number> {
           },
           signal: runController.signal,
           onEvent,
+          onSchedule(schedule) {
+            onEvent({ type: 'run-scheduled', schedule })
+          },
           onApplicationDiagnostic(event) {
             onEvent({ type: 'diagnostic-recorded', ...event })
           },

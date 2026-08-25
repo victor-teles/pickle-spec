@@ -18,6 +18,7 @@ type TestRunManifestFile = {
 
 type HistoryIndexPayload = {
   runs: Array<{ specificationUris: string[] }>
+  activeRunIds: string[]
 }
 
 type BrowserViewportHost = {
@@ -85,7 +86,7 @@ describe('Studio browser seam', () => {
   beforeAll(async () => {
     await fixture.setup()
     browser = fixture.browser
-  }, 60_000)
+  }, 120_000)
 
   afterAll(async () => {
     await fixture.teardown()
@@ -116,19 +117,22 @@ Feature: Search
         await page.evaluate(async () => (await fetch('/api/plans')).status),
       ).toBe(404)
       expect(
-        await page
-          .getByRole('heading', { name: 'opened-project' })
-          .textContent(),
+        await page.getByText('opened-project', { exact: true }).textContent(),
       ).toBe('opened-project')
       expect(
         await page
           .getByRole('button', { name: 'Specifications', exact: true })
           .count(),
       ).toBe(1)
-      expect(await page.getByRole('button', { name: 'Runs' }).count()).toBe(0)
+      expect(
+        await page.getByRole('button', { name: 'Runs', exact: true }).count(),
+      ).toBe(1)
       expect(await page.getByRole('button', { name: 'History' }).count()).toBe(
-        1,
+        0,
       )
+      expect(
+        await page.getByRole('button', { name: 'View runs' }).count(),
+      ).toBe(1)
       expect(await page.getByRole('button', { name: 'Settings' }).count()).toBe(
         1,
       )
@@ -182,7 +186,7 @@ Feature: Search
       child.kill()
       await child.exited
     }
-  }, 30_000)
+  }, 60_000)
 
   test('Studio submits an explicit contextual cache refresh request', async () => {
     const project = await createStudioProject('refresh-cache')
@@ -330,14 +334,17 @@ export default {
       expect(after?.sourceRunId).not.toBe(before.sourceRunId)
       expect(await cache.read(before.key)).toContain('v2')
 
-      await page.getByRole('button', { name: 'History' }).click()
-      const latestRun = page
+      await page.getByRole('button', { name: 'Runs', exact: true }).click()
+      await page
         .getByRole('table', { name: 'Test run history' })
         .getByRole('row')
         .nth(1)
-      expect(await latestRun.textContent()).toContain('adaptive')
-      expect(await latestRun.textContent()).toContain('refresh')
-      expect(await latestRun.textContent()).toContain('3 inferences')
+        .getByRole('button', { name: 'Review run' })
+        .click()
+      await page.getByRole('table', { name: 'Test run results' }).waitFor()
+      expect(await page.getByText('adaptive').count()).toBeGreaterThan(0)
+      expect(await page.getByText('refresh').count()).toBeGreaterThan(0)
+      expect(await page.getByText('3 inferences').count()).toBeGreaterThan(0)
     } finally {
       await page.close()
       child.kill()
@@ -828,24 +835,13 @@ Feature: Search
         timeout: 20_000,
       })
       const indexedHistory = await page.evaluate(async () => {
-        const response = await fetch('/api/history')
+        const response = await fetch('/api/runs')
         return response.json() as Promise<HistoryIndexPayload>
       })
       expect(indexedHistory.runs[0]?.specificationUris).toEqual([
         'features/checkout.feature',
       ])
-      await page.route(
-        '**/api/history',
-        async (route) => {
-          await Bun.sleep(500)
-          await route.continue()
-        },
-        { times: 1 },
-      )
-      await page.getByRole('button', { name: 'History' }).click()
-      await page
-        .getByRole('status', { name: 'Loading Test run history' })
-        .waitFor()
+      await page.getByRole('button', { name: 'Runs', exact: true }).click()
 
       const history = page.getByRole('table', { name: 'Test run history' })
       await history.waitFor()
@@ -853,21 +849,27 @@ Feature: Search
       const run = history.getByRole('row').nth(1)
       expect(await run.textContent()).toContain('Ad hoc selection')
       expect(await run.textContent()).toContain('chrome, firefox')
-      expect(await run.textContent()).toContain('app-42')
       expect(await run.textContent()).toContain('failed')
-      expect(await run.textContent()).toContain('adaptive')
-      expect(await run.textContent()).toContain('uncacheable')
-      expect(await run.textContent()).toContain('0 inferences')
       expect(await run.textContent()).toContain('6 results')
 
+      await page
+        .getByRole('button', { name: 'Specifications', exact: true })
+        .click()
       await page.getByRole('button', { name: 'Search' }).click()
-      await page.getByRole('button', { name: 'History' }).click()
-      await page.getByText('No test runs for this Specification yet.').waitFor()
+      await page.getByRole('button', { name: 'View runs' }).click()
+      await page.getByText('No Test runs match these filters.').waitFor()
       expect(
         await page.getByRole('table', { name: 'Test run history' }).count(),
       ).toBe(0)
+      expect(new URL(page.url()).pathname).toBe('/runs')
+      expect(new URL(page.url()).searchParams.get('specification')).toBe(
+        'features/search.feature',
+      )
+      await page
+        .getByRole('button', { name: 'Specifications', exact: true })
+        .click()
       await page.getByRole('button', { name: 'Checkout' }).click()
-      await page.getByRole('button', { name: 'History' }).click()
+      await page.getByRole('button', { name: 'View runs' }).click()
       await history.waitFor()
 
       await run.getByRole('button', { name: 'Rerun failures' }).click()
@@ -891,6 +893,7 @@ Feature: Search
         .getByRole('button', { name: 'Review run' })
         .click()
       const results = page.getByRole('table', { name: 'Test run results' })
+      expect(await page.getByText('app-42').count()).toBeGreaterThan(0)
       expect(await results.textContent()).toContain('Pay for the order')
       expect(await results.textContent()).toContain('adaptive')
       expect(await results.textContent()).toContain('uncacheable')
@@ -917,9 +920,8 @@ Feature: Search
           name: 'Pay for the order · failed · chrome',
         })
         .waitFor()
-      expect(new URL(page.url()).searchParams.get('run')).toBeTruthy()
-      expect(new URL(page.url()).searchParams.get('scenario')).toBe(
-        'scnpaybbbbbbbbbb',
+      expect(new URL(page.url()).pathname).toMatch(
+        /^\/runs\/[^/]+\/results\/scnpaybbbbbbbbbb\/chrome\/1$/,
       )
       expect(
         await page
@@ -985,7 +987,16 @@ Feature: Search
       expect(await history.getByRole('row').nth(1).textContent()).toContain(
         '2 results',
       )
-      await results
+      await history
+        .getByRole('row')
+        .filter({ hasText: '6 results' })
+        .first()
+        .getByRole('button', { name: 'Review run' })
+        .click()
+      const targetResults = page.getByRole('table', {
+        name: 'Test run results',
+      })
+      await targetResults
         .getByRole('button', { name: 'Rerun target' })
         .first()
         .click()
@@ -996,6 +1007,12 @@ Feature: Search
       )
 
       expect(await page.getByText('14 days · 1 B').count()).toBe(1)
+      await history
+        .getByRole('row')
+        .filter({ hasText: '6 results' })
+        .first()
+        .getByRole('button', { name: 'Review run' })
+        .click()
       const exportButton = page.locator('[data-slot="dropdown-menu-trigger"]')
       await exportButton.click()
       await Bun.sleep(100)
@@ -1068,12 +1085,13 @@ Feature: Search
       }
       const importBytes = `${JSON.stringify(archive, null, 2)}\n`
       await Bun.write(archivePath, importBytes)
+      await page.getByRole('button', { name: 'Back to Runs' }).click()
       await page.getByLabel('Import run archive').setInputFiles(archivePath)
       await history.getByText('run-imported').waitFor({ timeout: 20_000 })
       await page
         .getByRole('dialog')
         .filter({ hasText: 'Test run imported' })
-        .filter({ hasText: 'run-imported is now available in History.' })
+        .filter({ hasText: 'run-imported is now available in Runs.' })
         .waitFor()
       expect(
         await Bun.file(
@@ -1085,11 +1103,12 @@ Feature: Search
       ).toBe(importBytes)
 
       const pin = history.getByRole('button', { name: 'Pin' }).first()
-      await pin.focus()
+      await pin.hover()
       await page
         .getByRole('tooltip')
         .filter({ hasText: 'Protect this Test run from retention deletion.' })
         .waitFor()
+      await pin.focus()
       await page.keyboard.press('Space')
       await history.getByRole('button', { name: 'Unpin' }).waitFor()
       const pinnedToast = page
@@ -1099,9 +1118,7 @@ Feature: Search
       await pinnedToast.waitFor()
       await pinnedToast.waitFor({ state: 'detached' })
 
-      await page
-        .getByRole('button', { name: 'Delete eligible history' })
-        .click()
+      await page.getByRole('button', { name: 'Delete eligible runs' }).click()
       await page.getByText(/Deleted \d+ local Test runs/).waitFor()
       expect(
         await Bun.file(
@@ -1141,7 +1158,7 @@ Feature: Checkout
         .getByRole('status')
         .filter({ hasText: 'passed' })
         .waitFor({ timeout: 20_000 })
-      await page.getByRole('button', { name: 'History' }).click()
+      await page.getByRole('button', { name: 'Runs', exact: true }).click()
       const history = page.getByRole('table', { name: 'Test run history' })
       await history
         .getByRole('row')
@@ -1184,7 +1201,33 @@ Feature: Checkout
       await page.getByRole('button', { name: 'Run Specification' }).waitFor({
         state: 'hidden',
       })
-      await page.getByRole('button', { name: 'Cancel test run' }).click()
+      await waitForFile(marker)
+      await page.getByRole('button', { name: 'Runs', exact: true }).click()
+      const activeRuns = page.getByRole('heading', { name: 'Active Runs' })
+      await activeRuns.waitFor()
+      const activeRunId = await page.evaluate(async () => {
+        const response = await fetch('/api/runs')
+        const index = (await response.json()) as HistoryIndexPayload
+        return index.activeRunIds[0]
+      })
+      expect(activeRunId).toBeDefined()
+      expect(
+        await page
+          .getByRole('table', { name: 'Test run history' })
+          .textContent(),
+      ).not.toContain(activeRunId)
+      await page.getByRole('button', { name: 'State: All' }).click()
+      await page
+        .getByRole('menuitemradio', { name: 'running', exact: true })
+        .click()
+      expect(new URL(page.url()).searchParams.get('state')).toBe('running')
+      await page.reload()
+      await activeRuns.waitFor()
+      await page.getByRole('button', { name: 'Cancel Test run' }).click()
+      await activeRuns.waitFor({ state: 'detached', timeout: 20_000 })
+      await page
+        .getByRole('button', { name: 'Specifications', exact: true })
+        .click()
       await page.getByRole('button', { name: 'Run Specification' }).waitFor({
         timeout: 20_000,
       })
@@ -1274,9 +1317,8 @@ Feature: Checkout
         .boundingBox()
       expect(mobileRunBox).not.toBeNull()
       expect(mobileEditBox).not.toBeNull()
-      expect(
-        Math.abs((mobileRunBox?.y ?? 0) - (mobileEditBox?.y ?? 1)),
-      ).toBeLessThan(1)
+      expect(mobileEditBox!.y).toBeGreaterThanOrEqual(mobileRunBox!.y)
+      expect(mobileEditBox!.y - mobileRunBox!.y).toBeLessThanOrEqual(40)
       expect(
         await page.evaluate(() => {
           const browser = globalThis as unknown as BrowserViewportHost

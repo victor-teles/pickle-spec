@@ -17,8 +17,8 @@ import {
   recoveryGuidance,
   timelineFor,
 } from './result-evidence'
-import { historyLocationHref, parseHistoryLocation } from './result-inspection'
 import type { StudioRunSnapshot } from './server'
+import { parseStudioRoute, studioRouteHref } from './studio-route'
 
 const evidenceAvailability: ScenarioAttempt['evidenceAvailability'] = [
   { kind: 'screenshot', state: 'not-requested' },
@@ -147,7 +147,7 @@ test('opens failed attempts in Timeline and passed attempts in Overview', () => 
   expect(defaultResultInspectorTab('passed')).toBe('overview')
 })
 
-test('round-trips durable result identity through a deep link', () => {
+test('round-trips durable result identity through a Runs deep link', () => {
   const location = {
     specificationUri: 'features/checkout.feature',
     runId: 'run-78',
@@ -158,7 +158,9 @@ test('round-trips durable result identity through a deep link', () => {
     tab: 'diagnostics' as const,
   }
 
-  expect(parseHistoryLocation(historyLocationHref(location))).toEqual(location)
+  expect(
+    parseStudioRoute(studioRouteHref({ kind: 'result', location })),
+  ).toEqual({ kind: 'result', location })
 })
 
 test('correlates the failed step, resolved action, and Diagnostic entry at the same instant', () => {

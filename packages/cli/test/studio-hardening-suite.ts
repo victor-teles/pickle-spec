@@ -71,9 +71,7 @@ export function registerStudioHardeningTests(
       await page.waitForURL((current) => !current.searchParams.has('token'))
       expect(new URL(page.url()).searchParams.has('token')).toBe(false)
       await page.reload()
-      await page
-        .getByRole('heading', { name: 'secure-local-session' })
-        .waitFor()
+      await page.getByText('secure-local-session', { exact: true }).waitFor()
     } finally {
       await page.close()
       child.kill()
@@ -124,18 +122,15 @@ export function registerStudioHardeningTests(
     })
     try {
       await page.goto(url)
-      await page
-        .getByRole('heading', { name: 'accessible-workflows' })
-        .waitFor()
+      await page.getByText('accessible-workflows', { exact: true }).waitFor()
 
       for (const [areaIndex, area] of [
         'Specifications',
+        'Runs',
         'Settings',
       ].entries()) {
         await page.goto(url)
-        await page
-          .getByRole('heading', { name: 'accessible-workflows' })
-          .waitFor()
+        await page.getByText('accessible-workflows', { exact: true }).waitFor()
         for (let tabIndex = 0; tabIndex <= areaIndex; tabIndex++) {
           await page.keyboard.press('Tab')
         }
@@ -155,7 +150,7 @@ export function registerStudioHardeningTests(
         expect(results.violations).toEqual([])
       }
       await page.goto(url)
-      await page.getByRole('button', { name: 'History' }).click()
+      await page.getByRole('button', { name: 'Runs', exact: true }).click()
       const historyResults = await new AxeBuilder({ page })
         .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa'])
         .analyze()
@@ -345,14 +340,58 @@ Feature: Fixture ${suffix}
     try {
       const response = await page.goto(url)
       expect(response?.status()).toBe(200)
-      await page.getByRole('heading', { name: 'large-run-history' }).waitFor()
-      await page.getByRole('button', { name: 'History' }).click()
+      await page.getByText('large-run-history', { exact: true }).waitFor()
+      await page.getByRole('button', { name: 'Runs', exact: true }).click()
       const history = page.getByRole('table', { name: 'Test run history' })
       const largeRun = history.getByRole('row').filter({
         hasText: 'run-large-results',
       })
       await largeRun.waitFor()
       expect(await history.getByRole('row').count()).toBeLessThan(60)
+
+      const filterMenu = page.locator('[data-slot="dropdown-menu-content"]')
+      await history.getByRole('checkbox').first().check()
+      await page.getByRole('button', { name: 'State: All' }).focus()
+      await page.keyboard.press('Enter')
+      await filterMenu.getByText('passed', { exact: true }).click()
+      expect(new URL(page.url()).searchParams.get('state')).toBe('passed')
+      expect(
+        await page
+          .getByRole('button', { name: 'Compare selected runs' })
+          .isDisabled(),
+      ).toBe(true)
+
+      await page.getByRole('button', { name: 'Specification: All' }).click()
+      await filterMenu.getByText('Checkout', { exact: true }).click()
+      expect(new URL(page.url()).searchParams.get('specification')).toBe(
+        'features/checkout.feature',
+      )
+      await page.getByRole('button', { name: 'Target: All' }).click()
+      await filterMenu.getByText('chrome', { exact: true }).click()
+      expect(new URL(page.url()).searchParams.get('profile')).toBe('chrome')
+      await page.getByRole('button', { name: 'Suite: All' }).click()
+      await filterMenu.getByText('large-results', { exact: true }).click()
+      expect(new URL(page.url()).searchParams.get('suite')).toBe(
+        'large-results',
+      )
+
+      const searchRuns = page.getByRole('searchbox', { name: 'Search Runs' })
+      await searchRuns.fill('run-large-results')
+      expect(new URL(page.url()).searchParams.get('q')).toBe(
+        'run-large-results',
+      )
+      expect(await history.getByRole('row').count()).toBe(2)
+      await page.reload()
+      await searchRuns.waitFor()
+      expect(await searchRuns.inputValue()).toBe('run-large-results')
+      await largeRun.waitFor()
+      await page.goBack()
+      expect(new URL(page.url()).pathname).toBe('/')
+      await page.goForward()
+      await largeRun.waitFor()
+      await page.getByRole('button', { name: 'Clear filters' }).click()
+      expect(new URL(page.url()).pathname).toBe('/runs')
+      expect(new URL(page.url()).search).toBe('')
 
       const historyScroller = page.getByRole('region', {
         name: 'Scrollable test run history',
@@ -379,12 +418,15 @@ Feature: Fixture ${suffix}
       await results.getByText('Scenario 249').waitFor()
       expect(await results.getByRole('row').count()).toBeLessThan(60)
 
+      const backToRuns = page.getByRole('button', { name: 'Back to Runs' })
+      await tabTo(page, backToRuns)
+      await page.keyboard.press('Enter')
       const deleteEligible = page.getByRole('button', {
-        name: 'Delete eligible history',
+        name: 'Delete eligible runs',
       })
       await tabTo(page, deleteEligible)
       await page.keyboard.press('Enter')
-      await page.getByText('No test runs for this Specification yet.').waitFor()
+      await page.getByText('No Test runs have been recorded yet.').waitFor()
       expect(await history.count()).toBe(0)
     } finally {
       await page.close()
@@ -395,7 +437,7 @@ Feature: Fixture ${suffix}
 }
 
 async function tabTo(page: Page, target: ReturnType<Page['locator']>) {
-  for (let index = 0; index < 200; index++) {
+  for (let index = 0; index < 500; index++) {
     await page.keyboard.press('Tab')
     if (await target.evaluate((element) => element.matches(':focus'))) {
       return

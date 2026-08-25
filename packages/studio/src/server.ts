@@ -6,6 +6,7 @@ import type {
   ExecutionCacheEntryMetadata,
   HtmlArtifactMode,
   RunEvent,
+  ScheduledTestResult,
   TestRunComparison,
   TestRunManifest,
   TestRunStorageInspection,
@@ -25,6 +26,7 @@ import {
   type SpecificationWorkspace,
 } from './documents'
 import { createGitWorkspace, type GitWorkspace } from './git'
+import { parseStudioRoute } from './studio-route'
 
 export interface StudioScenario {
   id: string
@@ -169,6 +171,7 @@ export type StudioLiveDiagnosticEvent = {
 export type StudioRunStreamEvent =
   | RunEvent
   | StudioLiveDiagnosticEvent
+  | { type: 'run-scheduled'; schedule: readonly ScheduledTestResult[] }
   | { type: 'run-finished'; run: { id: string } }
 
 export interface StudioRunGateway {
@@ -208,6 +211,10 @@ export interface StudioHistory {
   runs: readonly TestRunSummary[]
   retention: StudioRetentionPolicy
   storage: TestRunStorageInspection
+}
+
+export interface StudioRunsIndex extends StudioHistory {
+  activeRunIds: readonly string[]
 }
 
 export interface StudioExecutionCacheInspection {
@@ -525,13 +532,19 @@ export async function startStudio(
       const url = new URL(request.url)
       const origin = `http://${browserHostname(hostname)}:${server.port}`
       async function routeHistory(): Promise<Response | null> {
-        if (url.pathname === '/api/history' && request.method === 'GET') {
+        if (
+          (url.pathname === '/api/history' || url.pathname === '/api/runs') &&
+          request.method === 'GET'
+        ) {
           if (!options.history) {
             return new Response('Test run history is unavailable', {
               status: 501,
             })
           }
-          return Response.json(await options.history.list())
+          return Response.json({
+            ...(await options.history.list()),
+            activeRunIds: [...activeRuns].sort(),
+          } satisfies StudioRunsIndex)
         }
         if (
           url.pathname === '/api/history/compare' &&
@@ -878,12 +891,23 @@ export async function startStudio(
             .json()
             .catch(() => ({}))) as StudioRunRequest
           let runId = ''
+          const pendingEvents: StudioStreamEvent[] = []
           try {
             const started = await options.gateway.start(body, (event) => {
               if (event.type === 'run-started') runId = event.run.id
+              if (!runId) {
+                pendingEvents.push(event)
+                return
+              }
+              for (const pendingEvent of pendingEvents.splice(0)) {
+                publish(runId, pendingEvent)
+              }
               publish(runId, event)
             })
             runId = started.id
+            for (const pendingEvent of pendingEvents.splice(0)) {
+              publish(runId, pendingEvent)
+            }
             activeRuns.add(started.id)
             const finishRun = () => {
               publish(runId, { type: 'run-finished', run: { id: runId } })
@@ -966,7 +990,20 @@ export async function startStudio(
       }
 
       async function routeRequest(): Promise<Response | undefined> {
-        if (url.pathname === '/' || url.pathname === '/index.html') {
+        const asset =
+          ui.files.get(url.pathname) ?? ui.files.get(basename(url.pathname))
+        if (asset && request.method === 'GET') {
+          if (!authorized(request, origin)) {
+            return new Response('Unauthorized', { status: 401 })
+          }
+          return new Response(asset)
+        }
+        if (
+          request.method === 'GET' &&
+          (url.pathname === '/' ||
+            url.pathname === '/index.html' ||
+            ['runs', 'run', 'result'].includes(parseStudioRoute(url.href).kind))
+        ) {
           if (!authorized(request, origin)) {
             return new Response('Unauthorized', { status: 401 })
           }
@@ -976,14 +1013,6 @@ export async function startStudio(
               'set-cookie': `${sessionCookie}=${encodeURIComponent(token)}; Path=/; HttpOnly; SameSite=Strict`,
             },
           })
-        }
-        const asset =
-          ui.files.get(url.pathname) ?? ui.files.get(basename(url.pathname))
-        if (asset && request.method === 'GET') {
-          if (!authorized(request, origin)) {
-            return new Response('Unauthorized', { status: 401 })
-          }
-          return new Response(asset)
         }
         if (!authorized(request, origin)) {
           return new Response('Unauthorized', { status: 401 })

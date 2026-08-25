@@ -1,6 +1,7 @@
 import {
   type KeyboardEvent,
   StrictMode,
+  useCallback,
   useEffect,
   useMemo,
   useState,
@@ -20,7 +21,6 @@ import {
 } from './components/ui/table'
 import { Toaster } from './components/ui/toast'
 import { TooltipProvider } from './components/ui/tooltip'
-import { HistoryPanel } from './history'
 import { cn } from './lib/utils'
 import {
   cellsFromLiveInspection,
@@ -36,12 +36,7 @@ import {
   startLiveInspection,
 } from './live-result-inspection'
 import { StudioShellSkeleton } from './loading-skeletons'
-import {
-  historyLocationHref,
-  isResultInspection,
-  parseHistoryLocation,
-  type ResultInspectorTab,
-} from './result-inspection'
+import type { ResultInspectorTab } from './result-inspection'
 import { ResultInspector } from './result-inspector'
 import { reasonMessage, resultBadgeVariant } from './result-presentation'
 import {
@@ -53,14 +48,21 @@ import {
   statusLabel,
   type TestResultState,
 } from './run-view'
+import { RunsArea } from './runs'
 import { SettingsPanel } from './settings'
 import { SpecificationEditor } from './specification-editor'
+import {
+  parseStudioRoute,
+  type StudioRoute,
+  studioRouteHref,
+} from './studio-route'
 import './styles.css'
 import type {
   StudioProject,
   StudioRunReadiness,
   StudioRunRequest,
   StudioRunSnapshot,
+  StudioRunsIndex,
   StudioScenario,
   StudioSpecification,
 } from './server'
@@ -76,8 +78,8 @@ if (token) {
     `${address.pathname}${address.search}${address.hash}`,
   )
 }
-const initialHistoryLocation = parseHistoryLocation(location.search)
-const areas = ['Specifications', 'Settings'] as const
+const initialRoute = parseStudioRoute(location.href)
+const areas = ['Specifications', 'Runs', 'Settings'] as const
 const specificationRowHeight = 36
 
 async function api<T>(path: string, init?: RequestInit): Promise<T> {
@@ -128,22 +130,37 @@ function StudioApp() {
   const [error, setError] = useState<string>()
   const [runId, setRunId] = useState<string>()
   const [selectedId, setSelectedId] = useState<string>()
-  const [historyLocation, setHistoryLocation] = useState(initialHistoryLocation)
-  const [currentArea, setCurrentArea] =
-    useState<(typeof areas)[number]>('Specifications')
-  const [specificationSection, setSpecificationSection] = useState<
-    'scenarios' | 'history'
-  >(initialHistoryLocation ? 'history' : 'scenarios')
+  const [route, setRoute] = useState(initialRoute)
+  const [runsIndex, setRunsIndex] = useState<StudioRunsIndex>()
+  const [currentArea, setCurrentArea] = useState<(typeof areas)[number]>(
+    initialRoute.kind === 'runs' ||
+      initialRoute.kind === 'run' ||
+      initialRoute.kind === 'result'
+      ? 'Runs'
+      : 'Specifications',
+  )
   const [starting, setStarting] = useState(false)
   const [live, setLive] = useState<LiveResultInspection>()
   const [authoring, setAuthoring] = useState(false)
   const [attentionOrder, setAttentionOrder] = useState<string[]>()
 
+  const reloadRunsIndex = useCallback(async () => {
+    const value = await api<StudioRunsIndex>('/api/runs')
+    setRunsIndex(value)
+    return value
+  }, [])
+
   useEffect(() => {
     let cancelled = false
-    api<StudioProject>('/api/project').then(
-      (value) => {
-        if (!cancelled) setProject(value)
+    Promise.all([
+      api<StudioProject>('/api/project'),
+      api<StudioRunsIndex>('/api/runs'),
+    ]).then(
+      ([projectValue, runsValue]) => {
+        if (!cancelled) {
+          setProject(projectValue)
+          setRunsIndex(runsValue)
+        }
       },
       (reason: unknown) => {
         if (!cancelled) setError(reasonMessage(reason))
@@ -156,12 +173,13 @@ function StudioApp() {
 
   useEffect(() => {
     function restoreLocation() {
-      const next = parseHistoryLocation(location.search)
-      setHistoryLocation(next)
-      if (next) {
-        setCurrentArea('Specifications')
-        setSpecificationSection('history')
-      }
+      const next = parseStudioRoute(location.href)
+      setRoute(next)
+      setCurrentArea(
+        next.kind === 'runs' || next.kind === 'run' || next.kind === 'result'
+          ? 'Runs'
+          : 'Specifications',
+      )
     }
     addEventListener('popstate', restoreLocation)
     return () => removeEventListener('popstate', restoreLocation)
@@ -187,6 +205,7 @@ function StudioApp() {
             setLive((current) =>
               current ? hydrateLiveInspection(current, snapshot) : current,
             )
+            void reloadRunsIndex()
           },
           (reason: unknown) => setError(reasonMessage(reason)),
         )
@@ -204,12 +223,7 @@ function StudioApp() {
       closedByClient = true
       socket.close()
     }
-  }, [runId])
-
-  useEffect(() => {
-    if (!live?.location) return
-    history.replaceState(null, '', historyLocationHref(live.location))
-  }, [live?.location])
+  }, [reloadRunsIndex, runId])
 
   const cells = live ? cellsFromLiveInspection(live) : []
   const attention = useMemo(() => attentionCells(cells), [cells])
@@ -226,7 +240,8 @@ function StudioApp() {
       : live?.phase === 'running' || starting
         ? 'running'
         : 'idle'
-  const running = runPhase === 'running'
+  const running =
+    runPhase === 'running' || Boolean(runsIndex?.activeRunIds.length)
   const composedView: RunView = {
     phase: runPhase,
     activity: [],
@@ -251,9 +266,6 @@ function StudioApp() {
   }, [attention, attentionOrder])
   const aggregate = statusLabel(composedView)
   const selected =
-    project?.specifications.find(
-      (item) => item.uri === historyLocation?.specificationUri,
-    ) ??
     project?.specifications.find((item) => item.id === selectedId) ??
     project?.specifications[0]
   const canRunAll = Boolean(project?.readiness?.ready ?? true)
@@ -266,13 +278,17 @@ function StudioApp() {
     return value
   }
 
-  function navigateHistory(next: typeof historyLocation) {
-    history.pushState(
-      null,
-      '',
-      next ? historyLocationHref(next) : location.pathname,
+  function navigate(next: StudioRoute, replace = false) {
+    if (next.kind === 'not-found') return
+    const href = studioRouteHref(next)
+    if (replace) history.replaceState(null, '', href)
+    else history.pushState(null, '', href)
+    setRoute(next)
+    setCurrentArea(
+      next.kind === 'runs' || next.kind === 'run' || next.kind === 'result'
+        ? 'Runs'
+        : 'Specifications',
     )
-    setHistoryLocation(next)
   }
 
   function updateLive(
@@ -283,10 +299,6 @@ function StudioApp() {
 
   function pinSelection(cell: MatrixCell) {
     updateLive((current) => pinLiveCell(current, cell))
-  }
-
-  function leaveHistory() {
-    if (historyLocation) navigateHistory(undefined)
   }
 
   async function startRun(request: StudioRunRequest) {
@@ -310,6 +322,14 @@ function StudioApp() {
         body: JSON.stringify(request),
       })
       setRunId(started.id)
+      setRunsIndex((current) =>
+        current
+          ? {
+              ...current,
+              activeRunIds: [...new Set([...current.activeRunIds, started.id])],
+            }
+          : current,
+      )
       setLive(
         startLiveInspection({
           specificationUri: request.paths?.[0] ?? selected?.uri ?? '',
@@ -323,12 +343,12 @@ function StudioApp() {
     }
   }
 
-  async function cancelRun() {
-    if (!runId || !running) return
+  async function cancelRun(requestedRunId = runId) {
+    if (!requestedRunId || !running) return
     setError(undefined)
     try {
       const response = await fetch(
-        `/api/runs/${encodeURIComponent(runId)}/cancel`,
+        `/api/runs/${encodeURIComponent(requestedRunId)}/cancel`,
         {
           method: 'POST',
           headers: { Authorization: `Bearer ${token}` },
@@ -389,8 +409,13 @@ function StudioApp() {
                 variant={area === currentArea ? 'secondary' : 'ghost'}
                 aria-current={area === currentArea ? 'page' : undefined}
                 onClick={() => {
+                  if (area === 'Runs') {
+                    navigate({ kind: 'runs', filters: {} })
+                    return
+                  }
+                  history.pushState(null, '', '/')
+                  setRoute({ kind: 'specifications' })
                   setCurrentArea(area)
-                  if (area === 'Settings') leaveHistory()
                 }}
               >
                 {area}
@@ -409,6 +434,24 @@ function StudioApp() {
             onError={setError}
           />
         </div>
+      ) : currentArea === 'Runs' &&
+        (route.kind === 'runs' ||
+          route.kind === 'run' ||
+          route.kind === 'result') ? (
+        <div className="studio-stage flex min-h-0 flex-1">
+          <RunsArea
+            api={api}
+            index={runsIndex}
+            project={project}
+            route={route}
+            runsBlocked={running}
+            onCancel={(activeRunId) => void cancelRun(activeRunId)}
+            onError={setError}
+            onNavigate={navigate}
+            onRerun={startRun}
+            reloadIndex={reloadRunsIndex}
+          />
+        </div>
       ) : (
         <div
           className={cn(
@@ -423,9 +466,7 @@ function StudioApp() {
               running={running}
               canRun={canRunAll}
               onSelect={(id) => {
-                leaveHistory()
                 setSelectedId(id)
-                setSpecificationSection('scenarios')
               }}
               onRunAll={() => void startRun({})}
             />
@@ -480,48 +521,6 @@ function StudioApp() {
                         : 'flex flex-wrap items-center gap-2',
                     )}
                   >
-                    {authoring ? null : (
-                      <nav
-                        aria-label="Specification"
-                        className="flex w-fit gap-0.5 rounded-[0.625rem] bg-muted p-0.5"
-                      >
-                        <Button
-                          type="button"
-                          variant={
-                            specificationSection === 'scenarios'
-                              ? 'secondary'
-                              : 'ghost'
-                          }
-                          aria-current={
-                            specificationSection === 'scenarios'
-                              ? 'page'
-                              : undefined
-                          }
-                          onClick={() => {
-                            leaveHistory()
-                            setSpecificationSection('scenarios')
-                          }}
-                        >
-                          Scenarios
-                        </Button>
-                        <Button
-                          type="button"
-                          variant={
-                            specificationSection === 'history'
-                              ? 'secondary'
-                              : 'ghost'
-                          }
-                          aria-current={
-                            specificationSection === 'history'
-                              ? 'page'
-                              : undefined
-                          }
-                          onClick={() => setSpecificationSection('history')}
-                        >
-                          History
-                        </Button>
-                      </nav>
-                    )}
                     <div
                       className={cn(
                         authoring
@@ -567,66 +566,43 @@ function StudioApp() {
                           </Button>
                         </>
                       ) : null}
-                      {specificationSection === 'scenarios' ? (
-                        <SpecificationEditor
-                          uri={selected.uri}
-                          namespaces={Object.keys(project.links ?? {})}
-                          linkTemplates={project.links}
-                          api={api}
-                          onModeChange={(mode) => setAuthoring(mode === 'edit')}
-                          onCatalogChange={async () => {
-                            await reloadProject()
-                          }}
-                          onCreated={(uri) => {
-                            void reloadProject().then((value) => {
-                              const created = value.specifications.find(
-                                (item) => item.uri === uri,
-                              )
-                              if (created) setSelectedId(created.id)
+                      <SpecificationEditor
+                        uri={selected.uri}
+                        namespaces={Object.keys(project.links ?? {})}
+                        linkTemplates={project.links}
+                        api={api}
+                        onModeChange={(mode) => setAuthoring(mode === 'edit')}
+                        onCatalogChange={async () => {
+                          await reloadProject()
+                        }}
+                        onCreated={(uri) => {
+                          void reloadProject().then((value) => {
+                            const created = value.specifications.find(
+                              (item) => item.uri === uri,
+                            )
+                            if (created) setSelectedId(created.id)
+                          })
+                        }}
+                        onError={(message) => setError(message)}
+                      />
+                      {authoring ? null : (
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          onClick={() =>
+                            navigate({
+                              kind: 'runs',
+                              filters: { specification: selected.uri },
                             })
-                          }}
-                          onError={(message) => setError(message)}
-                        />
-                      ) : null}
+                          }
+                        >
+                          View runs
+                        </Button>
+                      )}
                     </div>
                   </div>
                 </header>
-                {authoring ? null : isResultInspection(historyLocation) &&
-                  historyLocation.specificationUri === selected.uri ? (
-                  <ResultInspector
-                    api={api}
-                    location={historyLocation}
-                    onBack={() =>
-                      navigateHistory({
-                        specificationUri: selected.uri,
-                        runId: historyLocation.runId,
-                      })
-                    }
-                    onTabChange={(tab: ResultInspectorTab) =>
-                      navigateHistory({ ...historyLocation, tab })
-                    }
-                  />
-                ) : specificationSection === 'history' ? (
-                  <HistoryPanel
-                    key={selected.uri}
-                    api={api}
-                    initialRunId={
-                      historyLocation?.specificationUri === selected.uri
-                        ? historyLocation.runId
-                        : undefined
-                    }
-                    runPhase={runPhase}
-                    specification={selected}
-                    onReviewRun={(reviewedRunId) =>
-                      navigateHistory({
-                        specificationUri: selected.uri,
-                        runId: reviewedRunId,
-                      })
-                    }
-                    onInspectResult={navigateHistory}
-                    onRerun={startRun}
-                  />
-                ) : (
+                {authoring ? null : (
                   <div className="min-h-0 flex-1 space-y-5 overflow-auto px-3 py-4 sm:px-5">
                     <ScenarioTable
                       profiles={project.profiles}

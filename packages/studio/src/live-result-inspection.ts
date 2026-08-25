@@ -1,4 +1,8 @@
-import type { DiagnosticEntry, RunEvent } from '@pickle-spec/runner'
+import type {
+  DiagnosticEntry,
+  RunEvent,
+  ScheduledTestResult,
+} from '@pickle-spec/runner'
 import { nextFollowedEntryId, nextLiveLocation } from './live-result-follow'
 import {
   cellsFromLiveSnapshot,
@@ -21,6 +25,7 @@ export {
 export type LiveStreamEvent =
   | RunEvent
   | StudioLiveDiagnosticEvent
+  | { type: 'run-scheduled'; schedule: readonly ScheduledTestResult[] }
   | { type: 'run-finished'; run: { id: string } }
 
 export type LiveConnectionStatus =
@@ -37,6 +42,7 @@ export type LiveResultInspection = {
   runId: string
   phase: 'idle' | 'running' | 'finished'
   events: RunEvent[]
+  schedule: readonly ScheduledTestResult[]
   liveDiagnostics: Array<{
     profileId: string
     scope?: StudioLiveDiagnosticEvent['scope']
@@ -68,6 +74,7 @@ export function startLiveInspection(
     runId: input.runId,
     phase: 'running',
     events: [],
+    schedule: [],
     liveDiagnostics: [],
     connection: { kind: 'connected' },
     following: true,
@@ -170,6 +177,9 @@ export function receiveLiveStreamEvent(
   if (event.type === 'run-finished') {
     return withProjectedSnapshot({ ...inspection, phase: 'finished' })
   }
+  if (event.type === 'run-scheduled') {
+    return withProjectedSnapshot({ ...inspection, schedule: event.schedule })
+  }
   if (event.type === 'diagnostic-recorded') {
     return withProjectedSnapshot({
       ...inspection,
@@ -245,7 +255,10 @@ function sequenceGap(events: readonly RunEvent[]):
 function withProjectedSnapshot(
   inspection: LiveResultInspection,
 ): LiveResultInspection {
-  return withSnapshot(inspection, projectLiveSnapshot(inspection))
+  return withSnapshot(
+    inspection,
+    projectLiveSnapshot({ ...inspection, schedule: inspection.schedule }),
+  )
 }
 
 function withSnapshot(

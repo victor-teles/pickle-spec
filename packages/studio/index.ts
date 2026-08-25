@@ -32,6 +32,7 @@ export type {
   StudioRunReadiness,
   StudioRunRequest,
   StudioRunSnapshot,
+  StudioRunsIndex,
   StudioScenario,
   StudioServer,
   StudioSpecification,

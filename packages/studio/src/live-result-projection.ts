@@ -2,6 +2,7 @@ import type {
   EvidenceAvailability,
   RunEvent,
   ScenarioAttempt,
+  ScheduledTestResult,
   TestResult,
   TestResultState,
   TestStepResult,
@@ -36,6 +37,7 @@ type ProjectLiveSnapshotInput = {
   specificationUri: string
   phase: 'idle' | 'running' | 'finished'
   events: RunEvent[]
+  schedule?: readonly ScheduledTestResult[]
   liveDiagnostics?: Array<{
     profileId: string
     scope?: AttemptEventScope
@@ -203,9 +205,10 @@ function projectResults(input: ProjectLiveSnapshotInput): TestResult[] {
         )
       : 0
     const finishedAt = latest?.finishedAt ?? event.occurredAt
+    const scheduled = scheduledResultFor(input.schedule, event)
     inProgress.push({
       schemaVersion: 2,
-      specification: {
+      specification: scheduled?.specification ?? {
         name: input.specificationUri,
         uri: input.specificationUri,
       },
@@ -237,6 +240,20 @@ function projectResults(input: ProjectLiveSnapshotInput): TestResult[] {
     })
   }
   return [...finished.values(), ...inProgress]
+}
+
+function scheduledResultFor(
+  schedule: readonly ScheduledTestResult[] | undefined,
+  event: Extract<RunEvent, { type: 'scenario-started' }>,
+): ScheduledTestResult | undefined {
+  return schedule?.find(
+    (candidate) =>
+      (candidate.scenario.id ?? candidate.scenario.name) ===
+        event.scope.scenarioId &&
+      candidate.scenario.examplesRowId === event.scope.examplesRowId &&
+      candidate.executionTargetProfile.id ===
+        event.scope.executionTargetProfileId,
+  )
 }
 
 function inProgressSteps(

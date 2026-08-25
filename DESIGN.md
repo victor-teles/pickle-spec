@@ -170,6 +170,8 @@ Global and contextual navigation use ghost buttons with 32px rows and 8–10px c
 
 Tables use 36–40px rows, 12px text, and quiet row hover. Cards, timelines, editor wells, and evidence panels share the same dark surface family. Dense diagnostic values remain mono; titles and explanations remain sans.
 
+Operational command centers place live work above persisted records. Their filter bars wrap before dense tables, while the tables retain horizontally scrollable data columns instead of compressing content.
+
 ### Gherkin editor
 
 The editor is a dark document well using the `pickle-studio-dark` Monaco theme. Foreground carries keywords and source, muted neutrals carry comments and secondary tokens, and semantic colors are not used as syntax decoration. Selection, suggestions, scrollbars, focus, and caret use the same dark palette.
