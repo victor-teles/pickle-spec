@@ -17,18 +17,18 @@ import { oklchToMonacoHex } from './monaco-theme-color'
 let languageReady = false
 
 const editorPalette = {
-  canvas: 'oklch(1 0 0)',
-  ink: 'oklch(0.26848 0.00629 34.30)',
-  inkStrong: 'oklch(0.14690 0.00413 49.25)',
-  body: 'oklch(0.42393 0 0)',
-  muted: 'oklch(0.55159 0.01426 75.28)',
-  mutedSoft: 'oklch(0.71608 0.00905 56.26)',
-  hairline: 'oklch(0.92318 0.00256 48.72)',
-  hairlineStrong: 'oklch(0.86866 0.00431 56.37)',
-  surfaceStrong: 'oklch(0.95234 0.00288 84.56)',
-  canvasSoft: 'oklch(0.98510 0 0)',
-  scrollbar: 'oklch(0.71608 0.00905 56.26 / 0.333)',
-  scrollbarHover: 'oklch(0.55159 0.01426 75.28 / 0.400)',
+  canvas: 'oklch(0.183 0.002 286.18)',
+  ink: 'oklch(0.88 0 0)',
+  inkStrong: 'oklch(0.985 0 0)',
+  body: 'oklch(0.76 0 0)',
+  muted: 'oklch(0.6 0 0)',
+  mutedSoft: 'oklch(0.45 0 0)',
+  hairline: 'oklch(1 0 0 / 0.12)',
+  hairlineStrong: 'oklch(1 0 0 / 0.14)',
+  surfaceStrong: 'oklch(1 0 0 / 0.075)',
+  canvasSoft: 'oklch(1 0 0 / 0.025)',
+  scrollbar: 'oklch(1 0 0 / 0.14)',
+  scrollbarHover: 'oklch(1 0 0 / 0.22)',
 } as const
 
 type EditorPaletteColor = keyof typeof editorPalette
@@ -89,8 +89,8 @@ function registerGherkinLanguage(catalogRef: { current: GherkinCatalog }) {
       }
     },
   })
-  monacoEditor.defineTheme('pickle-editorial', {
-    base: 'vs',
+  monacoEditor.defineTheme('pickle-studio-dark', {
+    base: 'vs-dark',
     inherit: false,
     colors: {
       'editor.background': editorColor('canvas'),
@@ -165,7 +165,7 @@ export function GherkinEditor(props: {
     const instance = monacoEditor.create(host, {
       value: initialSource.current,
       language: 'gherkin',
-      theme: 'pickle-editorial',
+      theme: 'pickle-studio-dark',
       ariaLabel: 'Gherkin source',
       automaticLayout: true,
       fontFamily:
@@ -210,7 +210,7 @@ export function GherkinEditor(props: {
   return (
     <div
       ref={hostRef}
-      className="relative z-10 h-[28rem] overflow-visible rounded-lg border border-border bg-secondary"
+      className="gherkin-editor-host relative z-10 h-full overflow-visible rounded-lg border border-border bg-secondary"
     />
   )
 }

@@ -81,22 +81,22 @@ function StudioShellSkeleton() {
       className="studio-shell flex h-screen flex-col overflow-hidden"
     >
       <span className="sr-only">Opening project…</span>
-      <header className="studio-topbar flex min-h-16 flex-wrap items-center justify-between gap-3 border-b border-border px-4 py-3 sm:flex-nowrap sm:px-8 sm:py-2">
+      <header className="studio-topbar flex min-h-11 flex-wrap items-center justify-between gap-2 border-b border-border px-3 py-1.5 sm:flex-nowrap sm:px-4">
         <Skeleton className="h-7 w-44" />
         <div className="flex items-center gap-2 max-sm:order-3 max-sm:w-full">
-          <Skeleton className="h-8 w-24 rounded-full" />
-          <Skeleton className="h-8 w-20 rounded-full" />
-          <Skeleton className="h-6 w-16 rounded-full" />
+          <Skeleton className="h-7 w-24 rounded-lg" />
+          <Skeleton className="h-7 w-20 rounded-lg" />
+          <Skeleton className="h-5 w-16 rounded-md" />
         </div>
       </header>
-      <div className="studio-stage grid min-h-0 flex-1 lg:grid-cols-[18rem_1fr]">
+      <div className="studio-stage grid min-h-0 flex-1 lg:grid-cols-[16rem_1fr]">
         <aside className="specification-rail hidden space-y-2 border-r border-border p-3 lg:block">
           <Skeleton className="mb-4 h-6 w-28" />
           {railRows.map((row) => (
-            <Skeleton key={row} className="h-11 w-full rounded-full" />
+            <Skeleton key={row} className="h-9 w-full rounded-lg" />
           ))}
         </aside>
-        <div className="space-y-5 p-8">
+        <div className="space-y-4 p-5">
           <LedgerSkeleton />
         </div>
       </div>

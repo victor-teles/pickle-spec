@@ -166,7 +166,7 @@ export function ResultOverview(props: ResultOverviewProps) {
 
 function EmptyEvidence(props: { message: string }) {
   return (
-    <div className="rounded-lg border border-dashed border-border px-4 py-8 text-center text-muted-foreground">
+    <div className="rounded-lg border border-dashed border-border px-4 py-5 text-center text-muted-foreground">
       {props.message}
     </div>
   )

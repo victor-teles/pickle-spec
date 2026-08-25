@@ -344,10 +344,10 @@ export function SettingsPanel<
   const suites: readonly StudioSuite[] = props.project.suiteDetails ?? []
 
   return (
-    <main className="mx-auto min-w-0 max-w-6xl space-y-10 p-6 sm:p-8">
-      <header className="space-y-2">
-        <h1 className="studio-display text-4xl">Project settings</h1>
-        <p className="max-w-2xl text-base text-muted-foreground">
+    <main className="mx-auto min-w-0 max-w-5xl space-y-6 p-4 sm:p-5">
+      <header className="space-y-1">
+        <h1 className="studio-display text-xl">Project settings</h1>
+        <p className="max-w-2xl text-sm text-muted-foreground">
           Configure execution, credentials, and the local repository for this
           project.
         </p>
@@ -355,10 +355,10 @@ export function SettingsPanel<
       <ExecutionCacheSettings api={props.api} />
 
       <section
-        className="space-y-5 border-t border-border pt-8"
+        className="space-y-4 border-t border-border pt-5"
         aria-labelledby="suites-heading"
       >
-        <h2 id="suites-heading" className="studio-display text-2xl">
+        <h2 id="suites-heading" className="studio-display text-sm">
           Test suites
         </h2>
         <div className="flex flex-wrap gap-1">
@@ -446,10 +446,10 @@ export function SettingsPanel<
       </section>
 
       <section
-        className="space-y-5 border-t border-border pt-8"
+        className="space-y-4 border-t border-border pt-5"
         aria-labelledby="profiles-heading"
       >
-        <h2 id="profiles-heading" className="studio-display text-2xl">
+        <h2 id="profiles-heading" className="studio-display text-sm">
           Execution target profiles
         </h2>
         <div className="flex flex-wrap gap-1">
@@ -510,10 +510,10 @@ export function SettingsPanel<
       </section>
 
       <section
-        className="space-y-5 border-t border-border pt-8"
+        className="space-y-4 border-t border-border pt-5"
         aria-labelledby="credentials-heading"
       >
-        <h2 id="credentials-heading" className="studio-display text-2xl">
+        <h2 id="credentials-heading" className="studio-display text-sm">
           Credentials
         </h2>
         {secrets.length === 0 ? (
@@ -557,10 +557,10 @@ export function SettingsPanel<
       </section>
 
       <section
-        className="space-y-5 border-t border-border pt-8"
+        className="space-y-4 border-t border-border pt-5"
         aria-labelledby="git-heading"
       >
-        <h2 id="git-heading" className="studio-display text-2xl">
+        <h2 id="git-heading" className="studio-display text-sm">
           Repository
         </h2>
         <p className="font-mono text-xs text-muted-foreground" role="status">

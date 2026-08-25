@@ -1,58 +1,52 @@
 ---
 name: Pickle Spec Studio
-description: Editorial test journal — a warm, precise workspace for authoring Specifications and reading test evidence.
+description: Compact dark test operations workspace for authoring Specifications and inspecting evidence.
 colors:
-  primary: "oklch(0.26848 0.00629 34.3)"
-  primary-active: "oklch(0.1469 0.00413 49.25)"
-  ink: "oklch(0.1469 0.00413 49.25)"
-  body: "oklch(0.42393 0 0)"
-  muted: "oklch(0.49533 0.01135 72.55)"
-  muted-soft: "oklch(0.71608 0.00905 56.26)"
-  hairline: "oklch(0.92318 0.00256 48.72)"
-  hairline-soft: "oklch(0.95234 0.00288 84.56)"
-  hairline-strong: "oklch(0.86866 0.00431 56.37)"
-  canvas: "oklch(0.97015 0 0)"
-  canvas-soft: "oklch(0.9851 0 0)"
-  surface-card: "oklch(1 0 0)"
-  surface-strong: "oklch(0.95234 0.00288 84.56)"
-  gradient-mint: "oklch(0.87488 0.06767 174.78)"
-  gradient-peach: "oklch(0.85746 0.06651 53.26)"
-  gradient-lavender: "oklch(0.80888 0.0581 303.31)"
-  gradient-sky: "oklch(0.82005 0.05689 248.52)"
-  gradient-rose: "oklch(0.82873 0.05738 1.76)"
-  semantic-error: "oklch(0.5771 0.21516 27.33)"
-  semantic-success: "oklch(0.5273 0.1371 150.07)"
+  canvas: "oklch(0.1709 0.002 286.18)"
+  rail: "oklch(0.205 0.002 286.18)"
+  surface: "oklch(0.193 0.002 286.18)"
+  surface-raised: "oklch(0.225 0.003 286.18)"
+  foreground: "oklch(0.985 0 0)"
+  body: "oklch(0.87 0 0)"
+  muted: "oklch(0.68 0 0)"
+  muted-soft: "oklch(0.52 0 0)"
+  border: "oklch(1 0 0 / 0.08)"
+  border-strong: "oklch(1 0 0 / 0.14)"
+  hover: "oklch(1 0 0 / 0.045)"
+  active: "oklch(1 0 0 / 0.075)"
+  semantic-error: "oklch(0.704 0.191 22.22)"
+  semantic-success: "oklch(0.723 0.158 149.58)"
 typography:
-  display:
-    fontFamily: "'EB Garamond Variable', 'Times New Roman', serif"
-    fontSize: "2.25rem"
-    fontWeight: 400
-    lineHeight: 1
-    letterSpacing: "-0.025em"
-  section:
-    fontFamily: "'EB Garamond Variable', 'Times New Roman', serif"
-    fontSize: "1.5rem"
-    fontWeight: 400
-    lineHeight: 1.2
-    letterSpacing: "-0.015em"
-  body:
+  title:
     fontFamily: "'Inter Variable', sans-serif"
-    fontSize: "1rem"
-    fontWeight: 400
-    lineHeight: 1.5
-    letterSpacing: "0.01em"
-  label:
+    fontSize: "1.25rem"
+    fontWeight: 600
+    lineHeight: 1.25
+    letterSpacing: "-0.02em"
+  section:
     fontFamily: "'Inter Variable', sans-serif"
     fontSize: "0.9375rem"
-    fontWeight: 500
+    fontWeight: 600
     lineHeight: 1.4
+    letterSpacing: "-0.01em"
+  body:
+    fontFamily: "'Inter Variable', sans-serif"
+    fontSize: "0.875rem"
+    fontWeight: 400
+    lineHeight: 1.45
+    letterSpacing: "normal"
+  label:
+    fontFamily: "'Inter Variable', sans-serif"
+    fontSize: "0.8125rem"
+    fontWeight: 500
+    lineHeight: 1.35
     letterSpacing: "normal"
   caption:
     fontFamily: "'Inter Variable', sans-serif"
-    fontSize: "0.75rem"
+    fontSize: "0.6875rem"
     fontWeight: 600
-    lineHeight: 1.4
-    letterSpacing: "0.08em"
+    lineHeight: 1.35
+    letterSpacing: "0.04em"
     textTransform: uppercase
   mono:
     fontFamily: "'JetBrains Mono Variable', monospace"
@@ -62,9 +56,8 @@ typography:
 rounded:
   sm: "0.375rem"
   md: "0.5rem"
-  lg: "0.75rem"
-  xl: "1rem"
-  pill: "9999px"
+  lg: "0.625rem"
+  xl: "0.75rem"
 spacing:
   xxs: "0.25rem"
   xs: "0.5rem"
@@ -72,149 +65,137 @@ spacing:
   base: "1rem"
   md: "1.25rem"
   lg: "1.5rem"
-  xl: "2rem"
-  section: "3rem"
 components:
   button-primary:
-    backgroundColor: "{colors.primary}"
-    textColor: "oklch(1 0 0)"
-    rounded: "{rounded.pill}"
-    padding: "0.625rem 1.25rem"
-    height: "2.5rem"
+    backgroundColor: "{colors.foreground}"
+    textColor: "{colors.canvas}"
+    rounded: "{rounded.lg}"
+    padding: "0.5rem 0.75rem"
+    height: "2rem"
   button-outline:
     backgroundColor: transparent
-    textColor: "{colors.ink}"
-    rounded: "{rounded.pill}"
-    padding: "0.5625rem 1.1875rem"
-    height: "2.5rem"
+    textColor: "{colors.foreground}"
+    rounded: "{rounded.lg}"
+    padding: "0.4375rem 0.75rem"
+    height: "2rem"
   badge:
-    backgroundColor: "{colors.surface-strong}"
-    textColor: "{colors.ink}"
-    rounded: "{rounded.pill}"
-    padding: "0.25rem 0.625rem"
-  card:
-    backgroundColor: "{colors.surface-card}"
-    textColor: "{colors.ink}"
-    rounded: "{rounded.xl}"
-    padding: "1.5rem"
-  input:
-    backgroundColor: "{colors.surface-card}"
-    textColor: "{colors.ink}"
+    backgroundColor: "{colors.hover}"
+    textColor: "{colors.body}"
     rounded: "{rounded.md}"
-    padding: "0.75rem 1rem"
-    height: "2.75rem"
+    padding: "0.1875rem 0.4375rem"
+  card:
+    backgroundColor: "{colors.surface}"
+    textColor: "{colors.foreground}"
+    rounded: "{rounded.xl}"
+    padding: "1rem"
+  input:
+    backgroundColor: "{colors.surface}"
+    textColor: "{colors.foreground}"
+    rounded: "{rounded.lg}"
+    padding: "0.5rem 0.75rem"
+    height: "2rem"
 ---
 
 # Design System: Pickle Spec Studio
 
 ## Overview
 
-**Creative North Star: “The Editorial Test Journal”**
+**Creative North Star: “The Test Operations Desk”**
 
-Studio makes an executable Specification feel like a carefully edited working document. The feature file is the manuscript, Scenarios are its sections, and test evidence is the annotated record of what actually happened. The interface is quiet enough to read for hours but structured enough to operate quickly.
+Studio is a compact desktop tool for moving between Specifications, running Scenarios, and reading evidence. It should feel immediately operational: persistent navigation, dense comparison surfaces, restrained hierarchy, and controls sized for frequent use.
 
-The visual world is a warm off-white editorial canvas with near-black ink, white sheets, fine rules, and generous but deliberate space. Soft pastel atmospheric blooms provide the only non-semantic brand color. This is an operator surface, not a marketing page: editorial character appears in titles, pacing, material, and transitions while controls remain direct and data stays dense.
+The visual language is a near-black workspace with a subtly lighter rail, white-alpha borders, and very small state deltas. Brand character lives in the Pickle Spec wordmark and precise interaction behavior; product screens do not borrow landing-page scale, decorative gradients, or editorial pacing.
 
 Key characteristics:
 
-- Warm off-white canvas and white paper surfaces; never a developer-tool dark canvas.
-- EB Garamond is the bundled open-source display substitute for licensed Waldenburg Light. Inter carries UI copy; JetBrains Mono carries paths, code, identifiers, and measurements.
-- Near-black pill actions, transparent outlined secondary actions, and pill badges.
-- Pastel mint, peach, lavender, sky, and rose appear only as atmospheric decoration.
+- Near-black canvas with a slightly lighter navigation rail.
+- Inter carries every application heading, label, control, table, and paragraph. JetBrains Mono is reserved for code, paths, identifiers, timestamps, and measurements.
+- 32px controls, 32–36px navigation rows, 36–40px data rows, and 8–12px radii.
+- White-alpha fills and borders create hierarchy without obvious panels or shadows.
+- Hover and active states use small neutral changes over 75ms; no ornamental movement.
 - Success green and error red appear only with a written state or recovery message.
-- Hairline rules and one restrained hover shadow tier provide depth.
 
 ## Color rules
 
-**The Ink Action Rule.** The near-black fill identifies the most important available action. Do not introduce a saturated product accent or fill navigation with semantic color.
+**The Neutral Hierarchy Rule.** Use lightness and white-alpha layers to distinguish canvas, rail, selected navigation, controls, and raised surfaces. Do not introduce a saturated brand accent.
 
-**The Atmospheric Color Rule.** Pastel gradient tokens belong only to soft radial blooms behind headings or in empty decorative space. Never use them as button fills, text color, table status, or syntax highlighting.
+**The State Rule.** Green means a spelled successful result. Red means a spelled failed or destructive state. Color never stands alone, and passing, failing, running, cache, and execution-mode labels remain distinct concepts.
 
-**The Semantic State Rule.** Green means a spelled successful result. Red means a spelled failed or destructive state. Color never stands alone, and passing, failing, running, cache, and execution-mode labels remain distinct concepts.
-
-**The Reading Contrast Rule.** Body copy uses Body or Ink on Canvas/Card. Muted copy uses Muted, never Muted Soft, when it carries instructions or other required information.
+**The Contrast Rule.** Required text uses Foreground or Body. Muted is for secondary metadata; Muted Soft is only for disabled or truly optional content.
 
 ## Typography
 
-Display type is editorial, restrained, and light in impression. EB Garamond’s lightest available variable cut is used at 400; never synthesize bold display headings. Display tracking stays between -0.015em and -0.025em.
-
-Inter carries navigation, controls, labels, tables, and prose at 400/500. Body text receives subtle positive tracking for the editorial cadence. JetBrains Mono is reserved for Gherkin, file paths, identifiers, timestamps, resolved actions, and measurements.
+Studio uses application typography, not editorial display typography. Inter carries the complete UI with small, clear weight changes. JetBrains Mono carries machine-shaped content.
 
 Hierarchy:
 
-- Project/specification display: 36px Garamond, 400, 1.0 line height.
-- Section title: 24px Garamond, 400, 1.2 line height.
-- Card title: 18px Inter, 500.
-- Body: 16px Inter, 400, 1.5 line height.
-- Compact table/control label: 14–15px Inter, 500.
-- Badge: 12px Inter, 600, uppercase, 0.08em tracking.
-- Code and measurement: 12–13px JetBrains Mono.
+- Specification or screen title: 20px Inter, 600, tight tracking.
+- Section title: 15px Inter, 600.
+- Body and table content: 13–14px Inter, 400.
+- Control label: 13px Inter, 500.
+- Badge: 11px Inter, 600, compact uppercase.
+- Code and measurement: 12px JetBrains Mono.
 
 ## Layout
 
-Studio remains a full-height app shell. The 64px top bar contains the Pickle Spec wordmark, local project name, global areas, and the current run state. Below it, Specifications uses an 18rem master rail and a flexible detail pane.
+Studio is a full-height app shell. The top bar is 44px tall and holds the wordmark, project name, global areas, and run state. Specifications uses a 16rem master rail and a flexible detail pane.
 
-The selected Specification begins with an editorial heading band. A restrained atmospheric bloom sits behind its right edge without carrying content. Scenarios and History share a pill-shaped contextual switcher. Primary run actions stay together on the right and wrap as one group.
+The detail header is a compact 76–92px work bar: title and path on the left, contextual navigation and actions aligned to the right or immediately below. It has no atmospheric art. Primary work begins within 16–20px of the header.
 
-The detail pane uses 32px desktop gutters and 16px mobile gutters. Major regions are separated by 32px. Cards use 16–24px internal padding. Tables remain dense enough for comparison but give every interactive row a 40–44px target.
+Desktop gutters are 20px; mobile gutters are 12px. Major regions are separated by 20–24px, and cards use 12–16px internal padding. Tables remain dense and horizontally scroll inside their own surface.
 
-On viewports below 1024px the master rail stacks above the detail pane. The top bar preserves global navigation, drops the project subtitle first, and never turns into an icon-only mystery menu. Horizontal data tables scroll inside their own surface.
+Below 1024px the master rail stacks above the detail pane. Global navigation stays labeled, and dense data retains horizontal scrolling instead of shrinking into unreadable columns.
 
 ## Depth and material
 
-Canvas is `oklch(0.97015 0 0)`; cards and form controls are white. Default cards use a 1px Hairline border with no shadow. Hoverable cards may use the single shadow tier `0 4px 16px rgba(0, 0, 0, 0.04)`. Dialogs may use a larger neutral shadow because they interrupt and protect focus.
+The canvas is `oklch(0.1709 0.002 286.18)`. The rail is slightly lighter, and raised surfaces differ by only a few lightness points. Default surfaces use a 1px white-alpha border and no shadow. Menus and dialogs may use a soft black shadow because they float above the application.
 
-Do not add glass, neon glow, hard offset shadows, nested cards, or gradient borders.
+Do not add atmospheric gradients, glow, glass, hard offset shadows, gradient borders, or nested cards.
 
 ## Components
 
 ### Buttons
 
-All buttons are shadcn Mira primitives with pill geometry. Primary actions are 40px-high Ink pills with white text. Outline buttons are transparent with Hairline Strong borders. Small table controls may be 32px high. Pressed controls scale to 0.98 over 100ms; reduced motion removes the transform. Focus uses a 2px Ink outline with a 3px offset.
+All buttons are shadcn Mira primitives. Default controls are 32px high with 13px labels and 10px corners. Primary actions use a near-white fill with dark text. Outline controls use a white-alpha border; ghost controls use neutral hover and active fills. Color transitions complete in 75ms. Pressed controls do not scale.
 
 ### Badges and results
 
-Badges use compact uppercase Inter. Ready uses Surface Strong, running uses Ink, passed uses a pale success tint with green text, and failed uses a pale error tint with red text. Every state remains spelled out and may include the existing Mira result mark or loading grid.
+Badges are 20px high with 8px corners, compact uppercase text, and subtle fills. Ready and running remain neutral. Passed and failed use tinted semantic fills with written labels and the existing result mark.
 
 ### Navigation
 
-Global and contextual navigation use ghost or Surface Strong pill buttons. Active navigation is neutral; it never borrows green, red, or atmospheric pastel color. The Specification rail uses 44px rows, generous truncation behavior, and an explicit Scenario count.
+Global and contextual navigation use ghost buttons with 32px rows and 8–10px corners. Selected navigation uses the Active neutral fill. The Specification rail keeps names and Scenario counts aligned without pills.
 
-### Scenario table
+### Tables and evidence
 
-The Scenario matrix is the signature white paper surface: 16px corners, a Hairline outline, editorial row spacing, and no decorative tint. Profile results are labeled buttons. A selected result gains a stronger neutral border. The table remains horizontally scrollable and keeps Scenario names readable before profile columns.
-
-### Cards, timelines, and evidence
-
-Settings groups, run summaries, evidence panels, and timeline entries use the same white sheet family rather than inventing sub-themes. Dense diagnostic values remain mono; titles and explanations remain sans. Screenshot and video evidence keeps its own aspect ratio inside a bordered neutral frame.
+Tables use 36–40px rows, 12px text, and quiet row hover. Cards, timelines, editor wells, and evidence panels share the same dark surface family. Dense diagnostic values remain mono; titles and explanations remain sans.
 
 ### Gherkin editor
 
-The editor is a white document well using the `pickle-editorial` Monaco theme. Ink carries keywords and source, Muted carries comments and secondary tokens, and no pastel or semantic color is used as syntax decoration. Focus, selection, suggestions, scrollbars, and the caret follow the same neutral palette.
+The editor is a dark document well using the `pickle-studio-dark` Monaco theme. Foreground carries keywords and source, muted neutrals carry comments and secondary tokens, and semantic colors are not used as syntax decoration. Selection, suggestions, scrollbars, focus, and caret use the same dark palette.
 
 ### Empty, loading, and error states
 
-Empty states use direct product language and the next available action. Loading skeletons mirror the final editorial shell rather than flashing a different chrome. Error messages name the problem and preserve the recovery action; red is never the only signal.
+Empty states use direct product language and the next available action. Loading skeletons mirror the compact shell. Error messages name the problem and preserve the recovery action; red is never the only signal.
 
 ## Motion
 
-Motion is quiet and functional. The existing live-run pixel wave remains the authored state moment. Hover and surface transitions use the shared exponential ease-out and complete in 150–200ms. The atmospheric bloom is static. `prefers-reduced-motion` removes shimmer, transforms, and animated transitions while timers and written states continue updating.
+Motion is quiet and functional. The live-run pixel wave remains the only authored state moment. Hover and active transitions affect color and border over 75ms using the standard UI ease. Dialogs use a short 120ms fade and scale. `prefers-reduced-motion` removes shimmer and animated transitions while timers and written states continue updating.
 
 ## Do and don’t
 
 Do:
 
-- Use the bundled editorial serif for page and section titles.
-- Keep the most important action as the one Ink-filled pill.
-- Let white space separate tasks while keeping tables and evidence operationally dense.
-- Keep every run state, execution mode, and cache outcome written in domain language.
-- Theme selection, focus, scrollbars, dialogs, loading, and editor chrome from this palette.
+- Keep navigation and action labels visible.
+- Keep the most important available action as the only high-contrast filled control.
+- Prefer compact rows and direct grouping over large empty zones.
+- Theme selection, focus, scrollbars, dialogs, loading, and Monaco from the same dark palette.
+- Keep every result, execution mode, and cache outcome written in domain language.
 
 Don’t:
 
-- Reintroduce a dark developer-tools canvas.
-- Add a tracked kicker above a heading.
-- Use pastel blooms inside controls, tables, status chips, or syntax.
-- Bold display copy or replace the serif with a system display face.
-- Use icons without labels for primary navigation or run state.
+- Use landing-page typography, decorative gradients, atmospheric blooms, or oversized whitespace.
+- Turn every surface into a floating card.
+- Add saturated color to navigation, syntax, or decorative chrome.
+- Use animation to attract attention to stable controls.
 - Invent cloud, collaboration, or approval concepts that are not part of the local-first product.

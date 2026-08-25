@@ -78,7 +78,7 @@ if (token) {
 }
 const initialHistoryLocation = parseHistoryLocation(location.search)
 const areas = ['Specifications', 'Settings'] as const
-const specificationRowHeight = 44
+const specificationRowHeight = 36
 
 async function api<T>(path: string, init?: RequestInit): Promise<T> {
   const headers = new Headers(init?.headers)
@@ -342,9 +342,9 @@ function StudioApp() {
 
   if (error && !project) {
     return (
-      <main className="studio-shell flex min-h-screen items-center justify-center p-6">
-        <div className="max-w-lg space-y-5 rounded-xl border border-border bg-card p-6 shadow-[0_4px_16px_rgb(0_0_0/0.04)]">
-          <p role="alert" className="text-base text-destructive">
+      <main className="studio-shell flex min-h-screen items-center justify-center p-4">
+        <div className="max-w-lg space-y-4 rounded-xl border border-border bg-card p-4 shadow-[0_16px_48px_rgb(0_0_0/0.32)]">
+          <p role="alert" className="text-sm text-destructive">
             {error}
           </p>
           <Button
@@ -369,8 +369,8 @@ function StudioApp() {
 
   return (
     <div className="studio-shell flex h-screen flex-col overflow-hidden">
-      <header className="studio-topbar flex min-h-16 shrink-0 flex-wrap items-center gap-3 border-b border-border px-4 py-3 sm:flex-nowrap sm:gap-4 sm:px-8 sm:py-2">
-        <div className="flex min-w-0 items-center gap-3">
+      <header className="studio-topbar flex min-h-11 shrink-0 flex-wrap items-center gap-2 border-b border-border px-3 py-1.5 sm:flex-nowrap sm:px-4">
+        <div className="flex min-w-0 items-center gap-2.5">
           <span className="studio-wordmark shrink-0">Pickle Spec</span>
           <span aria-hidden="true" className="h-5 w-px bg-border" />
           <span className="studio-project-name hidden truncate sm:block">
@@ -380,7 +380,7 @@ function StudioApp() {
         {authoring ? null : (
           <nav
             aria-label="Studio"
-            className="order-3 flex w-full items-center gap-1 sm:order-none sm:ml-auto sm:w-auto"
+            className="order-3 flex w-full items-center gap-0.5 sm:order-none sm:ml-auto sm:w-auto"
           >
             {areas.map((area) => (
               <Button
@@ -413,7 +413,7 @@ function StudioApp() {
         <div
           className={cn(
             'studio-stage min-h-0 flex-1',
-            authoring ? 'flex' : 'grid lg:grid-cols-[18rem_1fr]',
+            authoring ? 'flex' : 'grid lg:grid-cols-[16rem_1fr]',
           )}
         >
           {authoring ? null : (
@@ -435,7 +435,7 @@ function StudioApp() {
             aria-busy={running}
           >
             {error ? (
-              <p role="alert" className="px-6 pt-6 text-sm text-destructive">
+              <p role="alert" className="px-5 pt-4 text-sm text-destructive">
                 {error}
               </p>
             ) : null}
@@ -443,18 +443,18 @@ function StudioApp() {
               <>
                 <header
                   className={cn(
-                    'specification-heading border-b border-border px-4 py-6 sm:px-8 sm:py-8',
+                    'specification-heading border-b border-border px-3 py-3 sm:px-5 sm:py-4',
                     authoring
-                      ? 'flex min-h-0 flex-1 flex-col space-y-5'
-                      : 'shrink-0 space-y-5',
+                      ? 'flex min-h-0 flex-1 flex-col space-y-3'
+                      : 'shrink-0 space-y-3',
                   )}
                 >
-                  <div className="flex shrink-0 flex-wrap items-start justify-between gap-5">
-                    <div className="min-w-0 space-y-2">
-                      <h1 className="studio-display text-3xl leading-none sm:text-4xl">
+                  <div className="flex shrink-0 flex-wrap items-start justify-between gap-3">
+                    <div className="min-w-0 space-y-1">
+                      <h1 className="studio-display text-lg leading-tight sm:text-xl">
                         {selected.name}
                       </h1>
-                      <p className="truncate font-mono text-xs text-muted-foreground sm:text-sm">
+                      <p className="truncate font-mono text-[0.6875rem] text-muted-foreground sm:text-xs">
                         {selected.uri}
                       </p>
                     </div>
@@ -477,13 +477,13 @@ function StudioApp() {
                     className={cn(
                       authoring
                         ? 'flex min-h-0 flex-1 flex-col'
-                        : 'flex flex-wrap items-center gap-3',
+                        : 'flex flex-wrap items-center gap-2',
                     )}
                   >
                     {authoring ? null : (
                       <nav
                         aria-label="Specification"
-                        className="flex w-fit gap-1 rounded-full bg-muted p-1"
+                        className="flex w-fit gap-0.5 rounded-[0.625rem] bg-muted p-0.5"
                       >
                         <Button
                           type="button"
@@ -627,7 +627,7 @@ function StudioApp() {
                     onRerun={startRun}
                   />
                 ) : (
-                  <div className="min-h-0 flex-1 space-y-8 overflow-auto px-4 py-8 sm:px-8">
+                  <div className="min-h-0 flex-1 space-y-5 overflow-auto px-3 py-4 sm:px-5">
                     <ScenarioTable
                       profiles={project.profiles}
                       scenarios={selected.scenarios}
@@ -644,7 +644,7 @@ function StudioApp() {
                     />
                     {attention.length > 0 ? (
                       <div>
-                        <h3 className="studio-display mb-3 text-2xl">
+                        <h3 className="studio-display mb-2 text-sm">
                           Needs attention
                         </h3>
                         <ul
@@ -675,7 +675,7 @@ function StudioApp() {
                                 type="button"
                                 variant="outline"
                                 className={cn(
-                                  'h-auto w-full min-w-0 flex-col items-stretch gap-1.5 rounded-xl bg-card px-4 py-3 text-left',
+                                  'h-auto w-full min-w-0 flex-col items-stretch gap-1 rounded-xl bg-card px-3 py-2 text-left',
                                   isSelectedCell(selectedResult, cell)
                                     ? 'border-foreground/25'
                                     : 'border-border',
@@ -726,7 +726,7 @@ function StudioApp() {
                 )}
               </>
             ) : (
-              <p className="p-8 text-base text-muted-foreground">
+              <p className="p-5 text-sm text-muted-foreground">
                 No Specifications found. Add a feature file matching the project
                 configuration.
               </p>
@@ -794,17 +794,17 @@ function SpecificationList(props: {
       aria-label="Specifications"
       className="specification-rail flex min-h-0 flex-col border-b border-border lg:border-r lg:border-b-0"
     >
-      <div className="flex h-14 shrink-0 items-center px-4">
-        <h2 className="studio-display text-xl">Specifications</h2>
+      <div className="flex h-11 shrink-0 items-center px-3">
+        <h2 className="studio-display text-sm">Specifications</h2>
       </div>
       {props.specifications.length === 0 ? (
-        <p className="px-4 pb-4 text-sm/relaxed text-muted-foreground">
+        <p className="px-3 pb-3 text-xs/relaxed text-muted-foreground">
           None in this project.
         </p>
       ) : (
         <ul
           ref={virtual.containerRef}
-          className="flex min-h-0 flex-1 flex-col overflow-auto px-3 pb-3"
+          className="flex min-h-0 flex-1 flex-col overflow-auto px-2 pb-2"
         >
           {virtual.before > 0 ? (
             <li
@@ -825,12 +825,12 @@ function SpecificationList(props: {
                 <Button
                   type="button"
                   variant="ghost"
-                  size="lg"
+                  size="default"
                   data-specification-index={index}
                   aria-label={specification.name}
                   aria-current={current ? 'true' : undefined}
                   className={cn(
-                    'h-full w-full min-w-0 justify-between px-3 text-left text-sm',
+                    'h-full w-full min-w-0 justify-between px-2.5 text-left text-xs',
                     current && 'bg-accent font-medium text-accent-foreground',
                   )}
                   onClick={() => props.onSelect(specification.id)}
@@ -853,7 +853,7 @@ function SpecificationList(props: {
           ) : null}
         </ul>
       )}
-      <div className="border-t border-border p-3">
+      <div className="border-t border-border p-2">
         {props.canRun ? (
           <Button
             type="button"
@@ -889,7 +889,7 @@ function ScenarioTable(props: {
     <div className="scenario-table w-full min-w-0 max-w-full overflow-auto rounded-xl border border-border bg-card">
       <Table
         aria-label="Scenarios"
-        className="text-sm"
+        className="text-xs"
         style={{ tableLayout: 'fixed' }}
       >
         <TableHeader>
@@ -910,7 +910,7 @@ function ScenarioTable(props: {
             <TableRow>
               <TableCell
                 colSpan={2 + props.profiles.length}
-                className="py-8 text-muted-foreground"
+                className="py-5 text-muted-foreground"
               >
                 This Specification has no Scenarios.
               </TableCell>
@@ -940,7 +940,7 @@ function ScenarioTable(props: {
                           variant={matrixCellVariant(cell.state)}
                           aria-label={label}
                           aria-pressed={selected}
-                          className="animate-in fade-in zoom-in-95 duration-150 motion-reduce:animate-none"
+                          className="animate-in fade-in zoom-in-95 duration-120 motion-reduce:animate-none"
                           onClick={() => props.onSelect(cell)}
                         >
                           <ResultMark key={cell.state} state={cell.state} />

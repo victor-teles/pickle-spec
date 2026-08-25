@@ -99,7 +99,7 @@ export function ExecutionCacheSettings(props: ExecutionCacheSettingsProps) {
     >
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="space-y-1">
-          <h2 id="execution-cache-heading" className="studio-display text-2xl">
+          <h2 id="execution-cache-heading" className="studio-display text-sm">
             Execution cache
           </h2>
           <p className="max-w-2xl text-sm text-muted-foreground">

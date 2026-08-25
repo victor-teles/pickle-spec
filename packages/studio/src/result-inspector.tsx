@@ -77,7 +77,7 @@ export function ResultInspector(props: ResultInspectorProps) {
 
   if (error) {
     return (
-      <div className="p-6">
+      <div className="p-4">
         <p role="alert" className="text-sm text-destructive">
           {error}
         </p>
@@ -86,14 +86,14 @@ export function ResultInspector(props: ResultInspectorProps) {
   }
   if (!snapshot) {
     return (
-      <div className="p-6">
+      <div className="p-4">
         <LedgerLoadingSkeleton label="Opening Test result" />
       </div>
     )
   }
   if (!inspected) {
     return (
-      <div className="space-y-3 p-6">
+      <div className="space-y-3 p-4">
         <p role="alert" className="text-sm text-destructive">
           This Scenario attempt is not available in test run {snapshot.id}.
         </p>
@@ -120,9 +120,9 @@ export function ResultInspector(props: ResultInspectorProps) {
   return (
     <section
       aria-labelledby="result-inspector-title"
-      className="min-h-0 flex-1 overflow-auto px-4 py-8 sm:px-8"
+      className="min-h-0 flex-1 overflow-auto px-3 py-4 sm:px-5"
     >
-      <header className="sticky top-0 z-10 -mx-4 mb-6 flex flex-wrap items-start justify-between gap-4 border-b border-border bg-background px-4 pb-6 sm:-mx-8 sm:px-8">
+      <header className="sticky top-0 z-10 -mx-3 mb-4 flex flex-wrap items-start justify-between gap-3 border-b border-border bg-background px-3 pb-4 sm:-mx-5 sm:px-5">
         <div className="min-w-0 space-y-2">
           {props.onBack ? (
             <Button
@@ -135,7 +135,7 @@ export function ResultInspector(props: ResultInspectorProps) {
             </Button>
           ) : null}
           <div className="flex min-w-0 flex-wrap items-center gap-2">
-            <h3 id="result-inspector-title" className="studio-display text-2xl">
+            <h3 id="result-inspector-title" className="studio-display text-sm">
               {inspected.result.scenario.name} · {displayState} ·{' '}
               {inspected.result.executionTargetProfile.id}
             </h3>

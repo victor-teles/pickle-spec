@@ -39,41 +39,36 @@
 }
 
 :root {
-  color-scheme: light;
-  --radius: 1rem;
-  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
-  --background: oklch(0.97015 0 0);
-  --foreground: oklch(0.1469 0.00413 49.25);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.1469 0.00413 49.25);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.1469 0.00413 49.25);
-  --primary: oklch(0.26848 0.00629 34.3);
-  --primary-foreground: oklch(1 0 0);
-  --secondary: oklch(0.95234 0.00288 84.56);
-  --secondary-foreground: oklch(0.26848 0.00629 34.3);
-  --muted: oklch(0.95234 0.00288 84.56);
-  --muted-foreground: oklch(0.49533 0.01135 72.55);
-  --accent: oklch(0.93473 0.00457 78.3);
-  --accent-foreground: oklch(0.1469 0.00413 49.25);
-  --destructive: oklch(0.5771 0.21516 27.33);
-  --destructive-foreground: oklch(1 0 0);
-  --border: oklch(0.92318 0.00256 48.72);
-  --input: oklch(0.86866 0.00431 56.37);
-  --ring: oklch(0.26848 0.00629 34.3);
-  --passed: oklch(0.5273 0.1371 150.07);
-  --passed-foreground: oklch(1 0 0);
-  --gradient-mint: oklch(0.87488 0.06767 174.78);
-  --gradient-peach: oklch(0.85746 0.06651 53.26);
-  --gradient-lavender: oklch(0.80888 0.0581 303.31);
-  --gradient-sky: oklch(0.82005 0.05689 248.52);
-  --gradient-rose: oklch(0.82873 0.05738 1.76);
+  color-scheme: dark;
+  --radius: 0.625rem;
+  --ease-out: cubic-bezier(0.4, 0, 0.2, 1);
+  --background: oklch(0.1709 0.002 286.18);
+  --foreground: oklch(0.985 0 0);
+  --card: oklch(0.193 0.002 286.18);
+  --card-foreground: oklch(0.94 0 0);
+  --popover: oklch(0.218 0.003 286.18);
+  --popover-foreground: oklch(0.985 0 0);
+  --primary: oklch(0.985 0 0);
+  --primary-foreground: oklch(0.1709 0.002 286.18);
+  --secondary: oklch(1 0 0 / 0.075);
+  --secondary-foreground: oklch(0.985 0 0);
+  --muted: oklch(1 0 0 / 0.045);
+  --muted-foreground: oklch(0.68 0 0);
+  --accent: oklch(1 0 0 / 0.075);
+  --accent-foreground: oklch(0.985 0 0);
+  --destructive: oklch(0.704 0.191 22.22);
+  --destructive-foreground: oklch(0.985 0 0);
+  --border: oklch(1 0 0 / 0.08);
+  --input: oklch(1 0 0 / 0.12);
+  --ring: oklch(0.82 0 0);
+  --passed: oklch(0.723 0.158 149.58);
+  --passed-foreground: oklch(0.985 0 0);
 }
 
 @layer base {
   * {
     @apply border-border;
-    scrollbar-color: oklch(0.81898 0.00826 73.73) transparent;
+    scrollbar-color: oklch(1 0 0 / 0.2) transparent;
   }
   html,
   body,
@@ -82,10 +77,10 @@
   }
   body {
     @apply bg-background text-foreground font-sans antialiased;
-    letter-spacing: 0.01em;
+    font-size: 0.875rem;
   }
   ::selection {
-    background: color-mix(in srgb, var(--gradient-sky), white 25%);
+    background: oklch(1 0 0 / 0.16);
     color: var(--foreground);
   }
   :focus-visible {
@@ -97,81 +92,59 @@
   }
   input::placeholder,
   textarea::placeholder {
-    color: oklch(0.55159 0.01426 75.28);
+    color: oklch(0.52 0 0);
   }
 }
 
 .studio-shell {
   isolation: isolate;
-  background:
-    radial-gradient(
-      circle at 87% 11%,
-      color-mix(in srgb, var(--gradient-lavender), transparent 76%) 0,
-      transparent 25rem
-    ),
-    var(--background);
+  background: var(--background);
 }
 
 .studio-topbar {
-  background: color-mix(in srgb, var(--background), white 22%);
+  background: var(--background);
 }
 
-.studio-wordmark,
-.studio-display {
+.studio-wordmark {
   font-family: var(--font-serif);
   font-weight: 400;
   letter-spacing: -0.025em;
 }
 
 .studio-wordmark {
-  font-size: 1.5rem;
+  font-size: 1.125rem;
   line-height: 1;
+}
+
+.studio-display {
+  font-family: var(--font-sans);
+  font-weight: 600;
+  letter-spacing: -0.02em;
 }
 
 .studio-project-name {
   color: var(--muted-foreground);
-  font-size: 0.875rem;
+  font-size: 0.75rem;
 }
 
 .studio-stage {
-  background: color-mix(in srgb, var(--background), transparent 12%);
+  background: var(--background);
 }
 
 .specification-rail {
-  background: color-mix(in srgb, var(--card), transparent 34%);
+  background: oklch(0.205 0.002 286.18);
 }
 
 .specification-heading {
-  position: relative;
-  isolation: isolate;
-  overflow: hidden;
-  background: color-mix(in srgb, var(--background), white 20%);
-}
-
-.specification-heading::after {
-  position: absolute;
-  z-index: -1;
-  right: -7rem;
-  bottom: -10rem;
-  width: 26rem;
-  height: 26rem;
-  border-radius: 9999px;
-  background:
-    radial-gradient(circle at 35% 38%, var(--gradient-mint), transparent 48%),
-    radial-gradient(circle at 65% 52%, var(--gradient-peach), transparent 52%),
-    radial-gradient(
-      circle at 48% 74%,
-      var(--gradient-lavender),
-      transparent 54%
-    );
-  content: "";
-  filter: blur(30px);
-  opacity: 0.48;
-  pointer-events: none;
+  background: var(--background);
 }
 
 .scenario-table {
-  box-shadow: 0 1px 3px rgb(12 10 9 / 0.025);
+  background: var(--card);
+}
+
+.gherkin-editor-host {
+  min-height: 20rem;
 }
 
 @keyframes pixel-on {
@@ -232,7 +205,7 @@
 
 .monaco-editor,
 .monaco-editor .overflow-guard {
-  border-radius: 1rem;
+  border-radius: 0.625rem;
 }
 
 .monaco-editor .suggest-widget {

@@ -13,7 +13,7 @@ export type ResultMarkState =
   | 'infrastructure-error'
 
 const settleClass =
-  'size-3.5 origin-center animate-in fade-in zoom-in-95 duration-200 ease-[cubic-bezier(0.23,1,0.32,1)] motion-reduce:animate-none'
+  'size-3.5 origin-center animate-in fade-in zoom-in-95 duration-120 ease-[cubic-bezier(0.4,0,0.2,1)] motion-reduce:animate-none'
 
 function ResultMark(props: { state: ResultMarkState; className?: string }) {
   if (props.state === 'running') {

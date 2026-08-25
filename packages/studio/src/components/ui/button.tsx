@@ -4,18 +4,18 @@ import type { ComponentProps } from 'react'
 import { cn } from '../../lib/utils'
 
 const buttonVariants = cva(
-  "group/button inline-flex shrink-0 items-center justify-center rounded-full border border-transparent bg-clip-padding text-[0.9375rem] font-medium leading-none whitespace-nowrap outline-none select-none transition-[transform,background-color,border-color,color,opacity,box-shadow] duration-150 ease-[cubic-bezier(0.23,1,0.32,1)] active:not-aria-[haspopup]:scale-[0.98] active:duration-100 disabled:pointer-events-none disabled:opacity-45 focus-visible:border-current/40 aria-pressed:border-foreground/30 aria-invalid:border-destructive [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4 motion-reduce:transition-none motion-reduce:active:scale-100",
+  "group/button inline-flex shrink-0 items-center justify-center rounded-[0.625rem] border border-transparent bg-clip-padding text-[0.8125rem] font-medium leading-none whitespace-nowrap outline-none select-none transition-[background-color,border-color,color,opacity] duration-75 ease-[cubic-bezier(0.4,0,0.2,1)] disabled:pointer-events-none disabled:opacity-45 focus-visible:border-current/40 aria-pressed:border-foreground/30 aria-invalid:border-destructive [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-3.5 motion-reduce:transition-none",
   {
     variants: {
       variant: {
         default:
-          'bg-primary text-primary-foreground hover:bg-primary/90 hover:shadow-[0_4px_16px_rgb(0_0_0/0.08)]',
+          'bg-primary text-primary-foreground hover:bg-primary/88 active:bg-primary/80',
         outline:
-          'border-input bg-transparent text-foreground hover:border-foreground/35 hover:bg-card aria-expanded:bg-muted aria-expanded:text-foreground',
+          'border-input bg-background text-foreground hover:border-foreground/20 hover:bg-muted active:bg-secondary aria-expanded:bg-secondary aria-expanded:text-foreground',
         secondary:
-          'bg-secondary text-secondary-foreground hover:bg-[color-mix(in_srgb,var(--secondary),var(--foreground)_6%)] aria-expanded:bg-secondary aria-expanded:text-secondary-foreground',
+          'bg-secondary text-secondary-foreground hover:bg-foreground/10 active:bg-foreground/13 aria-expanded:bg-secondary aria-expanded:text-secondary-foreground',
         ghost:
-          'text-muted-foreground hover:bg-muted hover:text-foreground aria-expanded:bg-muted aria-expanded:text-foreground',
+          'text-muted-foreground hover:bg-muted hover:text-foreground active:bg-secondary aria-expanded:bg-secondary aria-expanded:text-foreground',
         destructive:
           'border-destructive/15 bg-destructive/8 text-destructive hover:border-destructive/30 hover:bg-destructive/14',
         link: 'text-primary underline-offset-4 hover:underline',
@@ -24,11 +24,11 @@ const buttonVariants = cva(
       },
       size: {
         default:
-          "h-10 gap-1.5 px-5 has-data-[icon=inline-end]:pr-4 has-data-[icon=inline-start]:pl-4 [&_svg:not([class*='size-'])]:size-4",
+          "h-8 gap-1.5 px-3 has-data-[icon=inline-end]:pr-2.5 has-data-[icon=inline-start]:pl-2.5 [&_svg:not([class*='size-'])]:size-3.5",
         xs: "h-6 gap-1 px-2.5 text-xs has-data-[icon=inline-end]:pr-2 has-data-[icon=inline-start]:pl-2 [&_svg:not([class*='size-'])]:size-3",
-        sm: "h-8 gap-1 px-3 text-sm has-data-[icon=inline-end]:pr-2.5 has-data-[icon=inline-start]:pl-2.5 [&_svg:not([class*='size-'])]:size-3.5",
-        lg: "h-11 gap-1.5 px-5 has-data-[icon=inline-end]:pr-4 has-data-[icon=inline-start]:pl-4 [&_svg:not([class*='size-'])]:size-4",
-        icon: "size-10 [&_svg:not([class*='size-'])]:size-4",
+        sm: "h-7 gap-1 px-2.5 text-xs has-data-[icon=inline-end]:pr-2 has-data-[icon=inline-start]:pl-2 [&_svg:not([class*='size-'])]:size-3",
+        lg: "h-9 gap-1.5 px-3.5 has-data-[icon=inline-end]:pr-3 has-data-[icon=inline-start]:pl-3 [&_svg:not([class*='size-'])]:size-3.5",
+        icon: "size-8 [&_svg:not([class*='size-'])]:size-3.5",
       },
     },
     defaultVariants: {

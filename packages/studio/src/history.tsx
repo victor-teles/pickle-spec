@@ -282,7 +282,7 @@ export function HistoryPanel(props: HistoryPanelProps) {
 
   if (history === undefined && error === undefined) {
     return (
-      <section className="min-h-0 flex-1 overflow-auto px-4 py-8 sm:px-8">
+      <section className="min-h-0 flex-1 overflow-auto px-3 py-4 sm:px-5">
         <LedgerLoadingSkeleton label="Loading Test run history" />
       </section>
     )
@@ -303,11 +303,11 @@ export function HistoryPanel(props: HistoryPanelProps) {
   return (
     <section
       aria-labelledby="run-history-title"
-      className="min-h-0 flex-1 space-y-8 overflow-auto px-4 py-8 sm:px-8"
+      className="min-h-0 flex-1 space-y-5 overflow-auto px-3 py-4 sm:px-5"
     >
       <header className="flex flex-wrap items-start justify-between gap-3">
         <div className="space-y-1">
-          <h3 id="run-history-title" className="studio-display text-2xl">
+          <h3 id="run-history-title" className="studio-display text-sm">
             Test run history
           </h3>
           <p className="text-sm text-muted-foreground">
@@ -340,7 +340,7 @@ export function HistoryPanel(props: HistoryPanelProps) {
         </p>
       ) : null}
       {runs.length === 0 ? (
-        <div className="rounded-lg border border-dashed border-border px-4 py-8 text-center">
+        <div className="rounded-lg border border-dashed border-border px-4 py-5 text-center">
           <p className="text-sm text-muted-foreground">
             No test runs for this Specification yet.
           </p>
@@ -494,9 +494,7 @@ export function HistoryPanel(props: HistoryPanelProps) {
         >
           <header className="flex flex-wrap items-center justify-between gap-3">
             <div>
-              <h3 className="studio-display text-2xl">
-                Test run {reviewed.id}
-              </h3>
+              <h3 className="studio-display text-sm">Test run {reviewed.id}</h3>
               <p className="text-xs text-muted-foreground">
                 {reviewed.sourceRunId
                   ? `Rerun of ${reviewed.sourceRunId}`
@@ -678,11 +676,11 @@ export function HistoryPanel(props: HistoryPanelProps) {
 
       {history ? (
         <section
-          className="flex flex-wrap items-center justify-between gap-5 rounded-xl border border-border bg-card p-6"
+          className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border bg-card p-4"
           aria-labelledby="run-storage-title"
         >
           <div className="min-w-0 space-y-1">
-            <h3 id="run-storage-title" className="studio-display text-2xl">
+            <h3 id="run-storage-title" className="studio-display text-sm">
               Local test run storage
             </h3>
             <p className="text-xs text-muted-foreground">
@@ -770,7 +768,7 @@ function RunComparison(props: { comparison: TestRunComparison }) {
 
   return (
     <section className="space-y-2">
-      <h3 className="studio-display text-2xl">Run comparison</h3>
+      <h3 className="studio-display text-sm">Run comparison</h3>
       <div className="rounded-xl border border-border bg-card">
         <Table aria-label="Run comparison">
           <TableHeader>

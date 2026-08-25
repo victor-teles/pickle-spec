@@ -319,7 +319,9 @@ export function SpecificationEditor(props: {
   return (
     <div
       className={
-        mode === 'edit' ? 'flex min-h-0 flex-1 flex-col gap-3' : undefined
+        mode === 'edit'
+          ? 'flex min-h-0 flex-1 flex-col gap-2 overflow-auto'
+          : undefined
       }
     >
       {mode === 'view' ? (
@@ -364,13 +366,13 @@ export function SpecificationEditor(props: {
             onChange={setSource}
             onError={props.onError}
           />
-          <div className="flex min-h-0 flex-1 flex-col gap-3">
+          <div className="grid min-h-0 flex-1 gap-3 lg:grid-cols-[minmax(0,1fr)_18rem]">
             <GherkinEditor
               source={source}
               catalog={catalog}
               onChange={setSource}
             />
-            <div className="space-y-2 rounded-lg border border-border bg-card p-3">
+            <div className="space-y-2 self-start rounded-lg border border-border bg-card p-3">
               <Label htmlFor="specification-prompt">AI assistance</Label>
               <Textarea
                 id="specification-prompt"
