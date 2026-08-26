@@ -1172,7 +1172,7 @@ Feature: Search
       expect(timelineText).toContain('Run event')
       expect(timelineText).toContain('Diagnostic entry')
       expect(timelineText).toContain('Test artifact')
-      expect(timelineText).toContain('Causal point')
+      expect(timelineText).toContain('Failure context')
       await page.getByRole('tab', { name: 'Artifacts' }).click()
       expect(
         await page
