@@ -272,9 +272,13 @@ Feature: Checkout
         .filter({ hasText: 'failed' })
         .waitFor({ timeout: 20_000 })
       const timeline = page.getByRole('list', {
-        name: 'Causal evidence timeline',
+        name: 'Execution timeline',
       })
       expect(await timeline.textContent()).toContain('Payment was declined')
+      const timelineResults = await new AxeBuilder({ page })
+        .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa'])
+        .analyze()
+      expect(timelineResults.violations).toEqual([])
       const scenarioLayout = await page
         .getByRole('table', { name: 'Scenarios' })
         .locator('..')

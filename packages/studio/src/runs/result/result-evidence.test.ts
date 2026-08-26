@@ -138,7 +138,9 @@ test('keeps Run events scoped to the selected Examples row', () => {
     },
   )
 
-  expect(entries.map((entry) => entry.detail)).toEqual(['Sequence 2'])
+  expect(entries.map((entry) => entry.attributes)).toEqual([
+    [{ label: 'Sequence', value: '2' }],
+  ])
   expect(entries.some((entry) => entry.causal)).toBe(false)
 })
 
@@ -163,7 +165,7 @@ test('round-trips durable result identity through a Runs deep link', () => {
   ).toEqual({ kind: 'result', location })
 })
 
-test('correlates the failed step, resolved action, and Diagnostic entry at the same instant', () => {
+test('projects exact spans and points without replacing occurrence time with causal time', () => {
   const occurredAt = '2026-08-22T12:00:01.100Z'
   const actionOccurredAt = '2026-08-22T12:00:01.050Z'
   const diagnosticOccurredAt = '2026-08-22T12:00:01.090Z'
@@ -225,21 +227,45 @@ test('correlates the failed step, resolved action, and Diagnostic entry at the s
     profileId: 'chrome',
     attempt: 1,
   }
-  const atInstant = timelineFor([], inspectedAttempt, location).filter(
-    (entry) => entry.occurredAt === occurredAt,
-  )
+  const entries = timelineFor([], inspectedAttempt, location)
 
-  expect(atInstant.map((entry) => entry.kind)).toEqual([
-    'Step',
-    'Trace',
-    'Diagnostic entry',
-    'Test artifact',
-  ])
-  expect(atInstant.map((entry) => entry.title)).toEqual([
-    'Then payment is captured',
-    'Click pay on chrome',
-    'Payment was declined',
-    'screenshot',
+  expect(
+    entries.map((entry) => ({
+      kind: entry.kind,
+      startedAt: entry.startedAt,
+      finishedAt: entry.finishedAt,
+      timingPrecision: entry.timingPrecision,
+      causalAt: entry.causalAt,
+    })),
+  ).toEqual([
+    {
+      kind: 'Step',
+      startedAt: '2026-08-22T12:00:01.000Z',
+      finishedAt: occurredAt,
+      timingPrecision: 'exact',
+      causalAt: occurredAt,
+    },
+    {
+      kind: 'Resolved action',
+      startedAt: actionOccurredAt,
+      finishedAt: undefined,
+      timingPrecision: 'exact',
+      causalAt: occurredAt,
+    },
+    {
+      kind: 'Diagnostic entry',
+      startedAt: diagnosticOccurredAt,
+      finishedAt: undefined,
+      timingPrecision: 'exact',
+      causalAt: occurredAt,
+    },
+    {
+      kind: 'Test artifact',
+      startedAt: occurredAt,
+      finishedAt: undefined,
+      timingPrecision: 'step-finish',
+      causalAt: undefined,
+    },
   ])
   expect(
     diagnosticsFor(inspectedAttempt).map((entry) => entry.message),
@@ -262,6 +288,68 @@ test('keeps Run events as a distinct timeline lane', () => {
 
   expect(entries.map((entry) => entry.kind)).toEqual(['Run event'])
   expect(entries[0]?.title).toBe('Scenario Started')
+})
+
+test('marks action timestamps inherited from step completion without downgrading exact artifacts', () => {
+  const inspectedAttempt: ScenarioAttempt = {
+    ...attempt(1),
+    steps: [
+      {
+        index: 0,
+        startedAt: '2026-08-22T12:00:00.000Z',
+        finishedAt: '2026-08-22T12:00:01.000Z',
+        durationMs: 1_000,
+        step: { keyword: 'When ', text: 'I pay', type: 'action' },
+        state: 'passed',
+        resolvedActions: [{ description: 'Click the Pay button' }],
+        artifacts: [
+          {
+            kind: 'screenshot',
+            path: '/tmp/payment.png',
+            capturedAt: '2026-08-22T12:00:00.500Z',
+          },
+        ],
+      },
+    ],
+  }
+
+  const entries = timelineFor([], inspectedAttempt, {
+    specificationUri: 'features/checkout.feature',
+    runId: 'run-78',
+    scenarioId: 'scenario-outline',
+    examplesRowId: 'row-2',
+    profileId: 'chrome',
+    attempt: 1,
+  })
+
+  expect(
+    entries.map((entry) => ({
+      id: entry.id,
+      kind: entry.kind,
+      startedAt: entry.startedAt,
+      timingPrecision: entry.timingPrecision,
+    })),
+  ).toEqual([
+    {
+      id: 'step-0',
+      kind: 'Step',
+      startedAt: '2026-08-22T12:00:00.000Z',
+      timingPrecision: 'exact',
+    },
+    {
+      id: 'artifact-0-0',
+      kind: 'Test artifact',
+      startedAt: '2026-08-22T12:00:00.500Z',
+      timingPrecision: 'exact',
+    },
+    {
+      id: 'trace-0-0',
+      kind: 'Resolved action',
+      startedAt: '2026-08-22T12:00:01.000Z',
+      timingPrecision: 'step-finish',
+    },
+  ])
+  expect(entries.some((entry) => entry.causal)).toBe(false)
 })
 
 test('filters Diagnostic entries without changing chronological order', () => {

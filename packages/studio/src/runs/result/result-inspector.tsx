@@ -189,6 +189,7 @@ export function ResultInspector(props: ResultInspectorProps) {
           <ResultEvidenceTimeline
             entries={timeline}
             startedAt={inspected.attempt.startedAt}
+            durationMs={inspected.attempt.durationMs}
             state={displayState}
             follow={props.following}
             followedEntryId={props.followedEntryId}

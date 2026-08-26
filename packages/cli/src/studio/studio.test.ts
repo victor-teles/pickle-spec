@@ -28,7 +28,12 @@ type RunRequestPayload = {
 }
 
 type BrowserViewportHost = {
-  document: { documentElement: { scrollWidth: number } }
+  document: {
+    documentElement: { clientWidth: number; scrollWidth: number }
+    querySelector: (
+      selector: string,
+    ) => { clientWidth: number; scrollWidth: number } | null
+  }
   innerWidth: number
 }
 
@@ -663,12 +668,80 @@ export default {
           .getByRole('tab', { name: 'Timeline' })
           .getAttribute('aria-selected'),
       ).toBe('true')
-      const timeline = page.getByRole('list', {
-        name: 'Causal evidence timeline',
-      })
+      const timeline = page.getByRole('list', { name: 'Execution timeline' })
       expect(await timeline.textContent()).toContain('Then payment is captured')
       expect(await timeline.textContent()).toContain('Payment was declined')
       expect(await timeline.textContent()).toContain('Run event')
+      expect(
+        await page.getByRole('list', { name: 'Timeline legend' }).count(),
+      ).toBe(1)
+      expect(
+        await page.getByRole('img', { name: 'Execution time ruler' }).count(),
+      ).toBe(1)
+      const selectedEvidence = page.getByRole('region', {
+        name: 'Selected timeline evidence',
+      })
+      const diagnosticEntry = timeline.getByRole('button', {
+        name: /Diagnostic entry Payment was declined/,
+      })
+      await diagnosticEntry.focus()
+      await page.keyboard.press('Enter')
+      expect(await diagnosticEntry.getAttribute('aria-pressed')).toBe('true')
+      expect(await selectedEvidence.textContent()).toContain(
+        'Payment was declined',
+      )
+      const artifactEntry = timeline.getByRole('button', {
+        name: /Test artifact screenshot/,
+      })
+      await artifactEntry.click()
+      expect(await artifactEntry.getAttribute('aria-pressed')).toBe('true')
+      expect(await selectedEvidence.textContent()).toContain(
+        'Recorded at step completion',
+      )
+      await page.getByRole('button', { name: 'Resume following' }).click()
+      expect(
+        await timeline
+          .getByRole('button', { name: /Step Then payment is captured/ })
+          .getAttribute('aria-pressed'),
+      ).toBe('true')
+      await timeline.dispatchEvent('wheel')
+      expect(
+        await timeline
+          .getByRole('button', { name: /Step Then payment is captured/ })
+          .getAttribute('aria-pressed'),
+      ).toBe('true')
+      expect(
+        await page.getByRole('button', { name: 'Resume following' }).count(),
+      ).toBe(1)
+      await page.setViewportSize({ width: 390, height: 844 })
+      const timelineChart = page.getByRole('region', {
+        name: 'Execution timeline chart',
+      })
+      const chartBox = await timelineChart.boundingBox()
+      const detailBox = await selectedEvidence.boundingBox()
+      expect(chartBox).not.toBeNull()
+      expect(detailBox).not.toBeNull()
+      expect(detailBox!.y).toBeGreaterThanOrEqual(
+        chartBox!.y + chartBox!.height - 1,
+      )
+      const timelineContainment = await page.evaluate(() => {
+        const browser = globalThis as unknown as BrowserViewportHost
+        const viewport = browser.document.querySelector(
+          '[data-slot="scroll-area-viewport"]',
+        )
+        return {
+          pageClientWidth: browser.document.documentElement.clientWidth,
+          pageScrollWidth: browser.document.documentElement.scrollWidth,
+          timelineClientWidth: viewport?.clientWidth ?? 0,
+          timelineScrollWidth: viewport?.scrollWidth ?? 0,
+        }
+      })
+      expect(timelineContainment.pageScrollWidth).toBeLessThanOrEqual(
+        timelineContainment.pageClientWidth,
+      )
+      expect(timelineContainment.timelineScrollWidth).toBeGreaterThan(
+        timelineContainment.timelineClientWidth,
+      )
       const scenarios = page.getByRole('table', { name: 'Scenarios' })
       expect(
         await scenarios.getByRole('columnheader', { name: 'chrome' }).count(),
@@ -903,7 +976,7 @@ export default {
         .click()
       await page.getByRole('tab', { name: 'Timeline' }).click()
       const timeline = page.getByRole('list', {
-        name: 'Causal evidence timeline',
+        name: 'Execution timeline',
       })
       expect(await timeline.textContent()).toContain('Then payment is captured')
       await page.getByRole('tab', { name: 'Artifacts' }).click()
@@ -1046,7 +1119,7 @@ Feature: Search
           .getAttribute('aria-selected'),
       ).toBe('true')
       const evidenceTimeline = page.getByRole('list', {
-        name: 'Causal evidence timeline',
+        name: 'Execution timeline',
       })
       const timelineText = await evidenceTimeline.textContent()
       expect(timelineText).toContain('Step')

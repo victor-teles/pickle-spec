@@ -7,7 +7,6 @@ import type {
   TestArtifact,
   TestResult,
   TestResultState,
-  TraceEntry,
 } from '@pickle-spec/runner'
 import type { StudioRunSnapshot } from '../../server/server'
 import type {
@@ -88,13 +87,31 @@ const artifactLoadGuidance: Record<ArtifactLoadFailure, string> = {
     'The preview could not be loaded. Retry the preview, then download the original file if the problem continues.',
 }
 
+export type TimelineEntryKind =
+  | 'Step'
+  | 'Resolved action'
+  | 'Browser activity'
+  | 'Run event'
+  | 'Diagnostic entry'
+  | 'Test artifact'
+
+export type TimelineEntryAttribute = {
+  label: string
+  value: string
+}
+
 export type TimelineEntry = {
   id: string
-  occurredAt: string
-  kind: 'Step' | 'Trace' | 'Run event' | 'Diagnostic entry' | 'Test artifact'
+  startedAt: string
+  finishedAt?: string
+  timingPrecision: 'exact' | 'step-finish'
+  kind: TimelineEntryKind
   title: string
-  detail?: string
+  context?: string
+  state?: TestResultState | DiagnosticLevel
+  causalAt?: string
   causal?: boolean
+  attributes: readonly TimelineEntryAttribute[]
 }
 
 export function defaultResultInspectorTab(
@@ -317,72 +334,97 @@ export function timelineFor(
   const causalAt = failedStep
     ? (failedStep.diagnostics?.findLast((entry) => entry.causalAt)?.causalAt ??
       failedStep.trace?.findLast((entry) => entry.causalAt)?.causalAt)
-    : undefined
+    : attempt.diagnostics?.findLast((entry) => entry.causalAt)?.causalAt
   const stepEntries: TimelineEntry[] = attempt.steps.map((step) => ({
     id: `step-${step.index}`,
-    occurredAt:
-      causalStepId === `step-${step.index}` && causalAt
-        ? causalAt
-        : step.finishedAt,
+    startedAt: step.startedAt,
+    finishedAt: step.finishedAt,
+    timingPrecision: 'exact',
     kind: 'Step',
     title: `${step.step.keyword.trim()} ${step.step.text}`,
-    detail: `${step.state} · ${step.durationMs} ms`,
+    state: step.state,
+    causalAt: causalStepId === `step-${step.index}` ? causalAt : undefined,
     causal: causalStepId === `step-${step.index}`,
+    attributes: [{ label: 'Step index', value: String(step.index) }],
   }))
   const eventEntries: TimelineEntry[] = scopedEvents(events, location).map(
     (event) => ({
       id: `event-${event.sequence}`,
-      occurredAt: event.occurredAt,
+      startedAt: event.occurredAt,
+      timingPrecision: 'exact',
       kind: 'Run event',
       title: eventTitle(event),
-      detail: `Sequence ${event.sequence}`,
+      attributes: [{ label: 'Sequence', value: String(event.sequence) }],
     }),
   )
-  const traceEntries: TimelineEntry[] = attempt.steps.flatMap((step) => {
-    const trace: TraceEntry[] =
-      step.trace ??
-      step.resolvedActions.map((action) => ({
-        occurredAt: step.finishedAt,
-        kind: 'resolved-action' as const,
-        description: action.description,
+  const traceEntries = attempt.steps.flatMap<TimelineEntry>((step) => {
+    const stepText = `${step.step.keyword.trim()} ${step.step.text}`
+    if (!step.trace) {
+      return step.resolvedActions.map((action, index) => ({
+        id: `trace-${step.index}-${index}`,
+        startedAt: step.finishedAt,
+        timingPrecision: 'step-finish' as const,
+        kind: 'Resolved action' as const,
+        title: action.description,
+        context: stepText,
+        causalAt: causalStepId === `step-${step.index}` ? causalAt : undefined,
+        causal: causalStepId === `step-${step.index}`,
+        attributes: [{ label: 'Step index', value: String(step.index) }],
       }))
-    return trace.map((entry, index) => ({
+    }
+    return step.trace.map((entry, index) => ({
       id: `trace-${step.index}-${index}`,
-      occurredAt: entry.causalAt ?? entry.occurredAt,
-      kind: 'Trace' as const,
-      title: entry.description,
-      detail:
+      startedAt: entry.occurredAt,
+      timingPrecision: 'exact' as const,
+      kind:
         entry.kind === 'resolved-action'
-          ? `${step.step.keyword.trim()} ${step.step.text}`
-          : 'Browser activity',
-      causal: causalStepId === `step-${step.index}`,
+          ? ('Resolved action' as const)
+          : ('Browser activity' as const),
+      title: entry.description,
+      context: stepText,
+      causalAt: entry.causalAt,
+      causal: Boolean(causalAt && entry.causalAt === causalAt),
+      attributes: [{ label: 'Step index', value: String(step.index) }],
     }))
   })
   const diagnosticEntries: TimelineEntry[] = diagnosticsFor(attempt).map(
     (diagnostic) => ({
       id: `diagnostic-${diagnostic.id}`,
-      occurredAt: diagnostic.causalAt ?? diagnostic.occurredAt,
+      startedAt: diagnostic.occurredAt,
+      timingPrecision: 'exact',
       kind: 'Diagnostic entry',
       title: diagnostic.message,
-      detail: diagnostic.stepText ?? diagnostic.source,
-      causal: !causalStepId && diagnostic.id === 'attempt',
+      context: diagnostic.stepText ?? diagnostic.source,
+      state: diagnostic.level,
+      causalAt: diagnostic.causalAt,
+      causal: Boolean(causalAt && diagnostic.causalAt === causalAt),
+      attributes: [
+        { label: 'Origin', value: diagnostic.origin },
+        { label: 'Source', value: diagnostic.source },
+      ],
     }),
   )
-  const artifactEntries: TimelineEntry[] = artifactsFor(attempt).map(
-    (artifact, index) => ({
-      id: `artifact-${artifact.stepIndex}-${index}`,
-      occurredAt: artifact.capturedAt,
+  const artifactEntries: TimelineEntry[] = attempt.steps.flatMap((step) =>
+    (step.artifacts ?? []).map((artifact, index) => ({
+      id: `artifact-${step.index}-${index}`,
+      startedAt: artifact.capturedAt ?? step.finishedAt,
+      timingPrecision: artifact.capturedAt ? 'exact' : 'step-finish',
       kind: 'Test artifact',
-      title: artifact.artifact.kind,
-      detail: artifact.stepText,
-    }),
+      title: artifact.kind,
+      context: `${step.step.keyword.trim()} ${step.step.text}`,
+      attributes: [
+        { label: 'Artifact kind', value: artifact.kind },
+        { label: 'Step index', value: String(step.index) },
+      ],
+    })),
   )
   const kindOrder: Record<TimelineEntry['kind'], number> = {
     Step: 0,
-    Trace: 1,
-    'Run event': 2,
-    'Diagnostic entry': 3,
-    'Test artifact': 4,
+    'Resolved action': 1,
+    'Browser activity': 2,
+    'Run event': 3,
+    'Diagnostic entry': 4,
+    'Test artifact': 5,
   }
   const entries = [
     ...stepEntries,
@@ -392,7 +434,7 @@ export function timelineFor(
     ...artifactEntries,
   ].sort(
     (left, right) =>
-      Date.parse(left.occurredAt) - Date.parse(right.occurredAt) ||
+      Date.parse(left.startedAt) - Date.parse(right.startedAt) ||
       kindOrder[left.kind] - kindOrder[right.kind] ||
       left.id.localeCompare(right.id),
   )

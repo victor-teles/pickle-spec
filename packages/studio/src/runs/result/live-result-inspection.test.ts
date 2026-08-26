@@ -202,9 +202,9 @@ test('live Run events update the same Overview, Timeline, Artifacts, and Diagnos
     ).map((entry) => entry.kind),
   ).toEqual([
     'Run event',
-    'Run event',
     'Step',
-    'Trace',
+    'Run event',
+    'Resolved action',
     'Run event',
     'Diagnostic entry',
     'Test artifact',
