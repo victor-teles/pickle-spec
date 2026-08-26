@@ -14,6 +14,8 @@ import {
   isSelectedCell,
   type MatrixCell,
 } from '../runs/result/run-view'
+import { RunControlButton } from '../runs/run-control-button'
+import { isBusyOrigin, type RunOrigin } from '../runs/run-origin'
 import type { StudioScenario } from '../server/server'
 
 type ScenarioTableProps = {
@@ -23,6 +25,7 @@ type ScenarioTableProps = {
   focusTargetId?: string
   onRun: (scenario: StudioScenario) => void
   onSelect: (cell: MatrixCell) => void
+  origin?: RunOrigin
   profiles: readonly string[]
   running: boolean
   scenarios: readonly StudioScenario[]
@@ -86,6 +89,7 @@ export function ScenarioTable(props: ScenarioTableProps) {
                 onRegister={registerRow}
                 onRun={props.onRun}
                 onSelect={props.onSelect}
+                origin={props.origin}
                 profiles={props.profiles}
                 running={props.running}
                 scenario={scenario}
@@ -118,6 +122,7 @@ type ScenarioRowProps = {
   onRegister: (id: string, row: HTMLTableRowElement | null) => void
   onRun: (scenario: StudioScenario) => void
   onSelect: (cell: MatrixCell) => void
+  origin?: RunOrigin
   profiles: readonly string[]
   running: boolean
   scenario: StudioScenario
@@ -159,16 +164,19 @@ function ScenarioRow(props: ScenarioRowProps) {
       ))}
       <TableCell className="w-20 text-right">
         {props.scenario.canRun !== false ? (
-          <Button
-            type="button"
+          <RunControlButton
             size="sm"
             variant="outline"
-            disabled={props.running}
+            blocked={props.running}
+            busy={isBusyOrigin(props.origin, {
+              kind: 'scenario',
+              scenarioId: props.scenario.id,
+            })}
             aria-label={`Run Scenario ${props.scenario.name}`}
             onClick={handleRun}
           >
             Run
-          </Button>
+          </RunControlButton>
         ) : null}
       </TableCell>
     </TableRow>

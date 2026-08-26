@@ -140,7 +140,7 @@ export function ResultInspector(props: ResultInspectorProps) {
           ) : null}
           <div className="flex min-w-0 flex-wrap items-center gap-2">
             <h3 id="result-inspector-title" className="studio-display text-sm">
-              {inspected.result.scenario.name} · {displayState} ·{' '}
+              {inspected.result.scenario.name} ·{' '}
               {inspected.result.executionTargetProfile.id}
             </h3>
             <Badge

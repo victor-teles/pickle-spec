@@ -86,13 +86,6 @@ export function useStudioController() {
     void run.startNewRun(request)
   }
 
-  function viewRuns(specificationUri: string) {
-    navigation.navigate({
-      kind: 'runs',
-      filters: { specification: specificationUri },
-    })
-  }
-
   return {
     actions: {
       cancelCurrentRun,
@@ -105,7 +98,6 @@ export function useStudioController() {
       startNewRun,
       startScenario,
       startSpecification,
-      viewRuns,
     },
     activeProfileId,
     authoring,

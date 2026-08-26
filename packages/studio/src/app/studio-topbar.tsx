@@ -2,7 +2,6 @@ import { SearchIcon } from '@hugeicons/core-free-icons'
 import { HugeiconsIcon } from '@hugeicons/react'
 import { Badge } from '../components/ui/badge'
 import { Button } from '../components/ui/button'
-import { LoadingState } from '../components/ui/loading-state'
 import { ResultMark } from '../components/ui/result-mark'
 import { resultBadgeVariant } from '../runs/result/result-presentation'
 import type { TestResultState } from '../runs/result/run-view'
@@ -98,13 +97,24 @@ function StudioAreaButton(props: StudioAreaButtonProps) {
 }
 
 function StatusBadge({ state }: { state: StatusBadgeState }) {
-  if (state === 'running') return <LoadingState label="running" />
-
-  const variant = state === 'idle' ? 'default' : resultBadgeVariant(state)
+  if (state === 'idle') {
+    return (
+      <Badge role="status" variant="default">
+        Ready
+      </Badge>
+    )
+  }
+  if (state === 'running') {
+    return (
+      <Badge role="status" variant="running">
+        running
+      </Badge>
+    )
+  }
   return (
-    <Badge variant={variant} role="status">
+    <Badge variant={resultBadgeVariant(state)} role="status">
       <ResultMark key={state} state={state} />
-      {state === 'idle' ? 'Ready' : state}
+      {state}
     </Badge>
   )
 }

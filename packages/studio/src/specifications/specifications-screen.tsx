@@ -4,6 +4,7 @@ import { cn } from '../lib/utils'
 import type { LiveResultInspection } from '../runs/result/live-result-inspection'
 import type { ResultInspectorTab } from '../runs/result/result-inspection'
 import type { MatrixCell } from '../runs/result/run-view'
+import type { RunOrigin } from '../runs/run-origin'
 import type {
   StudioProject,
   StudioRunRequest,
@@ -37,6 +38,7 @@ type SpecificationRun = {
   onResumeFollowing: () => void
   onRun: (request: StudioRunRequest) => void
   onSelectInspectorTab: (tab: ResultInspectorTab) => void
+  origin?: RunOrigin
   runId?: string
   running: boolean
   selectedResult?: MatrixCell
@@ -49,7 +51,6 @@ type SpecificationsScreenProps = {
   onAuthoringChange: (authoring: boolean) => void
   onError: (message: string | undefined) => void
   onReloadProject: () => Promise<StudioProject>
-  onViewRuns: (specificationUri: string) => void
   project: StudioProject
   run: SpecificationRun
   selection: SpecificationSelection
@@ -73,6 +74,7 @@ export function SpecificationsScreen(props: SpecificationsScreenProps) {
         <SpecificationList
           specifications={props.project.specifications}
           selectedId={props.selection.selected?.id}
+          origin={props.run.origin}
           running={props.run.running}
           canRun={canRunAll}
           onSelect={props.selection.onSelect}
@@ -116,15 +118,8 @@ function SpecificationDetail(props: SpecificationDetailProps) {
     })
   }
 
-  function handleViewRuns() {
-    props.onViewRuns(specification.uri)
-  }
-
   return (
-    <main
-      className="flex min-h-0 min-w-0 flex-1 flex-col"
-      aria-busy={props.run.running}
-    >
+    <main className="flex min-h-0 min-w-0 flex-1 flex-col">
       {props.error ? (
         <p role="alert" className="px-5 pt-4 text-sm text-destructive">
           {props.error}
@@ -143,7 +138,7 @@ function SpecificationDetail(props: SpecificationDetailProps) {
         onCreated={handleCreated}
         onError={props.onError}
         onRun={props.run.onRun}
-        onViewRuns={handleViewRuns}
+        origin={props.run.origin}
         runId={props.run.runId}
         running={props.run.running}
         runReasons={runReasons}
@@ -163,6 +158,7 @@ function SpecificationDetail(props: SpecificationDetailProps) {
           onResumeFollowing={props.run.onResumeFollowing}
           onRun={props.run.onRun}
           onSelectInspectorTab={props.run.onSelectInspectorTab}
+          origin={props.run.origin}
           profiles={props.project.profiles}
           running={props.run.running}
           selectedResult={props.run.selectedResult}
