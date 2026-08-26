@@ -9,7 +9,7 @@ export type {
   StructuredScenario,
   StructuredSpecification,
   StructuredStep,
-} from './src/editor'
+} from './src/authoring/editor'
 export {
   applySpecificationMetadata,
   applySpecificationSource,
@@ -19,34 +19,22 @@ export {
   parseExternalLinks,
   readSpecificationDocument,
   specificationSourceDiff,
-} from './src/editor'
+} from './src/authoring/editor'
 export type {
   SpecificationMigrationChange,
   SpecificationMigrationFile,
   SpecificationMigrationPlan,
   SpecificationSourceFile,
   SpecificationState,
-} from './src/identity'
+} from './src/identity/identity'
 export {
   formatMigrationPreview,
   planSpecificationMigration,
   resolveScenarioId,
   specificationStates,
   validateSpecificationMetadata,
-} from './src/identity'
-export { scenarioRevision } from './src/revision'
-export type {
-  ScenarioSelection,
-  SelectionOptions,
-  SelectScenariosContext,
-  Shard,
-} from './src/selection'
-export {
-  ignoreTag,
-  selectionOptionsSchema,
-  selectScenarios,
-  validateSelectionOptions,
-} from './src/selection'
+} from './src/identity/identity'
+export { scenarioRevision } from './src/identity/revision'
 export type {
   ParseSpecificationInput,
   Scenario,
@@ -55,5 +43,17 @@ export type {
   ScenarioVariableBinding,
   Specification,
   SpecificationSource,
-} from './src/specification'
-export { parseSpecification } from './src/specification'
+} from './src/parsing/specification'
+export { parseSpecification } from './src/parsing/specification'
+export type {
+  ScenarioSelection,
+  SelectionOptions,
+  SelectScenariosContext,
+  Shard,
+} from './src/selection/selection'
+export {
+  ignoreTag,
+  selectionOptionsSchema,
+  selectScenarios,
+  validateSelectionOptions,
+} from './src/selection/selection'

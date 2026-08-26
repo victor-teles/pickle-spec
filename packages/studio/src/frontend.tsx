@@ -10,8 +10,15 @@ import {
   useState,
 } from 'react'
 import { createRoot } from 'react-dom/client'
-import { CommandPalette, type CurrentScenario } from './command-palette'
-import { targetNewRun } from './command-palette-model'
+import { CommandPalette, type CurrentScenario } from './app/command-palette'
+import { targetNewRun } from './app/command-palette-model'
+import {
+  parseStudioRoute,
+  type StudioRoute,
+  studioRouteHref,
+} from './app/studio-route'
+import { SpecificationEditor } from './authoring/specification-editor'
+import { StudioShellSkeleton } from './components/loading-skeletons'
 import { Badge } from './components/ui/badge'
 import { Button } from './components/ui/button'
 import { LoadingState } from './components/ui/loading-state'
@@ -39,11 +46,13 @@ import {
   resumeLiveFollowing,
   selectLiveInspectorTab,
   startLiveInspection,
-} from './live-result-inspection'
-import { StudioShellSkeleton } from './loading-skeletons'
-import type { ResultInspectorTab } from './result-inspection'
-import { ResultInspector } from './result-inspector'
-import { reasonMessage, resultBadgeVariant } from './result-presentation'
+} from './runs/result/live-result-inspection'
+import type { ResultInspectorTab } from './runs/result/result-inspection'
+import { ResultInspector } from './runs/result/result-inspector'
+import {
+  reasonMessage,
+  resultBadgeVariant,
+} from './runs/result/result-presentation'
 import {
   attentionCells,
   cellKey,
@@ -52,16 +61,11 @@ import {
   type RunView,
   statusLabel,
   type TestResultState,
-} from './run-view'
-import { RunsArea } from './runs'
-import { SettingsPanel } from './settings'
-import { SpecificationEditor } from './specification-editor'
-import {
-  parseStudioRoute,
-  type StudioRoute,
-  studioRouteHref,
-} from './studio-route'
+} from './runs/result/run-view'
+import { RunsArea } from './runs/runs'
+import { SettingsPanel } from './settings/settings'
 import './styles.css'
+import { useVirtualWindow } from './hooks/use-virtual-window'
 import type {
   StudioProject,
   StudioRunReadiness,
@@ -70,8 +74,7 @@ import type {
   StudioRunsIndex,
   StudioScenario,
   StudioSpecification,
-} from './server'
-import { useVirtualWindow } from './virtualization'
+} from './server/server'
 
 const token = new URLSearchParams(location.search).get('token') ?? ''
 if (token) {

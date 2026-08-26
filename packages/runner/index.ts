@@ -1,110 +1,18 @@
 export type {
-  AllureArchiveOptions,
-  AllureAttachment,
-  AllureAttachmentFile,
-  AllureResultFile,
-  AllureResultsProjection,
-  AllureStatusDetails,
-  AllureStep,
-  AllureTestResult,
-} from './src/allure-results'
-export {
-  assertAllureArtifactPath,
-  createAllureResultsZip,
-  projectAllureResults,
-} from './src/allure-results'
-export type {
-  ImportedRunArchive,
-  ImportRunArchiveInput,
-  RunArchive,
-  RunArchiveArtifact,
-  WriteRunArchiveInput,
-} from './src/archive'
-export {
-  importRunArchive,
-  readRunArchive,
-  writeRunArchive,
-} from './src/archive'
-export type {
-  ComparedResultPair,
-  ComparedResultSide,
-  ResultChangeKind,
-  TestRunComparison,
-} from './src/compare'
-export { compareTestRuns } from './src/compare'
-export type {
   ExecutionSettings,
   ResolvedRunConfiguration,
   RunConfiguration,
   RunExtensionManifest,
   RunExtensions,
-} from './src/configuration'
+} from './src/configuration/configuration'
 export {
   executionSettingsSchema,
   resolveRunConfiguration,
   runConfigurationSchema,
   validateProjectRunConfiguration,
   validateRunConfiguration,
-} from './src/configuration'
-export { persistedEvidenceKinds } from './src/evidence'
-export type {
-  CacheOutcome,
-  DeserializeExecutionCacheEnvelopeInput,
-  ExecutionCacheAdapter,
-  ExecutionCacheCoordination,
-  ExecutionCacheEntryMetadata,
-  ExecutionCacheEntrySnapshot,
-  ExecutionCacheEnvelope,
-  ExecutionCacheKey,
-  ExecutionCacheKeyInput,
-  ExecutionCacheLease,
-  ExecutionCacheLeaseAcquisition,
-  ExecutionCacheLeasePublicationResult,
-  ExecutionCacheLeaseWaitResult,
-  ExecutionCachePayloadValidator,
-  ExecutionCacheStore,
-  ExecutionCacheTerminalOutcome,
-  ExecutionCacheUncacheableReason,
-  ExecutionCacheWriteMetadata,
-  ExecutionCacheWriteResult,
-  SerializedExecutionCacheEnvelope,
-  SerializedExecutionCacheTerminalOutcome,
-} from './src/execution-cache'
-export {
-  deserializeExecutionCacheEnvelope,
-  deserializeExecutionCacheTerminalOutcome,
-  resolveExecutionCacheKey,
-  serializeExecutionCacheEnvelope,
-  serializeExecutionCacheTerminalOutcome,
-} from './src/execution-cache'
-export {
-  historicalDurationsFrom,
-  latestHistoricalDurations,
-} from './src/historical-durations'
-export type {
-  LocalExecutionCache,
-  LocalExecutionCacheOptions,
-} from './src/local-execution-cache'
-export {
-  defaultExecutionCacheMaxBytes,
-  openLocalExecutionCache,
-} from './src/local-execution-cache'
-export type { ExecutionCacheLeaseTiming } from './src/local-execution-cache-coordination'
-export type { LocalProjectStorage } from './src/local-project-storage'
-export {
-  localProjectKey,
-  resolveLocalProjectStorage,
-} from './src/local-project-storage'
-export type { FormatHtmlOptions, HtmlArtifactMode } from './src/outputs'
-export {
-  formatHtml,
-  formatJson,
-  formatJunit,
-  formatNdjson,
-} from './src/outputs'
-export { publicRunEvent, publicTestResult } from './src/public-results'
-export type { RerunFilter } from './src/rerun'
-export { selectRerunResults } from './src/rerun'
+} from './src/configuration/configuration'
+export { persistedEvidenceKinds } from './src/evidence/evidence'
 export type {
   ApplicationOutputEvidenceAvailability,
   DiagnosticEntry,
@@ -145,37 +53,124 @@ export type {
   TestStepResult,
   TraceActivityKind,
   TraceEntry,
-} from './src/run-scenario'
+} from './src/execution/run-scenario'
 export {
   diagnosticLevels,
   diagnosticOrigins,
   finalScenarioAttempt,
   isEvidenceState,
   traceActivityKinds,
-} from './src/run-scenario'
-export { runScenario } from './src/run-scenario-entry'
+} from './src/execution/run-scenario'
+export { runScenario } from './src/execution/run-scenario-entry'
 export type {
   RunScenariosInput,
   RunScheduleInput,
   RunTarget,
   ScenarioCompletion,
   ScheduledTestResult,
-} from './src/run-scenarios'
+} from './src/execution/run-scenarios'
 export {
   runScenarios,
   scheduleScenarios,
   validateTargetSelection,
-} from './src/run-scenarios'
+} from './src/execution/run-scenarios'
+export type {
+  CacheOutcome,
+  DeserializeExecutionCacheEnvelopeInput,
+  ExecutionCacheAdapter,
+  ExecutionCacheCoordination,
+  ExecutionCacheEntryMetadata,
+  ExecutionCacheEntrySnapshot,
+  ExecutionCacheEnvelope,
+  ExecutionCacheKey,
+  ExecutionCacheKeyInput,
+  ExecutionCacheLease,
+  ExecutionCacheLeaseAcquisition,
+  ExecutionCacheLeasePublicationResult,
+  ExecutionCacheLeaseWaitResult,
+  ExecutionCachePayloadValidator,
+  ExecutionCacheStore,
+  ExecutionCacheTerminalOutcome,
+  ExecutionCacheUncacheableReason,
+  ExecutionCacheWriteMetadata,
+  ExecutionCacheWriteResult,
+  SerializedExecutionCacheEnvelope,
+  SerializedExecutionCacheTerminalOutcome,
+} from './src/execution-cache/execution-cache'
+export {
+  deserializeExecutionCacheEnvelope,
+  deserializeExecutionCacheTerminalOutcome,
+  resolveExecutionCacheKey,
+  serializeExecutionCacheEnvelope,
+  serializeExecutionCacheTerminalOutcome,
+} from './src/execution-cache/execution-cache'
+export type {
+  LocalExecutionCache,
+  LocalExecutionCacheOptions,
+} from './src/execution-cache/local-execution-cache'
+export {
+  defaultExecutionCacheMaxBytes,
+  openLocalExecutionCache,
+} from './src/execution-cache/local-execution-cache'
+export type { ExecutionCacheLeaseTiming } from './src/execution-cache/local-execution-cache-coordination'
+export type {
+  AllureArchiveOptions,
+  AllureAttachment,
+  AllureAttachmentFile,
+  AllureResultFile,
+  AllureResultsProjection,
+  AllureStatusDetails,
+  AllureStep,
+  AllureTestResult,
+} from './src/exports/allure-results'
+export {
+  assertAllureArtifactPath,
+  createAllureResultsZip,
+  projectAllureResults,
+} from './src/exports/allure-results'
+export type {
+  ImportedRunArchive,
+  ImportRunArchiveInput,
+  RunArchive,
+  RunArchiveArtifact,
+  WriteRunArchiveInput,
+} from './src/exports/archive'
+export {
+  importRunArchive,
+  readRunArchive,
+  writeRunArchive,
+} from './src/exports/archive'
+export type { FormatHtmlOptions, HtmlArtifactMode } from './src/exports/outputs'
+export {
+  formatHtml,
+  formatJson,
+  formatJunit,
+  formatNdjson,
+} from './src/exports/outputs'
 export type {
   PublishTestRunExportsInput,
   TestRunExportFormat,
   TestRunExportOutcome,
   TestRunExportRequest,
-} from './src/test-run-exports'
+} from './src/exports/test-run-exports'
 export {
   publishTestRunExports,
   testRunExportFormats,
-} from './src/test-run-exports'
+} from './src/exports/test-run-exports'
+export type {
+  ComparedResultPair,
+  ComparedResultSide,
+  ResultChangeKind,
+  TestRunComparison,
+} from './src/results/compare'
+export { compareTestRuns } from './src/results/compare'
+export {
+  historicalDurationsFrom,
+  latestHistoricalDurations,
+} from './src/results/historical-durations'
+export { publicRunEvent, publicTestResult } from './src/results/public-results'
+export type { RerunFilter } from './src/results/rerun'
+export { selectRerunResults } from './src/results/rerun'
 export type {
   ArtifactCapturePolicy,
   CreateTestRunOptions,
@@ -188,10 +183,15 @@ export type {
   TestRunStore,
   TestRunStoreOptions,
   TestRunSummary,
-} from './src/test-run-store'
+} from './src/results/test-run-store'
 export {
   defaultRetention,
   defaultRunStorageWarningBytes,
   openTestRunStore,
   slug,
-} from './src/test-run-store'
+} from './src/results/test-run-store'
+export type { LocalProjectStorage } from './src/storage/local-project-storage'
+export {
+  localProjectKey,
+  resolveLocalProjectStorage,
+} from './src/storage/local-project-storage'

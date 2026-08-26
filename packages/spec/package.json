@@ -10,8 +10,8 @@
   },
   "files": [
     "index.ts",
-    "src/*.ts",
-    "!src/*.test.ts"
+    "src/**/*.ts",
+    "!src/**/*.test.ts"
   ],
   "scripts": {
     "typecheck": "tsc --noEmit",
@@ -20,6 +20,7 @@
   "dependencies": {
     "@cucumber/gherkin": "catalog:",
     "@cucumber/messages": "catalog:",
+    "@pickle-spec/configuration": "workspace:*",
     "zod": "catalog:"
   },
   "devDependencies": {

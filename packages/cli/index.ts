@@ -1,1 +1,1 @@
-export type { PickleConfig, ServerConfig } from './src/config'
+export type { PickleConfig, ServerConfig } from './src/configuration/config'

@@ -10,11 +10,11 @@
   },
   "files": [
     "index.ts",
-    "src/*.ts",
-    "!src/*.test.ts"
+    "src/**/*.ts",
+    "!src/**/*.test.ts"
   ],
   "scripts": {
-    "benchmark:replay": "bun src/mobile-benchmark-cli.ts",
+    "benchmark:replay": "bun src/benchmarking/mobile-benchmark-cli.ts",
     "typecheck": "tsc --noEmit",
     "test": "bun test"
   },

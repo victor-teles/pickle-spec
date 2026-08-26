@@ -18,36 +18,40 @@ import {
   type WebAdapterOptions,
 } from '@pickle-spec/web'
 import cliPackage from '../package.json' with { type: 'json' }
-import type { ApplicationOutputOptions } from './application-output'
-import { runCacheCommand } from './cache'
-import { errorMessage, withRecoveryFailure } from './command-error'
-import { defaultSpecificationGlob, loadConfig } from './config'
+import { defaultSpecificationGlob, loadConfig } from './configuration/config'
+import {
+  checkProject,
+  initializeProject,
+  migrateProject,
+} from './configuration/project'
+import { runCacheCommand } from './execution-cache/cache'
+import type { ApplicationOutputOptions } from './run/application-output'
 import {
   loadExtensions,
   loadPersistedRun,
   loadProjectSpecifications,
   startProjectRun,
-} from './execute-run'
-import { parseTestRunOutput } from './output-arguments'
-import { checkProject, initializeProject, migrateProject } from './project'
+} from './run/execute-run'
+import { parseTestRunOutput } from './run/output-arguments'
 import {
   finalizeMaterializedEvidence,
   reportTestRunExportOutcomes,
   testRunExportFailed,
   writeRunOutputs,
-} from './run-outputs'
+} from './run/run-outputs'
 import {
   createRunReporter,
   type RunReporterName,
   terminalReporterCapabilities,
-} from './run-reporter'
-import { createRunReportingSession } from './run-reporting-session'
-import { createStudioExecutionCacheGateway } from './studio-cache'
-import { createStudioHistoryGateway } from './studio-history'
+} from './run/run-reporter'
+import { createRunReportingSession } from './run/run-reporting-session'
+import { evaluateTestRunExitStatus } from './run/test-run-exit-status'
+import { createStudioExecutionCacheGateway } from './studio/studio-cache'
+import { createStudioHistoryGateway } from './studio/studio-history'
 import {
   discoverStudioMobileTargets,
   validateStudioMobileTargetCapabilities,
-} from './studio-mobile-targets'
+} from './studio/studio-mobile-targets'
 import {
   loadStudioProject,
   patchStudioConfig,
@@ -55,8 +59,8 @@ import {
   saveStudioCredential,
   studioRunReadiness,
   studioRunSelection,
-} from './studio-project'
-import { evaluateTestRunExitStatus } from './test-run-exit-status'
+} from './studio/studio-project'
+import { errorMessage, withRecoveryFailure } from './terminal/command-error'
 
 interface RunArguments {
   pattern?: string

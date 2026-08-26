@@ -7,7 +7,7 @@ import type {
   TestResultState,
 } from './index'
 import { runScenario } from './index'
-import { finalScenarioAttempt } from './src/run-scenario-types'
+import { finalScenarioAttempt } from './src/execution/run-scenario-types'
 
 export interface AdapterConformanceSuiteOptions {
   name: string

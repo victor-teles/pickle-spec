@@ -33,6 +33,11 @@ const versionPattern = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/
 
 const releasePackageDefinitions: ReleasePackageDefinition[] = [
   {
+    directory: 'packages/configuration',
+    name: '@pickle-spec/configuration',
+    exports: { '.': './index.ts' },
+  },
+  {
     directory: 'packages/spec',
     name: '@pickle-spec/spec',
     exports: { '.': './index.ts' },
@@ -261,7 +266,7 @@ export async function validateReleasePackages(
       `${definition.name} exports must match its documented public entry points`,
     )
     assertRelease(
-      manifest.files?.some((entry) => entry.includes('!src/*.test.ts')),
+      manifest.files?.includes('!src/**/*.test.ts'),
       `${definition.name} must exclude tests from its package artifact`,
     )
     await assertExportTargets(root, definition)
