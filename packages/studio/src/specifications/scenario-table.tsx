@@ -1,0 +1,225 @@
+import { useEffect, useMemo, useRef } from 'react'
+import { Button } from '../components/ui/button'
+import { ResultMark } from '../components/ui/result-mark'
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '../components/ui/table'
+import {
+  cellKey,
+  isSelectedCell,
+  type MatrixCell,
+} from '../runs/result/run-view'
+import type { StudioScenario } from '../server/server'
+
+type ScenarioTableProps = {
+  cells: readonly MatrixCell[]
+  focusRequest: number
+  focusedScenarioId?: string
+  focusTargetId?: string
+  onRun: (scenario: StudioScenario) => void
+  onSelect: (cell: MatrixCell) => void
+  profiles: readonly string[]
+  running: boolean
+  scenarios: readonly StudioScenario[]
+  selected?: MatrixCell
+}
+
+export function ScenarioTable(props: ScenarioTableProps) {
+  const rowRefs = useRef(new Map<string, HTMLTableRowElement>())
+  const cellsByScenarioAndProfile = useMemo(
+    () =>
+      new Map(
+        props.cells.map((cell) => [
+          cellKey(cell.scenarioId, cell.profileId),
+          cell,
+        ]),
+      ),
+    [props.cells],
+  )
+
+  useEffect(() => {
+    if (!props.focusTargetId || props.focusRequest === 0) return
+    const row = rowRefs.current.get(props.focusTargetId)
+    row?.scrollIntoView({ block: 'nearest' })
+    row?.focus({ preventScroll: true })
+  }, [props.focusRequest, props.focusTargetId])
+
+  function registerRow(id: string, row: HTMLTableRowElement | null) {
+    if (row) rowRefs.current.set(id, row)
+    else rowRefs.current.delete(id)
+  }
+
+  return (
+    <div className="scenario-table w-full min-w-0 max-w-full overflow-auto rounded-xl border border-border bg-card">
+      <Table
+        aria-label="Scenarios"
+        className="text-xs"
+        style={{ tableLayout: 'fixed' }}
+      >
+        <TableHeader>
+          <TableRow>
+            <TableHead>Scenario</TableHead>
+            {props.profiles.map((profile) => (
+              <TableHead key={profile} className="w-32">
+                {profile}
+              </TableHead>
+            ))}
+            <TableHead className="w-20 text-right">
+              <span className="sr-only">Run</span>
+            </TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {props.scenarios.length === 0 ? (
+            <EmptyScenarioRow profileCount={props.profiles.length} />
+          ) : (
+            props.scenarios.map((scenario) => (
+              <ScenarioRow
+                key={scenario.id}
+                cells={cellsByScenarioAndProfile}
+                focused={scenario.id === props.focusedScenarioId}
+                onRegister={registerRow}
+                onRun={props.onRun}
+                onSelect={props.onSelect}
+                profiles={props.profiles}
+                running={props.running}
+                scenario={scenario}
+                selected={props.selected}
+              />
+            ))
+          )}
+        </TableBody>
+      </Table>
+    </div>
+  )
+}
+
+function EmptyScenarioRow({ profileCount }: { profileCount: number }) {
+  return (
+    <TableRow>
+      <TableCell
+        colSpan={2 + profileCount}
+        className="py-5 text-muted-foreground"
+      >
+        This Specification has no Scenarios.
+      </TableCell>
+    </TableRow>
+  )
+}
+
+type ScenarioRowProps = {
+  cells: ReadonlyMap<string, MatrixCell>
+  focused: boolean
+  onRegister: (id: string, row: HTMLTableRowElement | null) => void
+  onRun: (scenario: StudioScenario) => void
+  onSelect: (cell: MatrixCell) => void
+  profiles: readonly string[]
+  running: boolean
+  scenario: StudioScenario
+  selected?: MatrixCell
+}
+
+function ScenarioRow(props: ScenarioRowProps) {
+  function handleRef(row: HTMLTableRowElement | null) {
+    props.onRegister(props.scenario.id, row)
+  }
+
+  function handleRun() {
+    props.onRun(props.scenario)
+  }
+
+  return (
+    <TableRow
+      ref={handleRef}
+      tabIndex={-1}
+      data-state={props.focused ? 'selected' : undefined}
+      className="outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-foreground/35"
+    >
+      <TableHead
+        scope="row"
+        className="max-w-0 truncate"
+        title={props.scenario.name}
+      >
+        {props.scenario.name}
+      </TableHead>
+      {props.profiles.map((profile) => (
+        <ScenarioResultCell
+          key={profile}
+          cell={props.cells.get(cellKey(props.scenario.id, profile))}
+          onSelect={props.onSelect}
+          profile={profile}
+          scenarioName={props.scenario.name}
+          selected={props.selected}
+        />
+      ))}
+      <TableCell className="w-20 text-right">
+        {props.scenario.canRun !== false ? (
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            disabled={props.running}
+            aria-label={`Run Scenario ${props.scenario.name}`}
+            onClick={handleRun}
+          >
+            Run
+          </Button>
+        ) : null}
+      </TableCell>
+    </TableRow>
+  )
+}
+
+type ScenarioResultCellProps = {
+  cell?: MatrixCell
+  onSelect: (cell: MatrixCell) => void
+  profile: string
+  scenarioName: string
+  selected?: MatrixCell
+}
+
+function ScenarioResultCell(props: ScenarioResultCellProps) {
+  const { cell } = props
+  if (!cell) {
+    return (
+      <TableCell className="w-32">
+        <span className="text-muted-foreground">pending</span>
+      </TableCell>
+    )
+  }
+  const selectedCell = cell
+
+  function handleSelect() {
+    props.onSelect(selectedCell)
+  }
+
+  return (
+    <TableCell className="w-32">
+      <Button
+        type="button"
+        size="sm"
+        variant={matrixCellVariant(cell.state)}
+        aria-label={`${props.scenarioName} ${props.profile} ${cell.state}`}
+        aria-pressed={isSelectedCell(props.selected, cell)}
+        className="animate-in fade-in zoom-in-95 duration-120 motion-reduce:animate-none"
+        onClick={handleSelect}
+      >
+        <ResultMark key={cell.state} state={cell.state} />
+        {cell.state}
+      </Button>
+    </TableCell>
+  )
+}
+
+function matrixCellVariant(state: MatrixCell['state']) {
+  if (state === 'failed' || state === 'infrastructure-error') {
+    return 'destructive'
+  }
+  if (state === 'passed') return 'passed'
+  return 'outline'
+}

@@ -1,15 +1,15 @@
-export type { CredentialStore } from './src/credentials'
+export type { CredentialStore } from './src/server/credentials'
 export {
   createCredentialStore,
   createDirectoryCredentialStore,
-} from './src/credentials'
+} from './src/server/credentials'
 export type {
   GitWorkspace,
   StudioGitFile,
   StudioGitStatus,
   StudioPullRequestResult,
-} from './src/git'
-export { createGitWorkspace } from './src/git'
+} from './src/server/git'
+export { createGitWorkspace } from './src/server/git'
 export type {
   StudioAuthoringGateway,
   StudioAuthoringModel,
@@ -32,9 +32,10 @@ export type {
   StudioRunReadiness,
   StudioRunRequest,
   StudioRunSnapshot,
+  StudioRunsIndex,
   StudioScenario,
   StudioServer,
   StudioSpecification,
   StudioSuite,
-} from './src/server'
-export { startStudio } from './src/server'
+} from './src/server/server'
+export { startStudio } from './src/server/server'

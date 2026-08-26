@@ -1,9 +1,9 @@
-export type { ProviderCredentialEnvironment } from './src/provider-credentials'
+export type { ProviderCredentialEnvironment } from './src/benchmarking/provider-credentials'
 export {
   assertNoProviderCredentials,
   providerCredentialEnvironmentNames,
   removeProviderCredentials,
-} from './src/provider-credentials'
+} from './src/benchmarking/provider-credentials'
 export type {
   EvaluateReplayPerformanceBenchmarkInput,
   ReplayBenchmarkBudgets,
@@ -13,10 +13,10 @@ export type {
   ReplayBenchmarkStatistics,
   ReplayPerformanceBenchmarkResult,
   RunReplayPerformanceBenchmarkInput,
-} from './src/replay-benchmark'
+} from './src/benchmarking/replay-benchmark'
 export {
   defaultReplayBenchmarkWarmupPairs,
   evaluateReplayPerformanceBenchmark,
   minimumReplayBenchmarkSamplePairs,
   runReplayPerformanceBenchmark,
-} from './src/replay-benchmark'
+} from './src/benchmarking/replay-benchmark'

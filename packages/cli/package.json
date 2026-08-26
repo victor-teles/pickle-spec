@@ -13,16 +13,17 @@
   },
   "files": [
     "index.ts",
-    "src/*.ts",
-    "!src/*.test.ts"
+    "src/**/*.ts",
+    "!src/**/*.test.ts"
   ],
   "scripts": {
     "typecheck": "tsc --noEmit",
     "test": "bun run test:confidentiality && bun run test:remaining",
-    "test:confidentiality": "bun test --preload ./test/test-environment.ts --max-concurrency 1 src/execution-cache-confidentiality.test.ts",
+    "test:confidentiality": "bun test --preload ./test/test-environment.ts --max-concurrency 1 src/execution-cache/execution-cache-confidentiality.test.ts",
     "test:remaining": "bun test --preload ./test/test-environment.ts --max-concurrency 1 --path-ignore-patterns '**/execution-cache-confidentiality.test.ts'"
   },
   "dependencies": {
+    "@pickle-spec/configuration": "workspace:*",
     "@pickle-spec/mobile": "workspace:*",
     "@pickle-spec/runner": "workspace:*",
     "@pickle-spec/spec": "workspace:*",

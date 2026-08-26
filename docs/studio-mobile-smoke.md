@@ -11,7 +11,7 @@ PICKLE_STUDIO_ANDROID_SMOKE=1 \
 PICKLE_ANDROID_APP_ID=com.example.app \
 PICKLE_ANDROID_APP_PATH=/absolute/path/to/app.apk \
 PICKLE_ANDROID_SMOKE_STEP='the mobile behavior succeeds' \
-bun test packages/cli/src/studio-mobile.smoke.test.ts
+bun test packages/cli/src/studio/studio-mobile.smoke.test.ts
 ```
 
 For iOS Simulator:
@@ -21,7 +21,7 @@ PICKLE_STUDIO_IOS_SMOKE=1 \
 PICKLE_IOS_APP_ID=com.example.app \
 PICKLE_IOS_APP_PATH=/absolute/path/to/App.app \
 PICKLE_IOS_SMOKE_STEP='the mobile behavior succeeds' \
-bun test packages/cli/src/studio-mobile.smoke.test.ts
+bun test packages/cli/src/studio/studio-mobile.smoke.test.ts
 ```
 
 Set `PICKLE_ANDROID_TARGET_ID` or `PICKLE_IOS_TARGET_ID` to require a specific

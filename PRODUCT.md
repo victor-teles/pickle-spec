@@ -33,7 +33,7 @@ A neighboring runner could cache a model response. It could not truthfully claim
 - Specifications live as Gherkin feature files in the repository. Execution caches are disposable local-computer data outside the repository.
 - Immutable test runs live under `.pickle/runs/<run-id>/` as an event stream, a materialized manifest, and separate test artifacts. They stay out of Git.
 - Studio navigation uses Specifications, Runs, and Settings as stable primary areas. Specifications is the current working room; Runs and Settings remain global.
-- The current Studio slice lists Specifications, authors them from a view-mode outline into an opt-in Gherkin editor, starts a scoped test run, streams live progress, and diagnoses results in the Scenario table, Needs attention list, and step timeline. Cache refresh is contextual to Run; inspection and clearing belong to Settings.
+- Studio lists and authors Specifications, starts scoped test runs, and diagnoses live results in the Scenario table, Needs attention list, and step timeline. Runs is the global command center for live progress, cross-Specification history, comparison, reruns, exports, retention, and evidence inspection. Cache refresh is contextual to Run; cache inspection and clearing belong to Settings.
 
 ## Capabilities and Constraints
 

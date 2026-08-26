@@ -14,14 +14,15 @@
     "benchmarking.ts",
     "index.ts",
     "testing.ts",
-    "src/*.ts",
-    "!src/*.test.ts"
+    "src/**/*.ts",
+    "!src/**/*.test.ts"
   ],
   "scripts": {
     "typecheck": "tsc --noEmit",
     "test": "bun test"
   },
   "dependencies": {
+    "@pickle-spec/configuration": "workspace:*",
     "@pickle-spec/spec": "workspace:*",
     "zod": "catalog:"
   },

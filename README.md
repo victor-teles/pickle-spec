@@ -14,6 +14,7 @@ Each scoped package owns one public boundary.
 
 | Package | Responsibility |
 | --- | --- |
+| `@pickle-spec/configuration` | Provide shared strict configuration validation rules. |
 | `@pickle-spec/spec` | Parse Specifications and select Scenarios. |
 | `@pickle-spec/runner` | Schedule Scenarios and produce run events and test results. |
 | `@pickle-spec/web` | Adapt Stagehand operations to the runner contract. |
@@ -23,7 +24,7 @@ Each scoped package owns one public boundary.
 
 The `apps/example` workspace contains sample Specifications.
 
-All six packages publish at one lockstep version. Library consumers use the
+All seven packages publish at one lockstep version. Library consumers use the
 package roots; adapter conformance and controlled benchmark tooling are exposed
 only at `@pickle-spec/runner/testing` and
 `@pickle-spec/runner/benchmarking`.

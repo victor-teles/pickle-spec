@@ -5,6 +5,7 @@ Pickle Spec separates specification management, test-run orchestration, executio
 ## Package ownership
 
 - `@pickle-spec/spec` owns the specification model, parser, and editor operations.
+- `@pickle-spec/configuration` owns shared configuration validation rules, while domain schemas stay with their owning package.
 - `@pickle-spec/runner` owns scheduling, execution policy, events, and test results.
 - `@pickle-spec/web` adapts Stagehand to the runner contract.
 - `@pickle-spec/mobile` adapts `agent-device` to the runner contract.
@@ -13,7 +14,7 @@ Pickle Spec separates specification management, test-run orchestration, executio
 
 The runner owns concurrency, retries, timeouts, cancellation, execution-cache lifecycle, Adaptive fallback, run events, and test results. Each adapter declares capabilities and owns logical sessions, deterministic actions and assertions, verification, replay payloads, and artifact capture.
 
-The specification, runner, web, and mobile packages expose small public interfaces. The Studio and CLI are executable products, not general-purpose libraries.
+The configuration, specification, runner, web, and mobile packages expose small public interfaces. The Studio and CLI are executable products, not general-purpose libraries.
 
 Project configuration imports custom adapters explicitly. The first version does not discover plugins dynamically.
 

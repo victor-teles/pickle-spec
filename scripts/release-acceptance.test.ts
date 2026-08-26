@@ -14,7 +14,13 @@ import {
 const repositoryRoot = resolve(import.meta.dir, '..')
 
 const packageFixtures = [
-  ['spec', '@pickle-spec/spec', { '.': './index.ts' }, {}],
+  ['configuration', '@pickle-spec/configuration', { '.': './index.ts' }, {}],
+  [
+    'spec',
+    '@pickle-spec/spec',
+    { '.': './index.ts' },
+    { '@pickle-spec/configuration': 'workspace:*' },
+  ],
   [
     'runner',
     '@pickle-spec/runner',
@@ -23,13 +29,17 @@ const packageFixtures = [
       './benchmarking': './benchmarking.ts',
       './testing': './testing.ts',
     },
-    { '@pickle-spec/spec': 'workspace:*' },
+    {
+      '@pickle-spec/configuration': 'workspace:*',
+      '@pickle-spec/spec': 'workspace:*',
+    },
   ],
   [
     'web',
     '@pickle-spec/web',
     { '.': './index.ts' },
     {
+      '@pickle-spec/configuration': 'workspace:*',
       '@pickle-spec/runner': 'workspace:*',
       '@pickle-spec/spec': 'workspace:*',
     },
@@ -54,6 +64,7 @@ const packageFixtures = [
     '@pickle-spec/cli',
     { '.': './index.ts' },
     {
+      '@pickle-spec/configuration': 'workspace:*',
       '@pickle-spec/mobile': 'workspace:*',
       '@pickle-spec/runner': 'workspace:*',
       '@pickle-spec/spec': 'workspace:*',
@@ -76,8 +87,8 @@ async function createReleaseWorkspace(): Promise<string> {
       ...new Set(
         Object.values(exports).map((target) => target.replace('./', '')),
       ),
-      'src/*.ts',
-      '!src/*.test.ts',
+      'src/**/*.ts',
+      '!src/**/*.test.ts',
     ]
     await Bun.write(
       join(packageRoot, 'package.json'),
@@ -112,6 +123,7 @@ describe('release package acceptance', () => {
 
     expect(result.version).toMatch(/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/)
     expect(result.packages.map((item) => item.name)).toEqual([
+      '@pickle-spec/configuration',
       '@pickle-spec/spec',
       '@pickle-spec/runner',
       '@pickle-spec/web',
@@ -184,6 +196,7 @@ describe('release package acceptance', () => {
         result.packages.find((item) => item.name === '@pickle-spec/cli')
           ?.dependencies,
       ).toEqual({
+        '@pickle-spec/configuration': '9.8.7',
         '@pickle-spec/mobile': '9.8.7',
         '@pickle-spec/runner': '9.8.7',
         '@pickle-spec/spec': '9.8.7',

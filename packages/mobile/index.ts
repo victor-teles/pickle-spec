@@ -9,9 +9,9 @@ export type {
   MobileArtifactKind,
   MobileExecutionTargetAdapter,
   MobileTextRedaction,
-} from './src/mobile-adapter'
+} from './src/adapter/mobile-adapter'
 export {
   androidCapabilities,
   createMobileAdapter,
   iosCapabilities,
-} from './src/mobile-adapter'
+} from './src/adapter/mobile-adapter'

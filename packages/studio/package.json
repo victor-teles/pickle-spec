@@ -11,8 +11,8 @@
   "files": [
     "index.ts",
     "src",
-    "!src/*.test.ts",
-    "!src/*.test.tsx"
+    "!src/**/*.test.ts",
+    "!src/**/*.test.tsx"
   ],
   "scripts": {
     "typecheck": "tsc --noEmit",
@@ -20,6 +20,9 @@
   },
   "dependencies": {
     "@base-ui/react": "^1.0.0",
+    "@fontsource-variable/eb-garamond": "^5.3.0",
+    "@fontsource-variable/inter": "^5.3.0",
+    "@fontsource-variable/jetbrains-mono": "^5.3.0",
     "@hugeicons/core-free-icons": "^4.2.3",
     "@hugeicons/react": "^1.1.9",
     "@pickle-spec/runner": "workspace:*",
@@ -29,6 +32,7 @@
     "bun-plugin-tailwind": "^0.1.2",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
+    "cmdk": "^1.1.1",
     "monaco-editor": "^0.56.0",
     "react": "^19.1.1",
     "react-dom": "^19.1.1",
