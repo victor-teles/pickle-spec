@@ -33,6 +33,10 @@ interface LeaseHeartbeat {
   stop(): Promise<boolean>
 }
 
+type CoordinatedWaitResult<Result> =
+  | { status: 'resolved'; result: Result }
+  | { status: 'retry' }
+
 function waitForDelay(delayMs: number, signal: AbortSignal): Promise<void> {
   if (signal.aborted) return Promise.resolve()
   return new Promise((resolve) => {
@@ -73,6 +77,51 @@ function startLeaseHeartbeat(
   }
 }
 
+async function waitForCoordinatedResult<Evaluation, Result>(
+  input: CoordinateExecutionCacheRunInput<Evaluation, Result>,
+  ownerToken: string,
+  baselineRevision: number | undefined,
+): Promise<CoordinatedWaitResult<Result>> {
+  const waited = await input.coordination.wait(
+    input.cacheKey,
+    ownerToken,
+    baselineRevision,
+    input.signal,
+  )
+  if (waited.status !== 'released') {
+    return { status: 'resolved', result: await input.waitEnded(waited.status) }
+  }
+  if (waited.published) {
+    const replay = await input.replayPublished()
+    if (replay) return { status: 'resolved', result: replay }
+  }
+  if (waited.terminalOutcome) {
+    const terminal = await input.reuseTerminal(waited.terminalOutcome)
+    if (terminal) return { status: 'resolved', result: terminal }
+  }
+  return { status: 'retry' }
+}
+
+async function evaluateWithLease<Evaluation, Result>(
+  input: CoordinateExecutionCacheRunInput<Evaluation, Result>,
+  lease: ExecutionCacheLease,
+): Promise<Result> {
+  const heartbeat = startLeaseHeartbeat(input.coordination, lease)
+  try {
+    const current = await input.coordination.readCurrent(input.cacheKey)
+    if (current && current.revision !== input.observedRevision) {
+      const replay = await input.replayPublished()
+      if (replay) return replay
+    }
+    const evaluation = await input.evaluate()
+    if (await heartbeat.stop()) return input.ownershipLost(evaluation)
+    return await input.completeOwner(evaluation, lease)
+  } finally {
+    await heartbeat.stop()
+    await input.coordination.release(lease)
+  }
+}
+
 export async function coordinateExecutionCacheRun<Evaluation, Result>(
   input: CoordinateExecutionCacheRunInput<Evaluation, Result>,
 ): Promise<Result> {
@@ -80,37 +129,14 @@ export async function coordinateExecutionCacheRun<Evaluation, Result>(
   for (;;) {
     const acquisition = await coordination.acquire(cacheKey)
     if (!acquisition.acquired) {
-      const waited = await coordination.wait(
-        cacheKey,
+      const waited = await waitForCoordinatedResult(
+        input,
         acquisition.ownerToken,
         acquisition.baselineRevision,
-        input.signal,
       )
-      if (waited.status !== 'released') return input.waitEnded(waited.status)
-      if (waited.published) {
-        const replay = await input.replayPublished()
-        if (replay) return replay
-      }
-      if (waited.terminalOutcome) {
-        const terminal = await input.reuseTerminal(waited.terminalOutcome)
-        if (terminal) return terminal
-      }
+      if (waited.status === 'resolved') return waited.result
       continue
     }
-
-    const heartbeat = startLeaseHeartbeat(coordination, acquisition.lease)
-    try {
-      const current = await coordination.readCurrent(cacheKey)
-      if (current && current.revision !== input.observedRevision) {
-        const replay = await input.replayPublished()
-        if (replay) return replay
-      }
-      const evaluation = await input.evaluate()
-      if (await heartbeat.stop()) return input.ownershipLost(evaluation)
-      return await input.completeOwner(evaluation, acquisition.lease)
-    } finally {
-      await heartbeat.stop()
-      await coordination.release(acquisition.lease)
-    }
+    return evaluateWithLease(input, acquisition.lease)
   }
 }

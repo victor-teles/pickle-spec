@@ -318,6 +318,70 @@ export function openTestRunStore(options: TestRunStoreOptions): TestRunStore {
     })
   }
 
+  async function removeExpiredRuns(
+    eligible: readonly TestRunManifest[],
+    cutoff: number | undefined,
+  ): Promise<string[]> {
+    const removed: string[] = []
+    if (cutoff === undefined) return removed
+    for (const manifest of eligible) {
+      if (!manifest.finishedAt || Date.parse(manifest.finishedAt) > cutoff)
+        continue
+      await removeRun(runsDirectory, indexPath, manifest.id)
+      removed.push(manifest.id)
+    }
+    return removed
+  }
+
+  async function removeRunsOverLimit(
+    eligible: readonly TestRunManifest[],
+    maxBytes: number | undefined,
+    removed: string[],
+  ): Promise<number> {
+    let total = await directorySize(runsDirectory)
+    if (maxBytes === undefined) return total
+
+    const removedRunIds = new Set(removed)
+    const remaining = eligible.filter(
+      (manifest) => !removedRunIds.has(manifest.id),
+    )
+    while (total > maxBytes) {
+      const oldest = remaining.shift()
+      if (!oldest) break
+      await removeRun(runsDirectory, indexPath, oldest.id)
+      removed.push(oldest.id)
+      total = await directorySize(runsDirectory)
+    }
+    return total
+  }
+
+  async function applyRetentionPolicy(
+    policy: RetentionPolicy,
+  ): Promise<RetentionResult> {
+    const beforeBytes = await directorySize(runsDirectory)
+    if (policy.maxAgeMs === undefined && policy.maxBytes === undefined) {
+      return { removed: [], beforeBytes, afterBytes: beforeBytes }
+    }
+
+    const cutoff =
+      policy.maxAgeMs === undefined
+        ? undefined
+        : now().getTime() - policy.maxAgeMs
+    const pinnedRunIds = await readPinnedRunIds()
+    const eligible = (await loadManifests())
+      .filter(
+        (manifest) => manifest.finishedAt && !pinnedRunIds.has(manifest.id),
+      )
+      .sort(byOldest)
+    const removed = await removeExpiredRuns(eligible, cutoff)
+    const afterBytes = await removeRunsOverLimit(
+      eligible,
+      policy.maxBytes,
+      removed,
+    )
+    return { removed, beforeBytes, afterBytes }
+  }
+
   return {
     async create(options: CreateTestRunOptions = {}) {
       await loadManifests()
@@ -393,52 +457,7 @@ export function openTestRunStore(options: TestRunStoreOptions): TestRunStore {
       return updatePin(id, false)
     },
     applyRetention(policy: RetentionPolicy = {}) {
-      return serializeManagementOperation(async () => {
-        const beforeBytes = await directorySize(runsDirectory)
-        if (policy.maxAgeMs === undefined && policy.maxBytes === undefined) {
-          return { removed: [], beforeBytes, afterBytes: beforeBytes }
-        }
-        const cutoff =
-          policy.maxAgeMs === undefined
-            ? undefined
-            : now().getTime() - policy.maxAgeMs
-        const manifests = await loadManifests()
-        const pinnedRunIds = await readPinnedRunIds()
-        const removed: string[] = []
-        const removedRunIds = new Set<string>()
-        const eligible = manifests
-          .filter(
-            (manifest) => manifest.finishedAt && !pinnedRunIds.has(manifest.id),
-          )
-          .sort(byOldest)
-
-        for (const manifest of eligible) {
-          const finishedAt = manifest.finishedAt
-          if (
-            cutoff !== undefined &&
-            finishedAt &&
-            Date.parse(finishedAt) <= cutoff
-          ) {
-            await removeRun(runsDirectory, indexPath, manifest.id)
-            removed.push(manifest.id)
-            removedRunIds.add(manifest.id)
-          }
-        }
-
-        let total = await directorySize(runsDirectory)
-        const remaining = eligible.filter(
-          (manifest) => !removedRunIds.has(manifest.id),
-        )
-        while (policy.maxBytes !== undefined && total > policy.maxBytes) {
-          const oldest = remaining.shift()
-          if (!oldest) break
-          await removeRun(runsDirectory, indexPath, oldest.id)
-          removedRunIds.add(oldest.id)
-          removed.push(oldest.id)
-          total = await directorySize(runsDirectory)
-        }
-        return { removed, beforeBytes, afterBytes: total }
-      })
+      return serializeManagementOperation(() => applyRetentionPolicy(policy))
     },
   }
 }

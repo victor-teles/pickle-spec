@@ -3,6 +3,7 @@ import {
   type AttemptScenarioRun,
   createSyntheticTestResult,
   createTestResult,
+  type ExecutionCachePolicy,
   type ExecutionMode,
   type RunEvent,
   type RunEventPayload,
@@ -12,6 +13,7 @@ import {
   type ScenarioAttempt,
   type ScenarioRun,
   scenarioFinishedPayload,
+  type TargetSessionReplayRepresentation,
   type TestResult,
   testRunSchemaVersion,
   withFinalAttempt,
@@ -293,6 +295,19 @@ interface FinalizeAdaptiveRunInput {
   lease?: ExecutionCacheLease
 }
 
+type AdaptiveCachePublication =
+  | { status: 'published' }
+  | { status: 'uncacheable'; reason: ExecutionCacheUncacheableReason }
+  | { status: 'failed'; result: TestResult }
+
+interface AdaptiveResultContext {
+  input: RunScenarioInput
+  events: RunEvent[]
+  result: TestResult
+  lease?: ExecutionCacheLease
+  scope: RunEventScope
+}
+
 function terminalOutcomeFor(
   result: TestResult,
 ): SerializedExecutionCacheTerminalOutcome {
@@ -323,13 +338,154 @@ async function completeLeaseWithTerminalOutcome(
   )
 }
 
+function adaptiveUncacheableReason(
+  input: RunScenarioInput,
+  run: RetriedScenarioRun,
+  forcedReason: ExecutionCacheUncacheableReason | undefined,
+): ExecutionCacheUncacheableReason | undefined {
+  if (forcedReason) return forcedReason
+  const bindings = nonemptyBindings(input.scenario.runtimeBindings)
+  if (
+    run.runtimeValueExposed ||
+    (run.completion?.evaluationModel &&
+      stringContainsBinding(run.completion.evaluationModel, bindings))
+  ) {
+    return 'bound-parameter-value'
+  }
+
+  const representation = run.completion?.replayRepresentation
+  if (!representation) return 'non-deterministic-action'
+  if (!representation.cacheable) return representation.reason
+  if (
+    !requiredVariablesAreValid(representation.requiredVariables, input.scenario)
+  )
+    return 'payload-validation-failed'
+  return undefined
+}
+
+function serializedAdaptiveEntry(
+  input: RunScenarioInput,
+  cacheKey: ExecutionCacheKey,
+  representation: Extract<
+    TargetSessionReplayRepresentation,
+    { cacheable: true }
+  >,
+): SerializedExecutionCacheEnvelope | undefined {
+  try {
+    return serializeExecutionCacheEnvelope(
+      {
+        schemaVersion: 1,
+        key: cacheKey,
+        requiredVariables: [...representation.requiredVariables],
+        adapterPayload: representation.adapterPayload,
+      },
+      input.adapter.executionCache!,
+    )
+  } catch {
+    return undefined
+  }
+}
+
+async function publishAdaptiveEntry(
+  context: AdaptiveResultContext,
+  run: RetriedScenarioRun,
+  cacheKey: ExecutionCacheKey,
+): Promise<AdaptiveCachePublication> {
+  const { events, input, lease, result, scope } = context
+  const representation = run.completion?.replayRepresentation
+  if (!representation) {
+    return { status: 'uncacheable', reason: 'non-deterministic-action' }
+  }
+  if (!representation.cacheable) {
+    return { status: 'uncacheable', reason: representation.reason }
+  }
+
+  const serialized = serializedAdaptiveEntry(input, cacheKey, representation)
+  if (!serialized) {
+    return { status: 'uncacheable', reason: 'payload-validation-failed' }
+  }
+  if (serializedContainsRuntimeValue(serialized.source, input.scenario)) {
+    return { status: 'uncacheable', reason: 'bound-parameter-value' }
+  }
+
+  const metadata = {
+    sourceRunId: input.executionCache!.sourceRunId,
+    evaluationModel: run.completion?.evaluationModel,
+    evaluationInferenceCount: run.inferenceCount,
+  }
+  const write = lease
+    ? await input.executionCache!.store.coordination!.publish(
+        lease,
+        serialized,
+        metadata,
+      )
+    : await input.executionCache!.store.write(serialized, metadata)
+  if ('published' in write && !write.published) {
+    return {
+      status: 'failed',
+      result: withFinalAttempt(result, {
+        state: 'infrastructure-error',
+        message: 'Execution cache lease ownership was lost before publication',
+      }),
+    }
+  }
+  if (!write.stored) {
+    return { status: 'uncacheable', reason: 'entry-too-large' }
+  }
+
+  await appendEvent(events, input, { type: 'cache-written', cacheKey, scope })
+  return { status: 'published' }
+}
+
+async function finishFailedAdaptiveRun(
+  context: AdaptiveResultContext,
+): Promise<ScenarioRun> {
+  const { events, input, lease, result } = context
+  if (await completeLeaseWithTerminalOutcome(input, lease, result)) {
+    return finishRun(input, events, result)
+  }
+  return finishRun(
+    input,
+    events,
+    withFinalAttempt(result, {
+      state: 'infrastructure-error',
+      message: 'Execution cache lease ownership was lost after evaluation',
+    }),
+  )
+}
+
+async function finishSuccessfulAdaptiveRun(
+  context: AdaptiveResultContext,
+  reason: ExecutionCacheUncacheableReason | undefined,
+): Promise<ScenarioRun> {
+  const { events, input, lease, result, scope } = context
+  if (!reason) return finishRun(input, events, result)
+
+  await appendEvent(events, input, {
+    type: 'cache-uncacheable',
+    reason,
+    scope,
+  })
+  let finalResult = withFinalAttempt(result, {
+    cacheOutcome: 'uncacheable',
+    cacheUncacheableReason: reason,
+  })
+  if (!(await completeLeaseWithTerminalOutcome(input, lease, finalResult))) {
+    finalResult = withFinalAttempt(finalResult, {
+      state: 'infrastructure-error',
+      message: 'Execution cache lease ownership was lost after evaluation',
+    })
+  }
+  return finishRun(input, events, finalResult)
+}
+
 async function finalizeAdaptiveRun(
   input: RunScenarioInput,
   events: RunEvent[],
   finalization: FinalizeAdaptiveRunInput,
 ): Promise<ScenarioRun> {
   const { run, cacheKey } = finalization
-  let result = withFinalAttempt(run.result, {
+  const result = withFinalAttempt(run.result, {
     cacheOutcome: finalization.cacheOutcome,
     inferenceCount: run.inferenceCount,
   })
@@ -340,124 +496,32 @@ async function finalizeAdaptiveRun(
     scope,
   })
 
+  const context: AdaptiveResultContext = {
+    input,
+    events,
+    result,
+    lease: finalization.lease,
+    scope,
+  }
   if (result.state !== 'passed') {
-    if (
-      !(await completeLeaseWithTerminalOutcome(
-        input,
-        finalization.lease,
-        result,
-      ))
-    ) {
-      result = withFinalAttempt(result, {
-        state: 'infrastructure-error',
-        message: 'Execution cache lease ownership was lost after evaluation',
-      })
-    }
-    return finishRun(input, events, result)
+    return finishFailedAdaptiveRun(context)
   }
 
-  let reason = finalization.forcedUncacheableReason
-  if (!reason && run.runtimeValueExposed) reason = 'bound-parameter-value'
-  if (
-    !reason &&
-    run.completion?.evaluationModel &&
-    stringContainsBinding(
-      run.completion.evaluationModel,
-      nonemptyBindings(input.scenario.runtimeBindings),
-    )
-  ) {
-    reason = 'bound-parameter-value'
+  const policyReason = adaptiveUncacheableReason(
+    input,
+    run,
+    finalization.forcedUncacheableReason,
+  )
+  const publication =
+    !policyReason && cacheKey
+      ? await publishAdaptiveEntry(context, run, cacheKey)
+      : undefined
+  if (publication?.status === 'failed') {
+    return finishRun(input, events, publication.result)
   }
-  const representation = run.completion?.replayRepresentation
-  if (!reason && !representation) reason = 'non-deterministic-action'
-  if (!reason && representation && !representation.cacheable) {
-    reason = representation.reason
-  }
-  if (
-    !reason &&
-    representation?.cacheable &&
-    !requiredVariablesAreValid(representation.requiredVariables, input.scenario)
-  ) {
-    reason = 'payload-validation-failed'
-  }
-
-  if (!reason && cacheKey && representation?.cacheable) {
-    let serialized: SerializedExecutionCacheEnvelope | undefined
-    try {
-      serialized = serializeExecutionCacheEnvelope(
-        {
-          schemaVersion: 1,
-          key: cacheKey,
-          requiredVariables: [...representation.requiredVariables],
-          adapterPayload: representation.adapterPayload,
-        },
-        input.adapter.executionCache!,
-      )
-    } catch {
-      reason = 'payload-validation-failed'
-    }
-    if (
-      serialized &&
-      serializedContainsRuntimeValue(serialized.source, input.scenario)
-    ) {
-      reason = 'bound-parameter-value'
-    }
-    if (!reason && serialized) {
-      const metadata = {
-        sourceRunId: input.executionCache!.sourceRunId,
-        evaluationModel: run.completion?.evaluationModel,
-        evaluationInferenceCount: run.inferenceCount,
-      }
-      const write = finalization.lease
-        ? await input.executionCache!.store.coordination!.publish(
-            finalization.lease,
-            serialized,
-            metadata,
-          )
-        : await input.executionCache!.store.write(serialized, metadata)
-      if ('published' in write && !write.published) {
-        return finishRun(
-          input,
-          events,
-          withFinalAttempt(result, {
-            state: 'infrastructure-error',
-            message:
-              'Execution cache lease ownership was lost before publication',
-          }),
-        )
-      }
-      if (!write.stored) reason = 'entry-too-large'
-      else {
-        await appendEvent(events, input, {
-          type: 'cache-written',
-          cacheKey,
-          scope,
-        })
-      }
-    }
-  }
-
-  if (reason) {
-    await appendEvent(events, input, {
-      type: 'cache-uncacheable',
-      reason,
-      scope,
-    })
-    result = withFinalAttempt(result, {
-      cacheOutcome: 'uncacheable',
-      cacheUncacheableReason: reason,
-    })
-  }
-  if (
-    reason &&
-    !(await completeLeaseWithTerminalOutcome(input, finalization.lease, result))
-  ) {
-    result = withFinalAttempt(result, {
-      state: 'infrastructure-error',
-      message: 'Execution cache lease ownership was lost after evaluation',
-    })
-  }
-  return finishRun(input, events, result)
+  const publicationReason =
+    publication?.status === 'uncacheable' ? publication.reason : undefined
+  return finishSuccessfulAdaptiveRun(context, policyReason ?? publicationReason)
 }
 
 async function finishLeaseWait(
@@ -688,94 +752,50 @@ export async function runCacheOnlyMiss(
   return finishRun(input, events, result)
 }
 
-export async function runScenarioWithExecutionCache(
-  input: RunScenarioInput,
+interface RunUncacheableScenarioInput {
+  input: RunScenarioInput
+  events: RunEvent[]
+  cachePolicy: ExecutionCachePolicy
+  unsafeOutline: boolean
+  unsafeCacheKey: boolean
+}
+
+async function runUncacheableScenario(
+  options: RunUncacheableScenarioInput,
 ): Promise<ScenarioRun> {
-  const events: RunEvent[] = []
-  const cachePolicy = input.cachePolicy ?? 'prefer-cache'
-  const resolvedCacheKey = cacheKeyFor(input)
-  const unsafeCacheKey = Boolean(
-    resolvedCacheKey &&
-      serializedContainsRuntimeValue(
-        JSON.stringify(resolvedCacheKey),
-        input.scenario,
-      ),
-  )
-  const cacheKey = unsafeCacheKey ? undefined : resolvedCacheKey
-  const unsafeOutline = !hasSeparatedOutlineBindings(input.scenario)
-
-  if (!cacheKey || unsafeOutline) {
-    if (cachePolicy === 'cache-only') {
-      return runCacheOnlyMiss(
-        input,
-        events,
-        unsafeOutline || unsafeCacheKey
-          ? 'Scenario parameters cannot be separated safely for Replay'
-          : 'Execution cache requires applicationRevision',
-      )
-    }
-    const run = await runCachedAttempts(input, 'adaptive', events)
-    return finalizeAdaptiveRun(input, events, {
-      run,
-      cacheOutcome: 'uncacheable',
-      forcedUncacheableReason:
-        unsafeOutline || unsafeCacheKey
-          ? 'bound-parameter-value'
-          : 'application-revision-missing',
-    })
+  const { cachePolicy, events, input, unsafeCacheKey, unsafeOutline } = options
+  const hasUnsafeBindings = unsafeOutline || unsafeCacheKey
+  if (cachePolicy === 'cache-only') {
+    const message = hasUnsafeBindings
+      ? 'Scenario parameters cannot be separated safely for Replay'
+      : 'Execution cache requires applicationRevision'
+    return runCacheOnlyMiss(input, events, message)
   }
 
-  if (cachePolicy === 'refresh') {
-    await appendEvent(events, input, {
-      type: 'cache-refresh',
-      cacheKey,
-      scope: nextAttemptScope(input),
-    })
-    const observedSnapshot =
-      await input.executionCache!.store.coordination?.readCurrent(cacheKey)
-    return runCoordinatedAdaptive({
-      input,
-      events,
-      cacheKey,
-      cacheOutcome: 'refresh',
-      observedRevision: observedSnapshot?.revision,
-    })
-  }
+  const run = await runCachedAttempts(input, 'adaptive', events)
+  return finalizeAdaptiveRun(input, events, {
+    run,
+    cacheOutcome: 'uncacheable',
+    forcedUncacheableReason: hasUnsafeBindings
+      ? 'bound-parameter-value'
+      : 'application-revision-missing',
+  })
+}
 
-  const observedSnapshot =
-    await input.executionCache!.store.coordination?.readCurrent(cacheKey)
-  const source = await input.executionCache!.store.read(cacheKey)
-  const cacheEntry = source
-    ? deserializeExecutionCacheEnvelope({
-        source,
-        expectedKey: cacheKey,
-        payloadValidator: input.adapter.executionCache!,
-      })
-    : undefined
-  if (!cacheEntry) {
-    if (source) await input.executionCache!.store.delete(cacheKey)
-    if (cachePolicy === 'cache-only') {
-      return runCacheOnlyMiss(
-        input,
-        events,
-        'Execution cache entry was not found',
-        cacheKey,
-      )
-    }
-    await appendEvent(events, input, {
-      type: 'cache-miss',
-      cacheKey,
-      scope: nextAttemptScope(input),
-    })
-    return runCoordinatedAdaptive({
-      input,
-      events,
-      cacheKey,
-      cacheOutcome: 'miss',
-      observedRevision: observedSnapshot?.revision,
-    })
-  }
+interface RunReplayCacheHitInput {
+  input: RunScenarioInput
+  events: RunEvent[]
+  cachePolicy: ExecutionCachePolicy
+  cacheKey: ExecutionCacheKey
+  cacheEntry: ExecutionCacheEnvelope
+  observedRevision?: number
+}
 
+async function runReplayCacheHit(
+  options: RunReplayCacheHitInput,
+): Promise<ScenarioRun> {
+  const { cacheEntry, cacheKey, cachePolicy, events, input, observedRevision } =
+    options
   await appendEvent(events, input, {
     type: 'cache-hit',
     cacheKey,
@@ -831,8 +851,95 @@ export async function runScenarioWithExecutionCache(
     events,
     cacheKey,
     cacheOutcome: 'fallback',
-    observedRevision: observedSnapshot?.revision,
+    observedRevision,
     inferenceOffset: replay.inferenceCount,
     priorAttempts: replay.result.attempts,
+  })
+}
+
+export async function runScenarioWithExecutionCache(
+  input: RunScenarioInput,
+): Promise<ScenarioRun> {
+  const events: RunEvent[] = []
+  const cachePolicy = input.cachePolicy ?? 'prefer-cache'
+  const resolvedCacheKey = cacheKeyFor(input)
+  const unsafeCacheKey = Boolean(
+    resolvedCacheKey &&
+      serializedContainsRuntimeValue(
+        JSON.stringify(resolvedCacheKey),
+        input.scenario,
+      ),
+  )
+  const cacheKey = unsafeCacheKey ? undefined : resolvedCacheKey
+  const unsafeOutline = !hasSeparatedOutlineBindings(input.scenario)
+
+  if (!cacheKey || unsafeOutline) {
+    return runUncacheableScenario({
+      input,
+      events,
+      cachePolicy,
+      unsafeOutline,
+      unsafeCacheKey,
+    })
+  }
+
+  if (cachePolicy === 'refresh') {
+    await appendEvent(events, input, {
+      type: 'cache-refresh',
+      cacheKey,
+      scope: nextAttemptScope(input),
+    })
+    const observedSnapshot =
+      await input.executionCache!.store.coordination?.readCurrent(cacheKey)
+    return runCoordinatedAdaptive({
+      input,
+      events,
+      cacheKey,
+      cacheOutcome: 'refresh',
+      observedRevision: observedSnapshot?.revision,
+    })
+  }
+
+  const observedSnapshot =
+    await input.executionCache!.store.coordination?.readCurrent(cacheKey)
+  const source = await input.executionCache!.store.read(cacheKey)
+  const cacheEntry = source
+    ? deserializeExecutionCacheEnvelope({
+        source,
+        expectedKey: cacheKey,
+        payloadValidator: input.adapter.executionCache!,
+      })
+    : undefined
+  if (!cacheEntry) {
+    if (source) await input.executionCache!.store.delete(cacheKey)
+    if (cachePolicy === 'cache-only') {
+      return runCacheOnlyMiss(
+        input,
+        events,
+        'Execution cache entry was not found',
+        cacheKey,
+      )
+    }
+    await appendEvent(events, input, {
+      type: 'cache-miss',
+      cacheKey,
+      scope: nextAttemptScope(input),
+    })
+    return runCoordinatedAdaptive({
+      input,
+      events,
+      cacheKey,
+      cacheOutcome: 'miss',
+      observedRevision: observedSnapshot?.revision,
+    })
+  }
+
+  return runReplayCacheHit({
+    input,
+    events,
+    cachePolicy,
+    cacheKey,
+    cacheEntry,
+    observedRevision: observedSnapshot?.revision,
   })
 }

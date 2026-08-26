@@ -130,6 +130,26 @@ export interface AttemptScenarioRun extends ScenarioRun {
   runtimeValueExposed: boolean
 }
 
+interface InitialAttemptOutcome {
+  state: 'skipped' | 'cancelled'
+  message: string
+}
+
+function initialAttemptOutcome(
+  input: ScenarioAttemptInput,
+): InitialAttemptOutcome | undefined {
+  if (input.scenario.tags.includes(ignoreTag)) {
+    return { state: 'skipped', message: 'Scenario is tagged @ignore' }
+  }
+  if (input.signal?.aborted) {
+    return {
+      state: 'cancelled',
+      message: 'Scenario cancelled before the logical session started',
+    }
+  }
+  return undefined
+}
+
 function stampDiagnostic(
   entry: DiagnosticEntry,
   input: ScenarioAttemptInput,
@@ -573,17 +593,9 @@ export async function runScenarioAttempt(
     }
   }
 
-  if (input.scenario.tags.includes(ignoreTag)) {
-    return finish('skipped', [], 'Scenario is tagged @ignore')
-  }
-
-  if (input.signal?.aborted) {
-    return finish(
-      'cancelled',
-      [],
-      'Scenario cancelled before the logical session started',
-    )
-  }
+  const initialOutcome = initialAttemptOutcome(input)
+  if (initialOutcome)
+    return finish(initialOutcome.state, [], initialOutcome.message)
 
   let session: TargetSession
   try {

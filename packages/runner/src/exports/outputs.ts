@@ -1,5 +1,6 @@
 import type {
   RunEvent,
+  TestArtifact,
   TestResult,
   TestResultState,
 } from '../execution/run-scenario'
@@ -47,30 +48,38 @@ function resultPriority(state: TestResultState): number {
   return 2
 }
 
+function resultArtifacts(result: TestResult): TestArtifact[] {
+  return result.attempts.flatMap((attempt) =>
+    attempt.steps.flatMap((step) => step.artifacts ?? []),
+  )
+}
+
+async function embedArtifact(
+  artifact: TestArtifact,
+): Promise<string | undefined> {
+  const file = Bun.file(artifact.path)
+  if (!(await file.exists())) return undefined
+
+  const bytes = Buffer.from(await file.arrayBuffer())
+  const mediaType = artifact.mediaType ?? 'application/octet-stream'
+  const href = `data:${mediaType};base64,${bytes.toString('base64')}`
+  const kind = escapeXml(artifact.kind)
+  return mediaType.startsWith('image/')
+    ? `<figure><img alt="${kind}" src="${href}"/></figure>`
+    : `<p><a href="${href}">${kind}</a></p>`
+}
+
 async function embedArtifacts(
   result: TestResult,
   mode: HtmlArtifactMode,
 ): Promise<string> {
   if (!shouldEmbedArtifacts(result.state, mode)) return ''
-  const parts: string[] = []
-  for (const attempt of result.attempts) {
-    for (const step of attempt.steps) {
-      for (const artifact of step.artifacts ?? []) {
-        if (!(await Bun.file(artifact.path).exists())) continue
-        const bytes = Buffer.from(await Bun.file(artifact.path).arrayBuffer())
-        const mediaType = artifact.mediaType ?? 'application/octet-stream'
-        const href = `data:${mediaType};base64,${bytes.toString('base64')}`
-        if (mediaType.startsWith('image/')) {
-          parts.push(
-            `<figure><img alt="${escapeXml(artifact.kind)}" src="${href}"/></figure>`,
-          )
-        } else {
-          parts.push(`<p><a href="${href}">${escapeXml(artifact.kind)}</a></p>`)
-        }
-      }
-    }
+  const embedded: string[] = []
+  for (const artifact of resultArtifacts(result)) {
+    const part = await embedArtifact(artifact)
+    if (part) embedded.push(part)
   }
-  return parts.join('\n')
+  return embedded.join('\n')
 }
 
 export async function formatHtml(

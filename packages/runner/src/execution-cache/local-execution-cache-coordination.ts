@@ -1,8 +1,13 @@
+import type { Database } from 'bun:sqlite'
 import { randomUUID } from 'node:crypto'
 import type {
   ExecutionCacheCoordination,
   ExecutionCacheKey,
   ExecutionCacheLease,
+  ExecutionCacheLeasePublicationResult,
+  ExecutionCacheLeaseWaitResult,
+  ExecutionCacheWriteMetadata,
+  SerializedExecutionCacheEnvelope,
   SerializedExecutionCacheTerminalOutcome,
 } from './execution-cache'
 import type { LocalExecutionCacheDatabase } from './local-execution-cache-database'
@@ -40,6 +45,26 @@ interface LeaseRow {
 
 interface LeaseOutcomeRow {
   source: string
+}
+
+interface WaitForLeaseInput {
+  database: LocalExecutionCacheDatabase
+  key: ExecutionCacheKey
+  ownerToken: string
+  baselineRevision?: number
+  signal?: AbortSignal
+  timing: ExecutionCacheLeaseTiming
+  now: () => Date
+}
+
+interface PublishLeaseInput {
+  db: Database
+  lease: ExecutionCacheLease
+  serialized: SerializedExecutionCacheEnvelope
+  metadata: ExecutionCacheWriteMetadata
+  projectKey: string
+  maxBytes: number
+  now: () => Date
 }
 
 const defaultTiming: ExecutionCacheLeaseTiming = {
@@ -101,6 +126,136 @@ function validateTiming(
     throw new Error('Execution cache heartbeatMs must be less than ttlMs')
   }
   return resolved
+}
+
+async function leaseIsActive(
+  database: LocalExecutionCacheDatabase,
+  digestKey: string,
+  ownerToken: string,
+  timestamp: number,
+): Promise<boolean> {
+  const active = await database.use((db) =>
+    db
+      .query(
+        `SELECT 1 FROM leases
+         WHERE key_digest = ? AND owner_token = ? AND expires_at > ?`,
+      )
+      .get(digestKey, ownerToken, timestamp),
+  )
+  return Boolean(active)
+}
+
+async function releasedLeaseResult(
+  input: WaitForLeaseInput,
+  digestKey: string,
+): Promise<ExecutionCacheLeaseWaitResult> {
+  const released = await input.database.use((db) => {
+    const currentRevision = readExecutionCacheEntrySnapshot(
+      db,
+      digestKey,
+    )?.revision
+    const outcome = db
+      .query(
+        `SELECT terminal_outcome AS source FROM lease_outcomes
+         WHERE key_digest = ? AND owner_token = ?`,
+      )
+      .get(digestKey, input.ownerToken) as LeaseOutcomeRow | null
+    return { currentRevision, outcome }
+  })
+  return {
+    status: 'released',
+    published: released.currentRevision !== input.baselineRevision,
+    terminalOutcome: released.outcome
+      ? (released.outcome as SerializedExecutionCacheTerminalOutcome)
+      : undefined,
+  }
+}
+
+async function waitForLeaseRelease(
+  input: WaitForLeaseInput,
+): Promise<ExecutionCacheLeaseWaitResult> {
+  const deadline = input.now().getTime() + input.timing.waitTimeoutMs
+  const digestKey = executionCacheKeyDigest(input.key)
+  while (!input.signal?.aborted) {
+    const timestamp = input.now().getTime()
+    const active = await leaseIsActive(
+      input.database,
+      digestKey,
+      input.ownerToken,
+      timestamp,
+    )
+    if (input.signal?.aborted) break
+    if (!active) return releasedLeaseResult(input, digestKey)
+    if (timestamp >= deadline) break
+
+    const delayMs = Math.min(pollDelay(input.timing), deadline - timestamp)
+    if (!(await waitForDelay(delayMs, input.signal))) break
+  }
+  return { status: input.signal?.aborted ? 'cancelled' : 'timed-out' }
+}
+
+function leaseIsOwned(
+  active: LeaseRow | null,
+  lease: ExecutionCacheLease,
+  timestamp: number,
+): boolean {
+  return Boolean(
+    active &&
+      active.ownerToken === lease.ownerToken &&
+      active.expiresAt > timestamp,
+  )
+}
+
+function deleteLease(
+  db: Database,
+  digestKey: string,
+  ownerToken: string,
+): void {
+  db.run('DELETE FROM leases WHERE key_digest = ? AND owner_token = ?', [
+    digestKey,
+    ownerToken,
+  ])
+}
+
+function publishLeaseEntry(
+  input: PublishLeaseInput,
+): ExecutionCacheLeasePublicationResult {
+  const { db, lease, maxBytes, metadata, now, projectKey, serialized } = input
+  const timestamp = now()
+  const digestKey = executionCacheKeyDigest(lease.key)
+  const active = db
+    .query(
+      `SELECT owner_token AS ownerToken, expires_at AS expiresAt,
+              baseline_revision AS baselineRevision
+       FROM leases WHERE key_digest = ?`,
+    )
+    .get(digestKey) as LeaseRow | null
+  if (!leaseIsOwned(active, lease, timestamp.getTime())) {
+    return { published: false, stored: false, evictedEntries: 0 }
+  }
+  if (executionCacheEntrySize(serialized) > maxBytes) {
+    return { published: true, stored: false, evictedEntries: 0 }
+  }
+
+  const published = writeExecutionCacheEntry(
+    db,
+    serialized,
+    metadata,
+    timestamp.toISOString(),
+    {
+      kind: 'compare-and-swap',
+      expectedRevision: active?.baselineRevision ?? undefined,
+    },
+  )
+  if (!published) {
+    deleteLease(db, digestKey, lease.ownerToken)
+    return { published: false, stored: false, evictedEntries: 0 }
+  }
+
+  const evictedEntries = evictLeastRecentlyUsed(db, projectKey, maxBytes)
+  const stored = executionCacheEntryIsRetained(db, serialized.key)
+  if (stored) deleteLease(db, digestKey, lease.ownerToken)
+  return { published: true, stored, evictedEntries }
 }
 
 export function createLocalExecutionCacheCoordination(
@@ -205,50 +360,15 @@ export function createLocalExecutionCacheCoordination(
     },
     async wait(key, ownerToken, baselineRevision, signal) {
       assertExecutionCacheProjectKey(projectKey, key)
-      const deadline = now().getTime() + timing.waitTimeoutMs
-      while (!signal?.aborted) {
-        const timestamp = now().getTime()
-        const active = await database.use((db) =>
-          db
-            .query(
-              `SELECT 1 FROM leases
-                 WHERE key_digest = ? AND owner_token = ? AND expires_at > ?`,
-            )
-            .get(executionCacheKeyDigest(key), ownerToken, timestamp),
-        )
-        if (signal?.aborted) break
-        if (!active) {
-          const released = await database.use((db) => {
-            const digestKey = executionCacheKeyDigest(key)
-            const currentRevision = readExecutionCacheEntrySnapshot(
-              db,
-              digestKey,
-            )?.revision
-            const outcome = db
-              .query(
-                `SELECT terminal_outcome AS source FROM lease_outcomes
-                 WHERE key_digest = ? AND owner_token = ?`,
-              )
-              .get(digestKey, ownerToken) as LeaseOutcomeRow | null
-            return { currentRevision, outcome }
-          })
-          return {
-            status: 'released' as const,
-            published: released.currentRevision !== baselineRevision,
-            terminalOutcome: released.outcome
-              ? (released.outcome as SerializedExecutionCacheTerminalOutcome)
-              : undefined,
-          }
-        }
-        if (timestamp >= deadline) break
-        const delayMs = Math.min(pollDelay(timing), deadline - timestamp)
-        if (!(await waitForDelay(delayMs, signal))) break
-      }
-      return {
-        status: signal?.aborted
-          ? ('cancelled' as const)
-          : ('timed-out' as const),
-      }
+      return waitForLeaseRelease({
+        database,
+        key,
+        ownerToken,
+        baselineRevision,
+        signal,
+        timing,
+        now,
+      })
     },
     async publish(lease, serialized, metadata) {
       assertExecutionCacheProjectKey(projectKey, lease.key)
@@ -261,60 +381,17 @@ export function createLocalExecutionCacheCoordination(
       }
       return database.use((db) =>
         db
-          .transaction(() => {
-            const timestamp = now()
-            const active = db
-              .query(
-                `SELECT owner_token AS ownerToken, expires_at AS expiresAt,
-                      baseline_revision AS baselineRevision
-               FROM leases WHERE key_digest = ?`,
-              )
-              .get(executionCacheKeyDigest(lease.key)) as LeaseRow | null
-            if (
-              !active ||
-              active.ownerToken !== lease.ownerToken ||
-              active.expiresAt <= timestamp.getTime()
-            ) {
-              return { published: false, stored: false, evictedEntries: 0 }
-            }
-            if (executionCacheEntrySize(serialized) > maxBytes) {
-              return { published: true, stored: false, evictedEntries: 0 }
-            }
-            const published = writeExecutionCacheEntry(
+          .transaction(() =>
+            publishLeaseEntry({
               db,
+              lease,
               serialized,
               metadata,
-              timestamp.toISOString(),
-              {
-                kind: 'compare-and-swap',
-                expectedRevision: active.baselineRevision ?? undefined,
-              },
-            )
-            if (!published) {
-              db.run(
-                'DELETE FROM leases WHERE key_digest = ? AND owner_token = ?',
-                [executionCacheKeyDigest(lease.key), lease.ownerToken],
-              )
-              return { published: false, stored: false, evictedEntries: 0 }
-            }
-            const evictedEntries = evictLeastRecentlyUsed(
-              db,
               projectKey,
               maxBytes,
-            )
-            const stored = executionCacheEntryIsRetained(db, serialized.key)
-            if (stored) {
-              db.run(
-                'DELETE FROM leases WHERE key_digest = ? AND owner_token = ?',
-                [executionCacheKeyDigest(lease.key), lease.ownerToken],
-              )
-            }
-            return {
-              published: true,
-              stored,
-              evictedEntries,
-            }
-          })
+              now,
+            }),
+          )
           .immediate(),
       )
     },
