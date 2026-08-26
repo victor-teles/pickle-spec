@@ -1,40 +1,36 @@
-import { mkdir } from 'node:fs/promises'
-import { join, resolve } from 'node:path'
-import {
-  isEvidenceState,
-  type ResolvedAction,
-  resolveLocalProjectStorage,
-  type StepExecution,
-  type StepExecutionTargetAdapter,
-  type TestArtifact,
+import type {
+  StepExecutionTargetAdapter,
+  StepTargetSession,
 } from '@pickle-spec/runner'
-import type { ScenarioStep, ScenarioVariableBinding } from '@pickle-spec/spec'
-import type { CollectedWebEvidence } from '../evidence/web-evidence'
-import { projectWebStepEvidence } from '../evidence/web-step-evidence'
+import { createWebStepFinalizer } from '../evidence/web-step-finalizer'
 import { createWebCacheSession } from '../execution-cache/web-cache-session'
 import {
   parseWebExecutionCachePayload,
-  type WebAssertionDraft,
-  type WebInstruction,
   webTargetConfigurationFingerprint,
 } from '../execution-cache/web-execution-cache'
-import {
-  errorMessage,
-  navigationTarget,
-  navigationUrl,
-  promptFor,
-} from '../execution-cache/web-step'
-import { abortError } from './abort'
-import { type ResolvedFidelity, resolveFidelityPolicy } from './fidelity'
+import { resolveFidelityPolicy } from './fidelity'
 import { stagehandFactory } from './stagehand-factory'
+import type { WebAutomationFactory } from './web-automation'
+import { createWebLiveSession } from './web-live-session'
 import {
   type BrowserOptions,
   defaultModelName,
-  type ScreenshotOptions,
   type WebAdapterOptions,
 } from './web-options'
 import { WebProcessPool } from './web-pool'
 
+export type {
+  WebActResult,
+  WebAutomation,
+  WebAutomationFactory,
+  WebBrowserProcess,
+  WebClientContext,
+  WebDirectExecutionResult,
+  WebIsolationState,
+  WebObservedAction,
+  WebScreenshotCapture,
+  WebVerificationResult,
+} from './web-automation'
 export type {
   BrowserOptions,
   ScreenshotOptions,
@@ -45,73 +41,6 @@ export {
   validateWebAdapterOptions,
   webAdapterOptionsSchema,
 } from './web-options'
-
-export interface WebObservedAction {
-  description: string
-  handle: unknown
-}
-
-export interface WebIsolationState {
-  cookieCount: number
-  storageKeyCount: number
-}
-
-export interface WebActResult {
-  success: boolean
-  message?: string
-}
-
-export interface WebVerificationResult {
-  meetsExpectation: boolean
-  actualState: string
-}
-
-export interface WebScreenshotCapture {
-  format: 'png' | 'jpeg'
-  fullPage: boolean
-}
-
-export interface WebClientContext {
-  browser: BrowserOptions
-  mode?: 'adaptive' | 'replay'
-  fidelity?: ResolvedFidelity
-  signal?: AbortSignal
-}
-
-export interface WebDirectExecutionResult {
-  success: boolean
-  actualState?: string
-  message?: string
-}
-
-export interface WebAutomation {
-  navigate(url: string, signal?: AbortSignal): Promise<void>
-  observe(prompt: string, signal?: AbortSignal): Promise<WebObservedAction[]>
-  act(action: WebObservedAction, signal?: AbortSignal): Promise<WebActResult>
-  verify(prompt: string, signal?: AbortSignal): Promise<WebVerificationResult>
-  compileAssertion?(
-    prompt: string,
-    signal?: AbortSignal,
-  ): Promise<WebAssertionDraft>
-  executeInstruction?(
-    instruction: WebInstruction,
-    bindings: readonly ScenarioVariableBinding[],
-    signal?: AbortSignal,
-  ): Promise<WebDirectExecutionResult>
-  screenshot(options: WebScreenshotCapture): Promise<Uint8Array>
-  readIsolationState(): Promise<WebIsolationState>
-  consumeEvidence?(): CollectedWebEvidence | Promise<CollectedWebEvidence>
-  close(): Promise<void>
-}
-
-export interface WebBrowserProcess {
-  openContext(input: WebClientContext): Promise<WebAutomation>
-  close(): Promise<void>
-}
-
-export interface WebAutomationFactory {
-  launch(input: WebClientContext): Promise<WebBrowserProcess>
-}
 
 const providerApiKeyEnvNamesByProvider: Record<string, string[]> = {
   openai: ['OPENAI_API_KEY'],
@@ -125,20 +54,6 @@ type BrowserLaunchConfig = {
   browser: BrowserOptions | undefined
   requireProviderApiKey: boolean
   requiresInference: boolean
-}
-
-function screenshotIdentity(kind: string, value: string): string {
-  const digest = new Bun.CryptoHasher('sha256').update(value).digest('hex')
-  return `${kind}-${digest.slice(0, 16)}`
-}
-
-function replayPayload(handle: unknown): Record<string, unknown> | undefined {
-  if (!handle || typeof handle !== 'object') return undefined
-  try {
-    return JSON.parse(JSON.stringify(handle)) as Record<string, unknown>
-  } catch {
-    return undefined
-  }
 }
 
 function providerApiKeyEnvNames(modelName: string | undefined): string[] {
@@ -165,33 +80,23 @@ function resolveBrowserLaunchOptions({
   const modelApiKey = requiresInference
     ? resolveModelApiKey(browser)
     : undefined
-  const next = {
+  const resolvedBrowser = {
     ...browser,
     modelApiKey,
   }
   if (
     requireProviderApiKey &&
     requiresInference &&
-    next.environment !== 'browserbase' &&
-    !next.modelApiKey
+    resolvedBrowser.environment !== 'browserbase' &&
+    !resolvedBrowser.modelApiKey
   ) {
-    const envNames = providerApiKeyEnvNames(next.modelName)
+    const envNames = providerApiKeyEnvNames(resolvedBrowser.modelName)
     throw new Error(
       'Model inference requires a provider API key or a Browserbase session. ' +
         `Set ${envNames.join(', ')}, or web.browser.modelApiKey.`,
     )
   }
-  return next
-}
-
-function shouldCaptureScreenshot(
-  mode: NonNullable<ScreenshotOptions['mode']>,
-  state: StepExecution['state'],
-): boolean {
-  if (mode === 'off') return false
-  if (state === 'cancelled' || state === 'skipped') return false
-  if (mode === 'on-failure') return isEvidenceState(state)
-  return true
+  return resolvedBrowser
 }
 
 export interface WebAdapterBehavior {
@@ -253,24 +158,13 @@ export function createWebAdapter(
       )
       const automation = logicalSession.automation
       let closePromise: Promise<void> | undefined
-      let navigated = false
       let stepIndex = 0
-      let previousResolvedActionTrace: StepExecution['trace'] = []
-      const specificationArtifactId = screenshotIdentity(
-        'specification',
-        input.specification.id ?? input.specification.source.uri,
-      )
-      const scenarioArtifactId = screenshotIdentity(
-        'scenario',
-        input.scenario.id ??
-          input.scenario.template?.name ??
-          (input.runtimeBindings?.length
-            ? 'parameterized'
-            : input.scenario.name),
-      )
-      const examplesRowArtifactId = input.scenario.examplesRowId
-        ? screenshotIdentity('examples-row', input.scenario.examplesRowId)
-        : undefined
+      const finishStep = createWebStepFinalizer({
+        input,
+        options,
+        automation,
+        stepNumber: () => stepIndex,
+      })
 
       const close = async () => {
         if (closePromise) return closePromise
@@ -286,223 +180,38 @@ export function createWebAdapter(
       }
       input.signal?.addEventListener('abort', onAbort, { once: true })
 
+      let eagerlyNavigated = false
       if (
         behavior.navigationPolicy === 'eager' &&
         !cacheReplay &&
         !automation.executeInstruction
       ) {
         await automation.navigate(options.baseUrl, input.signal)
-        navigated = true
+        eagerlyNavigated = true
       }
 
-      async function screenshot(state: StepExecution['state']): Promise<{
-        artifact?: TestArtifact
-        availability: NonNullable<StepExecution['evidenceAvailability']>[number]
-      }> {
-        const screenshotOptions = options.screenshots
-        const mode = screenshotOptions?.mode ?? 'off'
-        if (!shouldCaptureScreenshot(mode, state)) {
-          return {
-            availability: { kind: 'screenshot', state: 'not-requested' },
-          }
-        }
-
-        try {
-          const format = screenshotOptions?.format ?? 'png'
-          const defaultOutputDirectory = join(
-            resolveLocalProjectStorage(process.cwd()).projectDirectory,
-            'artifacts',
-          )
-          const directory = resolve(
-            screenshotOptions?.outputDir ?? defaultOutputDirectory,
-            specificationArtifactId,
-            scenarioArtifactId,
-            ...(examplesRowArtifactId ? [examplesRowArtifactId] : []),
-          )
-          await mkdir(directory, { recursive: true })
-          const path = join(
-            directory,
-            `step-${String(stepIndex).padStart(2, '0')}-${state}.${format}`,
-          )
-          await Bun.write(
-            path,
-            await automation.screenshot({
-              format,
-              fullPage: screenshotOptions?.fullPage ?? false,
-            }),
-          )
-          return {
-            artifact: {
-              kind: 'screenshot',
-              path,
-              mediaType: `image/${format}`,
-            },
-            availability: { kind: 'screenshot', state: 'available' },
-          }
-        } catch {
-          return {
-            availability: {
-              kind: 'screenshot',
-              state: 'capture-failed',
-              message: 'Screenshot capture failed',
-            },
-          }
-        }
-      }
-
-      async function finishStep(
-        result: StepExecution,
-        step: ScenarioStep,
-      ): Promise<StepExecution> {
-        const collected = automation.consumeEvidence
-          ? await automation.consumeEvidence()
-          : { diagnostics: [], activity: [] }
-        const projected = projectWebStepEvidence({
-          execution: result,
-          step,
-          collected,
-          previousResolvedActionTrace: previousResolvedActionTrace ?? [],
-        })
-        previousResolvedActionTrace = projected.nextResolvedActionTrace
-        const capture = await screenshot(result.state)
-        return {
-          ...projected.execution,
-          artifacts: capture.artifact
-            ? [...(projected.execution.artifacts ?? []), capture.artifact]
-            : projected.execution.artifacts,
-          evidenceAvailability: [
-            ...(projected.execution.evidenceAvailability ?? []),
-            capture.availability,
-          ],
-        }
-      }
-
-      async function ensureNavigation(signal?: AbortSignal): Promise<void> {
-        if (navigated) return
-        await automation.navigate(options.baseUrl, signal)
-        navigated = true
-      }
-
-      async function resolveByObservation(
-        prompt: string,
-        signal?: AbortSignal,
-      ): Promise<StepExecution> {
-        let actions = await automation.observe(prompt, signal)
-        if (actions.length === 0)
-          actions = await automation.observe(prompt, signal)
-        if (actions.length === 0) {
-          return {
-            state: 'failed',
-            resolvedActions: [],
-            message: 'Observe returned no actions',
-          }
-        }
-
-        const resolvedActions: ResolvedAction[] = []
-        for (const action of actions) {
-          const result = await automation.act(action, signal)
-          resolvedActions.push({
-            description: action.description,
-            replay: replayPayload(action.handle),
-          })
-          if (!result.success) {
-            return {
-              state: 'failed',
-              resolvedActions,
-              message: result.message ?? 'Web action failed',
-            }
-          }
-        }
-        return { state: 'passed', resolvedActions }
-      }
-
-      if (
+      const runtime: Omit<StepTargetSession, 'close'> =
         cacheReplay ||
         (executionMode === 'adaptive' && automation.executeInstruction)
-      ) {
-        const cacheSession = createWebCacheSession({
-          input,
-          options,
-          automation,
-          finish: finishStep,
-        })
-        return {
-          ...cacheSession,
-          async executeStep(step, signal, context) {
-            stepIndex++
-            return cacheSession.executeStep(step, signal, context)
-          },
-          close,
-        }
-      }
+          ? createWebCacheSession({
+              input,
+              options,
+              automation,
+              finish: finishStep,
+            })
+          : createWebLiveSession({
+              input,
+              options,
+              automation,
+              finish: finishStep,
+              initiallyNavigated: eagerlyNavigated,
+            })
 
       return {
-        async executeStep(step, signal) {
+        ...runtime,
+        async executeStep(step, signal, context) {
           stepIndex++
-          const operationSignal = signal ?? input.signal
-          if (operationSignal?.aborted) throw abortError()
-          const prompt = promptFor(step)
-
-          try {
-            const target = navigationTarget(prompt)
-            if (target) {
-              const url = navigationUrl(options.baseUrl, target)
-              await automation.navigate(url, operationSignal)
-              navigated = true
-              return finishStep(
-                {
-                  state: 'passed',
-                  resolvedActions: [{ description: `Navigate to ${url}` }],
-                },
-                step,
-              )
-            }
-
-            await ensureNavigation(operationSignal)
-            if (step.type === 'outcome') {
-              const verification = await automation.verify(
-                prompt,
-                operationSignal,
-              )
-              if (!verification.meetsExpectation) {
-                return finishStep(
-                  {
-                    state: 'failed',
-                    resolvedActions: [{ description: `Verify: ${prompt}` }],
-                    message: `Expected: "${prompt}" | Actual: ${verification.actualState}`,
-                  },
-                  step,
-                )
-              }
-              return finishStep(
-                {
-                  state: 'passed',
-                  resolvedActions: [{ description: `Verify: ${prompt}` }],
-                },
-                step,
-              )
-            }
-
-            return finishStep(
-              await resolveByObservation(prompt, operationSignal),
-              step,
-            )
-          } catch (error) {
-            if (
-              operationSignal?.aborted ||
-              (error instanceof Error && error.name === 'AbortError')
-            ) {
-              throw abortError()
-            }
-            return finishStep(
-              {
-                state: 'infrastructure-error',
-                resolvedActions: [],
-                message: errorMessage(error),
-              },
-              step,
-            )
-          }
+          return runtime.executeStep(step, signal, context)
         },
         close,
       }

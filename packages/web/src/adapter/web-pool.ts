@@ -1,12 +1,12 @@
 import { abortError } from './abort'
 import type { ResolvedFidelity } from './fidelity'
 import type {
-  BrowserOptions,
   WebAutomation,
   WebAutomationFactory,
   WebBrowserProcess,
   WebIsolationState,
-} from './web-adapter'
+} from './web-automation'
+import type { BrowserOptions } from './web-options'
 
 const defaultIdleTimeoutMs = 30_000
 

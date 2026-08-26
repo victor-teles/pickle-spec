@@ -5,8 +5,8 @@ import type {
   StepTargetSession,
 } from '@pickle-spec/runner'
 import type { ScenarioStep } from '@pickle-spec/spec'
-import { abortError } from '../adapter/abort'
-import type { WebAutomation } from '../adapter/web-adapter'
+import { abortError, isAbortError } from '../adapter/abort'
+import type { WebAutomation } from '../adapter/web-automation'
 import type { WebAdapterOptions } from '../adapter/web-options'
 import { createWebAdaptiveSession } from './web-cache-adaptive-session'
 import { createWebReplaySession } from './web-cache-replay-session'
@@ -63,12 +63,7 @@ export function createWebCacheSession({
         )
         return finish(result, step)
       } catch (error) {
-        if (
-          operationSignal?.aborted ||
-          (error instanceof Error && error.name === 'AbortError')
-        ) {
-          throw abortError()
-        }
+        if (isAbortError(error, operationSignal)) throw abortError()
         return finish(
           {
             state: 'infrastructure-error',

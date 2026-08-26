@@ -7,7 +7,7 @@ import type {
   TargetSessionCompletion,
 } from '@pickle-spec/runner'
 import type { ScenarioStep } from '@pickle-spec/spec'
-import type { WebAutomation } from '../adapter/web-adapter'
+import type { WebAutomation } from '../adapter/web-automation'
 import {
   defaultModelName,
   type WebAdapterOptions,
@@ -68,6 +68,23 @@ export function createWebAdaptiveSession({
   let uncacheableReason: ExecutionCacheUncacheableReason | undefined
   let inferenceCount = 0
 
+  async function executeCompiledStep(
+    instructions: WebInstruction[],
+    executableInstructions: readonly WebInstruction[],
+    index: number,
+    signal: AbortSignal | undefined,
+  ): Promise<StepExecution> {
+    const result = await executor.executeSequence(
+      executableInstructions,
+      signal,
+    )
+    if (result.state === 'passed') compiledSteps[index] = { instructions }
+    return {
+      ...result,
+      resolvedActions: resolvedInstructions(instructions, 'resolved'),
+    }
+  }
+
   async function adaptiveNavigation(
     templateStep: ScenarioStep,
     target: string,
@@ -88,11 +105,7 @@ export function createWebAdaptiveSession({
       instruction &&
       instructionCoversStepVariables([instruction], templateStep)
     ) {
-      const result = await executor.executeSequence([instruction], signal)
-      if (result.state === 'passed') {
-        compiledSteps[index] = { instructions: [instruction] }
-      }
-      return result
+      return executeCompiledStep([instruction], [instruction], index, signal)
     }
     uncacheableReason = 'bound-parameter-value'
     await automation.navigate(url, signal)
@@ -130,12 +143,7 @@ export function createWebAdaptiveSession({
       instructionCoversStepVariables([assertion], templateStep)
     ) {
       instructions.push(assertion)
-      const result = await executor.executeSequence([assertion], signal)
-      if (result.state === 'passed') compiledSteps[index] = { instructions }
-      return {
-        ...result,
-        resolvedActions: resolvedInstructions(instructions, 'resolved'),
-      }
+      return executeCompiledStep(instructions, [assertion], index, signal)
     }
     uncacheableReason = draft
       ? 'bound-parameter-value'
@@ -184,12 +192,7 @@ export function createWebAdaptiveSession({
       instructionCoversStepVariables(compiled, templateStep)
     ) {
       instructions.push(...compiled)
-      const result = await executor.executeSequence(compiled, signal)
-      if (result.state === 'passed') compiledSteps[index] = { instructions }
-      return {
-        ...result,
-        resolvedActions: resolvedInstructions(instructions, 'resolved'),
-      }
+      return executeCompiledStep(instructions, compiled, index, signal)
     }
     uncacheableReason = 'non-deterministic-action'
     const resolvedActions: ResolvedAction[] = []

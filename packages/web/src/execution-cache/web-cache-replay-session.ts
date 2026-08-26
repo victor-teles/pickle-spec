@@ -5,7 +5,7 @@ import type {
   TargetSessionCompletion,
 } from '@pickle-spec/runner'
 import type { ScenarioStep } from '@pickle-spec/spec'
-import type { WebAutomation } from '../adapter/web-adapter'
+import type { WebAutomation } from '../adapter/web-automation'
 import type { WebAdapterOptions } from '../adapter/web-options'
 import {
   createWebInstructionExecutor,

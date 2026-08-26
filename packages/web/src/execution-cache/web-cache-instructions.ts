@@ -1,7 +1,7 @@
 import type { ResolvedAction, StepExecution } from '@pickle-spec/runner'
 import type { ScenarioStep, ScenarioVariableBinding } from '@pickle-spec/spec'
-import { abortError } from '../adapter/abort'
-import type { WebAutomation } from '../adapter/web-adapter'
+import { abortError, isAbortError } from '../adapter/abort'
+import type { WebAutomation } from '../adapter/web-automation'
 import {
   parameterizeWebValue,
   type WebInstruction,
@@ -124,12 +124,7 @@ export function createWebInstructionExecutor({
           `${replay ? 'Replay diverged' : 'Deterministic web instruction failed'}: ${result.actualState ?? instruction.kind}`,
       )
     } catch (error) {
-      if (
-        signal?.aborted ||
-        (error instanceof Error && error.name === 'AbortError')
-      ) {
-        throw abortError()
-      }
+      if (isAbortError(error, signal)) throw abortError()
       return failure(
         instruction,
         `${replay ? 'Replay diverged' : 'Deterministic web instruction failed'}: ${errorMessage(error)}`,

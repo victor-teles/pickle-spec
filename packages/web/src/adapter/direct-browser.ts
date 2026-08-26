@@ -5,8 +5,8 @@ import {
   type WebInstruction,
   type WebLocator,
 } from '../execution-cache/web-execution-cache'
-import { abortError } from './abort'
-import type { WebDirectExecutionResult } from './web-adapter'
+import { abortError, withAbort } from './abort'
+import type { WebDirectExecutionResult } from './web-automation'
 
 interface DirectBrowserOptions {
   actionTimeoutMs: number
@@ -17,25 +17,6 @@ async function activePage(context: BrowserContext): Promise<Page> {
   const page = await context.activePage()
   if (!page) throw new Error('No active browser page')
   return page
-}
-
-function withAbort<T>(operation: Promise<T>, signal?: AbortSignal): Promise<T> {
-  if (!signal) return operation
-  if (signal.aborted) return Promise.reject(abortError())
-  return new Promise<T>((resolve, reject) => {
-    const onAbort = () => reject(abortError())
-    signal.addEventListener('abort', onAbort, { once: true })
-    operation.then(
-      (value) => {
-        signal.removeEventListener('abort', onAbort)
-        resolve(value)
-      },
-      (error) => {
-        signal.removeEventListener('abort', onAbort)
-        reject(error)
-      },
-    )
-  })
 }
 
 function boundValue(
