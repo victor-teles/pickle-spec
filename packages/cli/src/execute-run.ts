@@ -395,6 +395,12 @@ export async function startProjectRun(
         },
         historicalDurations ? { historicalDurations } : {},
       )
+      if (args.scenarioIds?.length && !args.rerunId) {
+        const scenarioIds = new Set(args.scenarioIds)
+        selections = selections.filter((selection) =>
+          scenarioIds.has(scenarioSelectionId(selection)),
+        )
+      }
       let profileIds = args.profiles
       let selectedResults: TestResult[] | undefined
 

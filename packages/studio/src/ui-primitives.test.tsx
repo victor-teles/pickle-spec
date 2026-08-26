@@ -6,6 +6,7 @@ import {
   CommandInput,
   CommandItem,
   CommandList,
+  CommandSeparator,
   CommandShortcut,
 } from './components/ui/command'
 import {
@@ -26,6 +27,7 @@ test('renders the command foundation with Mira data slots', () => {
             <CommandShortcut>Open</CommandShortcut>
           </CommandItem>
         </CommandGroup>
+        <CommandSeparator />
       </CommandList>
     </Command>,
   )
@@ -35,6 +37,10 @@ test('renders the command foundation with Mira data slots', () => {
   expect(markup).toContain('data-slot="command-list"')
   expect(markup).toContain('data-slot="command-item"')
   expect(markup).toContain('data-slot="command-shortcut"')
+  expect(markup).toContain('aria-hidden="true"')
+  expect(markup).toContain('**:[[cmdk-group-heading]]:text-foreground')
+  expect(markup).toContain('data-[selected=true]:bg-muted')
+  expect(markup).not.toContain('data-selected:bg-muted')
   expect(markup).not.toContain('shadow-')
 })
 

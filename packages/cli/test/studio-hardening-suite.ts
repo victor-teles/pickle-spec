@@ -155,6 +155,12 @@ export function registerStudioHardeningTests(
         .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa'])
         .analyze()
       expect(historyResults.violations).toEqual([])
+      await page.keyboard.press('Meta+k')
+      await page.getByRole('dialog', { name: 'Studio commands' }).waitFor()
+      const paletteResults = await new AxeBuilder({ page })
+        .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa'])
+        .analyze()
+      expect(paletteResults.violations).toEqual([])
       expect(consoleErrors).toEqual([])
     } finally {
       await context.close()
@@ -235,6 +241,19 @@ Feature: Checkout
     const page = await context.newPage()
     try {
       await page.goto(url)
+      await page.keyboard.press('Meta+k')
+      const palette = page.getByRole('dialog', { name: 'Studio commands' })
+      await palette.waitFor()
+      const paletteBounds = await palette.boundingBox()
+      expect(paletteBounds).not.toBeNull()
+      if (!paletteBounds) throw new Error('Expected command palette bounds')
+      expect(paletteBounds.width).toBeLessThanOrEqual(390)
+      expect(
+        await palette.evaluate(
+          (element) => element.getAnimations({ subtree: true }).length,
+        ),
+      ).toBe(0)
+      await page.keyboard.press('Escape')
       const run = page.getByRole('button', { name: 'Run Specification' })
       await tabTo(page, run)
       await page.keyboard.press('Enter')

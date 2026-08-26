@@ -1,12 +1,17 @@
+import { SearchIcon } from '@hugeicons/core-free-icons'
+import { HugeiconsIcon } from '@hugeicons/react'
 import {
   type KeyboardEvent,
   StrictMode,
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from 'react'
 import { createRoot } from 'react-dom/client'
+import { CommandPalette, type CurrentScenario } from './command-palette'
+import { targetNewRun } from './command-palette-model'
 import { Badge } from './components/ui/badge'
 import { Button } from './components/ui/button'
 import { LoadingState } from './components/ui/loading-state'
@@ -143,6 +148,26 @@ function StudioApp() {
   const [live, setLive] = useState<LiveResultInspection>()
   const [authoring, setAuthoring] = useState(false)
   const [attentionOrder, setAttentionOrder] = useState<string[]>()
+  const [commandPaletteOpen, setCommandPaletteOpen] = useState(false)
+  const [activeProfileId, setActiveProfileId] = useState<string>()
+  const [currentScenarioId, setCurrentScenarioId] = useState<string>()
+  const [currentScenarioSpecificationUri, setCurrentScenarioSpecificationUri] =
+    useState<string>()
+  const [scenarioFocusTargetId, setScenarioFocusTargetId] = useState<string>()
+  const [scenarioFocusRequest, setScenarioFocusRequest] = useState(0)
+  const [specificationFocusRequest, setSpecificationFocusRequest] = useState(0)
+  const commandReturnFocusRef = useRef<HTMLElement>(null)
+  const specificationHeadingRef = useRef<HTMLHeadingElement>(null)
+
+  const setCommandPaletteVisibility = useCallback((open: boolean) => {
+    if (open && document.activeElement instanceof HTMLElement) {
+      commandReturnFocusRef.current = document.activeElement
+    }
+    setCommandPaletteOpen(open)
+    if (!open) {
+      requestAnimationFrame(() => commandReturnFocusRef.current?.focus())
+    }
+  }, [])
 
   const reloadRunsIndex = useCallback(async () => {
     const value = await api<StudioRunsIndex>('/api/runs')
@@ -184,6 +209,21 @@ function StudioApp() {
     addEventListener('popstate', restoreLocation)
     return () => removeEventListener('popstate', restoreLocation)
   }, [])
+
+  useEffect(() => {
+    function toggleCommandPalette(event: globalThis.KeyboardEvent) {
+      if (
+        !(event.metaKey || event.ctrlKey) ||
+        event.key.toLowerCase() !== 'k'
+      ) {
+        return
+      }
+      event.preventDefault()
+      setCommandPaletteVisibility(!commandPaletteOpen)
+    }
+    addEventListener('keydown', toggleCommandPalette)
+    return () => removeEventListener('keydown', toggleCommandPalette)
+  }, [commandPaletteOpen, setCommandPaletteVisibility])
 
   useEffect(() => {
     if (!runId) return
@@ -268,9 +308,43 @@ function StudioApp() {
   const selected =
     project?.specifications.find((item) => item.id === selectedId) ??
     project?.specifications[0]
+  const currentScenario =
+    selected && selected.uri === currentScenarioSpecificationUri
+      ? selected.scenarios.find((scenario) => scenario.id === currentScenarioId)
+      : undefined
+  const currentScenarioContext: CurrentScenario | undefined =
+    selected && currentScenario
+      ? { specification: selected, scenario: currentScenario }
+      : undefined
   const canRunAll = Boolean(project?.readiness?.ready ?? true)
   const specCanRun = selected?.canRun ?? canRunAll
   const runReasons = selected?.runReasons ?? project?.readiness?.reasons
+
+  useEffect(() => {
+    if (activeProfileId && !project?.profiles.includes(activeProfileId)) {
+      setActiveProfileId(undefined)
+    }
+  }, [activeProfileId, project])
+
+  useEffect(() => {
+    if (
+      currentScenarioId &&
+      (!selected ||
+        selected.uri !== currentScenarioSpecificationUri ||
+        !selected.scenarios.some(
+          (scenario) => scenario.id === currentScenarioId,
+        ))
+    ) {
+      setCurrentScenarioId(undefined)
+      setCurrentScenarioSpecificationUri(undefined)
+      setScenarioFocusTargetId(undefined)
+    }
+  }, [currentScenarioId, currentScenarioSpecificationUri, selected])
+
+  useEffect(() => {
+    if (specificationFocusRequest === 0) return
+    specificationHeadingRef.current?.focus()
+  }, [specificationFocusRequest])
 
   async function reloadProject() {
     const value = await api<StudioProject>('/api/project')
@@ -343,6 +417,10 @@ function StudioApp() {
     }
   }
 
+  async function startNewRun(request: StudioRunRequest) {
+    await startRun(targetNewRun(request, activeProfileId))
+  }
+
   async function cancelRun(requestedRunId = runId) {
     if (!requestedRunId || !running) return
     setError(undefined)
@@ -358,6 +436,33 @@ function StudioApp() {
     } catch (reason) {
       setError(reasonMessage(reason))
     }
+  }
+
+  function jumpToSpecification(
+    specification: StudioSpecification,
+    scenario?: StudioScenario,
+  ) {
+    history.replaceState(null, '', '/')
+    setRoute({ kind: 'specifications' })
+    setCurrentArea('Specifications')
+    setSelectedId(specification.id)
+    setCurrentScenarioId(scenario?.id)
+    setCurrentScenarioSpecificationUri(scenario ? specification.uri : undefined)
+    if (scenario) {
+      setScenarioFocusTargetId(scenario.id)
+      setScenarioFocusRequest((current) => current + 1)
+    } else {
+      setScenarioFocusTargetId(undefined)
+      setSpecificationFocusRequest((current) => current + 1)
+    }
+  }
+
+  function rememberScenario(
+    specification: StudioSpecification,
+    scenario: StudioScenario,
+  ) {
+    setCurrentScenarioId(scenario.id)
+    setCurrentScenarioSpecificationUri(specification.uri)
   }
 
   if (error && !project) {
@@ -389,6 +494,38 @@ function StudioApp() {
 
   return (
     <div className="studio-shell flex h-screen flex-col overflow-hidden">
+      <CommandPalette
+        activeProfileId={activeProfileId}
+        currentScenario={currentScenarioContext}
+        currentSpecification={selected}
+        index={runsIndex}
+        open={commandPaletteOpen}
+        project={project}
+        running={running}
+        onCancelRun={(activeRunId) => void cancelRun(activeRunId)}
+        onJumpRun={(activeRunId) =>
+          navigate({ kind: 'run', runId: activeRunId })
+        }
+        onJumpSpecification={jumpToSpecification}
+        onOpenChange={setCommandPaletteVisibility}
+        onRefreshSpecification={(specification) =>
+          void startNewRun({
+            paths: [specification.uri],
+            refreshCache: true,
+          })
+        }
+        onSelectProfile={setActiveProfileId}
+        onStartAll={() => void startNewRun({})}
+        onStartScenario={({ specification, scenario }) =>
+          void startNewRun({
+            paths: [specification.uri],
+            scenarioId: scenario.id,
+          })
+        }
+        onStartSpecification={(specification) =>
+          void startNewRun({ paths: [specification.uri] })
+        }
+      />
       <header className="studio-topbar flex min-h-11 shrink-0 flex-wrap items-center gap-2 border-b border-border px-3 py-1.5 sm:flex-nowrap sm:px-4">
         <div className="flex min-w-0 items-center gap-2.5">
           <span className="studio-wordmark shrink-0">Pickle Spec</span>
@@ -422,6 +559,32 @@ function StudioApp() {
               </Button>
             ))}
           </nav>
+        )}
+        {authoring ? null : (
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            aria-label="Open Studio commands"
+            onClick={() => setCommandPaletteVisibility(true)}
+          >
+            <HugeiconsIcon
+              icon={SearchIcon}
+              strokeWidth={2}
+              aria-hidden="true"
+            />
+            <span className="hidden xl:inline">Commands</span>
+            <kbd className="font-mono text-[0.625rem] text-muted-foreground">
+              ⌘K
+            </kbd>
+          </Button>
+        )}
+        {authoring ? null : (
+          <Badge
+            aria-label={`Run target: ${activeProfileId ?? 'All profiles'}`}
+          >
+            Target: {activeProfileId ?? 'All profiles'}
+          </Badge>
         )}
         <StatusBadge state={aggregate} />
       </header>
@@ -467,8 +630,11 @@ function StudioApp() {
               canRun={canRunAll}
               onSelect={(id) => {
                 setSelectedId(id)
+                setCurrentScenarioId(undefined)
+                setCurrentScenarioSpecificationUri(undefined)
+                setScenarioFocusTargetId(undefined)
               }}
-              onRunAll={() => void startRun({})}
+              onRunAll={() => void startNewRun({})}
             />
           )}
           <main
@@ -492,7 +658,11 @@ function StudioApp() {
                 >
                   <div className="flex shrink-0 flex-wrap items-start justify-between gap-3">
                     <div className="min-w-0 space-y-1">
-                      <h1 className="studio-display text-lg leading-tight sm:text-xl">
+                      <h1
+                        ref={specificationHeadingRef}
+                        tabIndex={-1}
+                        className="studio-display text-lg leading-tight outline-none sm:text-xl"
+                      >
                         {selected.name}
                       </h1>
                       <p className="truncate font-mono text-[0.6875rem] text-muted-foreground sm:text-xs">
@@ -547,7 +717,7 @@ function StudioApp() {
                           <Button
                             type="button"
                             onClick={() =>
-                              void startRun({ paths: [selected.uri] })
+                              void startNewRun({ paths: [selected.uri] })
                             }
                           >
                             Run Specification
@@ -556,7 +726,7 @@ function StudioApp() {
                             type="button"
                             variant="outline"
                             onClick={() =>
-                              void startRun({
+                              void startNewRun({
                                 paths: [selected.uri],
                                 refreshCache: true,
                               })
@@ -609,14 +779,18 @@ function StudioApp() {
                       scenarios={selected.scenarios}
                       cells={cells}
                       selected={selectedResult}
+                      focusedScenarioId={currentScenarioId}
+                      focusTargetId={scenarioFocusTargetId}
+                      focusRequest={scenarioFocusRequest}
                       running={running}
                       onSelect={pinSelection}
-                      onRun={(scenarioName) =>
-                        void startRun({
+                      onRun={(scenario) => {
+                        rememberScenario(selected, scenario)
+                        void startNewRun({
                           paths: [selected.uri],
-                          scenarioName,
+                          scenarioId: scenario.id,
                         })
-                      }
+                      }}
                     />
                     {attention.length > 0 ? (
                       <div>
@@ -851,10 +1025,22 @@ function ScenarioTable(props: {
   scenarios: readonly StudioScenario[]
   cells: readonly MatrixCell[]
   selected?: MatrixCell
+  focusedScenarioId?: string
+  focusTargetId?: string
+  focusRequest: number
   running: boolean
   onSelect: (cell: MatrixCell) => void
-  onRun: (scenarioName: string) => void
+  onRun: (scenario: StudioScenario) => void
 }) {
+  const rowRefs = useRef(new Map<string, HTMLTableRowElement>())
+
+  useEffect(() => {
+    if (!props.focusTargetId || props.focusRequest === 0) return
+    const row = rowRefs.current.get(props.focusTargetId)
+    row?.scrollIntoView({ block: 'nearest' })
+    row?.focus({ preventScroll: true })
+  }, [props.focusRequest, props.focusTargetId])
+
   function cellFor(scenarioId: string, profileId: string) {
     return props.cells.find(
       (cell) => cell.scenarioId === scenarioId && cell.profileId === profileId,
@@ -893,7 +1079,20 @@ function ScenarioTable(props: {
             </TableRow>
           ) : (
             props.scenarios.map((scenario) => (
-              <TableRow key={scenario.id}>
+              <TableRow
+                key={scenario.id}
+                ref={(row) => {
+                  if (row) rowRefs.current.set(scenario.id, row)
+                  else rowRefs.current.delete(scenario.id)
+                }}
+                tabIndex={-1}
+                data-state={
+                  scenario.id === props.focusedScenarioId
+                    ? 'selected'
+                    : undefined
+                }
+                className="outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-foreground/35"
+              >
                 <TableHead
                   scope="row"
                   className="max-w-0 truncate"
@@ -936,7 +1135,7 @@ function ScenarioTable(props: {
                       variant="outline"
                       disabled={props.running}
                       aria-label={`Run Scenario ${scenario.name}`}
-                      onClick={() => props.onRun(scenario.name)}
+                      onClick={() => props.onRun(scenario)}
                     >
                       Run
                     </Button>

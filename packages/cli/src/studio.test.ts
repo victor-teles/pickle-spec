@@ -21,6 +21,12 @@ type HistoryIndexPayload = {
   activeRunIds: string[]
 }
 
+type RunRequestPayload = {
+  paths?: string[]
+  profiles?: string[]
+  scenarioId?: string
+}
+
 type BrowserViewportHost = {
   document: { documentElement: { scrollWidth: number } }
   innerWidth: number
@@ -181,6 +187,117 @@ Feature: Search
           .count(),
       ).toBe(1)
       expect(new URL(url).hostname).toBe('127.0.0.1')
+    } finally {
+      await page.close()
+      child.kill()
+      await child.exited
+    }
+  }, 60_000)
+
+  test('Studio command palette navigates, selects a run target, and starts contextual work', async () => {
+    const project = await createStudioProject('command-palette')
+    await Bun.write(
+      join(project, 'features', 'search.feature'),
+      `@pickle:id:specsearchaaaaaaa @pickle:state:active
+Feature: Search
+  @pickle:id:scnquerybbbbbbbb
+  Scenario: Query the catalog
+    Then results are shown`,
+    )
+    const { child, url } = await startStudio(project)
+    const page = await browser.newPage()
+    try {
+      await page.goto(url)
+      await page.getByRole('heading', { name: 'Checkout' }).waitFor()
+
+      await page.keyboard.press('Meta+k')
+      const palette = page.getByRole('dialog', { name: 'Studio commands' })
+      const search = page.locator('[data-slot="command-input"]')
+      await palette.waitFor()
+      await search.fill('query catalog')
+      await palette
+        .getByRole('option')
+        .filter({ hasText: 'Query the catalog' })
+        .click()
+
+      await page.getByRole('heading', { name: 'Search' }).waitFor()
+      const scenarioRow = page
+        .getByRole('table', { name: 'Scenarios' })
+        .getByRole('row')
+        .filter({ hasText: 'Query the catalog' })
+      expect(
+        await scenarioRow.evaluate((element) => element.matches(':focus')),
+      ).toBe(true)
+      expect(await scenarioRow.getAttribute('data-state')).toBe('selected')
+      expect(new URL(page.url()).pathname).toBe('/')
+
+      const trigger = page.getByRole('button', {
+        name: 'Open Studio commands',
+      })
+      await trigger.click()
+      expect(await search.inputValue()).toBe('')
+      await page.keyboard.press('Escape')
+      expect(
+        await trigger.evaluate((element) => element.matches(':focus')),
+      ).toBe(true)
+
+      await page.keyboard.press('Control+k')
+      await search.fill('profile firefox')
+      await page.keyboard.press('ArrowDown')
+      await page.keyboard.press('Enter')
+      await page.getByLabel('Run target: firefox').waitFor()
+
+      await page.keyboard.press('Meta+k')
+      await search.fill('run scenario query')
+      const runRequestPromise = page.waitForRequest(
+        (request) =>
+          new URL(request.url()).pathname === '/api/runs' &&
+          request.method() === 'POST',
+      )
+      const runResponsePromise = page.waitForResponse(
+        (response) =>
+          new URL(response.url()).pathname === '/api/runs' &&
+          response.request().method() === 'POST',
+      )
+      await palette
+        .getByRole('option')
+        .filter({ hasText: 'Run Scenario Query the catalog' })
+        .click()
+      const runRequest = await runRequestPromise
+      expect(runRequest.postDataJSON() as RunRequestPayload).toEqual({
+        paths: ['features/search.feature'],
+        profiles: ['firefox'],
+        scenarioId: 'scnquerybbbbbbbb',
+      })
+      const runResponse = await runResponsePromise
+      const started = (await runResponse.json()) as { id: string }
+
+      await page.keyboard.press('Meta+k')
+      await search.fill('all profiles')
+      await palette.getByRole('option', { name: 'All profiles' }).click()
+      await page.getByLabel('Run target: All profiles').waitFor()
+
+      await page.keyboard.press('Meta+k')
+      await search.fill(started.id)
+      await palette
+        .getByRole('option', { name: new RegExp(started.id) })
+        .click()
+      expect(new URL(page.url()).pathname).toBe(
+        `/runs/${encodeURIComponent(started.id)}`,
+      )
+
+      await page.keyboard.press('Meta+k')
+      await search.fill('Specification Checkout')
+      await palette
+        .getByRole('option')
+        .filter({ hasText: 'features/checkout.feature' })
+        .click()
+      const checkoutHeading = page.getByRole('heading', { name: 'Checkout' })
+      await checkoutHeading.waitFor()
+      expect(
+        await checkoutHeading.evaluate((element) => element.matches(':focus')),
+      ).toBe(true)
+      expect(new URL(page.url()).pathname).toBe('/')
     } finally {
       await page.close()
       child.kill()
@@ -1211,6 +1328,7 @@ Feature: Checkout
         return index.activeRunIds[0]
       })
       expect(activeRunId).toBeDefined()
+      if (!activeRunId) throw new Error('Expected an active Test run')
       expect(
         await page
           .getByRole('table', { name: 'Test run history' })
@@ -1223,7 +1341,13 @@ Feature: Checkout
       expect(new URL(page.url()).searchParams.get('state')).toBe('running')
       await page.reload()
       await activeRuns.waitFor()
-      await page.getByRole('button', { name: 'Cancel Test run' }).click()
+      await page.keyboard.press('Meta+k')
+      const palette = page.getByRole('dialog', { name: 'Studio commands' })
+      await page.locator('[data-slot="command-input"]').fill(activeRunId)
+      await palette
+        .getByRole('option')
+        .filter({ hasText: `Cancel Test run ${activeRunId}` })
+        .click()
       await activeRuns.waitFor({ state: 'detached', timeout: 20_000 })
       await page
         .getByRole('button', { name: 'Specifications', exact: true })
@@ -1660,6 +1784,17 @@ Feature: Checkout
           .filter({ hasText: 'geolocation' })
           .count(),
       ).toBeGreaterThan(0)
+      await page.keyboard.press('Meta+k')
+      const palette = page.getByRole('dialog', { name: 'Studio commands' })
+      const search = page.locator('[data-slot="command-input"]')
+      await search.fill('run checkout')
+      expect(
+        await palette
+          .getByRole('option')
+          .filter({ hasText: 'Run Checkout' })
+          .getAttribute('aria-disabled'),
+      ).toBe('true')
+      await page.keyboard.press('Escape')
       await page.getByRole('button', { name: 'Settings' }).click()
       await page.getByRole('button', { name: 'chrome' }).click()
       await page.getByLabel('Profile capabilities').fill('geolocation')
@@ -1669,8 +1804,16 @@ Feature: Checkout
       await saveExecutionTargetProfile(page, 'firefox')
       await page.getByRole('button', { name: 'Specifications' }).click()
       await page.getByRole('button', { name: 'Run Specification' }).waitFor({
-        timeout: 10_000,
+        timeout: 20_000,
       })
+      await page.keyboard.press('Meta+k')
+      await search.fill('run checkout')
+      expect(
+        await palette
+          .getByRole('option')
+          .filter({ hasText: 'Run Checkout' })
+          .getAttribute('aria-disabled'),
+      ).toBe('false')
     } finally {
       await page.close()
       child.kill()

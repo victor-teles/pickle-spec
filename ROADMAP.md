@@ -24,7 +24,7 @@ Every phase inherits the design law in `DESIGN.md`: flat plates, spelled result 
 Goal: make Studio navigable, addressable, and shareable as a full application. Runs become a first-class global area instead of history nested under each Specification.
 - [x] Global Runs area: a cross-Specification dashboard with live progress and a filterable run list backed by the existing `index.sqlite` projection, plus a unified run detail page that joins the manifest and the event stream
 - [ ] Real URL routing and deep links: replace the query-param history location so every Specification, scenario, run, result, and artifact has a shareable URL
-- [ ] Command palette (Cmd+K): jump to any Specification, scenario, or run; start and cancel runs; switch profiles
+- [x] Command palette (Cmd+K): jump to any Specification, scenario, or run; start and cancel runs; switch profiles
 - [ ] First-run onboarding: a visual readiness checklist built on the existing run-readiness API, guiding a new user to a first green run
 - [x] Design-system fill-in: add the missing shadcn Mira primitives (toast, tooltip, dropdown menu, command, skeleton)
 Exit criteria: any state in Studio has a URL, and a new user goes from `pickle studio` to a first green run without reading docs.
