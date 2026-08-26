@@ -92,7 +92,7 @@ export function TimelineKindBadge(
       )}
       {...badgeProps}
     >
-      <TimelineKindIcon kind={kind} />
+      <TimelineKindIcon kind={kind} className="size-3" />
       {kind}
     </Badge>
   )
