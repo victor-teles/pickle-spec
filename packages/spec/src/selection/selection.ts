@@ -5,11 +5,12 @@ import {
 } from '@pickle-spec/configuration'
 import { z } from 'zod'
 import {
-  resolveScenarioId,
   type SpecificationState,
   specificationStates,
 } from '../identity/identity'
 import type { Scenario, Specification } from '../parsing/specification'
+import { selectShard } from './sharding'
+import { createTagPredicate, validateTagExpression } from './tag-expression'
 
 export interface Shard {
   index: number
@@ -35,11 +36,6 @@ export interface ScenarioSelection {
 
 export const ignoreTag = '@ignore'
 
-type TagExpressionNode =
-  | { type: 'tag'; value: string }
-  | { type: 'not'; child: TagExpressionNode }
-  | { type: 'and' | 'or'; left: TagExpressionNode; right: TagExpressionNode }
-
 function positiveInteger(field: string) {
   return z
     .number({
@@ -51,100 +47,6 @@ function positiveInteger(field: string) {
     .min(1, {
       error: `${field} must be an integer greater than or equal to 1`,
     })
-}
-
-function normalizedTag(tag: string): string {
-  return tag.startsWith('@') ? tag : `@${tag}`
-}
-
-function tagExpressionTokens(expression: string): string[] {
-  const tokens: string[] = []
-  const tokenPattern = /\(|\)|(?:and|or|not)\b|@?[A-Za-z0-9:_-]+/iy
-  let index = 0
-  while (index < expression.length) {
-    while (index < expression.length && /\s/.test(expression[index]!)) index++
-    if (index === expression.length) break
-    tokenPattern.lastIndex = index
-    const match = tokenPattern.exec(expression)
-    if (!match)
-      throw new Error(
-        `Unexpected character "${expression[index]}" in tag expression`,
-      )
-    tokens.push(match[0])
-    index = tokenPattern.lastIndex
-  }
-  return tokens
-}
-
-function parseTagExpression(expression: string): TagExpressionNode {
-  const tokens = tagExpressionTokens(expression)
-  let index = 0
-
-  function consume(): string {
-    const token = tokens[index++]
-    if (!token) throw new Error('Unexpected end of tag expression')
-    return token
-  }
-
-  function primary(): TagExpressionNode {
-    const token = consume()
-    if (token === '(') {
-      const node = or()
-      if (consume() !== ')') throw new Error('Expected ")" in tag expression')
-      return node
-    }
-    if (/^not$/i.test(token)) return { type: 'not', child: primary() }
-    if (/^(and|or)$/i.test(token)) {
-      throw new Error(`Unexpected operator "${token}" in tag expression`)
-    }
-    return { type: 'tag', value: normalizedTag(token) }
-  }
-
-  function and(): TagExpressionNode {
-    let left = primary()
-    while (/^and$/i.test(tokens[index] ?? '')) {
-      index++
-      left = { type: 'and', left, right: primary() }
-    }
-    return left
-  }
-
-  function or(): TagExpressionNode {
-    let left = and()
-    while (/^or$/i.test(tokens[index] ?? '')) {
-      index++
-      left = { type: 'or', left, right: and() }
-    }
-    return left
-  }
-
-  const result = or()
-  if (index !== tokens.length) {
-    throw new Error(`Unexpected token "${tokens[index]}" in tag expression`)
-  }
-  return result
-}
-
-function matchesTagExpression(
-  node: TagExpressionNode,
-  tags: readonly string[],
-): boolean {
-  switch (node.type) {
-    case 'tag':
-      return tags.includes(node.value)
-    case 'not':
-      return !matchesTagExpression(node.child, tags)
-    case 'and':
-      return (
-        matchesTagExpression(node.left, tags) &&
-        matchesTagExpression(node.right, tags)
-      )
-    case 'or':
-      return (
-        matchesTagExpression(node.left, tags) ||
-        matchesTagExpression(node.right, tags)
-      )
-  }
 }
 
 const selectionPathsSchema = z.union(
@@ -191,7 +93,7 @@ export const selectionOptionsSchema = strictObject('selection', {
 }).superRefine((options, context) => {
   if (!options.tagExpression) return
   try {
-    parseTagExpression(options.tagExpression)
+    validateTagExpression(options.tagExpression)
   } catch (error) {
     context.addIssue({
       code: 'custom',
@@ -214,90 +116,6 @@ function assertShard(shard: Shard): void {
   }
 }
 
-function scenarioSelectionKey(
-  specification: Specification,
-  scenario: Scenario,
-): string {
-  return resolveScenarioId(
-    specification.source.uri,
-    specification.name,
-    scenario.name,
-    scenario.tags,
-  )
-}
-
-function median(values: readonly number[]): number {
-  if (values.length === 0) return 0
-  const sorted = [...values].sort((left, right) => left - right)
-  const middle = Math.floor(sorted.length / 2)
-  if (sorted.length % 2 === 0) {
-    return (sorted[middle - 1]! + sorted[middle]!) / 2
-  }
-  return sorted[middle]!
-}
-
-function shardByCount(
-  selections: readonly ScenarioSelection[],
-  shard: Shard,
-): ScenarioSelection[] {
-  return selections.filter(
-    (_, index) => index % shard.total === shard.index - 1,
-  )
-}
-
-function shardByDuration(
-  selections: readonly ScenarioSelection[],
-  shard: Shard,
-  historicalDurations: Readonly<Record<string, number>>,
-): ScenarioSelection[] {
-  const knownDurations = Object.values(historicalDurations)
-  const fallbackDuration = median(knownDurations)
-  const hasAnyHistory = selections.some(({ specification, scenario }) => {
-    const key = scenarioSelectionKey(specification, scenario)
-    return historicalDurations[key] !== undefined
-  })
-  if (!hasAnyHistory) return shardByCount(selections, shard)
-
-  const ranked = selections
-    .map((selection) => {
-      const key = scenarioSelectionKey(
-        selection.specification,
-        selection.scenario,
-      )
-      return {
-        selection,
-        key,
-        duration: historicalDurations[key] ?? fallbackDuration,
-      }
-    })
-    .sort(
-      (left, right) =>
-        right.duration - left.duration || left.key.localeCompare(right.key),
-    )
-
-  const shardTotals = Array.from({ length: shard.total }, () => 0)
-  const shardAssignments = new Map<string, number>()
-
-  for (const entry of ranked) {
-    let targetShard = 0
-    let lowestTotal = shardTotals[0]!
-    for (let index = 1; index < shardTotals.length; index++) {
-      const total = shardTotals[index]!
-      if (total < lowestTotal) {
-        lowestTotal = total
-        targetShard = index
-      }
-    }
-    shardAssignments.set(entry.key, targetShard)
-    shardTotals[targetShard] = lowestTotal + entry.duration
-  }
-
-  return selections.filter(({ specification, scenario }) => {
-    const key = scenarioSelectionKey(specification, scenario)
-    return shardAssignments.get(key) === shard.index - 1
-  })
-}
-
 export function validateSelectionOptions(value: unknown): SelectionOptions {
   return parseConfiguration(selectionOptionsSchema, value, 'Invalid selection')
 }
@@ -309,9 +127,7 @@ export function selectScenarios(
 ): ScenarioSelection[] {
   if (options.shard) assertShard(options.shard)
   const name = options.scenarioName?.trim().toLowerCase()
-  const tagExpression = options.tagExpression
-    ? parseTagExpression(options.tagExpression)
-    : undefined
+  const matchesTags = createTagPredicate(options.tagExpression)
 
   const paths = options.paths ? [options.paths].flat() : []
   const states = new Set<SpecificationState>(options.states ?? ['active'])
@@ -330,25 +146,17 @@ export function selectScenarios(
     .filter(
       ({ scenario }) => !name || scenario.name.toLowerCase().includes(name),
     )
-    .filter(
-      ({ scenario }) =>
-        !tagExpression || matchesTagExpression(tagExpression, scenario.tags),
-    )
+    .filter(({ scenario }) => matchesTags(scenario.tags))
 
   if (!options.shard) return selected
 
   const shardable = selected.filter(
     ({ scenario }) => !scenario.tags.includes(ignoreTag),
   )
-  const sharded = context.historicalDurations
-    ? shardByDuration(shardable, options.shard, context.historicalDurations)
-    : shardByCount(shardable, options.shard)
-  const shardedKeys = new Set(
-    sharded.map(({ specification, scenario }) =>
-      scenarioSelectionKey(specification, scenario),
-    ),
-  )
-  return selected.filter(({ specification, scenario }) =>
-    shardedKeys.has(scenarioSelectionKey(specification, scenario)),
-  )
+  return selectShard({
+    selected,
+    shardable,
+    shard: options.shard,
+    historicalDurations: context.historicalDurations,
+  })
 }

@@ -1,176 +1,38 @@
-import {
-  createMobileExecutionCache,
-  type MobileExecutionCachePayload,
-  mobileReplayVariableName,
-} from '../execution-cache/mobile-execution-cache'
+import type { MobileExecutionCachePayload } from '../execution-cache/mobile-execution-cache'
 import type {
-  MobileApplication,
-  MobileArtifactKind,
   MobilePlatform,
   MobileTarget,
-  MobileTextRedaction,
-  MobileWorkerScenario,
   WorkerScenarioExecution,
   WorkerSessionCompletion,
 } from '../worker/worker-protocol'
 import {
   type AgentDeviceClientFactory,
-  type AgentDeviceDevice,
   agentDeviceCapabilitiesSchema,
-  agentDeviceLogPathSchema,
   agentDeviceReplayPlanStep,
   defaultAgentDeviceClientFactory,
   isAgentDeviceReplayDivergence,
-  type MobileSelection,
-  mobileAppStateSchema,
   mobileDevicesSchema,
 } from './agent-device-client'
 import {
   finishScenarioEvidence,
-  type MobileEvidenceAvailability,
   startScenarioEvidence,
 } from './agent-device-evidence'
 import { executePrivateAgentDeviceReplay } from './agent-device-replay'
 import {
-  type CompiledMobileScenario,
-  compileMobileScenario,
-} from './mobile-ad-script'
+  createGatewaySession,
+  deviceSelection,
+  type GatewaySession,
+  initializeGatewaySession,
+  mobilePlatformPolicies,
+  normalizedCapabilities,
+  type OpenGatewaySessionInput,
+} from './agent-device-session'
 
 export type {
   AgentDeviceClientFactory,
   AgentDeviceClientPort,
 } from './agent-device-client'
-
-export interface OpenGatewaySessionInput {
-  sessionId: string
-  platform?: MobilePlatform
-  targetId?: string
-  application: MobileApplication
-  artifactDirectory?: string
-  artifacts?: readonly MobileArtifactKind[]
-  redactions?: readonly MobileTextRedaction[]
-  requiredCapabilities?: readonly string[]
-  mode: 'adaptive' | 'replay'
-  scenario: MobileWorkerScenario
-  executionCache?: {
-    adapterPayload: MobileExecutionCachePayload
-    requiredVariables: string[]
-  }
-}
-
-interface GatewaySession {
-  artifactDirectory?: string
-  artifacts: ReadonlySet<MobileArtifactKind>
-  client: import('./agent-device-client').AgentDeviceClientPort
-  compiled: CompiledMobileScenario
-  deviceLogPath?: string
-  execution?: WorkerScenarioExecution
-  evidenceAvailability: MobileEvidenceAvailability[]
-  logsStarted: boolean
-  mode: 'adaptive' | 'replay'
-  redactions: readonly MobileTextRedaction[]
-  requestedArtifacts: readonly MobileArtifactKind[]
-  selection?: MobileSelection
-}
-
-interface MobilePlatformPolicy {
-  applicationName: string
-  targetCapability: string
-  targetKind: AgentDeviceDevice['kind']
-  targetName: string
-}
-
-const mobilePlatformPolicies: Record<MobilePlatform, MobilePlatformPolicy> = {
-  android: {
-    applicationName: 'Android application',
-    targetCapability: 'android-emulator',
-    targetKind: 'emulator',
-    targetName: 'Android Emulator',
-  },
-  ios: {
-    applicationName: 'iOS application',
-    targetCapability: 'ios-simulator',
-    targetKind: 'simulator',
-    targetName: 'iOS Simulator',
-  },
-}
-
-const artifactCommands: Record<MobileArtifactKind, string> = {
-  screenshot: 'screenshot',
-  'device-log': 'logs',
-  recording: 'record',
-  trace: 'trace',
-}
-
-const binaryArtifacts = new Set<MobileArtifactKind>([
-  'screenshot',
-  'recording',
-  'trace',
-])
-
-function validateArtifactRedactions(input: OpenGatewaySessionInput): void {
-  if (!input.redactions?.length) return
-  const unsupported = (input.artifacts ?? ['screenshot']).filter((artifact) =>
-    binaryArtifacts.has(artifact),
-  )
-  if (unsupported.length > 0) {
-    throw new Error(
-      `Binary mobile evidence cannot apply text redactions: ${unsupported.join(', ')}`,
-    )
-  }
-}
-
-function evidenceRedactions(
-  input: OpenGatewaySessionInput,
-): MobileTextRedaction[] {
-  const redactions = [...(input.redactions ?? [])]
-  const configuredValues = new Set(
-    redactions.map((redaction) => redaction.match),
-  )
-  for (const binding of input.scenario.runtimeBindings) {
-    if (!binding.value || configuredValues.has(binding.value)) continue
-    configuredValues.add(binding.value)
-    redactions.push({ match: binding.value })
-  }
-  return redactions
-}
-
-function normalizedCapabilities(
-  platform: MobilePlatform,
-  commands: readonly string[],
-): string[] {
-  const capabilities = [
-    platform,
-    mobilePlatformPolicies[platform].targetCapability,
-  ]
-  if (commands.includes('screenshot')) capabilities.push('screenshots')
-  if (commands.includes('logs')) capabilities.push('device-logs')
-  if (commands.includes('record')) capabilities.push('recordings')
-  if (commands.includes('trace')) capabilities.push('traces')
-  return capabilities
-}
-
-function deviceSelection(device: AgentDeviceDevice): MobileSelection {
-  return device.platform === 'ios'
-    ? { platform: 'ios', udid: device.ios.udid }
-    : { platform: 'android', serial: device.android.serial }
-}
-
-function runtimeEnvironment(
-  requiredVariables: readonly string[],
-  scenario: MobileWorkerScenario,
-): string[] {
-  const bindings = new Map(
-    scenario.runtimeBindings.map((binding) => [binding.name, binding.value]),
-  )
-  return requiredVariables.map((name) => {
-    const value = bindings.get(name)
-    if (value === undefined) {
-      throw new Error(`Mobile Replay binding "${name}" was not provided`)
-    }
-    return `${mobileReplayVariableName(name)}=${value}`
-  })
-}
+export type { OpenGatewaySessionInput } from './agent-device-session'
 
 function replayScenarioStepIndex(
   error: unknown,
@@ -239,161 +101,24 @@ export class AgentDeviceGateway {
   async openSession(
     input: OpenGatewaySessionInput,
   ): Promise<{ targetId: string }> {
-    validateArtifactRedactions(input)
     if (this.sessions.has(input.sessionId)) {
       throw new Error(`Mobile logical session "${input.sessionId}" is open`)
     }
-    const platform = input.platform ?? 'android'
-    const policy = mobilePlatformPolicies[platform]
-    const requestedArtifacts =
-      input.artifacts ?? (input.artifactDirectory ? ['screenshot'] : [])
-    const replayPayload = input.executionCache
-      ? createMobileExecutionCache({
-          platform,
-          executionTarget:
-            platform === 'ios' ? 'ios-simulator' : 'android-emulator',
-          applicationId: input.application.id,
-          targetId: input.targetId,
-        }).parse(
-          input.executionCache.adapterPayload,
-          input.executionCache.requiredVariables,
-        )
-      : undefined
-    if (input.executionCache && !replayPayload) {
-      throw new Error('Mobile Replay cache payload is invalid')
-    }
-    const client = this.createClient({
-      session: input.sessionId,
-      lockPolicy: 'reject',
-      lockPlatform: platform,
-    })
-    const session: GatewaySession = {
-      artifactDirectory: input.artifactDirectory,
-      artifacts: new Set(requestedArtifacts),
-      client,
-      compiled:
-        input.executionCache && replayPayload
-          ? {
-              payload: replayPayload,
-              requiredVariables: [...input.executionCache.requiredVariables],
-              runtimeEnv: runtimeEnvironment(
-                input.executionCache.requiredVariables,
-                input.scenario,
-              ),
-              descriptions: input.scenario.templateSteps.map(
-                (step) => `Replay: ${step.text}`,
-              ),
-            }
-          : compileMobileScenario({
-              platform,
-              applicationId: input.application.id,
-              scenario: input.scenario,
-            }),
-      logsStarted: false,
-      mode: input.mode,
-      redactions: evidenceRedactions(input),
-      requestedArtifacts,
-      evidenceAvailability: [],
-    }
+    const session = createGatewaySession(input, this.createClient)
     this.sessions.set(input.sessionId, session)
-    const ensureSessionOwned = () => {
+    const assertOwned = () => {
       if (this.sessions.get(input.sessionId) !== session) {
         throw new DOMException('Aborted', 'AbortError')
       }
     }
 
     try {
-      const devices = mobileDevicesSchema.parse(
-        await client.devices.list({ platform }),
+      const targetId = await initializeGatewaySession(
+        input,
+        session,
+        assertOwned,
       )
-      ensureSessionOwned()
-      const target = devices.find(
-        (device) =>
-          device.platform === platform &&
-          device.kind === policy.targetKind &&
-          device.booted === true &&
-          (input.targetId === undefined || device.id === input.targetId),
-      )
-      if (!target) {
-        throw new Error(
-          input.targetId
-            ? `Booted ${policy.targetName} target "${input.targetId}" was not found`
-            : `No booted ${policy.targetName} target was found`,
-        )
-      }
-
-      const selection = deviceSelection(target)
-      session.selection = selection
-      if (requestedArtifacts.length > 0 || input.requiredCapabilities?.length) {
-        const capabilityResult = agentDeviceCapabilitiesSchema.parse(
-          await client.devices.capabilities(selection),
-        )
-        ensureSessionOwned()
-        const unsupportedArtifacts = requestedArtifacts.filter(
-          (artifact) =>
-            !capabilityResult.availableCommands.includes(
-              artifactCommands[artifact],
-            ),
-        )
-        session.artifacts = new Set(
-          requestedArtifacts.filter(
-            (artifact) => !unsupportedArtifacts.includes(artifact),
-          ),
-        )
-        session.evidenceAvailability = unsupportedArtifacts.map((kind) => ({
-          kind,
-          state: 'not-supported',
-          message: `${policy.targetName} does not support ${kind} evidence`,
-        }))
-        const targetCapabilities = normalizedCapabilities(
-          platform,
-          capabilityResult.availableCommands,
-        )
-        const unsupportedRequirements = (
-          input.requiredCapabilities ?? []
-        ).filter((capability) => !targetCapabilities.includes(capability))
-        if (unsupportedRequirements.length > 0) {
-          throw new Error(
-            `${policy.targetName} does not satisfy required capabilities: ${unsupportedRequirements.join(', ')}`,
-          )
-        }
-      }
-      await client.apps.reinstall({
-        ...selection,
-        app: input.application.id,
-        appPath: input.application.binaryPath,
-      })
-      ensureSessionOwned()
-      await client.apps.open({
-        ...selection,
-        app: input.application.id,
-      })
-      ensureSessionOwned()
-      const state = mobileAppStateSchema.parse(
-        await client.command.appState(selection),
-      )
-      ensureSessionOwned()
-      const runningApplicationId =
-        state.platform === 'ios' ? state.appBundleId : state.package
-      if (
-        state.platform !== platform ||
-        runningApplicationId !== input.application.id
-      ) {
-        throw new Error(
-          `${policy.applicationName} reset verification failed: expected ${input.application.id}, found ${runningApplicationId ?? 'unknown'}`,
-        )
-      }
-      if (session.artifactDirectory && session.artifacts.has('device-log')) {
-        await client.observability.logs({ action: 'start' })
-        session.logsStarted = true
-        ensureSessionOwned()
-        const log = agentDeviceLogPathSchema.parse(
-          await client.observability.logs({ action: 'path' }),
-        )
-        session.deviceLogPath = log.path
-        ensureSessionOwned()
-      }
-      return { targetId: target.id }
+      return { targetId }
     } catch (error) {
       await this.closeSession(input.sessionId).catch(() => {})
       throw error

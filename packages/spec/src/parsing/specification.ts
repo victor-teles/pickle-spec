@@ -8,6 +8,7 @@ import type {
   Examples,
   FeatureChild,
   GherkinDocument,
+  Pickle,
   PickleStep,
   RuleChild,
   Step,
@@ -244,64 +245,15 @@ export function parseSpecification(
   collectIdentityNodes(document, scenariosById, rowsById)
   const featureTags = feature.tags.map((tag) => tag.name)
   const featureIdentity = identityFromTags(featureTags)
-  const scenarios: Scenario[] = compile(document, input.uri, newId).map(
-    (pickle) => {
-      const scenarioNode = scenariosById.get(pickle.astNodeIds[0] ?? '')
-      const scenarioTags = scenarioNode?.tags ?? []
-      const row = rowsById.get(pickle.astNodeIds[1] ?? '')
-      const tags = pickle.tags.map(({ name }) => name)
-      const requirements = capabilityRequirements(tags)
-      const runtimeBindings = row ? outlineVariables(row) : undefined
-      const templateSteps = row
-        ? pickle.steps.map((step) => templateStep(step, infoByAstNodeId))
-        : undefined
-      const templateName = row ? (scenarioNode?.name ?? pickle.name) : undefined
-      const template =
-        row && templateName && templateSteps
-          ? {
-              name: templateName,
-              steps: templateSteps,
-              variableNames: templateVariableNames(
-                templateName,
-                templateSteps,
-                row.header,
-              ),
-            }
-          : undefined
-      return {
-        name: pickle.name,
-        tags,
-        steps: pickle.steps.map((step) => mapStep(step, infoByAstNodeId)),
-        id: resolveScenarioId(
-          input.uri,
-          feature.name,
-          scenarioNode?.name ?? pickle.name,
-          scenarioTags,
-        ),
-        examplesId: row
-          ? resolveExamplesId(
-              input.uri,
-              feature.name,
-              row.scenarioName,
-              row.examplesName,
-              row.examplesTags,
-            )
-          : undefined,
-        examplesRowId: row
-          ? resolveExamplesRowId(
-              input.uri,
-              feature.name,
-              row.scenarioName,
-              row.examplesName,
-              row.header,
-              row.cells,
-            )
-          : undefined,
-        template,
-        runtimeBindings,
-        capabilityRequirements: requirements,
-      }
-    },
+  const context: ScenarioMappingContext = {
+    uri: input.uri,
+    specificationName: feature.name,
+    infoByAstNodeId,
+    scenariosById,
+    rowsById,
+  }
+  const scenarios = compile(document, input.uri, newId).map((pickle) =>
+    mapScenario(pickle, context),
   )
 
   return {
@@ -314,6 +266,77 @@ export function parseSpecification(
     scenarios,
     id: resolveSpecificationId(input.uri, feature.name, featureTags),
     ...(featureIdentity.state ? { state: featureIdentity.state } : {}),
+  }
+}
+
+interface ScenarioMappingContext {
+  uri: string
+  specificationName: string
+  infoByAstNodeId: ReadonlyMap<string, ScenarioStep>
+  scenariosById: ReadonlyMap<string, { tags: string[]; name: string }>
+  rowsById: ReadonlyMap<string, OutlineRow>
+}
+
+function outlineTemplate(
+  pickle: Pickle,
+  row: OutlineRow | undefined,
+  scenarioName: string,
+  infoByAstNodeId: ReadonlyMap<string, ScenarioStep>,
+): ScenarioTemplate | undefined {
+  if (!row) return undefined
+  const steps = pickle.steps.map((step) => templateStep(step, infoByAstNodeId))
+  return {
+    name: scenarioName,
+    steps,
+    variableNames: templateVariableNames(scenarioName, steps, row.header),
+  }
+}
+
+function mapScenario(
+  pickle: Pickle,
+  context: ScenarioMappingContext,
+): Scenario {
+  const scenarioNode = context.scenariosById.get(pickle.astNodeIds[0] ?? '')
+  const scenarioName = scenarioNode?.name ?? pickle.name
+  const row = context.rowsById.get(pickle.astNodeIds[1] ?? '')
+  const tags = pickle.tags.map(({ name }) => name)
+  return {
+    name: pickle.name,
+    tags,
+    steps: pickle.steps.map((step) => mapStep(step, context.infoByAstNodeId)),
+    id: resolveScenarioId(
+      context.uri,
+      context.specificationName,
+      scenarioName,
+      scenarioNode?.tags ?? [],
+    ),
+    examplesId: row
+      ? resolveExamplesId(
+          context.uri,
+          context.specificationName,
+          row.scenarioName,
+          row.examplesName,
+          row.examplesTags,
+        )
+      : undefined,
+    examplesRowId: row
+      ? resolveExamplesRowId(
+          context.uri,
+          context.specificationName,
+          row.scenarioName,
+          row.examplesName,
+          row.header,
+          row.cells,
+        )
+      : undefined,
+    template: outlineTemplate(
+      pickle,
+      row,
+      scenarioName,
+      context.infoByAstNodeId,
+    ),
+    runtimeBindings: row ? outlineVariables(row) : undefined,
+    capabilityRequirements: capabilityRequirements(tags),
   }
 }
 

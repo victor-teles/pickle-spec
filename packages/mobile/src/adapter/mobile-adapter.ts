@@ -1,5 +1,6 @@
 import type {
   ExecutionTargetAdapter,
+  OpenSessionInput,
   ScenarioTargetSession,
 } from '@pickle-spec/runner'
 import { createMobileExecutionCache } from '../execution-cache/mobile-execution-cache'
@@ -18,9 +19,13 @@ import {
   type MobileArtifactKind,
   type MobilePlatform,
   type MobileTextRedaction,
-  type MobileWorkerResponse,
+  type MobileWorkerRequest,
   mobileWorkerProtocolVersion,
 } from '../worker/worker-protocol'
+import {
+  expectWorkerResponse,
+  MobileWorkerSession,
+} from './mobile-worker-session'
 
 export type {
   AndroidApplication,
@@ -75,6 +80,70 @@ const executionTargetPolicies = {
   },
 } as const satisfies Record<string, ExecutionTargetPolicy>
 
+type OpenSessionRequest = Extract<MobileWorkerRequest, { type: 'open-session' }>
+type ScenarioStep = OpenSessionInput['scenario']['steps'][number]
+
+function workerStep(
+  step: ScenarioStep,
+): OpenSessionRequest['scenario']['steps'][number] {
+  return {
+    type: step.type,
+    text: step.text,
+    argument: step.argument,
+  }
+}
+
+function openSessionRequest(
+  input: OpenSessionInput,
+  options: MobileAdapterOptions,
+  platform: MobilePlatform,
+  executionCache: ReturnType<typeof createMobileExecutionCache>,
+  sessionId: string,
+): OpenSessionRequest {
+  const replayCache = input.executionCache
+  const replayPayload = replayCache
+    ? executionCache.parse(
+        replayCache.adapterPayload,
+        replayCache.requiredVariables,
+      )
+    : undefined
+  if (replayCache && !replayPayload) {
+    throw new Error('Mobile Replay cache payload is invalid')
+  }
+
+  const templateSteps = input.scenarioTemplate?.steps ?? input.scenario.steps
+  return {
+    version: mobileWorkerProtocolVersion,
+    type: 'open-session',
+    sessionId,
+    platform,
+    targetId: options.targetId,
+    application: options.application,
+    mode: input.mode ?? 'adaptive',
+    artifactDirectory: options.artifactDirectory,
+    artifacts: options.artifacts ? [...options.artifacts] : undefined,
+    redactions: options.redactions?.map((redaction) => ({ ...redaction })),
+    requiredCapabilities: input.scenario.capabilityRequirements
+      ? [...input.scenario.capabilityRequirements]
+      : undefined,
+    scenario: {
+      steps: input.scenario.steps.map(workerStep),
+      templateSteps: templateSteps.map(workerStep),
+      runtimeBindings: (input.runtimeBindings ?? []).map((binding) => ({
+        name: binding.name,
+        value: binding.value,
+      })),
+    },
+    executionCache:
+      replayPayload && replayCache
+        ? {
+            adapterPayload: replayPayload,
+            requiredVariables: [...replayCache.requiredVariables],
+          }
+        : undefined,
+  }
+}
+
 export function createMobileAdapter(
   options: MobileAdapterOptions,
   workerFactory?: MobileWorkerFactory,
@@ -107,170 +176,33 @@ export function createMobileAdapter(
         type: 'discover-targets',
         platform: policy.platform,
       })
-      if (response.type !== 'targets-discovered') {
-        throw new Error(`Unexpected mobile worker response: ${response.type}`)
-      }
-      return response.targets
+      return expectWorkerResponse(response, 'targets-discovered').targets
     },
     async openSession(input) {
       const sessionId = crypto.randomUUID()
-      let closePromise: Promise<void> | undefined
-      let cancellationPromise: Promise<void> | undefined
-      let cancelled = false
-      const cancel = () => {
-        cancelled = true
-        cancellationPromise ??= (async () => {
-          const cancelledResponse = await ensureWorker().request({
-            version: mobileWorkerProtocolVersion,
-            type: 'cancel-session',
-            sessionId,
-          })
-          if (cancelledResponse.type !== 'session-cancelled') {
-            throw new Error(
-              `Unexpected mobile worker response: ${cancelledResponse.type}`,
-            )
-          }
-        })()
-        return cancellationPromise
-      }
-      const onAbort = () => {
-        void cancel().catch(() => {})
-      }
-      if (input.signal?.aborted) void cancel().catch(() => {})
-      else input.signal?.addEventListener('abort', onAbort, { once: true })
-
-      let response: MobileWorkerResponse
+      const mobileWorker = ensureWorker()
+      const session = new MobileWorkerSession(
+        mobileWorker,
+        sessionId,
+        input.signal,
+      )
       try {
-        const templateSteps =
-          input.scenarioTemplate?.steps ?? input.scenario.steps
-        const replayPayload = input.executionCache
-          ? executionCache.parse(
-              input.executionCache.adapterPayload,
-              input.executionCache.requiredVariables,
-            )
-          : undefined
-        if (input.executionCache && !replayPayload) {
-          throw new Error('Mobile Replay cache payload is invalid')
-        }
-        response = await ensureWorker().request(
-          {
-            version: mobileWorkerProtocolVersion,
-            type: 'open-session',
+        const response = await mobileWorker.request(
+          openSessionRequest(
+            input,
+            options,
+            policy.platform,
+            executionCache,
             sessionId,
-            platform: policy.platform,
-            targetId: options.targetId,
-            application: options.application,
-            mode: input.mode ?? 'adaptive',
-            artifactDirectory: options.artifactDirectory,
-            artifacts: options.artifacts ? [...options.artifacts] : undefined,
-            redactions: options.redactions
-              ? options.redactions.map((redaction) => ({ ...redaction }))
-              : undefined,
-            requiredCapabilities: input.scenario.capabilityRequirements
-              ? [...input.scenario.capabilityRequirements]
-              : undefined,
-            scenario: {
-              steps: input.scenario.steps.map((step) => ({
-                type: step.type,
-                text: step.text,
-                argument: step.argument,
-              })),
-              templateSteps: templateSteps.map((step) => ({
-                type: step.type,
-                text: step.text,
-                argument: step.argument,
-              })),
-              runtimeBindings: (input.runtimeBindings ?? []).map((binding) => ({
-                name: binding.name,
-                value: binding.value,
-              })),
-            },
-            executionCache: replayPayload
-              ? {
-                  adapterPayload: replayPayload,
-                  requiredVariables: [
-                    ...(input.executionCache?.requiredVariables ?? []),
-                  ],
-                }
-              : undefined,
-          },
+          ),
           input.signal,
         )
+        await session.confirmOpened(response)
       } catch (error) {
-        input.signal?.removeEventListener('abort', onAbort)
-        if (cancelled) await cancellationPromise?.catch(() => {})
+        await session.handleOpenFailure()
         throw error
       }
-      if (cancelled) {
-        await cancellationPromise
-        throw new DOMException('Aborted', 'AbortError')
-      }
-      if (response.type !== 'session-opened') {
-        throw new Error(`Unexpected mobile worker response: ${response.type}`)
-      }
-
-      return {
-        async executeScenario(signal) {
-          const operationSignal = signal ?? input.signal
-          const onOperationAbort = () => {
-            void cancel().catch(() => {})
-          }
-          operationSignal?.addEventListener('abort', onOperationAbort, {
-            once: true,
-          })
-          try {
-            const scenarioResponse = await ensureWorker().request(
-              {
-                version: mobileWorkerProtocolVersion,
-                type: 'execute-scenario',
-                sessionId,
-              },
-              operationSignal,
-            )
-            if (scenarioResponse.type !== 'scenario-executed') {
-              throw new Error(
-                `Unexpected mobile worker response: ${scenarioResponse.type}`,
-              )
-            }
-            return scenarioResponse.execution
-          } finally {
-            operationSignal?.removeEventListener('abort', onOperationAbort)
-          }
-        },
-        async complete() {
-          const completionResponse = await ensureWorker().request({
-            version: mobileWorkerProtocolVersion,
-            type: 'complete-session',
-            sessionId,
-          })
-          if (completionResponse.type !== 'session-completed') {
-            throw new Error(
-              `Unexpected mobile worker response: ${completionResponse.type}`,
-            )
-          }
-          return completionResponse.completion
-        },
-        close() {
-          closePromise ??= (async () => {
-            input.signal?.removeEventListener('abort', onAbort)
-            if (cancelled) {
-              await cancellationPromise
-              return
-            }
-            const closed = await ensureWorker().request({
-              version: mobileWorkerProtocolVersion,
-              type: 'close-session',
-              sessionId,
-            })
-            if (closed.type !== 'session-closed') {
-              throw new Error(
-                `Unexpected mobile worker response: ${closed.type}`,
-              )
-            }
-          })()
-          return closePromise
-        },
-      }
+      return session
     },
     async dispose() {
       if (!worker) return
