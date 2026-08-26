@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
+import type { StudioApi } from '../app/studio-api'
 import { LedgerRowsSkeleton } from '../components/loading-skeletons'
 import { Badge } from '../components/ui/badge'
 import { Button } from '../components/ui/button'
@@ -22,7 +23,7 @@ import { toast } from '../components/ui/toast'
 import type { StudioExecutionCacheInspection } from '../server/server'
 
 type ExecutionCacheSettingsProps = {
-  api: <R>(path: string, init?: RequestInit) => Promise<R>
+  api: StudioApi
 }
 
 function byteCount(value: number): string {

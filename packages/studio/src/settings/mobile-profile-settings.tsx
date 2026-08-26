@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import type { StudioApi } from '../app/studio-api'
 import { Button } from '../components/ui/button'
 import { Card, CardContent } from '../components/ui/card'
 import { Input } from '../components/ui/input'
@@ -9,7 +10,7 @@ import type {
 } from '../server/server'
 
 type MobileProfileSettingsProps = {
-  api: <R>(path: string, init?: RequestInit) => Promise<R>
+  api: StudioApi
   onChange: (profile: StudioMobileProfile) => void
   onError: (message: string | undefined) => void
   profile: StudioMobileProfile

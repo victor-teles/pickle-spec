@@ -1,5 +1,6 @@
 import type { TestRunManifest } from '@pickle-spec/runner'
 import { useEffect, useMemo, useState } from 'react'
+import type { StudioApi } from '../app/studio-api'
 import { LedgerLoadingSkeleton } from '../components/loading-skeletons'
 import { Badge } from '../components/ui/badge'
 import { Button, buttonVariants } from '../components/ui/button'
@@ -29,8 +30,6 @@ import type { ResultInspectionLocation } from './result/result-inspection'
 import { reasonMessage, resultBadgeVariant } from './result/result-presentation'
 import { durationLabel, inferenceCountLabel } from './run-format'
 import { VirtualTableSpacer } from './virtual-table-spacer'
-
-type StudioApi = <Value>(path: string, init?: RequestInit) => Promise<Value>
 
 type RunDetailProps = {
   api: StudioApi

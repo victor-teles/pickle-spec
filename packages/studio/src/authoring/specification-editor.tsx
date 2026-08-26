@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import type { StudioApi } from '../app/studio-api'
 import { Button } from '../components/ui/button'
 import {
   Dialog,
@@ -122,7 +123,7 @@ export function SpecificationEditor(props: {
   uri: string
   namespaces?: readonly string[]
   linkTemplates?: Readonly<Record<string, string>>
-  api: <T>(path: string, init?: RequestInit) => Promise<T>
+  api: StudioApi
   onCatalogChange: () => Promise<void>
   onCreated?: (uri: string) => void
   onError: (message: string | undefined) => void

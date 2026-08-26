@@ -106,7 +106,7 @@ export function resultPriority(state: TestResultState | 'running'): number {
   return 3
 }
 
-export function attentionCells(cells: MatrixCell[]): MatrixCell[] {
+export function attentionCells(cells: readonly MatrixCell[]): MatrixCell[] {
   return [...cells]
     .filter((cell) => needsAttention(cell.state))
     .sort(

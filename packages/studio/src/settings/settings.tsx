@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import type { StudioApi } from '../app/studio-api'
 import { Badge } from '../components/ui/badge'
 import { Button } from '../components/ui/button'
 import { Checkbox } from '../components/ui/checkbox'
@@ -71,7 +72,7 @@ export function SettingsPanel<
   },
 >(props: {
   project: T
-  api: <R>(path: string, init?: RequestInit) => Promise<R>
+  api: StudioApi
   onProject: (project: T) => void
   onError: (message: string | undefined) => void
 }) {

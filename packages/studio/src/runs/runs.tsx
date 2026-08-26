@@ -4,6 +4,7 @@ import type {
   TestRunSummary,
 } from '@pickle-spec/runner'
 import { useMemo, useState } from 'react'
+import type { StudioApi } from '../app/studio-api'
 import {
   type RunsFilters,
   runFilterStates,
@@ -61,8 +62,6 @@ import {
 } from './runs-model'
 import { useActiveRuns } from './use-active-runs'
 import { VirtualTableSpacer } from './virtual-table-spacer'
-
-type StudioApi = <Value>(path: string, init?: RequestInit) => Promise<Value>
 
 type RunsAreaProps = {
   api: StudioApi

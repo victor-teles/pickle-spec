@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import type { StudioApi } from '../app/studio-api'
 import type { StudioRunSnapshot } from '../server/server'
 import {
   disconnectLiveInspection,
@@ -8,8 +9,6 @@ import {
   receiveLiveStreamEvent,
   startLiveInspection,
 } from './result/live-result-inspection'
-
-type StudioApi = <Value>(path: string, init?: RequestInit) => Promise<Value>
 
 type ActiveRunsOptions = {
   api: StudioApi

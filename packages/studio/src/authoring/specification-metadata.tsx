@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import type { StudioApi } from '../app/studio-api'
 import { Badge } from '../components/ui/badge'
 import { Button, ButtonLink } from '../components/ui/button'
 import { Input } from '../components/ui/input'
@@ -66,7 +67,7 @@ export function SpecificationMetadataForm(props: {
   source: string
   namespaces: readonly string[]
   templates?: Readonly<Record<string, string>>
-  api: <T>(path: string, init?: RequestInit) => Promise<T>
+  api: StudioApi
   onChange: (source: string) => void
   onError: (message: string | undefined) => void
 }) {

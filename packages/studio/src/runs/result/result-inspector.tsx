@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import type { StudioApi } from '../../app/studio-api'
 import { LedgerLoadingSkeleton } from '../../components/loading-skeletons'
 import { Badge } from '../../components/ui/badge'
 import { Button } from '../../components/ui/button'
@@ -33,8 +34,6 @@ import type {
   ResultInspectorTab,
 } from './result-inspection'
 import { reasonMessage, resultBadgeVariant } from './result-presentation'
-
-type StudioApi = <Value>(path: string, init?: RequestInit) => Promise<Value>
 
 type ResultInspectorProps = {
   api: StudioApi
