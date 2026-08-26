@@ -62,29 +62,36 @@ export function createInteractiveTerminalSurface(
     return renderedTerminalRows(lines, options.columns())
   }
 
+  function hiddenLine(hiddenCount: number): string {
+    const label = ` … +${hiddenCount}`
+    const columns = options.columns()
+    return columns && Bun.stringWidth(label) > columns ? '…' : label
+  }
+
+  function visibleTail(
+    lines: readonly string[],
+    maxRows: number,
+  ): readonly string[] {
+    const tail: string[] = []
+    let usedRows = renderedRows([lines[0]!, '…'])
+    for (let index = lines.length - 1; index > 0; index--) {
+      const line = lines[index]!
+      const lineRows = renderedRows([line])
+      if (usedRows + lineRows > maxRows) break
+      tail.unshift(line)
+      usedRows += lineRows
+    }
+    return tail
+  }
+
   function visibleDynamicLines(lines: readonly string[]): readonly string[] {
     const maxRows = availableTerminalRows(options.rows?.())
     if (renderedRows(lines) <= maxRows) return lines
     if (maxRows === 1) return ['…']
     const firstLine = lines[0]!
-    const visibleTail: string[] = []
-    let usedRows = renderedRows([firstLine, '…'])
-    for (let index = lines.length - 1; index > 0; index--) {
-      const line = lines[index]!
-      const lineRows = renderedRows([line])
-      if (usedRows + lineRows > maxRows) break
-      visibleTail.unshift(line)
-      usedRows += lineRows
-    }
-    const hiddenCount = lines.length - visibleTail.length - 1
-    const hiddenLabel = ` … +${hiddenCount}`
-    const columns = options.columns()
-    const hiddenLine = columns
-      ? Bun.stringWidth(hiddenLabel) <= columns
-        ? hiddenLabel
-        : '…'
-      : hiddenLabel
-    return [firstLine, hiddenLine, ...visibleTail]
+    const tail = visibleTail(lines, maxRows)
+    const hiddenCount = lines.length - tail.length - 1
+    return [firstLine, hiddenLine(hiddenCount), ...tail]
   }
 
   function clearDynamicRegion(): void {

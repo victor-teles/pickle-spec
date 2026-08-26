@@ -26,6 +26,41 @@ function hasColumn(db: Database, table: string, column: string): boolean {
   )
 }
 
+function addMissingColumn(
+  db: Database,
+  table: string,
+  column: string,
+  definition: string,
+): void {
+  if (!hasColumn(db, table, column)) {
+    db.run(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`)
+  }
+}
+
+function migrateLegacyEntries(db: Database, version: number): void {
+  if (version > 0 && version < 3) {
+    db.run('ALTER TABLE entries ADD COLUMN revision INTEGER NOT NULL DEFAULT 1')
+  }
+  addMissingColumn(db, 'leases', 'baseline_revision', 'INTEGER')
+  addMissingColumn(db, 'leases', 'project_key', 'TEXT')
+  addMissingColumn(db, 'lease_outcomes', 'project_key', 'TEXT')
+  if (version === 0 || version >= 5) return
+  db.run(`
+    UPDATE leases SET project_key = (
+      SELECT project_key FROM entries
+      WHERE entries.key_digest = leases.key_digest
+    )
+  `)
+  db.run(`
+    UPDATE lease_outcomes SET project_key = (
+      SELECT project_key FROM entries
+      WHERE entries.key_digest = lease_outcomes.key_digest
+    )
+  `)
+  db.run('DELETE FROM leases WHERE project_key IS NULL')
+  db.run('DELETE FROM lease_outcomes WHERE project_key IS NULL')
+}
+
 function migrate(db: Database): void {
   const version = db.query('PRAGMA user_version').get() as CacheSchemaVersion
   if (version.user_version > cacheSchemaVersion) {
@@ -89,36 +124,7 @@ function migrate(db: Database): void {
       CREATE INDEX IF NOT EXISTS lease_outcomes_completed
       ON lease_outcomes(completed_at)
     `)
-    if (version.user_version > 0 && version.user_version < 3) {
-      db.run(
-        'ALTER TABLE entries ADD COLUMN revision INTEGER NOT NULL DEFAULT 1',
-      )
-    }
-    if (!hasColumn(db, 'leases', 'baseline_revision')) {
-      db.run('ALTER TABLE leases ADD COLUMN baseline_revision INTEGER')
-    }
-    if (!hasColumn(db, 'leases', 'project_key')) {
-      db.run('ALTER TABLE leases ADD COLUMN project_key TEXT')
-    }
-    if (!hasColumn(db, 'lease_outcomes', 'project_key')) {
-      db.run('ALTER TABLE lease_outcomes ADD COLUMN project_key TEXT')
-    }
-    if (version.user_version > 0 && version.user_version < 5) {
-      db.run(`
-        UPDATE leases SET project_key = (
-          SELECT project_key FROM entries
-          WHERE entries.key_digest = leases.key_digest
-        )
-      `)
-      db.run(`
-        UPDATE lease_outcomes SET project_key = (
-          SELECT project_key FROM entries
-          WHERE entries.key_digest = lease_outcomes.key_digest
-        )
-      `)
-      db.run('DELETE FROM leases WHERE project_key IS NULL')
-      db.run('DELETE FROM lease_outcomes WHERE project_key IS NULL')
-    }
+    migrateLegacyEntries(db, version.user_version)
     db.run(`PRAGMA user_version = ${cacheSchemaVersion}`)
   }).immediate()
 }

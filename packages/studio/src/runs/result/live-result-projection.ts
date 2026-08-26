@@ -160,26 +160,24 @@ function projectResults(input: ProjectLiveSnapshotInput): TestResult[] {
   for (const event of input.events) {
     if (event.type !== 'scenario-finished') continue
     finishedKeys.add(attemptKey(event.scope))
-    const identity = resultIdentityKey(event.scope)
-    const existing = finished.get(identity)
-    if (existing) {
-      const attempts = [...existing.attempts, event.attempt].sort(
-        (left, right) => left.attempt - right.attempt,
-      )
-      const final = attempts.at(-1)
-      if (!final) continue
-      finished.set(identity, {
-        ...existing,
-        attempts,
-        state: final.state,
-        finishedAt: final.finishedAt,
-        durationMs: Math.max(
-          0,
-          Date.parse(final.finishedAt) - Date.parse(existing.startedAt),
-        ),
-      })
-      continue
-    }
+    appendFinishedResult(finished, event)
+  }
+  const inProgress: TestResult[] = []
+  for (const event of input.events) {
+    if (event.type !== 'scenario-started') continue
+    if (finishedKeys.has(attemptKey(event.scope))) continue
+    inProgress.push(projectInProgressResult(input, event, liveDiagnostics))
+  }
+  return [...finished.values(), ...inProgress]
+}
+
+function appendFinishedResult(
+  finished: Map<string, TestResult>,
+  event: Extract<RunEvent, { type: 'scenario-finished' }>,
+): void {
+  const identity = resultIdentityKey(event.scope)
+  const existing = finished.get(identity)
+  if (!existing) {
     finished.set(identity, {
       schemaVersion: 2,
       specification: event.specification,
@@ -191,55 +189,69 @@ function projectResults(input: ProjectLiveSnapshotInput): TestResult[] {
       durationMs: event.attempt.durationMs,
       attempts: [event.attempt],
     })
+    return
   }
-  const inProgress: TestResult[] = []
-  for (const event of input.events) {
-    if (event.type !== 'scenario-started') continue
-    if (finishedKeys.has(attemptKey(event.scope))) continue
-    const steps = inProgressSteps(input.events, event, liveDiagnostics)
-    const latest = steps.at(-1)
-    const durationMs = latest
-      ? Math.max(
-          0,
-          Date.parse(latest.finishedAt) - Date.parse(event.occurredAt),
-        )
-      : 0
-    const finishedAt = latest?.finishedAt ?? event.occurredAt
-    const scheduled = scheduledResultFor(input.schedule, event)
-    inProgress.push({
-      schemaVersion: 2,
-      specification: scheduled?.specification ?? {
-        name: input.specificationUri,
-        uri: input.specificationUri,
+  const attempts = [...existing.attempts, event.attempt].sort(
+    (left, right) => left.attempt - right.attempt,
+  )
+  const final = attempts.at(-1)
+  if (!final) return
+  finished.set(identity, {
+    ...existing,
+    attempts,
+    state: final.state,
+    finishedAt: final.finishedAt,
+    durationMs: Math.max(
+      0,
+      Date.parse(final.finishedAt) - Date.parse(existing.startedAt),
+    ),
+  })
+}
+
+function projectInProgressResult(
+  input: ProjectLiveSnapshotInput,
+  event: Extract<RunEvent, { type: 'scenario-started' }>,
+  liveDiagnostics: NonNullable<ProjectLiveSnapshotInput['liveDiagnostics']>,
+): TestResult {
+  const steps = inProgressSteps(input.events, event, liveDiagnostics)
+  const latest = steps.at(-1)
+  const finishedAt = latest?.finishedAt ?? event.occurredAt
+  const durationMs = latest
+    ? Math.max(0, Date.parse(finishedAt) - Date.parse(event.occurredAt))
+    : 0
+  const scheduled = scheduledResultFor(input.schedule, event)
+  return {
+    schemaVersion: 2,
+    specification: scheduled?.specification ?? {
+      name: input.specificationUri,
+      uri: input.specificationUri,
+    },
+    scenario: event.scenario,
+    executionTargetProfile: event.executionTargetProfile,
+    state: latest?.state ?? 'passed',
+    startedAt: event.occurredAt,
+    finishedAt,
+    durationMs,
+    attempts: [
+      {
+        attempt: event.scope.attempt,
+        startedAt: event.occurredAt,
+        finishedAt,
+        durationMs,
+        state: latest?.state ?? 'passed',
+        steps,
+        evidenceAvailability: liveEvidenceAvailability(steps),
+        diagnostics: liveDiagnostics
+          .filter(
+            (entry) =>
+              entry.scope &&
+              sameAttemptScope(entry.scope, event.scope) &&
+              entry.diagnostic.stepIndex === undefined,
+          )
+          .map((entry) => entry.diagnostic),
       },
-      scenario: event.scenario,
-      executionTargetProfile: event.executionTargetProfile,
-      state: latest?.state ?? 'passed',
-      startedAt: event.occurredAt,
-      finishedAt,
-      durationMs,
-      attempts: [
-        {
-          attempt: event.scope.attempt,
-          startedAt: event.occurredAt,
-          finishedAt,
-          durationMs,
-          state: latest?.state ?? 'passed',
-          steps,
-          evidenceAvailability: liveEvidenceAvailability(steps),
-          diagnostics: liveDiagnostics
-            .filter(
-              (entry) =>
-                entry.scope &&
-                sameAttemptScope(entry.scope, event.scope) &&
-                entry.diagnostic.stepIndex === undefined,
-            )
-            .map((entry) => entry.diagnostic),
-        },
-      ],
-    })
+    ],
   }
-  return [...finished.values(), ...inProgress]
 }
 
 function scheduledResultFor(

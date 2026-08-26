@@ -54,102 +54,128 @@ export class MobileWorkerRuntime {
   async handle(request: MobileWorkerRequest): Promise<MobileWorkerResponse> {
     switch (request.type) {
       case 'discover-targets':
-        return {
-          version: mobileWorkerProtocolVersion,
-          type: 'targets-discovered',
-          targets: await this.gateway.discoverTargets(
-            request.platform ?? 'android',
-          ),
-        }
-      case 'open-session': {
-        if (
-          this.sessions.has(request.sessionId) ||
-          this.cancelling.has(request.sessionId)
-        ) {
-          throw new Error(
-            `Mobile logical session "${request.sessionId}" is already active`,
-          )
-        }
-        const opened = await this.gateway.openSession({
-          sessionId: request.sessionId,
-          platform: request.platform ?? 'android',
-          targetId: request.targetId,
-          application: request.application,
-          artifactDirectory: request.artifactDirectory,
-          artifacts: request.artifacts,
-          redactions: request.redactions,
-          requiredCapabilities: request.requiredCapabilities,
-          mode: request.mode,
-          scenario: request.scenario,
-          executionCache: request.executionCache,
-        })
-        this.sessions.add(request.sessionId)
-        return {
-          version: mobileWorkerProtocolVersion,
-          type: 'session-opened',
-          sessionId: request.sessionId,
-          targetId: opened.targetId,
-        }
-      }
-      case 'execute-scenario': {
-        if (!this.sessions.has(request.sessionId)) {
-          throw new Error(
-            `Mobile logical session "${request.sessionId}" is not open`,
-          )
-        }
-        const execution = await this.serialize(request.sessionId, () =>
-          this.gateway.executeScenario(request.sessionId),
-        )
-        return {
-          version: mobileWorkerProtocolVersion,
-          type: 'scenario-executed',
-          sessionId: request.sessionId,
-          execution,
-        }
-      }
-      case 'complete-session': {
-        if (!this.sessions.has(request.sessionId)) {
-          throw new Error(
-            `Mobile logical session "${request.sessionId}" is not open`,
-          )
-        }
-        const completion = await this.serialize(request.sessionId, () =>
-          this.gateway.completeSession(request.sessionId),
-        )
-        return {
-          version: mobileWorkerProtocolVersion,
-          type: 'session-completed',
-          sessionId: request.sessionId,
-          completion,
-        }
-      }
+        return this.discoverTargets(request)
+      case 'open-session':
+        return this.openSession(request)
+      case 'execute-scenario':
+        return this.executeScenario(request)
+      case 'complete-session':
+        return this.completeSession(request)
       case 'close-session':
-        await this.serialize(request.sessionId, () =>
-          this.gateway.closeSession(request.sessionId),
-        )
-        this.sessions.delete(request.sessionId)
-        return {
-          version: mobileWorkerProtocolVersion,
-          type: 'session-closed',
-          sessionId: request.sessionId,
-        }
-      case 'cancel-session': {
-        this.cancelling.add(request.sessionId)
-        this.sessions.delete(request.sessionId)
-        try {
-          await (this.gateway.cancelSession?.(request.sessionId) ??
-            this.gateway.closeSession(request.sessionId))
-          await this.queues.get(request.sessionId)?.catch(() => {})
-        } finally {
-          this.queues.delete(request.sessionId)
-          this.cancelling.delete(request.sessionId)
-        }
-        return {
-          version: mobileWorkerProtocolVersion,
-          type: 'session-cancelled',
-          sessionId: request.sessionId,
-        }
-      }
+        return this.closeSession(request.sessionId)
+      case 'cancel-session':
+        return this.cancelSession(request.sessionId)
+    }
+  }
+
+  private async discoverTargets(
+    request: Extract<MobileWorkerRequest, { type: 'discover-targets' }>,
+  ): Promise<MobileWorkerResponse> {
+    return {
+      version: mobileWorkerProtocolVersion,
+      type: 'targets-discovered',
+      targets: await this.gateway.discoverTargets(
+        request.platform ?? 'android',
+      ),
+    }
+  }
+
+  private async openSession(
+    request: Extract<MobileWorkerRequest, { type: 'open-session' }>,
+  ): Promise<MobileWorkerResponse> {
+    if (
+      this.sessions.has(request.sessionId) ||
+      this.cancelling.has(request.sessionId)
+    ) {
+      throw new Error(
+        `Mobile logical session "${request.sessionId}" is already active`,
+      )
+    }
+    const opened = await this.gateway.openSession({
+      sessionId: request.sessionId,
+      platform: request.platform ?? 'android',
+      targetId: request.targetId,
+      application: request.application,
+      artifactDirectory: request.artifactDirectory,
+      artifacts: request.artifacts,
+      redactions: request.redactions,
+      requiredCapabilities: request.requiredCapabilities,
+      mode: request.mode,
+      scenario: request.scenario,
+      executionCache: request.executionCache,
+    })
+    this.sessions.add(request.sessionId)
+    return {
+      version: mobileWorkerProtocolVersion,
+      type: 'session-opened',
+      sessionId: request.sessionId,
+      targetId: opened.targetId,
+    }
+  }
+
+  private requireSession(sessionId: string): void {
+    if (!this.sessions.has(sessionId)) {
+      throw new Error(`Mobile logical session "${sessionId}" is not open`)
+    }
+  }
+
+  private async executeScenario(
+    request: Extract<MobileWorkerRequest, { type: 'execute-scenario' }>,
+  ): Promise<MobileWorkerResponse> {
+    this.requireSession(request.sessionId)
+    const execution = await this.serialize(request.sessionId, () =>
+      this.gateway.executeScenario(request.sessionId),
+    )
+    return {
+      version: mobileWorkerProtocolVersion,
+      type: 'scenario-executed',
+      sessionId: request.sessionId,
+      execution,
+    }
+  }
+
+  private async completeSession(
+    request: Extract<MobileWorkerRequest, { type: 'complete-session' }>,
+  ): Promise<MobileWorkerResponse> {
+    this.requireSession(request.sessionId)
+    const completion = await this.serialize(request.sessionId, () =>
+      this.gateway.completeSession(request.sessionId),
+    )
+    return {
+      version: mobileWorkerProtocolVersion,
+      type: 'session-completed',
+      sessionId: request.sessionId,
+      completion,
+    }
+  }
+
+  private async closeSession(sessionId: string): Promise<MobileWorkerResponse> {
+    await this.serialize(sessionId, () => this.gateway.closeSession(sessionId))
+    this.sessions.delete(sessionId)
+    return {
+      version: mobileWorkerProtocolVersion,
+      type: 'session-closed',
+      sessionId,
+    }
+  }
+
+  private async cancelSession(
+    sessionId: string,
+  ): Promise<MobileWorkerResponse> {
+    this.cancelling.add(sessionId)
+    this.sessions.delete(sessionId)
+    try {
+      await (this.gateway.cancelSession?.(sessionId) ??
+        this.gateway.closeSession(sessionId))
+      await this.queues.get(sessionId)?.catch(() => {})
+    } finally {
+      this.queues.delete(sessionId)
+      this.cancelling.delete(sessionId)
+    }
+    return {
+      version: mobileWorkerProtocolVersion,
+      type: 'session-cancelled',
+      sessionId,
     }
   }
 

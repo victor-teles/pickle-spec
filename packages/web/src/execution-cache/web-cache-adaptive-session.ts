@@ -46,6 +46,77 @@ function definedSteps(
   return values.every((value) => value !== undefined)
 }
 
+async function compileAssertionDraft(
+  automation: WebAutomation,
+  prompt: string,
+  signal: AbortSignal | undefined,
+): Promise<WebAssertionDraft | undefined> {
+  try {
+    return await automation.compileAssertion?.(prompt, signal)
+  } catch {
+    return undefined
+  }
+}
+
+function verificationExecution(
+  prompt: string,
+  meetsExpectation: boolean,
+  actualState: string,
+): StepExecution {
+  const resolvedActions = [{ description: `Verify: ${prompt}` }]
+  return meetsExpectation
+    ? { state: 'passed', resolvedActions }
+    : {
+        state: 'failed',
+        resolvedActions,
+        message: `Expected: "${prompt}" | Actual: ${actualState}`,
+      }
+}
+
+type ObservedActions = Awaited<ReturnType<WebAutomation['observe']>>
+
+async function observeActions(
+  automation: WebAutomation,
+  prompt: string,
+  signal: AbortSignal | undefined,
+  onInference: () => void,
+): Promise<ObservedActions> {
+  let actions = await automation.observe(prompt, signal)
+  onInference()
+  if (actions.length > 0) return actions
+  actions = await automation.observe(prompt, signal)
+  onInference()
+  return actions
+}
+
+async function executeObservedActions(
+  automation: WebAutomation,
+  actions: ObservedActions,
+  signal: AbortSignal | undefined,
+  onInference: () => void,
+): Promise<StepExecution> {
+  const resolvedActions: ResolvedAction[] = []
+  for (const action of actions) {
+    onInference()
+    const result = await automation.act(action, signal)
+    resolvedActions.push({ description: action.description })
+    if (!result.success) {
+      return {
+        state: 'failed',
+        resolvedActions,
+        message: result.message ?? 'Web action failed',
+      }
+    }
+  }
+  return actions.length > 0
+    ? { state: 'passed', resolvedActions }
+    : {
+        state: 'failed',
+        resolvedActions,
+        message: 'Observe returned no actions',
+      }
+}
+
 export function createWebAdaptiveSession({
   input,
   options,
@@ -129,12 +200,7 @@ export function createWebAdaptiveSession({
     )
     if (navigationFailure) return navigationFailure
     inferenceCount++
-    let draft: WebAssertionDraft | undefined
-    try {
-      draft = await automation.compileAssertion?.(prompt, signal)
-    } catch {
-      draft = undefined
-    }
+    const draft = await compileAssertionDraft(automation, prompt, signal)
     const assertion = draft
       ? compileWebAssertion(draft, runtimeBindings)
       : undefined
@@ -150,16 +216,11 @@ export function createWebAdaptiveSession({
       : 'non-deterministic-assertion'
     inferenceCount++
     const verification = await automation.verify(prompt, signal)
-    return verification.meetsExpectation
-      ? {
-          state: 'passed',
-          resolvedActions: [{ description: `Verify: ${prompt}` }],
-        }
-      : {
-          state: 'failed',
-          resolvedActions: [{ description: `Verify: ${prompt}` }],
-          message: `Expected: "${prompt}" | Actual: ${verification.actualState}`,
-        }
+    return verificationExecution(
+      prompt,
+      verification.meetsExpectation,
+      verification.actualState,
+    )
   }
 
   async function adaptiveAction(
@@ -174,12 +235,12 @@ export function createWebAdaptiveSession({
       signal,
     )
     if (navigationFailure) return navigationFailure
-    let actions = await automation.observe(prompt, signal)
-    inferenceCount++
-    if (actions.length === 0) {
-      actions = await automation.observe(prompt, signal)
-      inferenceCount++
-    }
+    const actions = await observeActions(
+      automation,
+      prompt,
+      signal,
+      () => inferenceCount++,
+    )
     const compiled = actions.map((action) => {
       const payload = parseObservedActionPayload(action.handle)
       return payload
@@ -195,26 +256,12 @@ export function createWebAdaptiveSession({
       return executeCompiledStep(instructions, compiled, index, signal)
     }
     uncacheableReason = 'non-deterministic-action'
-    const resolvedActions: ResolvedAction[] = []
-    for (const action of actions) {
-      inferenceCount++
-      const result = await automation.act(action, signal)
-      resolvedActions.push({ description: action.description })
-      if (!result.success) {
-        return {
-          state: 'failed',
-          resolvedActions,
-          message: result.message ?? 'Web action failed',
-        }
-      }
-    }
-    return actions.length > 0
-      ? { state: 'passed', resolvedActions }
-      : {
-          state: 'failed',
-          resolvedActions,
-          message: 'Observe returned no actions',
-        }
+    return executeObservedActions(
+      automation,
+      actions,
+      signal,
+      () => inferenceCount++,
+    )
   }
 
   return {

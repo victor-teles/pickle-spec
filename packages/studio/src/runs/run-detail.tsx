@@ -44,21 +44,19 @@ type RunDetailProps = {
 
 const resultRowHeight = 56
 
-export function RunDetail(props: RunDetailProps) {
-  const [fetched, setFetched] = useState<StudioRunSnapshot>()
+function useFetchedRunSnapshot(props: RunDetailProps) {
+  const [snapshot, setSnapshot] = useState<StudioRunSnapshot>()
   const [error, setError] = useState<string>()
-  const [includeAllArtifacts, setIncludeAllArtifacts] = useState(false)
-
   useEffect(() => {
     if (props.live?.snapshot) return
     let cancelled = false
-    setFetched(undefined)
+    setSnapshot(undefined)
     setError(undefined)
-    props
+    void props
       .api<StudioRunSnapshot>(`/api/runs/${encodeURIComponent(props.runId)}`)
       .then(
-        (snapshot) => {
-          if (!cancelled) setFetched(snapshot)
+        (value) => {
+          if (!cancelled) setSnapshot(value)
         },
         (reason: unknown) => {
           if (!cancelled) setError(reasonMessage(reason))
@@ -68,25 +66,19 @@ export function RunDetail(props: RunDetailProps) {
       cancelled = true
     }
   }, [props.api, props.live?.snapshot, props.runId])
+  return { snapshot, error }
+}
 
-  const snapshot = props.live?.snapshot ?? fetched
-  const attempts = useMemo(
-    () =>
-      (snapshot?.manifest?.results ?? []).flatMap((result) =>
-        result.attempts.map((attempt) => ({ result, attempt })),
-      ),
-    [snapshot?.manifest?.results],
-  )
-  const resultWindow = useVirtualWindow<HTMLDivElement>({
-    count: attempts.length,
-    itemSize: resultRowHeight,
-  })
+export function RunDetail(props: RunDetailProps) {
+  const fetched = useFetchedRunSnapshot(props)
+  const [includeAllArtifacts, setIncludeAllArtifacts] = useState(false)
+  const snapshot = props.live?.snapshot ?? fetched.snapshot
 
-  if (error) {
+  if (fetched.error) {
     return (
       <RunDetailMessage onBack={props.onBack}>
         <p role="alert" className="text-sm text-destructive">
-          {error}
+          {fetched.error}
         </p>
       </RunDetailMessage>
     )
@@ -98,79 +90,126 @@ export function RunDetail(props: RunDetailProps) {
       </section>
     )
   }
+  return (
+    <LoadedRunDetail
+      {...props}
+      manifest={snapshot.manifest}
+      includeAllArtifacts={includeAllArtifacts}
+      onIncludeAllArtifacts={setIncludeAllArtifacts}
+    />
+  )
+}
 
-  const manifest = snapshot.manifest
+function RunDetailHeader(
+  props: RunDetailProps & {
+    manifest: TestRunManifest
+    running: boolean
+    artifactMode: 'all' | 'failures'
+    includeAllArtifacts: boolean
+    onIncludeAllArtifacts: (include: boolean) => void
+  },
+) {
+  const displayState = props.running ? 'running' : props.manifest.state
+  const rerunDisabled =
+    props.runsBlocked ||
+    (props.manifest.state !== 'failed' &&
+      props.manifest.state !== 'infrastructure-error')
+  function cancelRun() {
+    props.onCancel(props.manifest.id)
+  }
+  function rerunFailures() {
+    void props.onRerun({ rerunId: props.manifest.id, failures: true })
+  }
+  return (
+    <header className="flex flex-wrap items-start justify-between gap-3 border-b border-border pb-4">
+      <div className="min-w-0 space-y-2">
+        <Button type="button" variant="ghost" size="sm" onClick={props.onBack}>
+          Back to Runs
+        </Button>
+        <div className="flex flex-wrap items-center gap-2">
+          <h1 className="studio-display text-lg sm:text-xl">
+            Test run {props.manifest.id}
+          </h1>
+          <Badge
+            variant={
+              displayState === 'running'
+                ? 'running'
+                : resultBadgeVariant(displayState)
+            }
+          >
+            <ResultMark state={displayState} />
+            {displayState}
+          </Badge>
+        </div>
+        <p className="text-xs text-muted-foreground">
+          {props.manifest.sourceRunId
+            ? `Rerun of ${props.manifest.sourceRunId}`
+            : 'Original Test run'}
+        </p>
+        {props.live?.connection.kind === 'disconnected' ? (
+          <p role="status" className="text-sm text-destructive">
+            {props.live.connection.message}
+          </p>
+        ) : null}
+      </div>
+      <div className="flex flex-wrap items-center gap-2">
+        {props.running ? (
+          <Button type="button" variant="destructive" onClick={cancelRun}>
+            Cancel Test run
+          </Button>
+        ) : (
+          <ExportMenu
+            runId={props.manifest.id}
+            artifactMode={props.artifactMode}
+            includeAllArtifacts={props.includeAllArtifacts}
+            onIncludeAllArtifacts={props.onIncludeAllArtifacts}
+          />
+        )}
+        <Button
+          type="button"
+          variant="outline"
+          disabled={rerunDisabled}
+          onClick={rerunFailures}
+        >
+          Rerun failures
+        </Button>
+      </div>
+    </header>
+  )
+}
+
+function LoadedRunDetail(
+  props: RunDetailProps & {
+    manifest: TestRunManifest
+    includeAllArtifacts: boolean
+    onIncludeAllArtifacts: (include: boolean) => void
+  },
+) {
+  const manifest = props.manifest
+  const includeAllArtifacts = props.includeAllArtifacts
+  const attempts = useMemo(
+    () =>
+      manifest.results.flatMap((result) =>
+        result.attempts.map((attempt) => ({ result, attempt })),
+      ),
+    [manifest.results],
+  )
+  const resultWindow = useVirtualWindow<HTMLDivElement>({
+    count: attempts.length,
+    itemSize: resultRowHeight,
+  })
   const running = props.live?.phase === 'running'
   const artifactMode = includeAllArtifacts ? 'all' : 'failures'
   const visibleAttempts = attempts.slice(resultWindow.start, resultWindow.end)
 
   return (
     <section className="min-h-0 flex-1 space-y-5 overflow-auto px-3 py-4 sm:px-5">
-      <header className="flex flex-wrap items-start justify-between gap-3 border-b border-border pb-4">
-        <div className="min-w-0 space-y-2">
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            onClick={props.onBack}
-          >
-            Back to Runs
-          </Button>
-          <div className="flex flex-wrap items-center gap-2">
-            <h1 className="studio-display text-lg sm:text-xl">
-              Test run {manifest.id}
-            </h1>
-            <Badge
-              variant={running ? 'running' : resultBadgeVariant(manifest.state)}
-            >
-              <ResultMark state={running ? 'running' : manifest.state} />
-              {running ? 'running' : manifest.state}
-            </Badge>
-          </div>
-          <p className="text-xs text-muted-foreground">
-            {manifest.sourceRunId
-              ? `Rerun of ${manifest.sourceRunId}`
-              : 'Original Test run'}
-          </p>
-          {props.live?.connection.kind === 'disconnected' ? (
-            <p role="status" className="text-sm text-destructive">
-              {props.live.connection.message}
-            </p>
-          ) : null}
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          {running ? (
-            <Button
-              type="button"
-              variant="destructive"
-              onClick={() => props.onCancel(manifest.id)}
-            >
-              Cancel Test run
-            </Button>
-          ) : (
-            <ExportMenu
-              runId={manifest.id}
-              artifactMode={artifactMode}
-              includeAllArtifacts={includeAllArtifacts}
-              onIncludeAllArtifacts={setIncludeAllArtifacts}
-            />
-          )}
-          <Button
-            type="button"
-            variant="outline"
-            disabled={
-              props.runsBlocked ||
-              (manifest.state !== 'failed' &&
-                manifest.state !== 'infrastructure-error')
-            }
-            onClick={() =>
-              void props.onRerun({ rerunId: manifest.id, failures: true })
-            }
-          >
-            Rerun failures
-          </Button>
-        </div>
-      </header>
+      <RunDetailHeader
+        {...props}
+        manifest={manifest}
+        running={running}
+        artifactMode={artifactMode}
+      />
 
       <RunMetadata manifest={manifest} />
 

@@ -212,34 +212,42 @@ export function createWebEvidenceCollector(
     }
   }
 
+  function recordBufferedEntry(
+    entry: z.infer<typeof bufferedEvidenceSchema>[number],
+  ): void {
+    if (entry.kind === 'diagnostic') {
+      const { kind: _kind, ...diagnostic } = entry
+      diagnostics.push(diagnostic)
+      return
+    }
+    const { kind: _kind, ...browserActivity } = entry
+    activity.push(browserActivity)
+  }
+
+  async function collectPage(page: unknown): Promise<void> {
+    if (!isObservablePage(page)) return
+    try {
+      const parsed = bufferedEvidenceSchema.safeParse(
+        await page.evaluate(consumeWebEvidenceScript),
+      )
+      if (!parsed.success) {
+        recordDiagnostic(
+          'adapter',
+          'Browser evidence buffer returned invalid data',
+        )
+        return
+      }
+      for (const entry of parsed.data) recordBufferedEntry(entry)
+    } catch (error) {
+      recordAdapterFailure('Browser evidence collection failed', error)
+    }
+  }
+
   async function collect(
     pages: readonly unknown[],
   ): Promise<CollectedWebEvidence> {
     for (const page of pages) {
-      if (!isObservablePage(page)) continue
-      try {
-        const parsed = bufferedEvidenceSchema.safeParse(
-          await page.evaluate(consumeWebEvidenceScript),
-        )
-        if (!parsed.success) {
-          recordDiagnostic(
-            'adapter',
-            'Browser evidence buffer returned invalid data',
-          )
-        } else {
-          for (const entry of parsed.data) {
-            if (entry.kind === 'diagnostic') {
-              const { kind: _kind, ...diagnostic } = entry
-              diagnostics.push(diagnostic)
-            } else {
-              const { kind: _kind, ...browserActivity } = entry
-              activity.push(browserActivity)
-            }
-          }
-        }
-      } catch (error) {
-        recordAdapterFailure('Browser evidence collection failed', error)
-      }
+      await collectPage(page)
     }
     return consume()
   }

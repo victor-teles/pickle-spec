@@ -128,32 +128,41 @@ function mapSourceArgument(step: Step): ScenarioStep['argument'] {
   return undefined
 }
 
+function addStepInfo(
+  result: Map<string, ScenarioStep>,
+  steps: readonly Step[],
+): void {
+  let previous: ScenarioStepType = 'context'
+  for (const step of steps) {
+    previous = stepType(step.keywordType, previous)
+    const argument = mapSourceArgument(step)
+    result.set(step.id, {
+      keyword: step.keyword.trim(),
+      text: step.text,
+      type: previous,
+      argument,
+    })
+  }
+}
+
+function addChildStepInfo(
+  result: Map<string, ScenarioStep>,
+  child: FeatureChild | RuleChild,
+): void {
+  if (child.background) addStepInfo(result, child.background.steps)
+  if (child.scenario) addStepInfo(result, child.scenario.steps)
+  if ('rule' in child && child.rule) {
+    for (const ruleChild of child.rule.children) {
+      addChildStepInfo(result, ruleChild)
+    }
+  }
+}
+
 function collectStepInfo(document: GherkinDocument): Map<string, ScenarioStep> {
   const result = new Map<string, ScenarioStep>()
-
-  function addSteps(steps: readonly Step[]): void {
-    let previous: ScenarioStepType = 'context'
-    for (const step of steps) {
-      previous = stepType(step.keywordType, previous)
-      const argument = mapSourceArgument(step)
-      result.set(step.id, {
-        keyword: step.keyword.trim(),
-        text: step.text,
-        type: previous,
-        argument,
-      })
-    }
-  }
-
   for (const child of document.feature?.children ?? []) {
-    if (child.background) addSteps(child.background.steps)
-    if (child.scenario) addSteps(child.scenario.steps)
-    for (const ruleChild of child.rule?.children ?? []) {
-      if (ruleChild.background) addSteps(ruleChild.background.steps)
-      if (ruleChild.scenario) addSteps(ruleChild.scenario.steps)
-    }
+    addChildStepInfo(result, child)
   }
-
   return result
 }
 
@@ -340,46 +349,57 @@ function mapScenario(
   }
 }
 
+function collectExamplesRows(
+  scenarioName: string,
+  examples: Examples,
+  rowsById: Map<string, OutlineRow>,
+): void {
+  const header = examples.tableHeader?.cells.map((cell) => cell.value) ?? []
+  const duplicate = header.find((name, index) => header.indexOf(name) !== index)
+  if (duplicate) {
+    throw new Error(
+      `Scenario Outline Examples contain duplicate variable name "${duplicate}"`,
+    )
+  }
+  const examplesTags = examples.tags.map((tag) => tag.name)
+  for (const row of examples.tableBody) {
+    rowsById.set(row.id, {
+      header,
+      cells: row.cells.map((cell) => cell.value),
+      examplesTags,
+      examplesName: examples.name,
+      scenarioName,
+    })
+  }
+}
+
+function collectChildIdentity(
+  child: FeatureChild | RuleChild,
+  scenariosById: Map<string, { tags: string[]; name: string }>,
+  rowsById: Map<string, OutlineRow>,
+): void {
+  if (child.scenario) {
+    scenariosById.set(child.scenario.id, {
+      tags: child.scenario.tags.map((tag) => tag.name),
+      name: child.scenario.name,
+    })
+    for (const examples of child.scenario.examples) {
+      collectExamplesRows(child.scenario.name, examples, rowsById)
+    }
+  }
+  if ('rule' in child && child.rule) {
+    for (const ruleChild of child.rule.children) {
+      collectChildIdentity(ruleChild, scenariosById, rowsById)
+    }
+  }
+}
+
 function collectIdentityNodes(
   document: GherkinDocument,
   scenariosById: Map<string, { tags: string[]; name: string }>,
   rowsById: Map<string, OutlineRow>,
 ): void {
-  function visitExamples(scenarioName: string, examples: Examples): void {
-    const header = examples.tableHeader?.cells.map((cell) => cell.value) ?? []
-    const duplicate = header.find(
-      (name, index) => header.indexOf(name) !== index,
-    )
-    if (duplicate) {
-      throw new Error(
-        `Scenario Outline Examples contain duplicate variable name "${duplicate}"`,
-      )
-    }
-    const examplesTags = examples.tags.map((tag) => tag.name)
-    for (const row of examples.tableBody) {
-      rowsById.set(row.id, {
-        header,
-        cells: row.cells.map((cell) => cell.value),
-        examplesTags,
-        examplesName: examples.name,
-        scenarioName,
-      })
-    }
+  for (const child of document.feature?.children ?? []) {
+    collectChildIdentity(child, scenariosById, rowsById)
   }
-
-  function visitChild(child: FeatureChild | RuleChild): void {
-    if (child.scenario) {
-      scenariosById.set(child.scenario.id, {
-        tags: child.scenario.tags.map((tag) => tag.name),
-        name: child.scenario.name,
-      })
-      for (const examples of child.scenario.examples)
-        visitExamples(child.scenario.name, examples)
-    }
-    if ('rule' in child && child.rule) {
-      for (const ruleChild of child.rule.children) visitChild(ruleChild)
-    }
-  }
-
-  for (const child of document.feature?.children ?? []) visitChild(child)
 }

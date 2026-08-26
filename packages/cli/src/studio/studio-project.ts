@@ -94,31 +94,7 @@ async function studioCatalog(
 
 function profileDetails(config: PickleConfig): StudioProfile[] {
   if (config.executionTargetProfiles) {
-    return Object.entries(config.executionTargetProfiles).map(
-      ([id, profile]) => ({
-        id,
-        adapter: profile.adapter,
-        ...(profile.capabilities
-          ? { capabilities: [...profile.capabilities] }
-          : {}),
-        ...(profile.mobile
-          ? {
-              mobile: {
-                ...profile.mobile,
-                executionTarget:
-                  profile.mobile.executionTarget ?? 'android-emulator',
-                application: { ...profile.mobile.application },
-                artifacts: profile.mobile.artifacts
-                  ? [...profile.mobile.artifacts]
-                  : undefined,
-                redactions: profile.mobile.redactions?.map((redaction) => ({
-                  ...redaction,
-                })),
-              },
-            }
-          : {}),
-      }),
-    )
+    return Object.entries(config.executionTargetProfiles).map(profileDetail)
   }
   const profile = config.executionTargetProfile
   return [
@@ -130,6 +106,33 @@ function profileDetails(config: PickleConfig): StudioProfile[] {
         : {}),
     },
   ]
+}
+
+function profileDetail([id, profile]: [
+  string,
+  ProjectExecutionTargetProfile,
+]): StudioProfile {
+  const mobile = profile.mobile
+    ? {
+        ...profile.mobile,
+        executionTarget: profile.mobile.executionTarget ?? 'android-emulator',
+        application: { ...profile.mobile.application },
+        artifacts: profile.mobile.artifacts
+          ? [...profile.mobile.artifacts]
+          : undefined,
+        redactions: profile.mobile.redactions?.map((redaction) => ({
+          ...redaction,
+        })),
+      }
+    : undefined
+  return {
+    id,
+    adapter: profile.adapter,
+    ...(profile.capabilities
+      ? { capabilities: [...profile.capabilities] }
+      : {}),
+    ...(mobile ? { mobile } : {}),
+  }
 }
 
 function suiteDetails(config: PickleConfig): StudioSuite[] {
@@ -151,6 +154,93 @@ function stubAdapter(capabilities?: readonly string[]): ExecutionTargetAdapter {
   }
 }
 
+function readinessSelections(
+  request: StudioRunRequest | undefined,
+  config: PickleConfig,
+  specifications: readonly Specification[],
+  reasons: string[],
+) {
+  const suiteSelection = request?.suite
+    ? config.suites?.[request.suite]
+    : undefined
+  if (request?.suite && !suiteSelection) {
+    reasons.push(`Unknown test suite "${request.suite}"`)
+  }
+  const selections = selectScenarios(specifications, {
+    ...suiteSelection,
+    ...studioRunSelection(request),
+  })
+  if (selections.length === 0) {
+    reasons.push('No Scenarios match the current selection')
+  }
+  return selections
+}
+
+function validateReadinessTargets(
+  request: StudioRunRequest | undefined,
+  config: PickleConfig,
+  selections: ReturnType<typeof selectScenarios>,
+  reasons: string[],
+): void {
+  const runConfiguration = runConfigurationFrom(config, request?.profiles)
+  const profiles =
+    runConfiguration.executionTargetProfiles ??
+    (runConfiguration.executionTargetProfile
+      ? [runConfiguration.executionTargetProfile]
+      : [])
+  if (profiles.length === 0) {
+    reasons.push('A test run must select at least one execution target profile')
+  }
+  validateTargetSelection(
+    selections,
+    profiles.map((profile) => ({
+      executionTargetProfile: profile,
+      adapter: stubAdapter(profile.capabilities),
+    })),
+  )
+}
+
+function hasEnvironmentModelCredential(config: PickleConfig): boolean {
+  return Boolean(
+    config.web?.browser?.modelApiKey ||
+      process.env.OPENAI_API_KEY ||
+      process.env.ANTHROPIC_API_KEY ||
+      process.env.GOOGLE_API_KEY ||
+      process.env.GEMINI_API_KEY ||
+      process.env.GOOGLE_GENERATIVE_AI_API_KEY,
+  )
+}
+
+async function hasReferencedModelCredential(
+  context: StudioProjectContext,
+  config: PickleConfig,
+): Promise<boolean> {
+  for (const [name, ref] of Object.entries(config.secrets ?? {})) {
+    if (process.env[name] || (await context.credentials.has(ref.keychain))) {
+      return true
+    }
+  }
+  return false
+}
+
+async function appendCredentialReadiness(
+  context: StudioProjectContext,
+  config: PickleConfig,
+  reasons: string[],
+): Promise<void> {
+  const usesWeb = profileDetails(config).some(
+    (profile) => profile.adapter === 'web',
+  )
+  if (!usesWeb || hasEnvironmentModelCredential(config)) return
+  const secretNames = Object.keys(config.secrets ?? {})
+  if (await hasReferencedModelCredential(context, config)) return
+  reasons.push(
+    secretNames.length === 0
+      ? 'Store a model credential in the system keychain before a web test run'
+      : 'The referenced model credential is not available',
+  )
+}
+
 export async function studioRunReadiness(
   context: StudioProjectContext,
   request: StudioRunRequest | undefined,
@@ -159,72 +249,57 @@ export async function studioRunReadiness(
 ): Promise<StudioRunReadiness> {
   const reasons: string[] = []
   try {
-    const suiteSelection = request?.suite
-      ? config.suites?.[request.suite]
-      : undefined
-    if (request?.suite && !suiteSelection) {
-      reasons.push(`Unknown test suite "${request.suite}"`)
-    }
-    const selection = {
-      ...suiteSelection,
-      ...studioRunSelection(request),
-    }
-    const selections = selectScenarios(specifications, selection)
-    if (selections.length === 0) {
-      reasons.push('No Scenarios match the current selection')
-    }
-    const runConfiguration = runConfigurationFrom(config, request?.profiles)
-    const profiles =
-      runConfiguration.executionTargetProfiles ??
-      (runConfiguration.executionTargetProfile
-        ? [runConfiguration.executionTargetProfile]
-        : [])
-    if (profiles.length === 0) {
-      reasons.push(
-        'A test run must select at least one execution target profile',
-      )
-    }
-    const targets = profiles.map((profile) => ({
-      executionTargetProfile: profile,
-      adapter: stubAdapter(profile.capabilities),
-    }))
-    validateTargetSelection(selections, targets)
-    const usesWeb = profileDetails(config).some(
-      (profile) => profile.adapter === 'web',
+    const selections = readinessSelections(
+      request,
+      config,
+      specifications,
+      reasons,
     )
-    if (usesWeb) {
-      const secretNames = Object.keys(config.secrets ?? {})
-      let present = Boolean(
-        config.web?.browser?.modelApiKey ||
-          process.env.OPENAI_API_KEY ||
-          process.env.ANTHROPIC_API_KEY ||
-          process.env.GOOGLE_API_KEY ||
-          process.env.GEMINI_API_KEY ||
-          process.env.GOOGLE_GENERATIVE_AI_API_KEY,
-      )
-      if (!present) {
-        for (const [name, ref] of Object.entries(config.secrets ?? {})) {
-          if (
-            process.env[name] ||
-            (await context.credentials.has(ref.keychain))
-          ) {
-            present = true
-            break
-          }
-        }
-      }
-      if (!present && secretNames.length === 0) {
-        reasons.push(
-          'Store a model credential in the system keychain before a web test run',
-        )
-      } else if (!present) {
-        reasons.push('The referenced model credential is not available')
-      }
-    }
+    validateReadinessTargets(request, config, selections, reasons)
+    await appendCredentialReadiness(context, config, reasons)
   } catch (error) {
     reasons.push(error instanceof Error ? error.message : String(error))
   }
   return { ready: reasons.length === 0, reasons }
+}
+
+function patchedExecutionTargetProfile(
+  profile: NonNullable<StudioConfigPatch['executionTargetProfiles']>[string],
+  existing: ProjectExecutionTargetProfile | undefined,
+): ProjectExecutionTargetProfile {
+  const retainedMobile =
+    profile.adapter === 'mobile' && existing?.mobile
+      ? { mobile: existing.mobile }
+      : {}
+  return {
+    adapter: profile.adapter,
+    ...(profile.capabilities
+      ? { capabilities: [...profile.capabilities] }
+      : {}),
+    ...(existing?.web ? { web: existing.web } : {}),
+    ...retainedMobile,
+    ...(profile.mobile
+      ? {
+          mobile: {
+            ...profile.mobile,
+            application: { ...profile.mobile.application },
+          },
+        }
+      : {}),
+  }
+}
+
+function patchExecutionTargetProfiles(
+  config: PickleConfig,
+  patch: NonNullable<StudioConfigPatch['executionTargetProfiles']>,
+): Record<string, ProjectExecutionTargetProfile> {
+  const existing = config.executionTargetProfiles ?? {}
+  return Object.fromEntries(
+    Object.entries(patch).map(([id, profile]) => [
+      id,
+      patchedExecutionTargetProfile(profile, existing[id]),
+    ]),
+  )
 }
 
 export async function loadStudioProject(
@@ -281,28 +356,10 @@ export async function patchStudioConfig(
   if (patch.links) next.links = patch.links
   if (patch.secrets) next.secrets = patch.secrets
   if (patch.executionTargetProfiles) {
-    const existing = config.executionTargetProfiles ?? {}
-    const profiles: Record<string, ProjectExecutionTargetProfile> = {}
-    for (const [id, profile] of Object.entries(patch.executionTargetProfiles)) {
-      profiles[id] = {
-        adapter: profile.adapter,
-        ...(profile.capabilities
-          ? { capabilities: [...profile.capabilities] }
-          : {}),
-        ...(existing[id]?.web ? { web: existing[id].web } : {}),
-        ...(profile.mobile
-          ? {
-              mobile: {
-                ...profile.mobile,
-                application: { ...profile.mobile.application },
-              },
-            }
-          : profile.adapter === 'mobile' && existing[id]?.mobile
-            ? { mobile: existing[id].mobile }
-            : {}),
-      }
-    }
-    next.executionTargetProfiles = profiles
+    next.executionTargetProfiles = patchExecutionTargetProfiles(
+      config,
+      patch.executionTargetProfiles,
+    )
     next.executionTargetProfile = undefined
   }
   await saveConfig(next, context.configPath, context.root)

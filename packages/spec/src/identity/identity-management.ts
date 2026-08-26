@@ -190,36 +190,37 @@ function recordIdentifier(
 }
 
 function resolvedNodeId(node: IdentityNode, uri: string): string {
-  if (node.kind === 'examples-row') {
-    const explicit = node.pickleIdValue?.trim()
-    if (explicit) return explicit
-    return identifierDigest([
-      'examples-row',
-      uri,
-      node.specificationName,
-      node.scenarioName ?? '',
-      node.examplesName ?? '',
-      ...(node.rowValues ?? []),
-    ])
+  switch (node.kind) {
+    case 'examples-row': {
+      const explicit = node.pickleIdValue?.trim()
+      if (explicit) return explicit
+      return identifierDigest([
+        'examples-row',
+        uri,
+        node.specificationName,
+        node.scenarioName ?? '',
+        node.examplesName ?? '',
+        ...(node.rowValues ?? []),
+      ])
+    }
+    case 'feature':
+      return resolveSpecificationId(uri, node.specificationName, node.tags)
+    case 'scenario':
+      return resolveScenarioId(
+        uri,
+        node.specificationName,
+        node.scenarioName ?? '',
+        node.tags,
+      )
+    case 'examples':
+      return resolveExamplesId(
+        uri,
+        node.specificationName,
+        node.scenarioName ?? '',
+        node.examplesName ?? '',
+        node.tags,
+      )
   }
-  if (node.kind === 'feature') {
-    return resolveSpecificationId(uri, node.specificationName, node.tags)
-  }
-  if (node.kind === 'scenario') {
-    return resolveScenarioId(
-      uri,
-      node.specificationName,
-      node.scenarioName ?? '',
-      node.tags,
-    )
-  }
-  return resolveExamplesId(
-    uri,
-    node.specificationName,
-    node.scenarioName ?? '',
-    node.examplesName ?? '',
-    node.tags,
-  )
 }
 
 function validateExamplesRow(

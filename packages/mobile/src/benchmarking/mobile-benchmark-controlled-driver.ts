@@ -6,6 +6,7 @@ import {
   finalScenarioAttempt,
   openLocalExecutionCache,
   runScenario,
+  type TestResult,
 } from '@pickle-spec/runner'
 import {
   assertNoProviderCredentials,
@@ -69,6 +70,177 @@ const scenario = {
   runtimeBindings,
 }
 
+type OpenSessionRequest = Extract<MobileWorkerRequest, { type: 'open-session' }>
+type ExecuteScenarioRequest = Extract<
+  MobileWorkerRequest,
+  { type: 'execute-scenario' }
+>
+type CompleteSessionRequest = Extract<
+  MobileWorkerRequest,
+  { type: 'complete-session' }
+>
+
+interface ControlledWorkerState {
+  opened: Map<string, OpenSessionRequest>
+  executedAdaptive: Map<string, ReturnType<typeof compileMobileScenario>>
+  modes: Array<'adaptive' | 'replay'>
+  scriptsMatched: boolean
+  adaptiveScriptDigest?: string
+}
+
+function requireControlledSession(
+  state: ControlledWorkerState,
+  sessionId: string,
+): OpenSessionRequest {
+  const session = state.opened.get(sessionId)
+  if (!session) throw new Error('Controlled mobile session is absent')
+  return session
+}
+
+function digestScript(script: unknown): string | undefined {
+  return typeof script === 'string'
+    ? createHash('sha256').update(script).digest('hex')
+    : undefined
+}
+
+function controlledScenarioExecution(
+  state: ControlledWorkerState,
+  request: ExecuteScenarioRequest,
+) {
+  const session = requireControlledSession(state, request.sessionId)
+  const adaptive =
+    session.mode === 'adaptive'
+      ? compileMobileScenario({
+          platform: 'android',
+          applicationId,
+          scenario: session.scenario,
+        })
+      : undefined
+  if (adaptive) state.executedAdaptive.set(request.sessionId, adaptive)
+  const script =
+    adaptive?.payload.script ?? session.executionCache?.adapterPayload.script
+  const digest = digestScript(script)
+  if (session.mode === 'adaptive') state.adaptiveScriptDigest = digest
+  else state.scriptsMatched &&= digest === state.adaptiveScriptDigest
+  if (!state.scriptsMatched) {
+    throw new Error('Controlled modes did not execute the same .ad')
+  }
+  return {
+    version: 3 as const,
+    type: 'scenario-executed' as const,
+    sessionId: request.sessionId,
+    execution: {
+      stepExecutions: templateSteps.map((step) => ({
+        state: 'passed' as const,
+        resolvedActions: [{ description: step.text }],
+      })),
+    },
+  }
+}
+
+function controlledSessionCompletion(
+  state: ControlledWorkerState,
+  request: CompleteSessionRequest,
+) {
+  const session = requireControlledSession(state, request.sessionId)
+  const adaptive = state.executedAdaptive.get(request.sessionId)
+  if (session.mode === 'adaptive' && !adaptive) {
+    throw new Error('Controlled Adaptive representation is absent')
+  }
+  return {
+    version: 3 as const,
+    type: 'session-completed' as const,
+    sessionId: request.sessionId,
+    completion:
+      session.mode === 'adaptive'
+        ? {
+            inferenceCount: 0,
+            replayRepresentation: {
+              cacheable: true as const,
+              adapterPayload: adaptive!.payload,
+              requiredVariables: adaptive!.requiredVariables,
+            },
+          }
+        : { inferenceCount: 0 },
+  }
+}
+
+function closeControlledSession(
+  state: ControlledWorkerState,
+  sessionId: string,
+  type: 'session-closed' | 'session-cancelled',
+) {
+  state.opened.delete(sessionId)
+  state.executedAdaptive.delete(sessionId)
+  return { version: 3 as const, type, sessionId }
+}
+
+function createControlledWorker(
+  state: ControlledWorkerState,
+): MobileWorkerClient {
+  return {
+    async request(request) {
+      switch (request.type) {
+        case 'discover-targets':
+          return { version: 3, type: 'targets-discovered', targets: [] }
+        case 'open-session':
+          state.opened.set(request.sessionId, request)
+          state.modes.push(request.mode)
+          return {
+            version: 3,
+            type: 'session-opened',
+            sessionId: request.sessionId,
+            targetId: 'controlled-emulator',
+          }
+        case 'execute-scenario':
+          return controlledScenarioExecution(state, request)
+        case 'complete-session':
+          return controlledSessionCompletion(state, request)
+        case 'close-session':
+          return closeControlledSession(
+            state,
+            request.sessionId,
+            'session-closed',
+          )
+        case 'cancel-session':
+          return closeControlledSession(
+            state,
+            request.sessionId,
+            'session-cancelled',
+          )
+      }
+    },
+    async dispose() {},
+  }
+}
+
+function expectedAttemptFields(mode: MobileBenchmarkMode) {
+  return mode === 'adaptive'
+    ? { executionMode: 'adaptive', cacheOutcome: 'refresh' }
+    : {
+        executionMode: 'replay',
+        cacheOutcome: 'hit',
+        inferenceCount: 0,
+      }
+}
+
+function assertControlledRun(
+  mode: MobileBenchmarkMode,
+  result: TestResult,
+): void {
+  const attempt = finalScenarioAttempt(result)
+  if (result.state !== 'passed') {
+    throw new Error(
+      `Controlled ${mode} run failed: ${attempt.message ?? result.state}`,
+    )
+  }
+  for (const [field, value] of Object.entries(expectedAttemptFields(mode))) {
+    if (attempt[field as keyof typeof attempt] !== value) {
+      throw new Error(`Controlled ${mode} run reported invalid ${field}`)
+    }
+  }
+}
+
 export async function createControlledMobileBenchmarkDriver(
   environment: ProviderCredentialEnvironment = process.env,
 ): Promise<ControlledMobileBenchmarkDriver> {
@@ -77,112 +249,14 @@ export async function createControlledMobileBenchmarkDriver(
   const cacheRoot = await mkdtemp(
     join(tmpdir(), 'pickle-mobile-benchmark-cache-'),
   )
-  const opened = new Map<
-    string,
-    Extract<MobileWorkerRequest, { type: 'open-session' }>
-  >()
-  const executedAdaptive = new Map<
-    string,
-    ReturnType<typeof compileMobileScenario>
-  >()
-  const modes: Array<'adaptive' | 'replay'> = []
-  let scriptsMatched = true
-  let adaptiveScriptDigest: string | undefined
-  let sourceRun = 0
-  const worker: MobileWorkerClient = {
-    async request(request) {
-      switch (request.type) {
-        case 'discover-targets':
-          return { version: 3, type: 'targets-discovered', targets: [] }
-        case 'open-session':
-          opened.set(request.sessionId, request)
-          modes.push(request.mode)
-          return {
-            version: 3,
-            type: 'session-opened',
-            sessionId: request.sessionId,
-            targetId: 'controlled-emulator',
-          }
-        case 'execute-scenario': {
-          const session = opened.get(request.sessionId)
-          if (!session) throw new Error('Controlled mobile session is absent')
-          const adaptive =
-            session.mode === 'adaptive'
-              ? compileMobileScenario({
-                  platform: 'android',
-                  applicationId,
-                  scenario: session.scenario,
-                })
-              : undefined
-          if (adaptive) executedAdaptive.set(request.sessionId, adaptive)
-          const script =
-            adaptive?.payload.script ??
-            session.executionCache?.adapterPayload.script
-          const digest =
-            typeof script === 'string'
-              ? createHash('sha256').update(script).digest('hex')
-              : undefined
-          if (session.mode === 'adaptive') adaptiveScriptDigest = digest
-          else scriptsMatched &&= digest === adaptiveScriptDigest
-          if (!scriptsMatched) {
-            throw new Error('Controlled modes did not execute the same .ad')
-          }
-          return {
-            version: 3,
-            type: 'scenario-executed',
-            sessionId: request.sessionId,
-            execution: {
-              stepExecutions: templateSteps.map((step) => ({
-                state: 'passed' as const,
-                resolvedActions: [{ description: step.text }],
-              })),
-            },
-          }
-        }
-        case 'complete-session': {
-          const session = opened.get(request.sessionId)
-          if (!session) throw new Error('Controlled mobile session is absent')
-          const adaptive = executedAdaptive.get(request.sessionId)
-          if (session.mode === 'adaptive' && !adaptive) {
-            throw new Error('Controlled Adaptive representation is absent')
-          }
-          return {
-            version: 3,
-            type: 'session-completed',
-            sessionId: request.sessionId,
-            completion:
-              session.mode === 'adaptive'
-                ? {
-                    inferenceCount: 0,
-                    replayRepresentation: {
-                      cacheable: true as const,
-                      adapterPayload: adaptive!.payload,
-                      requiredVariables: adaptive!.requiredVariables,
-                    },
-                  }
-                : { inferenceCount: 0 },
-          }
-        }
-        case 'close-session':
-          opened.delete(request.sessionId)
-          executedAdaptive.delete(request.sessionId)
-          return {
-            version: 3,
-            type: 'session-closed',
-            sessionId: request.sessionId,
-          }
-        case 'cancel-session':
-          opened.delete(request.sessionId)
-          executedAdaptive.delete(request.sessionId)
-          return {
-            version: 3,
-            type: 'session-cancelled',
-            sessionId: request.sessionId,
-          }
-      }
-    },
-    async dispose() {},
+  const state: ControlledWorkerState = {
+    opened: new Map(),
+    executedAdaptive: new Map(),
+    modes: [],
+    scriptsMatched: true,
   }
+  let sourceRun = 0
+  const worker = createControlledWorker(state)
   const adapter = createMobileAdapter(
     {
       application: {
@@ -211,32 +285,14 @@ export async function createControlledMobileBenchmarkDriver(
           sourceRunId: `mobile-benchmark-${++sourceRun}`,
         },
       })
-      const expected =
-        mode === 'adaptive'
-          ? { executionMode: 'adaptive', cacheOutcome: 'refresh' }
-          : {
-              executionMode: 'replay',
-              cacheOutcome: 'hit',
-              inferenceCount: 0,
-            }
-      const attempt = finalScenarioAttempt(run.result)
-      if (run.result.state !== 'passed') {
-        throw new Error(
-          `Controlled ${mode} run failed: ${attempt.message ?? run.result.state}`,
-        )
-      }
-      for (const [field, value] of Object.entries(expected)) {
-        if (attempt[field as keyof typeof attempt] !== value) {
-          throw new Error(`Controlled ${mode} run reported invalid ${field}`)
-        }
-      }
+      assertControlledRun(mode, run.result)
       return performance.now() - startedAt
     },
     async evidence() {
       return {
         cacheEntries: (await cache.inspect()).length,
-        modes: [...modes],
-        scriptsMatched,
+        modes: [...state.modes],
+        scriptsMatched: state.scriptsMatched,
       }
     },
     async dispose() {

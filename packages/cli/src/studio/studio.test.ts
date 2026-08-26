@@ -1658,11 +1658,7 @@ Feature: Reloaded
       )
       await page.getByRole('button', { name: 'Edit Specification' }).click()
       await page.locator('.monaco-editor').waitFor()
-      const reloadedDeadline = Date.now() + 10_000
-      while (Date.now() < reloadedDeadline) {
-        if ((await gherkinValue(page)).includes('Feature: Reloaded')) break
-        await Bun.sleep(50)
-      }
+      await waitForGherkinValue(page, 'Feature: Reloaded')
       expect(await gherkinValue(page)).toContain('Feature: Reloaded')
       await setGherkinValue(
         page,
@@ -1691,11 +1687,7 @@ Feature: Disk edit
       await page
         .getByRole('dialog', { name: 'Specification changed on disk' })
         .waitFor({ state: 'hidden' })
-      const deadline = Date.now() + 10_000
-      while (Date.now() < deadline) {
-        if ((await gherkinValue(page)).includes('Feature: Disk edit')) break
-        await Bun.sleep(50)
-      }
+      await waitForGherkinValue(page, 'Feature: Disk edit')
       expect(await gherkinValue(page)).toContain('Feature: Disk edit')
     } finally {
       await page.close()
@@ -2006,13 +1998,7 @@ Feature: Checkout
       ],
       cwd: project,
     })
-    const branch =
-      Bun.spawnSync({
-        cmd: ['git', 'branch', '--show-current'],
-        cwd: project,
-      })
-        .stdout.toString()
-        .trim() || 'main'
+    const branch = currentGitBranch(project)
     await Bun.spawnSync({
       cmd: ['git', 'update-ref', `refs/remotes/github/${branch}`, 'HEAD'],
       cwd: project,
@@ -2079,32 +2065,14 @@ exit 0
         .getByRole('dialog', { name: 'Commit selected changes?' })
         .waitFor()
       await page.getByRole('button', { name: 'Confirm commit' }).click()
-      const deadline = Date.now() + 10_000
-      let log = ''
-      while (Date.now() < deadline) {
-        const result = Bun.spawnSync({
-          cmd: ['git', 'log', '-1', '--pretty=%s'],
-          cwd: project,
-        })
-        log = result.stdout.toString().trim()
-        if (log === 'Update Checkout') break
-        await Bun.sleep(50)
-      }
+      const log = await waitForCommitMessage(project, 'Update Checkout')
       expect(log).toBe('Update Checkout')
       const remoteHeads = Bun.spawnSync({
         cmd: ['git', 'ls-remote', remote, 'HEAD'],
       })
       expect(remoteHeads.stdout.toString().trim()).toBe('')
       await page.getByRole('button', { name: 'Create pull request' }).click()
-      const ghDeadline = Date.now() + 10_000
-      let ghInvoked = ''
-      while (Date.now() < ghDeadline) {
-        if (await Bun.file(ghLog).exists()) {
-          ghInvoked = await Bun.file(ghLog).text()
-          if (ghInvoked.includes('pr create --web')) break
-        }
-        await Bun.sleep(50)
-      }
+      const ghInvoked = await waitForFileContent(ghLog, 'pr create --web')
       expect(ghInvoked).toContain('pr create --web')
       expect(ghInvoked).not.toContain('push')
     } finally {
@@ -2122,6 +2090,61 @@ async function gherkinValue(page: Page): Promise<string> {
     ).monaco?.editor.getEditors()[0]
     return editor?.getValue() ?? ''
   })
+}
+
+async function waitForGherkinValue(
+  page: Page,
+  expected: string,
+): Promise<void> {
+  const deadline = Date.now() + 10_000
+  while (Date.now() < deadline) {
+    if ((await gherkinValue(page)).includes(expected)) return
+    await Bun.sleep(50)
+  }
+}
+
+function currentGitBranch(project: string): string {
+  return (
+    Bun.spawnSync({
+      cmd: ['git', 'branch', '--show-current'],
+      cwd: project,
+    })
+      .stdout.toString()
+      .trim() || 'main'
+  )
+}
+
+async function waitForCommitMessage(
+  project: string,
+  expected: string,
+): Promise<string> {
+  const deadline = Date.now() + 10_000
+  let message = ''
+  while (Date.now() < deadline) {
+    message = Bun.spawnSync({
+      cmd: ['git', 'log', '-1', '--pretty=%s'],
+      cwd: project,
+    })
+      .stdout.toString()
+      .trim()
+    if (message === expected) return message
+    await Bun.sleep(50)
+  }
+  return message
+}
+
+async function waitForFileContent(
+  path: string,
+  expected: string,
+): Promise<string> {
+  const deadline = Date.now() + 10_000
+  let content = ''
+  while (Date.now() < deadline) {
+    if (await Bun.file(path).exists()) content = await Bun.file(path).text()
+    if (content.includes(expected)) return content
+    await Bun.sleep(50)
+  }
+  return content
 }
 
 async function setGherkinValue(page: Page, source: string) {

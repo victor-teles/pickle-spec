@@ -13,6 +13,28 @@ const failureStates = new Set<TestResultState>([
   'infrastructure-error',
 ])
 
+function matchesOptionalSet(
+  value: string | undefined,
+  accepted: ReadonlySet<string> | undefined,
+): boolean {
+  return !accepted || (value !== undefined && accepted.has(value))
+}
+
+function matchesRerunFilter(
+  result: TestResult,
+  hasStateFilter: boolean,
+  scenarioIds: ReadonlySet<string> | undefined,
+  scenarioNames: ReadonlySet<string> | undefined,
+  profileIds: ReadonlySet<string> | undefined,
+): boolean {
+  if (hasStateFilter && !failureStates.has(result.state)) return false
+  return (
+    matchesOptionalSet(result.scenario.id, scenarioIds) &&
+    matchesOptionalSet(result.scenario.name, scenarioNames) &&
+    matchesOptionalSet(result.executionTargetProfile.id, profileIds)
+  )
+}
+
 export function selectRerunResults(
   manifest: TestRunManifest,
   filter: RerunFilter,
@@ -26,22 +48,13 @@ export function selectRerunResults(
     : undefined
   const profileIds = filter.profileIds ? new Set(filter.profileIds) : undefined
 
-  return manifest.results.filter((result) => {
-    if (hasStateFilter) {
-      if (!failureStates.has(result.state)) return false
-    }
-    if (
-      scenarioIds &&
-      (!result.scenario.id || !scenarioIds.has(result.scenario.id))
-    ) {
-      return false
-    }
-    if (scenarioNames && !scenarioNames.has(result.scenario.name)) {
-      return false
-    }
-    if (profileIds && !profileIds.has(result.executionTargetProfile.id)) {
-      return false
-    }
-    return true
-  })
+  return manifest.results.filter((result) =>
+    matchesRerunFilter(
+      result,
+      hasStateFilter,
+      scenarioIds,
+      scenarioNames,
+      profileIds,
+    ),
+  )
 }

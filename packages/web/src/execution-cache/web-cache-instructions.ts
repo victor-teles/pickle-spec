@@ -99,17 +99,30 @@ export function createWebInstructionExecutor({
     return execution
   }
 
+  function failurePrefix(): string {
+    return replay ? 'Replay diverged' : 'Deterministic web instruction failed'
+  }
+
+  function unavailableMessage(): string {
+    return `${failurePrefix()}: direct browser execution is unavailable`
+  }
+
+  function failedResultMessage(
+    instruction: WebInstruction,
+    result: { message?: string; actualState?: string },
+  ): string {
+    return (
+      result.message ??
+      `${failurePrefix()}: ${result.actualState ?? instruction.kind}`
+    )
+  }
+
   async function executeDirect(
     instruction: WebInstruction,
     signal: AbortSignal | undefined,
   ): Promise<StepExecution | undefined> {
     if (!automation.executeInstruction) {
-      return failure(
-        instruction,
-        replay
-          ? 'Replay diverged: direct browser execution is unavailable'
-          : 'Deterministic web instruction failed: direct browser execution is unavailable',
-      )
+      return failure(instruction, unavailableMessage())
     }
     try {
       const result = await automation.executeInstruction(
@@ -118,17 +131,10 @@ export function createWebInstructionExecutor({
         signal,
       )
       if (result.success) return undefined
-      return failure(
-        instruction,
-        result.message ??
-          `${replay ? 'Replay diverged' : 'Deterministic web instruction failed'}: ${result.actualState ?? instruction.kind}`,
-      )
+      return failure(instruction, failedResultMessage(instruction, result))
     } catch (error) {
       if (isAbortError(error, signal)) throw abortError()
-      return failure(
-        instruction,
-        `${replay ? 'Replay diverged' : 'Deterministic web instruction failed'}: ${errorMessage(error)}`,
-      )
+      return failure(instruction, `${failurePrefix()}: ${errorMessage(error)}`)
     }
   }
 

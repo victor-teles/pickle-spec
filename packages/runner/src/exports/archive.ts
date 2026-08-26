@@ -255,9 +255,20 @@ export async function readRunArchive(path: string): Promise<RunArchive> {
   return archive
 }
 
-export async function importRunArchive(
+type ImportedArtifact = RunArchive['artifacts'][number] & { target: string }
+
+interface PreparedArchiveImport {
+  archive: RunArchive
+  originalBytes: Uint8Array
+  artifacts: ImportedArtifact[]
+  archivesDirectory: string
+  runDirectory: string
+  preservedArchivePath: string
+}
+
+async function prepareArchiveImport(
   input: ImportRunArchiveInput,
-): Promise<ImportedRunArchive> {
+): Promise<PreparedArchiveImport> {
   const originalBytes = new Uint8Array(
     await Bun.file(input.archivePath).arrayBuffer(),
   )
@@ -289,37 +300,73 @@ export async function importRunArchive(
   }
   validateArchiveArtifactReferences(archive, runDirectory)
   assertArchiveArtifactPayloads(archive)
-  await mkdir(archivesDirectory, { recursive: true })
-  await mkdir(dirname(runDirectory), { recursive: true })
+  return {
+    archive,
+    originalBytes,
+    artifacts,
+    archivesDirectory,
+    runDirectory,
+    preservedArchivePath,
+  }
+}
+
+async function createImportedRunDirectory(
+  runDirectory: string,
+  runId: string,
+): Promise<void> {
   try {
     await mkdir(runDirectory)
   } catch (error) {
     if (isAlreadyExists(error)) {
-      throw new Error(`Test run "${archive.manifest.id}" already exists`)
+      throw new Error(`Test run "${runId}" already exists`)
     }
     throw error
   }
+}
+
+async function writePreservedArchive(
+  path: string,
+  originalBytes: Uint8Array,
+): Promise<void> {
+  const archiveFile = await open(path, 'wx')
+  try {
+    await archiveFile.writeFile(originalBytes)
+  } finally {
+    await archiveFile.close()
+  }
+}
+
+async function writeImportedArtifacts(
+  artifacts: readonly ImportedArtifact[],
+): Promise<Map<string, string>> {
+  const pathMap = new Map<string, string>()
+  for (const artifact of artifacts) {
+    await mkdir(dirname(artifact.target), { recursive: true })
+    await Bun.write(
+      artifact.target,
+      decodeBase64(artifact.content, artifact.path),
+    )
+    pathMap.set(artifact.path, artifact.target)
+  }
+  return pathMap
+}
+
+export async function importRunArchive(
+  input: ImportRunArchiveInput,
+): Promise<ImportedRunArchive> {
+  const prepared = await prepareArchiveImport(input)
+  const { archive, originalBytes, artifacts } = prepared
+  const { archivesDirectory, runDirectory, preservedArchivePath } = prepared
+  await mkdir(archivesDirectory, { recursive: true })
+  await mkdir(dirname(runDirectory), { recursive: true })
+  await createImportedRunDirectory(runDirectory, archive.manifest.id)
 
   let preservedArchive = false
   try {
-    const archiveFile = await open(preservedArchivePath, 'wx')
+    await writePreservedArchive(preservedArchivePath, originalBytes)
     preservedArchive = true
-    try {
-      await archiveFile.writeFile(originalBytes)
-    } finally {
-      await archiveFile.close()
-    }
     await mkdir(join(runDirectory, 'artifacts'))
-
-    const pathMap = new Map<string, string>()
-    for (const artifact of artifacts) {
-      await mkdir(dirname(artifact.target), { recursive: true })
-      await Bun.write(
-        artifact.target,
-        decodeBase64(artifact.content, artifact.path),
-      )
-      pathMap.set(artifact.path, artifact.target)
-    }
+    const pathMap = await writeImportedArtifacts(artifacts)
     const mapPath: MapArtifactPath = (path) =>
       pathMap.get(path) ?? importedArtifactPath(runDirectory, path)
     const events = archive.events.map((event) =>

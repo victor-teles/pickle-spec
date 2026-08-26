@@ -1,4 +1,10 @@
-import { type KeyboardEvent, useEffect, useRef, useState } from 'react'
+import {
+  type KeyboardEvent,
+  type RefObject,
+  useEffect,
+  useRef,
+  useState,
+} from 'react'
 import { Button } from '../../components/ui/button'
 import { ScrollArea } from '../../components/ui/scroll-area'
 import { cn } from '../../lib/utils'
@@ -81,6 +87,82 @@ type TimelineLabelsProps = TimelineWaterfallProps & {
   onMoveFocus: (event: KeyboardEvent, index: number) => void
 }
 
+function TimelineLabelEntry(
+  props: TimelineWaterfallProps & {
+    entry: TimelineEntry
+    entryIndex: number
+    totalEntries: number
+    followedRef: RefObject<HTMLLIElement | null>
+    onMoveFocus: (event: KeyboardEvent, index: number) => void
+  },
+) {
+  const selected = props.entry.id === props.selectedEntryId
+  function handleClick() {
+    props.onSelect(props.entry.id)
+  }
+  function handleKeyDown(event: KeyboardEvent) {
+    props.onMoveFocus(event, props.entryIndex)
+  }
+  return (
+    <li
+      ref={
+        props.entry.id === props.followedEntryId ? props.followedRef : undefined
+      }
+      aria-posinset={props.entryIndex + 1}
+      aria-setsize={props.totalEntries}
+      className="h-11 border-b border-border last:border-b-0"
+    >
+      <Button
+        type="button"
+        variant="ghost"
+        aria-label={`${props.entry.kind} ${props.entry.title}, ${relativeTimeLabel(props.entry.startedAt, props.attemptStartedAt)}`}
+        aria-pressed={selected}
+        data-timeline-index={props.entryIndex}
+        tabIndex={selected ? 0 : -1}
+        onClick={handleClick}
+        onKeyDown={handleKeyDown}
+        className={cn(
+          'h-full w-full min-w-0 justify-start rounded-none px-3 text-left',
+          selected && 'bg-secondary text-foreground',
+          props.entry.causal && 'text-destructive',
+        )}
+      >
+        <span
+          className={cn(
+            'flex size-6 shrink-0 items-center justify-center rounded-md',
+            timelineKindSolidClassName(props.entry.kind),
+          )}
+        >
+          <TimelineKindIcon kind={props.entry.kind} className="size-3.5" />
+        </span>
+        <span className="min-w-0 flex-1">
+          <span className="block truncate text-xs font-medium text-current">
+            {props.entry.title}
+          </span>
+          <span className="mt-0.5 flex items-center gap-1.5 text-[0.625rem] text-muted-foreground">
+            <span className="truncate">{props.entry.kind}</span>
+            <span aria-hidden="true">·</span>
+            <span className="shrink-0 font-mono tabular-nums">
+              {relativeTimeLabel(props.entry.startedAt, props.attemptStartedAt)}
+            </span>
+          </span>
+        </span>
+        {props.entry.causal ? (
+          <>
+            <span className="sr-only">
+              {props.entry.causalAt ? 'Causal point' : 'Failure context'}
+            </span>
+            <span
+              aria-hidden="true"
+              className="size-1.5 shrink-0 rounded-full bg-destructive"
+            />
+          </>
+        ) : null}
+      </Button>
+    </li>
+  )
+}
+
 function TimelineLabels(props: TimelineLabelsProps) {
   const followedRef = useRef<HTMLLIElement>(null)
   useEffect(() => {
@@ -93,70 +175,15 @@ function TimelineLabels(props: TimelineLabelsProps) {
         Evidence
       </div>
       <ol aria-label="Execution timeline">
-        {props.entries.map((entry, visibleIndex) => {
-          const entryIndex = props.entryOffset + visibleIndex
-          return (
-            <li
-              key={entry.id}
-              ref={entry.id === props.followedEntryId ? followedRef : undefined}
-              aria-posinset={entryIndex + 1}
-              aria-setsize={props.totalEntries}
-              className="h-11 border-b border-border last:border-b-0"
-            >
-              <Button
-                type="button"
-                variant="ghost"
-                aria-label={`${entry.kind} ${entry.title}, ${relativeTimeLabel(entry.startedAt, props.attemptStartedAt)}`}
-                aria-pressed={entry.id === props.selectedEntryId}
-                data-timeline-index={entryIndex}
-                tabIndex={entry.id === props.selectedEntryId ? 0 : -1}
-                onClick={() => props.onSelect(entry.id)}
-                onKeyDown={(event) => props.onMoveFocus(event, entryIndex)}
-                className={cn(
-                  'h-full w-full min-w-0 justify-start rounded-none px-3 text-left',
-                  entry.id === props.selectedEntryId &&
-                    'bg-secondary text-foreground',
-                  entry.causal && 'text-destructive',
-                )}
-              >
-                <span
-                  className={cn(
-                    'flex size-6 shrink-0 items-center justify-center rounded-md',
-                    timelineKindSolidClassName(entry.kind),
-                  )}
-                >
-                  <TimelineKindIcon kind={entry.kind} className="size-3.5" />
-                </span>
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate text-xs font-medium text-current">
-                    {entry.title}
-                  </span>
-                  <span className="mt-0.5 flex items-center gap-1.5 text-[0.625rem] text-muted-foreground">
-                    <span className="truncate">{entry.kind}</span>
-                    <span aria-hidden="true">·</span>
-                    <span className="shrink-0 font-mono tabular-nums">
-                      {relativeTimeLabel(
-                        entry.startedAt,
-                        props.attemptStartedAt,
-                      )}
-                    </span>
-                  </span>
-                </span>
-                {entry.causal ? (
-                  <>
-                    <span className="sr-only">
-                      {entry.causalAt ? 'Causal point' : 'Failure context'}
-                    </span>
-                    <span
-                      aria-hidden="true"
-                      className="size-1.5 shrink-0 rounded-full bg-destructive"
-                    />
-                  </>
-                ) : null}
-              </Button>
-            </li>
-          )
-        })}
+        {props.entries.map((entry, visibleIndex) => (
+          <TimelineLabelEntry
+            {...props}
+            key={entry.id}
+            entry={entry}
+            entryIndex={props.entryOffset + visibleIndex}
+            followedRef={followedRef}
+          />
+        ))}
       </ol>
     </div>
   )

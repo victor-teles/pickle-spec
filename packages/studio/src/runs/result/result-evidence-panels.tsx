@@ -41,6 +41,24 @@ const diagnosticOrigins = [
   'application',
 ] as const satisfies readonly DiagnosticOrigin[]
 
+function hasDiagnosticFilters(filters: readonly unknown[]): boolean {
+  return filters.some(Boolean)
+}
+
+function diagnosticAvailability(
+  availability: readonly EvidenceAvailability[],
+): { description: string; recovery?: string } {
+  const diagnostics = availability.find((item) => item.kind === 'diagnostics')
+  const description = diagnostics?.message
+    ? `${diagnostics.state} · ${diagnostics.message}`
+    : (diagnostics?.state ?? 'Not recorded')
+  const recovery =
+    diagnostics && diagnostics.state !== 'available'
+      ? recoveryGuidance(diagnostics.state)
+      : undefined
+  return { description, recovery }
+}
+
 type MetadataProps = {
   label: string
   value: string
@@ -289,16 +307,7 @@ export function ResultDiagnostics(props: ResultDiagnosticsProps) {
   const [scenarioId, setScenarioId] = useState('')
   const [stepIndex, setStepIndex] = useState('')
   const [executionTargetProfileId, setExecutionTargetProfileId] = useState('')
-  const diagnosticsAvailability = props.availability.find(
-    (item) => item.kind === 'diagnostics',
-  )
-  const availabilityDescription = diagnosticsAvailability?.message
-    ? `${diagnosticsAvailability.state} · ${diagnosticsAvailability.message}`
-    : (diagnosticsAvailability?.state ?? 'Not recorded')
-  const availabilityRecovery =
-    diagnosticsAvailability && diagnosticsAvailability.state !== 'available'
-      ? recoveryGuidance(diagnosticsAvailability.state)
-      : undefined
+  const availability = diagnosticAvailability(props.availability)
   const parsedStepIndex = stepIndex === '' ? undefined : Number(stepIndex)
   const diagnostics = useMemo(
     () =>
@@ -330,14 +339,14 @@ export function ResultDiagnostics(props: ResultDiagnosticsProps) {
     stepIndex,
     executionTargetProfileId,
   ].join(':')
-  const hasFilters = Boolean(
-    query ||
-      level ||
-      origin ||
-      scenarioId ||
-      stepIndex ||
-      executionTargetProfileId,
-  )
+  const hasFilters = hasDiagnosticFilters([
+    query,
+    level,
+    origin,
+    scenarioId,
+    stepIndex,
+    executionTargetProfileId,
+  ])
 
   function clearFilters() {
     setQuery('')
@@ -353,9 +362,9 @@ export function ResultDiagnostics(props: ResultDiagnosticsProps) {
         <CardHeader>
           <CardTitle>Diagnostics availability</CardTitle>
           <CardDescription>
-            <span>{availabilityDescription}</span>
-            {availabilityRecovery ? (
-              <span className="block">{availabilityRecovery}</span>
+            <span>{availability.description}</span>
+            {availability.recovery ? (
+              <span className="block">{availability.recovery}</span>
             ) : null}
           </CardDescription>
         </CardHeader>
