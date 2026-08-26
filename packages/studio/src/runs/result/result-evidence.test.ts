@@ -104,6 +104,10 @@ function scenarioStarted(examplesRowId: string, sequence: number): RunEvent {
   }
 }
 
+function timelineIdSuffix(id: string): string {
+  return id.slice(id.lastIndexOf(':') + 1)
+}
+
 test('selects one persisted attempt by Specification and Examples-row identity', () => {
   const expectedAttempt = attempt(1, 'failed')
   const run = snapshot([
@@ -193,6 +197,7 @@ test('projects exact spans and points without replacing occurrence time with cau
             causalAt: occurredAt,
             level: 'error',
             origin: 'console',
+            stream: 'stderr',
             message: 'Payment was declined',
             scenarioId: 'scenario-pay',
             scenarioName: 'Pay for the order',
@@ -214,6 +219,8 @@ test('projects exact spans and points without replacing occurrence time with cau
             kind: 'screenshot',
             path: '/tmp/checkout.png',
             mediaType: 'image/png',
+            name: 'failure.png',
+            sizeBytes: 2_048,
           },
         ],
       },
@@ -236,6 +243,7 @@ test('projects exact spans and points without replacing occurrence time with cau
       finishedAt: entry.finishedAt,
       timingPrecision: entry.timingPrecision,
       causalAt: entry.causalAt,
+      causal: entry.causal === true,
     })),
   ).toEqual([
     {
@@ -244,6 +252,7 @@ test('projects exact spans and points without replacing occurrence time with cau
       finishedAt: occurredAt,
       timingPrecision: 'exact',
       causalAt: occurredAt,
+      causal: false,
     },
     {
       kind: 'Resolved action',
@@ -251,6 +260,7 @@ test('projects exact spans and points without replacing occurrence time with cau
       finishedAt: undefined,
       timingPrecision: 'exact',
       causalAt: occurredAt,
+      causal: true,
     },
     {
       kind: 'Diagnostic entry',
@@ -258,6 +268,7 @@ test('projects exact spans and points without replacing occurrence time with cau
       finishedAt: undefined,
       timingPrecision: 'exact',
       causalAt: occurredAt,
+      causal: true,
     },
     {
       kind: 'Test artifact',
@@ -265,11 +276,24 @@ test('projects exact spans and points without replacing occurrence time with cau
       finishedAt: undefined,
       timingPrecision: 'step-finish',
       causalAt: undefined,
+      causal: false,
     },
   ])
   expect(
     diagnosticsFor(inspectedAttempt).map((entry) => entry.message),
   ).toEqual(['Payment was declined'])
+  expect(
+    entries.find((entry) => entry.kind === 'Diagnostic entry')?.attributes,
+  ).toContainEqual({ label: 'Stream', value: 'stderr' })
+  expect(
+    entries.find((entry) => entry.kind === 'Test artifact')?.attributes,
+  ).toEqual(
+    expect.arrayContaining([
+      { label: 'Name', value: 'failure.png' },
+      { label: 'Media type', value: 'image/png' },
+      { label: 'Size', value: '2048 bytes' },
+    ]),
+  )
 })
 
 test('keeps Run events as a distinct timeline lane', () => {
@@ -324,7 +348,7 @@ test('marks action timestamps inherited from step completion without downgrading
 
   expect(
     entries.map((entry) => ({
-      id: entry.id,
+      id: timelineIdSuffix(entry.id),
       kind: entry.kind,
       startedAt: entry.startedAt,
       timingPrecision: entry.timingPrecision,
@@ -350,6 +374,78 @@ test('marks action timestamps inherited from step completion without downgrading
     },
   ])
   expect(entries.some((entry) => entry.causal)).toBe(false)
+})
+
+test('selects attempt-level causal evidence even when a failed step exists', () => {
+  const causalAt = '2026-08-22T12:00:00.900Z'
+  const inspectedAttempt: ScenarioAttempt = {
+    ...attempt(1, 'failed'),
+    diagnostics: [
+      {
+        occurredAt: causalAt,
+        causalAt,
+        level: 'error',
+        origin: 'runner',
+        message: 'The browser process exited',
+      },
+    ],
+    steps: [
+      {
+        index: 0,
+        startedAt: '2026-08-22T12:00:00.000Z',
+        finishedAt: '2026-08-22T12:00:01.000Z',
+        durationMs: 1_000,
+        step: { keyword: 'Then ', text: 'checkout completes', type: 'outcome' },
+        state: 'failed',
+        resolvedActions: [],
+        message: 'Checkout failed',
+      },
+    ],
+  }
+
+  const entries = timelineFor([], inspectedAttempt, {
+    specificationUri: 'features/checkout.feature',
+    runId: 'run-78',
+    scenarioId: 'scenario-outline',
+    profileId: 'chrome',
+    attempt: 1,
+  })
+
+  expect(
+    entries.filter((entry) => entry.causal).map((entry) => entry.title),
+  ).toEqual(['The browser process exited'])
+  expect(entries.find((entry) => entry.kind === 'Step')?.causalAt).toBe(
+    causalAt,
+  )
+})
+
+test('labels synthesized Diagnostic timestamps as completion fallbacks', () => {
+  const inspectedAttempt: ScenarioAttempt = {
+    ...attempt(1, 'failed'),
+    message: 'Attempt failed',
+    steps: [
+      {
+        index: 0,
+        startedAt: '2026-08-22T12:00:00.000Z',
+        finishedAt: '2026-08-22T12:00:00.500Z',
+        durationMs: 500,
+        step: { keyword: 'Then ', text: 'checkout completes', type: 'outcome' },
+        state: 'failed',
+        resolvedActions: [],
+        message: 'Step failed',
+      },
+    ],
+  }
+
+  expect(
+    diagnosticsFor(inspectedAttempt).map((entry) => ({
+      message: entry.message,
+      timingPrecision: entry.timingPrecision,
+    })),
+  ).toEqual([
+    { message: 'Step failed', timingPrecision: 'step-finish' },
+    { message: 'Attempt failed', timingPrecision: 'attempt-finish' },
+  ])
 })
 
 test('filters Diagnostic entries without changing chronological order', () => {
@@ -452,6 +548,7 @@ test('searches the complete 10,000-entry Diagnostic set before rendering is boun
   const diagnostics = Array.from({ length: 10_000 }, (_, index) => ({
     id: `diagnostic-${index}`,
     occurredAt: new Date(Date.UTC(2026, 7, 22, 12, 0, 0, index)).toISOString(),
+    timingPrecision: 'exact' as const,
     level: 'info' as const,
     origin: 'adapter' as const,
     source: 'Scenario attempt' as const,

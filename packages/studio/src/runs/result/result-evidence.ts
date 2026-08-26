@@ -31,6 +31,7 @@ export type ArtifactViewerKind = 'image' | 'video' | 'text' | 'download'
 export type DiagnosticEvidence = {
   id: string
   occurredAt: string
+  timingPrecision: 'exact' | 'step-finish' | 'attempt-finish'
   causalAt?: string
   message: string
   source: 'Scenario attempt' | 'Step'
@@ -104,7 +105,7 @@ export type TimelineEntry = {
   id: string
   startedAt: string
   finishedAt?: string
-  timingPrecision: 'exact' | 'step-finish'
+  timingPrecision: 'exact' | 'step-finish' | 'attempt-finish'
   kind: TimelineEntryKind
   title: string
   context?: string
@@ -112,6 +113,24 @@ export type TimelineEntry = {
   causalAt?: string
   causal?: boolean
   attributes: readonly TimelineEntryAttribute[]
+}
+
+export function causalTimelineEntry(
+  entries: readonly TimelineEntry[],
+): TimelineEntry | undefined {
+  return entries
+    .filter((entry) => entry.causal)
+    .sort((left, right) => {
+      const leftDistance = Math.abs(
+        Date.parse(left.startedAt) -
+          Date.parse(left.causalAt ?? left.startedAt),
+      )
+      const rightDistance = Math.abs(
+        Date.parse(right.startedAt) -
+          Date.parse(right.causalAt ?? right.startedAt),
+      )
+      return leftDistance - rightDistance
+    })[0]
 }
 
 export function defaultResultInspectorTab(
@@ -201,12 +220,14 @@ export function diagnosticsFor(attempt: ScenarioAttempt): DiagnosticEvidence[] {
   ).map((entry, index) => ({
     ...entry,
     id: `attempt-${index}`,
+    timingPrecision: 'exact',
     source: 'Scenario attempt',
   }))
   const stepDiagnostics: DiagnosticEvidence[] = attempt.steps.flatMap((step) =>
     (step.diagnostics ?? []).map((entry, index) => ({
       ...entry,
       id: `step-${step.index}-${index}`,
+      timingPrecision: 'exact',
       source: 'Step' as const,
       stepIndex: entry.stepIndex ?? step.index,
       stepText:
@@ -226,6 +247,7 @@ export function diagnosticsFor(attempt: ScenarioAttempt): DiagnosticEvidence[] {
       diagnostics.push({
         id: `step-${step.index}-message`,
         occurredAt: step.finishedAt,
+        timingPrecision: 'step-finish',
         level: 'error',
         origin: 'adapter',
         message: step.message,
@@ -242,6 +264,7 @@ export function diagnosticsFor(attempt: ScenarioAttempt): DiagnosticEvidence[] {
     diagnostics.push({
       id: 'attempt-message',
       occurredAt: attempt.finishedAt,
+      timingPrecision: 'attempt-finish',
       level: 'error',
       origin: 'runner',
       message: attempt.message,
@@ -327,29 +350,51 @@ export function timelineFor(
   attempt: ScenarioAttempt,
   location: ResultInspectionLocation,
 ): TimelineEntry[] {
+  const scopeId = [
+    location.runId,
+    location.specificationUri,
+    location.scenarioId,
+    location.examplesRowId ?? '',
+    location.profileId,
+    location.attempt,
+  ].join(':')
+  const entryId = (suffix: string) => `${scopeId}:${suffix}`
   const failedStep = attempt.steps.find(
     (step) => step.state === 'failed' || step.state === 'infrastructure-error',
   )
-  const causalStepId = failedStep ? `step-${failedStep.index}` : undefined
-  const causalAt = failedStep
-    ? (failedStep.diagnostics?.findLast((entry) => entry.causalAt)?.causalAt ??
-      failedStep.trace?.findLast((entry) => entry.causalAt)?.causalAt)
-    : attempt.diagnostics?.findLast((entry) => entry.causalAt)?.causalAt
+  const causalStepId = failedStep
+    ? entryId(`step-${failedStep.index}`)
+    : undefined
+  const causalEvidence = [
+    ...(attempt.diagnostics ?? []),
+    ...attempt.steps.flatMap((step) => [
+      ...(step.diagnostics ?? []),
+      ...(step.trace ?? []),
+    ]),
+  ]
+    .filter((entry) => entry.causalAt)
+    .sort(
+      (left, right) =>
+        Date.parse(left.occurredAt) - Date.parse(right.occurredAt),
+    )
+    .at(-1)
+  const causalAt = causalEvidence?.causalAt
   const stepEntries: TimelineEntry[] = attempt.steps.map((step) => ({
-    id: `step-${step.index}`,
+    id: entryId(`step-${step.index}`),
     startedAt: step.startedAt,
     finishedAt: step.finishedAt,
     timingPrecision: 'exact',
     kind: 'Step',
     title: `${step.step.keyword.trim()} ${step.step.text}`,
     state: step.state,
-    causalAt: causalStepId === `step-${step.index}` ? causalAt : undefined,
-    causal: causalStepId === `step-${step.index}`,
+    causalAt:
+      causalStepId === entryId(`step-${step.index}`) ? causalAt : undefined,
+    causal: causalStepId === entryId(`step-${step.index}`) && !causalAt,
     attributes: [{ label: 'Step index', value: String(step.index) }],
   }))
   const eventEntries: TimelineEntry[] = scopedEvents(events, location).map(
     (event) => ({
-      id: `event-${event.sequence}`,
+      id: entryId(`event-${event.sequence}`),
       startedAt: event.occurredAt,
       timingPrecision: 'exact',
       kind: 'Run event',
@@ -361,19 +406,20 @@ export function timelineFor(
     const stepText = `${step.step.keyword.trim()} ${step.step.text}`
     if (!step.trace) {
       return step.resolvedActions.map((action, index) => ({
-        id: `trace-${step.index}-${index}`,
+        id: entryId(`trace-${step.index}-${index}`),
         startedAt: step.finishedAt,
         timingPrecision: 'step-finish' as const,
         kind: 'Resolved action' as const,
         title: action.description,
         context: stepText,
-        causalAt: causalStepId === `step-${step.index}` ? causalAt : undefined,
-        causal: causalStepId === `step-${step.index}`,
+        causalAt:
+          causalStepId === entryId(`step-${step.index}`) ? causalAt : undefined,
+        causal: causalStepId === entryId(`step-${step.index}`) && !causalAt,
         attributes: [{ label: 'Step index', value: String(step.index) }],
       }))
     }
     return step.trace.map((entry, index) => ({
-      id: `trace-${step.index}-${index}`,
+      id: entryId(`trace-${step.index}-${index}`),
       startedAt: entry.occurredAt,
       timingPrecision: 'exact' as const,
       kind:
@@ -389,9 +435,9 @@ export function timelineFor(
   })
   const diagnosticEntries: TimelineEntry[] = diagnosticsFor(attempt).map(
     (diagnostic) => ({
-      id: `diagnostic-${diagnostic.id}`,
+      id: entryId(`diagnostic-${diagnostic.id}`),
       startedAt: diagnostic.occurredAt,
-      timingPrecision: 'exact',
+      timingPrecision: diagnostic.timingPrecision,
       kind: 'Diagnostic entry',
       title: diagnostic.message,
       context: diagnostic.stepText ?? diagnostic.source,
@@ -401,12 +447,32 @@ export function timelineFor(
       attributes: [
         { label: 'Origin', value: diagnostic.origin },
         { label: 'Source', value: diagnostic.source },
+        ...(diagnostic.stream
+          ? [{ label: 'Stream', value: diagnostic.stream }]
+          : []),
+        ...(diagnostic.scenarioId
+          ? [{ label: 'Scenario ID', value: diagnostic.scenarioId }]
+          : []),
+        ...(diagnostic.scenarioName
+          ? [{ label: 'Scenario', value: diagnostic.scenarioName }]
+          : []),
+        ...(diagnostic.stepIndex === undefined
+          ? []
+          : [{ label: 'Step index', value: String(diagnostic.stepIndex) }]),
+        ...(diagnostic.executionTargetProfileId
+          ? [
+              {
+                label: 'Execution target',
+                value: diagnostic.executionTargetProfileId,
+              },
+            ]
+          : []),
       ],
     }),
   )
   const artifactEntries: TimelineEntry[] = attempt.steps.flatMap((step) =>
     (step.artifacts ?? []).map((artifact, index) => ({
-      id: `artifact-${step.index}-${index}`,
+      id: entryId(`artifact-${step.index}-${index}`),
       startedAt: artifact.capturedAt ?? step.finishedAt,
       timingPrecision: artifact.capturedAt ? 'exact' : 'step-finish',
       kind: 'Test artifact',
@@ -415,6 +481,13 @@ export function timelineFor(
       attributes: [
         { label: 'Artifact kind', value: artifact.kind },
         { label: 'Step index', value: String(step.index) },
+        ...(artifact.name ? [{ label: 'Name', value: artifact.name }] : []),
+        ...(artifact.mediaType
+          ? [{ label: 'Media type', value: artifact.mediaType }]
+          : []),
+        ...(artifact.sizeBytes === undefined
+          ? []
+          : [{ label: 'Size', value: `${artifact.sizeBytes} bytes` }]),
       ],
     })),
   )

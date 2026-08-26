@@ -276,6 +276,48 @@ test('follows the newest causal activity until the user intervenes', () => {
   expect(inspection.followedEntryId).toBe(pausedEntry)
 })
 
+test('follows the evidence closest to a shared causal timestamp', () => {
+  let inspection = startLiveInspection({
+    specificationUri,
+    runId: 'run-79',
+  })
+  for (const event of [runStarted(), scenarioStarted(), stepStarted()]) {
+    inspection = receiveLiveStreamEvent(inspection, event)
+  }
+  const finished = stepFinished()
+  if (finished.type !== 'step-finished') {
+    throw new Error('Expected a step-finished event')
+  }
+  const causalAt = '2026-08-23T12:00:00.004Z'
+  inspection = receiveLiveStreamEvent(inspection, {
+    ...finished,
+    result: {
+      ...finished.result,
+      trace: [
+        {
+          occurredAt: '2026-08-23T12:00:00.003Z',
+          causalAt,
+          kind: 'browser-activity',
+          description: 'Browser navigation failed',
+        },
+      ],
+      diagnostics: [
+        {
+          occurredAt: causalAt,
+          causalAt,
+          level: 'error',
+          origin: 'network',
+          message: 'Payment request failed',
+        },
+      ],
+    },
+  })
+
+  expect(inspection.followedEntryId?.endsWith(':diagnostic-step-0-0')).toBe(
+    true,
+  )
+})
+
 test('keeps the current investigation after the user intervenes unless they pinned a later failure', () => {
   let inspection = startLiveInspection({
     specificationUri,
@@ -306,7 +348,7 @@ test('resumes following after manual navigation', () => {
   inspection = resumeLiveFollowing(inspection)
   expect(inspection.following).toBe(true)
   expect(inspection.followedEntryId).not.toBe(pausedEntry)
-  expect(inspection.followedEntryId).toBe('step-0')
+  expect(inspection.followedEntryId?.endsWith(':step-0')).toBe(true)
 })
 
 test('keeps a pinned investigation when a later failure arrives', () => {

@@ -9,7 +9,7 @@ import {
   CardTitle,
 } from '../../components/ui/card'
 import { durationLabel } from '../run-format'
-import type { TimelineEntry } from './result-evidence'
+import { causalTimelineEntry, type TimelineEntry } from './result-evidence'
 import { TimelineEvidenceDetail } from './timeline-evidence-detail'
 import { TimelineWaterfall } from './timeline-waterfall'
 
@@ -25,7 +25,7 @@ type ResultEvidenceTimelineProps = {
 
 export function ResultEvidenceTimeline(props: ResultEvidenceTimelineProps) {
   const [selectedEntryId, setSelectedEntryId] = useState<string>()
-  const causalEntry = props.entries.find((entry) => entry.causal)
+  const causalEntry = causalTimelineEntry(props.entries)
   const followedEntryId =
     props.followedEntryId ?? causalEntry?.id ?? props.entries.at(-1)?.id
   const activeEntryId =

@@ -4,6 +4,7 @@ import {
   locationFromResult,
 } from './live-result-projection'
 import {
+  causalTimelineEntry,
   defaultResultInspectorTab,
   findInspectedResult,
   timelineFor,
@@ -51,7 +52,7 @@ export function nextFollowedEntryId(
   const inspected = findInspectedResult(snapshot, location)
   if (!inspected) return state.followedEntryId
   const entries = timelineFor(snapshot.events, inspected.attempt, location)
-  const causal = entries.find((entry) => entry.causal)
+  const causal = causalTimelineEntry(entries)
   return causal?.id ?? entries.at(-1)?.id ?? state.followedEntryId
 }
 

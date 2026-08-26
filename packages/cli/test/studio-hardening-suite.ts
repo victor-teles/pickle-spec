@@ -221,6 +221,19 @@ Feature: Checkout
       expect(
         await attention.getByRole('listitem').first().textContent(),
       ).toContain('Review the purchase')
+      await focusedFailure.click()
+      const selectedEvidence = page.getByRole('region', {
+        name: 'Selected timeline evidence',
+      })
+      expect(await selectedEvidence.textContent()).toContain(
+        'Then the basket is reviewed',
+      )
+      await attention
+        .getByRole('button', { name: /Pay for the order.*failed/ })
+        .click()
+      expect(await selectedEvidence.textContent()).toContain(
+        'Then payment is captured',
+      )
     } finally {
       await page.close()
       child.kill()

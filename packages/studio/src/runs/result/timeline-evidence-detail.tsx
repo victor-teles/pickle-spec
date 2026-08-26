@@ -36,6 +36,14 @@ function entryDurationMs(entry: TimelineEntry): number | undefined {
   return Math.max(0, Date.parse(entry.finishedAt) - Date.parse(entry.startedAt))
 }
 
+function timingPrecisionLabel(entry: TimelineEntry): string {
+  if (entry.timingPrecision === 'exact') return 'Exact recorded time'
+  if (entry.timingPrecision === 'step-finish') {
+    return 'Recorded at step completion'
+  }
+  return 'Recorded at attempt completion'
+}
+
 export function TimelineEvidenceDetail(props: TimelineEvidenceDetailProps) {
   const { entry } = props
   const durationMs = entryDurationMs(entry)
@@ -73,14 +81,7 @@ export function TimelineEvidenceDetail(props: TimelineEvidenceDetailProps) {
         {durationMs === undefined ? null : (
           <DetailItem label="Duration" value={durationLabel(durationMs)} mono />
         )}
-        <DetailItem
-          label="Timing"
-          value={
-            entry.timingPrecision === 'exact'
-              ? 'Exact recorded time'
-              : 'Recorded at step completion'
-          }
-        />
+        <DetailItem label="Timing" value={timingPrecisionLabel(entry)} />
         {entry.state ? <DetailItem label="State" value={entry.state} /> : null}
         {entry.causalAt ? (
           <DetailItem

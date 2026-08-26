@@ -12,6 +12,7 @@ test('renders an accessible bounded page for a 10,000-entry Diagnostic set', () 
   const diagnostics = Array.from({ length: 10_000 }, (_, index) => ({
     id: `diagnostic-${index}`,
     occurredAt: new Date(Date.UTC(2026, 7, 24, 12, 0, 0, index)).toISOString(),
+    timingPrecision: 'exact' as const,
     level: 'info' as const,
     origin: 'adapter' as const,
     source: 'Scenario attempt' as const,

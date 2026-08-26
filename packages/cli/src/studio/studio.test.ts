@@ -681,6 +681,17 @@ export default {
       const selectedEvidence = page.getByRole('region', {
         name: 'Selected timeline evidence',
       })
+      const selectedStep = timeline.getByRole('button', {
+        name: /Step Then payment is captured/,
+      })
+      await page.getByRole('tab', { name: 'Timeline' }).focus()
+      await page.keyboard.press('Tab')
+      await page.keyboard.press('Tab')
+      expect(
+        await selectedStep.evaluate((element) =>
+          element.matches(':focus-visible'),
+        ),
+      ).toBe(true)
       const diagnosticEntry = timeline.getByRole('button', {
         name: /Diagnostic entry Payment was declined/,
       })
@@ -742,6 +753,21 @@ export default {
       expect(timelineContainment.timelineScrollWidth).toBeGreaterThan(
         timelineContainment.timelineClientWidth,
       )
+      const timeRulerViewport = page.getByRole('region', {
+        name: 'Scrollable execution time ruler',
+      })
+      const horizontalScrollbar = timelineChart.locator(
+        '[data-slot="scroll-area-scrollbar"][data-orientation="horizontal"]',
+      )
+      const scrollbarBox = await horizontalScrollbar.boundingBox()
+      expect(scrollbarBox).not.toBeNull()
+      expect(scrollbarBox!.height).toBeGreaterThanOrEqual(8)
+      await timeRulerViewport.focus()
+      await page.keyboard.press('End')
+      await page.waitForTimeout(100)
+      expect(
+        await timeRulerViewport.evaluate((element) => element.scrollLeft),
+      ).toBeGreaterThan(0)
       const scenarios = page.getByRole('table', { name: 'Scenarios' })
       expect(
         await scenarios.getByRole('columnheader', { name: 'chrome' }).count(),
