@@ -63,6 +63,25 @@ async function waitForFile(path: string): Promise<void> {
   }
 }
 
+async function expectBusyRunControl(page: Page, name: string) {
+  const control = page.getByRole('button', { name, exact: true })
+  await control.locator('[data-slot="spinner"]').waitFor()
+  expect(await control.getAttribute('aria-busy')).toBe('true')
+}
+
+async function waitForIdleRun(page: Page) {
+  const running = page.getByRole('status').filter({ hasText: 'running' })
+  await running.waitFor()
+  await running.waitFor({ state: 'hidden', timeout: 20_000 })
+}
+
+async function waitForRunToFinish(page: Page) {
+  await page
+    .getByRole('status')
+    .filter({ hasText: 'running' })
+    .waitFor({ state: 'hidden', timeout: 20_000 })
+}
+
 async function saveExecutionTargetProfile(
   page: Page,
   profileId: string,
@@ -143,7 +162,7 @@ Feature: Search
       )
       expect(
         await page.getByRole('button', { name: 'View runs' }).count(),
-      ).toBe(1)
+      ).toBe(0)
       expect(await page.getByRole('button', { name: 'Settings' }).count()).toBe(
         1,
       )
@@ -426,9 +445,7 @@ export default {
       })
       await page.goto(url)
       await page.getByRole('button', { name: 'Run Specification' }).click()
-      await page.getByRole('button', { name: 'Run Specification' }).waitFor({
-        timeout: 20_000,
-      })
+      await waitForIdleRun(page)
       const before = (await cache.inspect())[0]
       expect(before).toBeDefined()
       if (!before) throw new Error('Initial cache revision was not published')
@@ -438,7 +455,7 @@ export default {
       await Bun.write(payloadVersion, 'v2')
       await Bun.write(blockRefresh, 'block')
       await page.getByRole('button', { name: 'Refresh cache' }).click()
-      await page.getByRole('button', { name: 'Checking readiness…' }).waitFor()
+      await expectBusyRunControl(page, 'Refresh cache')
       await waitForFile(refreshStarted)
       const during = (await cache.inspect()).find(
         (entry) => entry.payloadDigest === before.payloadDigest,
@@ -447,9 +464,7 @@ export default {
       expect(await cache.read(before.key)).toBe(beforeSource)
 
       await Bun.write(releaseRefresh, 'release')
-      await page.getByRole('button', { name: 'Run Specification' }).waitFor({
-        timeout: 20_000,
-      })
+      await waitForRunToFinish(page)
       const after = (await cache.inspect()).find(
         (entry) => entry.key.scenarioId === before.key.scenarioId,
       )
@@ -628,7 +643,8 @@ export default {
       await page.getByRole('button', { name: 'Run Specification' }).click()
       const running = page.getByRole('status').filter({ hasText: 'running' })
       await running.waitFor()
-      expect(await running.locator('[data-slot="spinner"]').count()).toBe(1)
+      expect(await running.locator('[data-slot="spinner"]').count()).toBe(0)
+      await expectBusyRunControl(page, 'Run Specification')
       await page.getByRole('button', { name: 'Cancel test run' }).waitFor()
       await page
         .getByRole('button', { name: 'Pay for the order chrome running' })
@@ -638,7 +654,7 @@ export default {
           .getByRole('button', { name: 'Pay for the order chrome running' })
           .locator('[data-slot="spinner"]')
           .count(),
-      ).toBe(1)
+      ).toBe(0)
       expect(await finishedManifestCount(project)).toBe(0)
       await Bun.write(gate, 'continue')
       const failed = page.getByRole('status').filter({ hasText: 'failed' })
@@ -660,7 +676,7 @@ export default {
       expect(await items.nth(0).textContent()).toContain('Inspect result')
       await page
         .getByRole('heading', {
-          name: 'Pay for the order · failed · chrome',
+          name: 'Pay for the order · chrome',
         })
         .waitFor()
       expect(
@@ -1072,7 +1088,9 @@ Feature: Search
         .getByRole('button', { name: 'Specifications', exact: true })
         .click()
       await page.getByRole('button', { name: 'Search' }).click()
-      await page.getByRole('button', { name: 'View runs' }).click()
+      await page.getByRole('button', { name: 'Runs', exact: true }).click()
+      await page.getByRole('button', { name: 'Specification: All' }).click()
+      await page.getByRole('menuitemradio', { name: 'Search' }).click()
       await page.getByText('No Test runs match these filters.').waitFor()
       expect(
         await page.getByRole('table', { name: 'Test run history' }).count(),
@@ -1085,7 +1103,9 @@ Feature: Search
         .getByRole('button', { name: 'Specifications', exact: true })
         .click()
       await page.getByRole('button', { name: 'Checkout' }).click()
-      await page.getByRole('button', { name: 'View runs' }).click()
+      await page.getByRole('button', { name: 'Runs', exact: true }).click()
+      await page.getByRole('button', { name: 'Specification: All' }).click()
+      await page.getByRole('menuitemradio', { name: 'Checkout' }).click()
       await history.waitFor()
 
       await run.getByRole('button', { name: 'Rerun failures' }).click()
@@ -1133,7 +1153,7 @@ Feature: Search
       await failedResult.getByRole('button', { name: 'Inspect result' }).click()
       await page
         .getByRole('heading', {
-          name: 'Pay for the order · failed · chrome',
+          name: 'Pay for the order · chrome',
         })
         .waitFor()
       expect(new URL(page.url()).pathname).toMatch(
@@ -1174,7 +1194,7 @@ Feature: Search
       await page.getByRole('status', { name: 'Opening Test result' }).waitFor()
       await page
         .getByRole('heading', {
-          name: 'Pay for the order · failed · chrome',
+          name: 'Pay for the order · chrome',
         })
         .waitFor()
       await page.unroute('**/api/runs/*')
@@ -1414,9 +1434,7 @@ Feature: Checkout
       await page.goto(url)
       await page.getByRole('button', { name: 'Run Specification' }).click()
       await page.getByRole('button', { name: 'Cancel test run' }).waitFor()
-      await page.getByRole('button', { name: 'Run Specification' }).waitFor({
-        state: 'hidden',
-      })
+      await expectBusyRunControl(page, 'Run Specification')
       await waitForFile(marker)
       await page.getByRole('button', { name: 'Runs', exact: true }).click()
       const activeRuns = page.getByRole('heading', { name: 'Active Runs' })

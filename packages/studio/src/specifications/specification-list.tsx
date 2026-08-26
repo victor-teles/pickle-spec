@@ -2,6 +2,8 @@ import { type KeyboardEvent, useEffect, useState } from 'react'
 import { Button } from '../components/ui/button'
 import { useVirtualWindow } from '../hooks/use-virtual-window'
 import { cn } from '../lib/utils'
+import { RunControlButton } from '../runs/run-control-button'
+import { isBusyOrigin, type RunOrigin } from '../runs/run-origin'
 import type { StudioSpecification } from '../server/server'
 
 const specificationRowHeight = 36
@@ -10,6 +12,7 @@ type SpecificationListProps = {
   canRun: boolean
   onRunAll: () => void
   onSelect: (id: string) => void
+  origin?: RunOrigin
   running: boolean
   selectedId?: string
   specifications: readonly StudioSpecification[]
@@ -99,15 +102,15 @@ export function SpecificationList(props: SpecificationListProps) {
       )}
       <div className="border-t border-border p-2">
         {props.canRun ? (
-          <Button
-            type="button"
+          <RunControlButton
             variant="outline"
             className="w-full"
-            disabled={props.running || props.specifications.length === 0}
+            blocked={props.running || props.specifications.length === 0}
+            busy={isBusyOrigin(props.origin, { kind: 'all' })}
             onClick={props.onRunAll}
           >
             Run all Specifications
-          </Button>
+          </RunControlButton>
         ) : null}
       </div>
     </nav>

@@ -3,6 +3,7 @@ import type { LiveResultInspection } from '../runs/result/live-result-inspection
 import type { ResultInspectorTab } from '../runs/result/result-inspection'
 import { ResultInspector } from '../runs/result/result-inspector'
 import type { MatrixCell } from '../runs/result/run-view'
+import type { RunOrigin } from '../runs/run-origin'
 import type {
   StudioRunRequest,
   StudioScenario,
@@ -24,6 +25,7 @@ type SpecificationResultsProps = {
   onResumeFollowing: () => void
   onRun: (request: StudioRunRequest) => void
   onSelectInspectorTab: (tab: ResultInspectorTab) => void
+  origin?: RunOrigin
   profiles: readonly string[]
   running: boolean
   selectedResult?: MatrixCell
@@ -49,6 +51,7 @@ export function SpecificationResults(props: SpecificationResultsProps) {
         focusedScenarioId={props.focusedScenarioId}
         focusTargetId={props.focusTargetId}
         focusRequest={props.focusRequest}
+        origin={props.origin}
         running={props.running}
         onSelect={props.onPinSelection}
         onRun={handleRunScenario}

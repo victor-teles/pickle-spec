@@ -22,6 +22,7 @@ import {
 } from './result/live-result-inspection'
 import type { ResultInspectorTab } from './result/result-inspection'
 import { type MatrixCell, type RunView, statusLabel } from './result/run-view'
+import { type RunOrigin, runOriginFromRequest } from './run-origin'
 
 type UseLiveRunOptions = {
   activeProfileId?: string
@@ -37,6 +38,7 @@ type UseLiveRunOptions = {
 export function useLiveRun(options: UseLiveRunOptions) {
   const [runId, setRunId] = useState<string>()
   const [starting, setStarting] = useState(false)
+  const [origin, setOrigin] = useState<RunOrigin>()
   const [live, setLive] = useState<LiveResultInspection>()
 
   const runPhase =
@@ -79,6 +81,7 @@ export function useLiveRun(options: UseLiveRunOptions) {
         current ? receiveLiveStreamEvent(current, event) : current,
       )
       if (event.type !== 'run-finished') return
+      setOrigin(undefined)
       void options
         .api<StudioRunSnapshot>(`/api/runs/${encodeURIComponent(runId)}`)
         .then((snapshot) => {
@@ -117,6 +120,7 @@ export function useLiveRun(options: UseLiveRunOptions) {
     options.onClearError()
     setRunId(undefined)
     setLive(undefined)
+    setOrigin(runOriginFromRequest(request))
     setStarting(true)
     try {
       const readiness = await options.api<StudioRunReadiness>(
@@ -144,6 +148,7 @@ export function useLiveRun(options: UseLiveRunOptions) {
         }),
       )
     } catch (reason) {
+      setOrigin(undefined)
       options.onError(reason)
     } finally {
       setStarting(false)
@@ -188,6 +193,7 @@ export function useLiveRun(options: UseLiveRunOptions) {
     cancelRun,
     cells,
     live,
+    origin,
     pauseFollowing,
     pinSelection,
     runId,

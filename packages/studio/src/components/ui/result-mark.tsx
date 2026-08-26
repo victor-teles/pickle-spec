@@ -1,7 +1,6 @@
 import { Cancel01Icon, Tick02Icon } from '@hugeicons/core-free-icons'
 import { HugeiconsIcon } from '@hugeicons/react'
 import { cn } from '../../lib/utils'
-import { Spinner } from './spinner'
 
 export type ResultMarkState =
   | 'idle'
@@ -16,9 +15,6 @@ const settleClass =
   'size-3.5 origin-center animate-in fade-in zoom-in-95 duration-120 ease-[cubic-bezier(0.4,0,0.2,1)] motion-reduce:animate-none'
 
 function ResultMark(props: { state: ResultMarkState; className?: string }) {
-  if (props.state === 'running') {
-    return <Spinner className={props.className} />
-  }
   if (props.state === 'passed') {
     return (
       <HugeiconsIcon

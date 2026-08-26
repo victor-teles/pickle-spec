@@ -39,6 +39,7 @@ export function StudioApp({ loadingFallback }: { loadingFallback: ReactNode }) {
     onResumeFollowing: studio.run.resumeFollowing,
     onRun: studio.actions.startNewRun,
     onSelectInspectorTab: studio.run.selectInspectorTab,
+    origin: studio.run.origin,
     runId: studio.run.runId,
     running: studio.run.running,
     selectedResult: studio.run.selectedResult,
@@ -108,7 +109,6 @@ export function StudioApp({ loadingFallback }: { loadingFallback: ReactNode }) {
           onAuthoringChange={studio.setAuthoring}
           onError={data.setErrorMessage}
           onReloadProject={data.reloadProject}
-          onViewRuns={studio.actions.viewRuns}
           project={data.project}
           run={specificationRun}
           selection={specificationSelection}

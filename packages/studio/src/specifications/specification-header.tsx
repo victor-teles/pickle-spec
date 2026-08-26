@@ -3,6 +3,8 @@ import type { StudioApi } from '../app/studio-api'
 import { SpecificationEditor } from '../authoring/specification-editor'
 import { Button } from '../components/ui/button'
 import { cn } from '../lib/utils'
+import { RunControlButton } from '../runs/run-control-button'
+import { isBusyOrigin, type RunOrigin } from '../runs/run-origin'
 import type { StudioRunRequest, StudioSpecification } from '../server/server'
 
 type SpecificationHeaderProps = {
@@ -18,7 +20,7 @@ type SpecificationHeaderProps = {
   onCreated: (uri: string) => void
   onError: (message: string | undefined) => void
   onRun: (request: StudioRunRequest) => void
-  onViewRuns: () => void
+  origin?: RunOrigin
   runId?: string
   running: boolean
   runReasons?: readonly string[]
@@ -99,6 +101,7 @@ export function SpecificationHeader(props: SpecificationHeaderProps) {
               onCancel={handleCancel}
               onRefreshCache={handleRefreshCache}
               onRun={handleRun}
+              origin={props.origin}
               running={props.running}
             />
           )}
@@ -112,11 +115,6 @@ export function SpecificationHeader(props: SpecificationHeaderProps) {
             onCreated={props.onCreated}
             onError={props.onError}
           />
-          {props.authoring ? null : (
-            <Button type="button" variant="ghost" onClick={props.onViewRuns}>
-              View runs
-            </Button>
-          )}
         </div>
       </div>
     </header>
@@ -129,30 +127,34 @@ type SpecificationRunActionsProps = {
   onCancel: () => void
   onRefreshCache: () => void
   onRun: () => void
+  origin?: RunOrigin
   running: boolean
 }
 
 function SpecificationRunActions(props: SpecificationRunActionsProps) {
-  if (props.running) {
-    return props.hasRunId ? (
-      <Button type="button" variant="destructive" onClick={props.onCancel}>
-        Cancel test run
-      </Button>
-    ) : (
-      <Button type="button" disabled>
-        Checking readiness…
-      </Button>
-    )
-  }
-  if (!props.canRun) return null
+  if (!props.canRun && !props.running) return null
   return (
     <>
-      <Button type="button" onClick={props.onRun}>
+      <RunControlButton
+        busy={isBusyOrigin(props.origin, { kind: 'specification' })}
+        blocked={props.running}
+        onClick={props.onRun}
+      >
         Run Specification
-      </Button>
-      <Button type="button" variant="outline" onClick={props.onRefreshCache}>
+      </RunControlButton>
+      <RunControlButton
+        variant="outline"
+        busy={isBusyOrigin(props.origin, { kind: 'refresh' })}
+        blocked={props.running}
+        onClick={props.onRefreshCache}
+      >
         Refresh cache
-      </Button>
+      </RunControlButton>
+      {props.running && props.hasRunId ? (
+        <Button type="button" variant="destructive" onClick={props.onCancel}>
+          Cancel test run
+        </Button>
+      ) : null}
     </>
   )
 }
