@@ -19,7 +19,7 @@
     "browser": {
       "environment": "local",
       "modelName": "google/gemini-3.6-flash",
-      "headless": false
+      "headless": true
     }
   },
   "execution": {
