@@ -56,6 +56,9 @@ const payloadValidator: ExecutionCachePayloadValidator<TestPayload> = {
     }
     return { operation: payload.operation, target: payload.target }
   },
+  prefixStepCount() {
+    return 1
+  },
 }
 
 function key(projectKey: string, scenarioRevision: string): ExecutionCacheKey {

@@ -133,8 +133,16 @@ function controlledFactory(): WebAutomationFactory {
           }
           const automation: WebAutomation = {
             async navigate() {},
-            async observe() {
+            async observe(prompt) {
               rejectReplayInference('observe')
+              if (prompt.includes('Do not click or type')) {
+                return [
+                  {
+                    description: 'Account page ready indicator',
+                    handle: { selector: '#ready', method: 'click' },
+                  },
+                ]
+              }
               return [selectControlledAction()]
             },
             async act() {

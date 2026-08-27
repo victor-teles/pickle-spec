@@ -4,7 +4,6 @@ import {
   emptyRunView,
   pinCell,
   reduceRun,
-  statusLabel,
   type TestResult,
 } from './run-view'
 
@@ -58,8 +57,4 @@ test('prefers a failed cell over a passed cell when unpinned', () => {
   view = reduceRun(view, started('Pay for the order', 'pay'))
   view = reduceRun(view, finished('Pay for the order', 'pay', 'failed'))
   expect(view.selected?.scenarioName).toBe('Pay for the order')
-})
-
-test('status stays idle until a run starts', () => {
-  expect(statusLabel(emptyRunView())).toBe('idle')
 })

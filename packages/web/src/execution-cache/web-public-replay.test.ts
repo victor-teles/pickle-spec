@@ -207,8 +207,8 @@ describe('public web Replay proof', () => {
       ).toEqual(['Navigate to the cached URL', 'Click the cached locator'])
       expect(evidence.modelCalls.adaptive).toEqual({
         act: 0,
-        compileAssertion: 1,
-        observe: 1,
+        compileAssertion: 0,
+        observe: 2,
         verify: 0,
       })
       expect(evidence.modelCalls.replay).toEqual({
@@ -368,7 +368,7 @@ describe('public web Replay proof', () => {
       expect(
         firstEvidence.modelCalls.adaptive.observe +
           secondEvidence.modelCalls.adaptive.observe,
-      ).toBe(1)
+      ).toBe(2)
       expect(await firstCache.inspect()).toHaveLength(1)
     } finally {
       await Promise.all([firstAdapter.dispose?.(), secondAdapter.dispose?.()])

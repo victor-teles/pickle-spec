@@ -21,7 +21,7 @@ import {
   startLiveInspection,
 } from './result/live-result-inspection'
 import type { ResultInspectorTab } from './result/result-inspection'
-import { type MatrixCell, type RunView, statusLabel } from './result/run-view'
+import type { MatrixCell } from './result/run-view'
 import { type RunOrigin, runOriginFromRequest } from './run-origin'
 
 type UseLiveRunOptions = {
@@ -41,14 +41,10 @@ export function useLiveRun(options: UseLiveRunOptions) {
   const [origin, setOrigin] = useState<RunOrigin>()
   const [live, setLive] = useState<LiveResultInspection>()
 
-  const runPhase =
-    live?.phase === 'finished'
-      ? 'finished'
-      : live?.phase === 'running' || starting
-        ? 'running'
-        : 'idle'
   const running =
-    runPhase === 'running' || Boolean(options.runsIndex?.activeRunIds.length)
+    live?.phase === 'running' ||
+    starting ||
+    Boolean(options.runsIndex?.activeRunIds.length)
   const cells = useMemo(
     () => (live ? cellsFromLiveInspection(live) : []),
     [live],
@@ -60,14 +56,6 @@ export function useLiveRun(options: UseLiveRunOptions) {
           cell.profileId === live.location?.profileId,
       )
     : undefined
-  const aggregate = statusLabel({
-    phase: runPhase,
-    activity: [],
-    cells,
-    selected: selectedResult,
-    pinned: live?.pinned ?? false,
-  } satisfies RunView)
-
   useEffect(() => {
     if (!runId) return
     let closedByClient = false
@@ -189,7 +177,6 @@ export function useLiveRun(options: UseLiveRunOptions) {
   }
 
   return {
-    aggregate,
     cancelRun,
     cells,
     live,

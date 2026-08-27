@@ -573,9 +573,22 @@ test('renders execution mode, Cache outcome, and inference count independently f
   uncacheableAttempt.cacheOutcome = 'uncacheable'
   uncacheableAttempt.cacheUncacheableReason = 'non-deterministic-assertion'
   uncacheableAttempt.inferenceCount = 3
+  const mixed = passedRun({
+    specificationUri: 'features/checkout.feature',
+    specificationName: 'Checkout',
+    scenarioId: 'scenario-partial-hit',
+    scenarioName: 'Resume checkout',
+    profileId: 'web',
+    durationMs: 18,
+  })
+  const mixedAttempt = finalScenarioAttempt(mixed.result)
+  mixedAttempt.executionMode = 'adaptive'
+  mixedAttempt.cacheOutcome = 'partial-hit'
+  mixedAttempt.prefixStepCount = 1
+  mixedAttempt.inferenceCount = 2
 
   reporter.start()
-  finishReporter(reporter, [replay, fallback, uncacheable], 67)
+  finishReporter(reporter, [replay, fallback, uncacheable, mixed], 67)
 
   const output = lines.join('\n')
   expect(output).toContain(
@@ -587,7 +600,10 @@ test('renders execution mode, Cache outcome, and inference count independently f
   expect(output).toContain(
     'Inspect checkout [30ms] (passed; mode Adaptive; cache uncacheable: non-deterministic-assertion; 3 inferences)',
   )
-  expect(output).toContain(' Test results    3 passed (3)')
+  expect(output).toContain(
+    'Resume checkout [18ms] (passed; mode Adaptive; cache partial-hit; 2 inferences)',
+  )
+  expect(output).toContain(' Test results    4 passed (4)')
 })
 
 test('enables color only for a TTY when NO_COLOR is absent', () => {

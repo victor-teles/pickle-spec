@@ -68,6 +68,9 @@ describe('pickle cache commands', () => {
       parse(payload) {
         return payload as Payload
       },
+      prefixStepCount() {
+        return 1
+      },
     }
     const envelope: ExecutionCacheEnvelope<Payload> = {
       schemaVersion: 1,

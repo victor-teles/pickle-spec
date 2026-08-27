@@ -47,6 +47,9 @@ const payloadValidator: ExecutionCachePayloadValidator<TestPayload> = {
     }
     return parsed.data
   },
+  prefixStepCount() {
+    return 1
+  },
 }
 
 function envelope(): ExecutionCacheEnvelope<TestPayload> {

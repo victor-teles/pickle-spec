@@ -35,6 +35,9 @@ test('Studio inspects metadata and clears only its checkout Execution cache', as
     parse(payload) {
       return payload as Payload
     },
+    prefixStepCount() {
+      return 1
+    },
   }
   const envelope: ExecutionCacheEnvelope<Payload> = {
     schemaVersion: 1,

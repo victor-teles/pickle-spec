@@ -22,6 +22,10 @@ export interface ExecutionCacheEnvelope<AdapterPayload = unknown> {
   adapterPayload: AdapterPayload
 }
 
+export type ExecutionCachePrefixPolicy =
+  | { readonly mixedReplay: true; readonly write: 'prefix' }
+  | { readonly mixedReplay: false; readonly write: 'complete-scenario-only' }
+
 export interface ExecutionCachePayloadValidator<AdapterPayload = unknown> {
   adapterKind: string
   adapterCacheSchemaVersion: string
@@ -29,11 +33,19 @@ export interface ExecutionCachePayloadValidator<AdapterPayload = unknown> {
     payload: unknown,
     requiredVariables: readonly string[],
   ): AdapterPayload | undefined
+  prefixStepCount(payload: AdapterPayload): number
 }
 
 export interface ExecutionCacheAdapter<AdapterPayload = unknown>
   extends ExecutionCachePayloadValidator<AdapterPayload> {
   targetConfigurationFingerprint: string
+  prefixPolicy?: ExecutionCachePrefixPolicy
+}
+
+export function prefixPolicyOf(
+  adapter: ExecutionCacheAdapter,
+): ExecutionCachePrefixPolicy {
+  return adapter.prefixPolicy ?? { mixedReplay: true, write: 'prefix' }
 }
 
 declare const serializedExecutionCacheEnvelope: unique symbol
@@ -45,9 +57,17 @@ export type SerializedExecutionCacheEnvelope = {
   readonly [serializedExecutionCacheEnvelope]: true
 }
 
+export type TerminalCacheOutcome = Exclude<CacheOutcome, 'hit' | 'partial-hit'>
+
+export function isTerminalCacheOutcome(
+  outcome: CacheOutcome,
+): outcome is TerminalCacheOutcome {
+  return outcome !== 'hit' && outcome !== 'partial-hit'
+}
+
 export type ExecutionCacheTerminalOutcome = {
   state: 'passed' | 'failed' | 'skipped' | 'infrastructure-error'
-  cacheOutcome: Exclude<CacheOutcome, 'hit'>
+  cacheOutcome: TerminalCacheOutcome
   cacheUncacheableReason?: ExecutionCacheUncacheableReason
   failureKind?: 'cache-miss'
 }
@@ -133,7 +153,13 @@ const terminalCacheOutcomeValues = [
   'uncacheable',
 ] as const
 
-export type CacheOutcome = 'hit' | (typeof terminalCacheOutcomeValues)[number]
+const cacheOutcomeValues = [
+  'hit',
+  'partial-hit',
+  ...terminalCacheOutcomeValues,
+] as const
+
+export type CacheOutcome = (typeof cacheOutcomeValues)[number]
 
 const executionCacheUncacheableReasonValues = [
   'application-revision-missing',

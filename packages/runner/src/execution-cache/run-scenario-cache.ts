@@ -13,7 +13,6 @@ import {
   type ScenarioAttempt,
   type ScenarioRun,
   scenarioFinishedPayload,
-  type TargetSessionReplayRepresentation,
   type TestResult,
   testRunSchemaVersion,
   withFinalAttempt,
@@ -25,6 +24,13 @@ import {
   stringContainsBinding,
 } from '../execution/scenario-runtime'
 import {
+  type AttemptCacheUse,
+  attemptCacheUse,
+  type CachedStepPrefix,
+  cachedStepPrefixFrom,
+  sealCachedStepPrefix,
+} from './cached-step-prefix'
+import {
   type CacheOutcome,
   deserializeExecutionCacheEnvelope,
   deserializeExecutionCacheTerminalOutcome,
@@ -32,6 +38,8 @@ import {
   type ExecutionCacheKey,
   type ExecutionCacheLease,
   type ExecutionCacheUncacheableReason,
+  isTerminalCacheOutcome,
+  prefixPolicyOf,
   resolveExecutionCacheKey,
   type SerializedExecutionCacheEnvelope,
   type SerializedExecutionCacheTerminalOutcome,
@@ -119,6 +127,7 @@ async function runCachedAttempts(
     runtimeValueExposed ||= run.runtimeValueExposed
     const replayCompletionInvalid =
       mode === 'replay' &&
+      !run.adaptiveEvaluated &&
       run.result.state === 'passed' &&
       (run.completion === undefined || run.completion.inferenceCount !== 0)
     const completedAttempt = replayCompletionInvalid
@@ -290,7 +299,7 @@ function requiredVariablesAreValid(
 interface FinalizeAdaptiveRunInput {
   run: RetriedScenarioRun
   cacheKey?: ExecutionCacheKey
-  cacheOutcome: CacheOutcome
+  startedFrom: 'entry' | 'miss' | 'refresh'
   forcedUncacheableReason?: ExecutionCacheUncacheableReason
   lease?: ExecutionCacheLease
 }
@@ -315,8 +324,10 @@ function terminalOutcomeFor(
     throw new Error('Cancelled Test results do not have terminal outcomes')
   }
   const attempt = result.attempts.at(-1)
-  if (!attempt?.cacheOutcome || attempt.cacheOutcome === 'hit') {
-    throw new Error('Terminal Test result requires a non-hit Cache outcome')
+  if (!attempt?.cacheOutcome || !isTerminalCacheOutcome(attempt.cacheOutcome)) {
+    throw new Error(
+      'Terminal Test result requires a miss, refresh, fallback, or uncacheable Cache outcome',
+    )
   }
   return serializeExecutionCacheTerminalOutcome({
     state: result.state,
@@ -363,21 +374,39 @@ function adaptiveUncacheableReason(
   return undefined
 }
 
-function serializedAdaptiveEntry(
+function cacheFields(use: AttemptCacheUse): Partial<ScenarioAttempt> {
+  if (use.cacheOutcome === 'partial-hit') {
+    return {
+      cacheOutcome: use.cacheOutcome,
+      inferenceCount: use.inferenceCount,
+      prefixStepCount: use.prefixStepCount,
+    }
+  }
+  if (use.cacheOutcome === 'uncacheable') {
+    return {
+      cacheOutcome: use.cacheOutcome,
+      inferenceCount: use.inferenceCount,
+      cacheUncacheableReason: use.cacheUncacheableReason,
+    }
+  }
+  return {
+    cacheOutcome: use.cacheOutcome,
+    inferenceCount: use.inferenceCount,
+  }
+}
+
+function serializedPrefixEntry(
   input: RunScenarioInput,
   cacheKey: ExecutionCacheKey,
-  representation: Extract<
-    TargetSessionReplayRepresentation,
-    { cacheable: true }
-  >,
+  prefix: CachedStepPrefix,
 ): SerializedExecutionCacheEnvelope | undefined {
   try {
     return serializeExecutionCacheEnvelope(
       {
         schemaVersion: 1,
         key: cacheKey,
-        requiredVariables: [...representation.requiredVariables],
-        adapterPayload: representation.adapterPayload,
+        requiredVariables: [...prefix.requiredVariables],
+        adapterPayload: prefix.adapterPayload,
       },
       input.adapter.executionCache!,
     )
@@ -390,17 +419,10 @@ async function publishAdaptiveEntry(
   context: AdaptiveResultContext,
   run: RetriedScenarioRun,
   cacheKey: ExecutionCacheKey,
+  prefix: CachedStepPrefix,
 ): Promise<AdaptiveCachePublication> {
   const { events, input, lease, result, scope } = context
-  const representation = run.completion?.replayRepresentation
-  if (!representation) {
-    return { status: 'uncacheable', reason: 'non-deterministic-action' }
-  }
-  if (!representation.cacheable) {
-    return { status: 'uncacheable', reason: representation.reason }
-  }
-
-  const serialized = serializedAdaptiveEntry(input, cacheKey, representation)
+  const serialized = serializedPrefixEntry(input, cacheKey, prefix)
   if (!serialized) {
     return { status: 'uncacheable', reason: 'payload-validation-failed' }
   }
@@ -479,49 +501,123 @@ async function finishSuccessfulAdaptiveRun(
   return finishRun(input, events, finalResult)
 }
 
-async function finalizeAdaptiveRun(
+function publishableCachedPrefix(
   input: RunScenarioInput,
-  events: RunEvent[],
+  run: RetriedScenarioRun,
   finalization: FinalizeAdaptiveRunInput,
-): Promise<ScenarioRun> {
-  const { run, cacheKey } = finalization
-  const result = withFinalAttempt(run.result, {
-    cacheOutcome: finalization.cacheOutcome,
-    inferenceCount: run.inferenceCount,
+): {
+  prefix: CachedStepPrefix | undefined
+  policyReason: ExecutionCacheUncacheableReason | undefined
+} {
+  const adapter = input.adapter.executionCache!
+  const scenarioStepCount = input.scenario.steps.length
+  const prefix = sealCachedStepPrefix({
+    compiledPayload: run.completion?.replayRepresentation,
+    scenarioStepCount,
+    adapter,
   })
-  const scope = finalAttemptScope(input, result)
-  await appendEvent(events, input, {
-    type: 'inference-count-updated',
-    inferenceCount: run.inferenceCount,
-    scope,
-  })
-
-  const context: AdaptiveResultContext = {
-    input,
-    events,
-    result,
-    lease: finalization.lease,
-    scope,
-  }
-  if (result.state !== 'passed') {
-    return finishFailedAdaptiveRun(context)
-  }
-
+  const passedCount = run.attempt.steps.filter(
+    (step) => step.state === 'passed',
+  ).length
+  const policy = prefixPolicyOf(adapter)
   const policyReason = adaptiveUncacheableReason(
     input,
     run,
     finalization.forcedUncacheableReason,
   )
+  const publishable =
+    !finalization.forcedUncacheableReason &&
+    !policyReason &&
+    prefix &&
+    prefix.stepCount <= passedCount &&
+    (policy.write === 'prefix' || prefix.stepCount === scenarioStepCount)
+      ? prefix
+      : undefined
+  return { prefix: publishable, policyReason }
+}
+
+function attemptUncacheableReason(
+  run: RetriedScenarioRun,
+  policyReason: ExecutionCacheUncacheableReason | undefined,
+  publishablePrefix: CachedStepPrefix | undefined,
+): ExecutionCacheUncacheableReason | undefined {
+  if (run.result.state === 'passed' && policyReason && !publishablePrefix) {
+    return policyReason
+  }
+  return undefined
+}
+
+async function publishThenFinishAdaptive(
+  context: AdaptiveResultContext,
+  run: RetriedScenarioRun,
+  cacheKey: ExecutionCacheKey | undefined,
+  publishablePrefix: CachedStepPrefix | undefined,
+  policyReason: ExecutionCacheUncacheableReason | undefined,
+): Promise<ScenarioRun> {
+  const { events, input, result } = context
+  const canPublish =
+    Boolean(publishablePrefix && cacheKey) &&
+    (result.state === 'passed' || result.state === 'failed')
   const publication =
-    !policyReason && cacheKey
-      ? await publishAdaptiveEntry(context, run, cacheKey)
+    canPublish && publishablePrefix && cacheKey
+      ? await publishAdaptiveEntry(context, run, cacheKey, publishablePrefix)
       : undefined
   if (publication?.status === 'failed') {
     return finishRun(input, events, publication.result)
   }
   const publicationReason =
     publication?.status === 'uncacheable' ? publication.reason : undefined
-  return finishSuccessfulAdaptiveRun(context, policyReason ?? publicationReason)
+  if (result.state !== 'passed') {
+    return finishFailedAdaptiveRun(context)
+  }
+  return finishSuccessfulAdaptiveRun(
+    context,
+    publishablePrefix ? publicationReason : (policyReason ?? publicationReason),
+  )
+}
+
+async function finalizeAdaptiveRun(
+  input: RunScenarioInput,
+  events: RunEvent[],
+  finalization: FinalizeAdaptiveRunInput,
+): Promise<ScenarioRun> {
+  const { run, cacheKey } = finalization
+  const { prefix: publishablePrefix, policyReason } = publishableCachedPrefix(
+    input,
+    run,
+    finalization,
+  )
+  const cacheUse = attemptCacheUse({
+    prefixStepCount: run.replayedStepCount,
+    scenarioStepCount: input.scenario.steps.length,
+    inferenceCount: run.inferenceCount,
+    startedFrom: finalization.startedFrom,
+    uncacheableReason: attemptUncacheableReason(
+      run,
+      policyReason,
+      publishablePrefix,
+    ),
+  })
+  const result = withFinalAttempt(run.result, cacheFields(cacheUse))
+  const scope = finalAttemptScope(input, result)
+  await appendEvent(events, input, {
+    type: 'inference-count-updated',
+    inferenceCount: run.inferenceCount,
+    scope,
+  })
+  return publishThenFinishAdaptive(
+    {
+      input,
+      events,
+      result,
+      lease: finalization.lease,
+      scope,
+    },
+    run,
+    cacheKey,
+    publishablePrefix,
+    policyReason,
+  )
 }
 
 async function finishLeaseWait(
@@ -571,35 +667,64 @@ async function replayPublishedEntry(
     cacheKey,
     scope: nextAttemptScope(input, attempts),
   })
-  const replay = await runCachedAttempts(
-    input,
-    'replay',
-    events,
+  const adapter = input.adapter.executionCache!
+  const prefix = cachedStepPrefixFrom(
     entry,
-    attempts,
+    input.scenario.steps.length,
+    adapter,
   )
-  if (replay.replayDiverged) {
+  const mode =
+    prefix && prefix.stepCount === input.scenario.steps.length
+      ? 'replay'
+      : 'adaptive'
+  const replay = await runCachedAttempts(input, mode, events, entry, attempts)
+  if (replay.replayDiverged && !replay.adaptiveEvaluated) {
     await appendScenarioFinishedEvent(events, input, replay.result)
     await appendEvent(events, input, {
       type: 'replay-diverged',
       cacheKey,
       scope: finalAttemptScope(input, replay.result),
     })
-    return undefined
+    if (!prefixPolicyOf(adapter).mixedReplay) return undefined
+    return finishRun(
+      input,
+      events,
+      withFinalAttempt(replay.result, {
+        cacheOutcome: 'hit',
+        inferenceCount: inferenceOffset + replay.inferenceCount,
+        failureKind: 'cache-miss',
+      }),
+    )
   }
-  await appendEvent(events, input, {
-    type: 'inference-count-updated',
-    inferenceCount: inferenceOffset + replay.inferenceCount,
-    scope: finalAttemptScope(input, replay.result),
-  })
-  return finishRun(
-    input,
-    events,
-    withFinalAttempt(replay.result, {
-      cacheOutcome: 'hit',
+  if (
+    prefix &&
+    prefix.stepCount === input.scenario.steps.length &&
+    !replay.adaptiveEvaluated &&
+    replay.result.state === 'passed' &&
+    replay.inferenceCount === 0
+  ) {
+    await appendEvent(events, input, {
+      type: 'inference-count-updated',
       inferenceCount: inferenceOffset + replay.inferenceCount,
-    }),
-  )
+      scope: finalAttemptScope(input, replay.result),
+    })
+    return finishRun(
+      input,
+      events,
+      withFinalAttempt(replay.result, {
+        cacheOutcome: 'hit',
+        inferenceCount: inferenceOffset,
+      }),
+    )
+  }
+  return finalizeAdaptiveRun(input, events, {
+    run: {
+      ...replay,
+      inferenceCount: inferenceOffset + replay.inferenceCount,
+    },
+    cacheKey,
+    startedFrom: 'entry',
+  })
 }
 
 async function reuseTerminalOutcome(
@@ -675,7 +800,11 @@ async function runCoordinatedAdaptive(
       ...adaptive,
       inferenceCount: inferenceOffset + adaptive.inferenceCount,
     }
-    return finalizeAdaptiveRun(input, events, { run, cacheKey, cacheOutcome })
+    return finalizeAdaptiveRun(input, events, {
+      run,
+      cacheKey,
+      startedFrom: cacheOutcome === 'refresh' ? 'refresh' : 'miss',
+    })
   }
 
   return coordinateExecutionCacheRun({
@@ -727,7 +856,7 @@ async function runCoordinatedAdaptive(
       return finalizeAdaptiveRun(input, events, {
         run,
         cacheKey,
-        cacheOutcome,
+        startedFrom: cacheOutcome === 'refresh' ? 'refresh' : 'miss',
         lease,
       })
     },
@@ -775,7 +904,7 @@ async function runUncacheableScenario(
   const run = await runCachedAttempts(input, 'adaptive', events)
   return finalizeAdaptiveRun(input, events, {
     run,
-    cacheOutcome: 'uncacheable',
+    startedFrom: 'miss',
     forcedUncacheableReason: hasUnsafeBindings
       ? 'bound-parameter-value'
       : 'application-revision-missing',
@@ -791,18 +920,98 @@ interface RunReplayCacheHitInput {
   observedRevision?: number
 }
 
-async function runReplayCacheHit(
+async function denyUnusablePrefix(
   options: RunReplayCacheHitInput,
+  prefix: CachedStepPrefix | undefined,
+): Promise<ScenarioRun | undefined> {
+  const { cacheKey, cachePolicy, events, input, observedRevision } = options
+  const policy = prefixPolicyOf(input.adapter.executionCache!)
+  if (!prefix) {
+    await input.executionCache!.store.delete(cacheKey)
+    if (cachePolicy === 'cache-only') {
+      return runCacheOnlyMiss(
+        input,
+        events,
+        'Execution cache entry was not found',
+        cacheKey,
+      )
+    }
+    await appendEvent(events, input, {
+      type: 'cache-miss',
+      cacheKey,
+      scope: nextAttemptScope(input),
+    })
+    return runCoordinatedAdaptive({
+      input,
+      events,
+      cacheKey,
+      cacheOutcome: 'miss',
+      observedRevision,
+    })
+  }
+  const isComplete = prefix.stepCount === input.scenario.steps.length
+  if (!isComplete && cachePolicy === 'cache-only') {
+    return runCacheOnlyMiss(
+      input,
+      events,
+      'Execution cache prefix does not cover the Scenario',
+      cacheKey,
+    )
+  }
+  if (!isComplete && !policy.mixedReplay) {
+    await appendEvent(events, input, {
+      type: 'cache-miss',
+      cacheKey,
+      scope: nextAttemptScope(input),
+    })
+    return runCoordinatedAdaptive({
+      input,
+      events,
+      cacheKey,
+      cacheOutcome: 'miss',
+      observedRevision,
+    })
+  }
+  return undefined
+}
+
+async function finishDivergedReplayHit(
+  input: RunScenarioInput,
+  events: RunEvent[],
+  cacheKey: ExecutionCacheKey,
+  replay: RetriedScenarioRun,
 ): Promise<ScenarioRun> {
-  const { cacheEntry, cacheKey, cachePolicy, events, input, observedRevision } =
-    options
   await appendEvent(events, input, {
-    type: 'cache-hit',
+    type: 'replay-diverged',
     cacheKey,
-    scope: nextAttemptScope(input),
+    scope: finalAttemptScope(input, replay.result),
   })
-  const replay = await runCachedAttempts(input, 'replay', events, cacheEntry)
-  if (!replay.replayDiverged) {
+  return finishRun(
+    input,
+    events,
+    withFinalAttempt(replay.result, {
+      cacheOutcome: 'hit',
+      inferenceCount: replay.inferenceCount,
+      failureKind: 'cache-miss',
+    }),
+  )
+}
+
+async function resolveOpenedReplay(
+  options: RunReplayCacheHitInput,
+  prefix: CachedStepPrefix,
+  replay: RetriedScenarioRun,
+): Promise<ScenarioRun | undefined> {
+  const { cacheKey, cachePolicy, events, input, observedRevision } = options
+  const policy = prefixPolicyOf(input.adapter.executionCache!)
+  const isComplete = prefix.stepCount === input.scenario.steps.length
+  const fullReplayHit =
+    isComplete &&
+    !replay.adaptiveEvaluated &&
+    !replay.replayDiverged &&
+    replay.result.state === 'passed' &&
+    replay.inferenceCount === 0
+  if (fullReplayHit) {
     await appendEvent(events, input, {
       type: 'inference-count-updated',
       inferenceCount: replay.inferenceCount,
@@ -813,48 +1022,90 @@ async function runReplayCacheHit(
       events,
       withFinalAttempt(replay.result, {
         cacheOutcome: 'hit',
-        inferenceCount: replay.inferenceCount,
+        inferenceCount: 0,
       }),
     )
   }
-
   if (cachePolicy === 'cache-only') {
+    return finishDivergedReplayHit(input, events, cacheKey, replay)
+  }
+  if (
+    policy.mixedReplay &&
+    isComplete &&
+    !replay.adaptiveEvaluated &&
+    replay.replayDiverged
+  ) {
+    return finishDivergedReplayHit(input, events, cacheKey, replay)
+  }
+  if (!policy.mixedReplay && replay.replayDiverged) {
+    await appendScenarioFinishedEvent(events, input, replay.result)
     await appendEvent(events, input, {
       type: 'replay-diverged',
       cacheKey,
       scope: finalAttemptScope(input, replay.result),
     })
-    return finishRun(
+    await appendEvent(events, input, {
+      type: 'adaptive-fallback-started',
+      cacheKey,
+      scope: nextAttemptScope(input, replay.result.attempts),
+    })
+    return runCoordinatedAdaptive({
       input,
       events,
-      withFinalAttempt(replay.result, {
-        cacheOutcome: 'hit',
-        inferenceCount: replay.inferenceCount,
-        failureKind: 'cache-miss',
-      }),
-    )
+      cacheKey,
+      cacheOutcome: 'miss',
+      observedRevision,
+      inferenceOffset: replay.inferenceCount,
+      priorAttempts: replay.result.attempts,
+    })
+  }
+  if (replay.replayedStepCount < prefix.stepCount) {
+    await appendEvent(events, input, {
+      type: 'replay-diverged',
+      cacheKey,
+      scope: finalAttemptScope(input, replay.result),
+    })
+    await appendEvent(events, input, {
+      type: 'adaptive-fallback-started',
+      cacheKey,
+      scope: finalAttemptScope(input, replay.result),
+    })
+  }
+  return undefined
+}
+
+async function runReplayCacheHit(
+  options: RunReplayCacheHitInput,
+): Promise<ScenarioRun> {
+  const { cacheEntry, cacheKey, events, input } = options
+  const adapter = input.adapter.executionCache!
+  const prefix = cachedStepPrefixFrom(
+    cacheEntry,
+    input.scenario.steps.length,
+    adapter,
+  )
+  const denied = await denyUnusablePrefix(options, prefix)
+  if (denied) return denied
+  if (!prefix) {
+    throw new Error('Execution cache prefix was required after admission')
   }
 
-  await appendScenarioFinishedEvent(events, input, replay.result)
   await appendEvent(events, input, {
-    type: 'replay-diverged',
+    type: 'cache-hit',
     cacheKey,
-    scope: finalAttemptScope(input, replay.result),
+    scope: nextAttemptScope(input),
   })
-  await appendEvent(events, input, {
-    type: 'adaptive-fallback-started',
-    cacheKey,
-    scope: nextAttemptScope(input, replay.result.attempts),
-  })
-  return runCoordinatedAdaptive({
-    input,
-    events,
-    cacheKey,
-    cacheOutcome: 'fallback',
-    observedRevision,
-    inferenceOffset: replay.inferenceCount,
-    priorAttempts: replay.result.attempts,
-  })
+  const mode =
+    prefix.stepCount === input.scenario.steps.length ? 'replay' : 'adaptive'
+  const replay = await runCachedAttempts(input, mode, events, cacheEntry)
+  return (
+    (await resolveOpenedReplay(options, prefix, replay)) ??
+    (await finalizeAdaptiveRun(input, events, {
+      run: replay,
+      cacheKey,
+      startedFrom: 'entry',
+    }))
+  )
 }
 
 export async function runScenarioWithExecutionCache(

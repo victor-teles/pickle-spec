@@ -13,8 +13,16 @@ import {
 } from './web-template'
 
 const assertionLocatorShape = {
-  selector: z.string().min(1),
-  nth: z.number().int().nonnegative().optional(),
+  selector: z
+    .string()
+    .min(1)
+    .describe('CSS or Playwright selector for the element'),
+  nth: z
+    .number()
+    .int()
+    .nonnegative()
+    .optional()
+    .describe('0-based match index when the selector hits multiple nodes'),
 }
 
 export const webAssertionDraftSchema = z.discriminatedUnion('kind', [
@@ -24,25 +32,45 @@ export const webAssertionDraftSchema = z.discriminatedUnion('kind', [
   z.strictObject({
     kind: z.literal('text-equals'),
     ...assertionLocatorShape,
-    expected: z.string(),
+    expected: z
+      .string()
+      .describe('Exact inner text required by the expectation'),
   }),
   z.strictObject({
     kind: z.literal('text-contains'),
     ...assertionLocatorShape,
-    expected: z.string(),
+    expected: z
+      .string()
+      .describe('Substring that must appear in the element text'),
   }),
   z.strictObject({
     kind: z.literal('value-equals'),
     ...assertionLocatorShape,
-    expected: z.string(),
+    expected: z
+      .string()
+      .describe('Exact input value required by the expectation'),
   }),
   z.strictObject({
     kind: z.literal('count-equals'),
     ...assertionLocatorShape,
-    expected: z.union([z.number().int().nonnegative(), z.string()]),
+    expected: z
+      .union([z.number().int().nonnegative(), z.string()])
+      .describe('Exact number of matches required by the expectation'),
   }),
-  z.strictObject({ kind: z.literal('url-equals'), expected: z.string() }),
+  z.strictObject({
+    kind: z.literal('url-equals'),
+    expected: z.string().describe('Exact page URL required by the expectation'),
+  }),
 ])
+
+export const webAssertionCompileSchema = z.object({
+  assertions: z
+    .array(webAssertionDraftSchema)
+    .min(1)
+    .describe(
+      'One deterministic browser assertion per check in the expectation',
+    ),
+})
 
 export type WebAssertionDraft = z.infer<typeof webAssertionDraftSchema>
 

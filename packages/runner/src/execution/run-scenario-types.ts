@@ -127,10 +127,13 @@ export interface StepExecution {
   trace?: TraceEntry[]
 }
 
+export type StepEvaluation = 'replay' | 'adaptive'
+
 export interface StepExecutionContext {
   stepIndex: number
   templateStep: ScenarioStep
   runtimeBindings: readonly ScenarioVariableBinding[]
+  evaluation?: StepEvaluation
 }
 
 export type TargetSessionReplayRepresentation =
@@ -241,6 +244,7 @@ export interface ScenarioAttempt {
   executionMode?: ExecutionMode
   cacheOutcome?: CacheOutcome
   inferenceCount?: number
+  prefixStepCount?: number
   cacheUncacheableReason?: ExecutionCacheUncacheableReason
   failureKind?: 'cache-miss'
   message?: string

@@ -22,6 +22,17 @@ export function promptFor(step: ScenarioStep): string {
   return prompt
 }
 
+export function observeInstruction(step: ScenarioStep): string {
+  const prompt = promptFor(step)
+  if (step.type === 'outcome') {
+    return (
+      'Find the elements, by type and visible label, that confirm this ' +
+      `expectation. Do not click or type. Expectation: ${prompt}`
+    )
+  }
+  return `Find the controls, by type and visible label, needed to: ${prompt}`
+}
+
 export function navigationTarget(prompt: string): string | undefined {
   return prompt.match(navigationPattern)?.[1]?.trim()
 }

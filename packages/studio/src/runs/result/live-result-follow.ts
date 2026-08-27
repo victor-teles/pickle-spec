@@ -8,6 +8,7 @@ import {
   defaultResultInspectorTab,
   findInspectedResult,
   timelineFor,
+  visibleTimelineEntries,
 } from './result-evidence'
 import type { ResultInspectionLocation } from './result-inspection'
 import { resultPriority } from './run-view'
@@ -51,7 +52,10 @@ export function nextFollowedEntryId(
   if (!state.following || !location) return state.followedEntryId
   const inspected = findInspectedResult(snapshot, location)
   if (!inspected) return state.followedEntryId
-  const entries = timelineFor(snapshot.events, inspected.attempt, location)
+  const entries = visibleTimelineEntries(
+    timelineFor(snapshot.events, inspected.attempt, location),
+    'essential',
+  )
   const causal = causalTimelineEntry(entries)
   return causal?.id ?? entries.at(-1)?.id ?? state.followedEntryId
 }

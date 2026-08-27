@@ -8,8 +8,15 @@ import {
   CardHeader,
   CardTitle,
 } from '../../components/ui/card'
+import { Label } from '../../components/ui/label'
+import { Switch } from '../../components/ui/switch'
 import { durationLabel } from '../run-format'
-import { causalTimelineEntry, type TimelineEntry } from './result-evidence'
+import {
+  causalTimelineEntry,
+  type TimelineDensity,
+  type TimelineEntry,
+  visibleTimelineEntries,
+} from './result-evidence'
 import { TimelineEvidenceDetail } from './timeline-evidence-detail'
 import { TimelineWaterfall } from './timeline-waterfall'
 
@@ -37,21 +44,27 @@ function selectedTimelineEntry(
 
 export function ResultEvidenceTimeline(props: ResultEvidenceTimelineProps) {
   const [selectedEntryId, setSelectedEntryId] = useState<string>()
-  const causalEntry = causalTimelineEntry(props.entries)
+  const [density, setDensity] = useState<TimelineDensity>('essential')
+  const visibleEntries = visibleTimelineEntries(props.entries, density)
+  const followEntries = visibleTimelineEntries(props.entries, 'essential')
+  const causalEntry = causalTimelineEntry(visibleEntries)
   const followedEntryId =
-    props.followedEntryId ?? causalEntry?.id ?? props.entries.at(-1)?.id
+    props.followedEntryId ??
+    causalTimelineEntry(followEntries)?.id ??
+    followEntries.at(-1)?.id
   const activeEntryId =
     props.follow === true
       ? followedEntryId
       : (selectedEntryId ?? followedEntryId)
   const selectedEntry = selectedTimelineEntry(
-    props.entries,
+    visibleEntries,
     activeEntryId,
     causalEntry,
   )
   const causalPointUnavailable =
     !props.entries.some((entry) => entry.causalAt) &&
     (props.state === 'failed' || props.state === 'infrastructure-error')
+  const entryCount = visibleEntries.length
 
   function handleSelect(entryId: string) {
     setSelectedEntryId(entryId)
@@ -65,6 +78,10 @@ export function ResultEvidenceTimeline(props: ResultEvidenceTimelineProps) {
     props.onPauseFollowing?.()
   }
 
+  function handleVerboseChange(verbose: boolean) {
+    setDensity(verbose ? 'verbose' : 'essential')
+  }
+
   return (
     <Card>
       <CardHeader className="border-b border-border">
@@ -73,9 +90,20 @@ export function ResultEvidenceTimeline(props: ResultEvidenceTimelineProps) {
           Steps span their recorded duration. Actions and evidence mark when
           they were recorded.
         </CardDescription>
-        <CardAction className="font-mono text-[0.6875rem] text-muted-foreground tabular-nums">
-          {durationLabel(props.durationMs)} · {props.entries.length}{' '}
-          {props.entries.length === 1 ? 'entry' : 'entries'}
+        <CardAction className="flex items-center gap-3">
+          <span className="flex items-center gap-2">
+            <Switch
+              id="verbose-timeline"
+              size="sm"
+              checked={density === 'verbose'}
+              onCheckedChange={handleVerboseChange}
+            />
+            <Label htmlFor="verbose-timeline">Verbose timeline</Label>
+          </span>
+          <span className="font-mono text-[0.6875rem] text-muted-foreground tabular-nums">
+            {durationLabel(props.durationMs)} · {entryCount}{' '}
+            {entryCount === 1 ? 'entry' : 'entries'}
+          </span>
         </CardAction>
       </CardHeader>
       <CardContent className="px-0">
@@ -88,14 +116,14 @@ export function ResultEvidenceTimeline(props: ResultEvidenceTimelineProps) {
             precise failing instant.
           </p>
         ) : null}
-        {props.entries.length === 0 ? (
+        {entryCount === 0 ? (
           <p className="px-4 py-8 text-center text-sm text-muted-foreground">
             No Test evidence was recorded for this Scenario attempt.
           </p>
         ) : selectedEntry ? (
           <div className="grid min-w-0 lg:grid-cols-[minmax(0,1fr)_minmax(16rem,22rem)]">
             <TimelineWaterfall
-              entries={props.entries}
+              entries={visibleEntries}
               attemptStartedAt={props.startedAt}
               durationMs={props.durationMs}
               selectedEntryId={selectedEntry.id}

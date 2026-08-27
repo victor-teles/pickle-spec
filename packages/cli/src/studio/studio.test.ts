@@ -69,17 +69,28 @@ async function expectBusyRunControl(page: Page, name: string) {
   expect(await control.getAttribute('aria-busy')).toBe('true')
 }
 
-async function waitForIdleRun(page: Page) {
-  const running = page.getByRole('status').filter({ hasText: 'running' })
-  await running.waitFor()
-  await running.waitFor({ state: 'hidden', timeout: 20_000 })
+async function startCacheRefresh(page: Page) {
+  await page.keyboard.press('Meta+k')
+  const palette = page.getByRole('dialog', { name: 'Studio commands' })
+  await palette.waitFor()
+  await palette
+    .getByRole('option')
+    .filter({ hasText: 'Refresh cache for Checkout' })
+    .click()
 }
 
-async function waitForRunToFinish(page: Page) {
+async function waitForScenarioResult(page: Page, name: string) {
   await page
-    .getByRole('status')
-    .filter({ hasText: 'running' })
-    .waitFor({ state: 'hidden', timeout: 20_000 })
+    .getByRole('table', { name: 'Scenarios' })
+    .getByRole('button', { name, exact: true })
+    .first()
+    .waitFor({ timeout: 20_000 })
+}
+
+async function expectRunningStatusCleared(page: Page) {
+  const running = page.getByRole('status').filter({ hasText: 'running' })
+  await running.waitFor({ state: 'hidden', timeout: 20_000 })
+  expect(await running.count()).toBe(0)
 }
 
 async function saveExecutionTargetProfile(
@@ -173,7 +184,7 @@ Feature: Search
       ).toBe(0)
       expect(
         await page.getByRole('status').filter({ hasText: 'Ready' }).count(),
-      ).toBe(1)
+      ).toBe(0)
       const catalog = page.getByRole('navigation', { name: 'Specifications' })
       expect(
         await catalog.getByRole('button', { name: 'Checkout' }).count(),
@@ -187,6 +198,9 @@ Feature: Search
       expect(
         await page.getByRole('button', { name: 'Run Specification' }).count(),
       ).toBe(1)
+      expect(
+        await page.getByRole('button', { name: 'Refresh cache' }).count(),
+      ).toBe(0)
       expect(
         await page.getByRole('button', { name: 'Start test run' }).count(),
       ).toBe(0)
@@ -269,7 +283,7 @@ Feature: Search
       await search.fill('profile firefox')
       await page.keyboard.press('ArrowDown')
       await page.keyboard.press('Enter')
-      await page.getByLabel('Run target: firefox').waitFor()
+      await page.getByText('Target: firefox', { exact: true }).waitFor()
 
       await page.keyboard.press('Meta+k')
       await search.fill('run scenario query')
@@ -299,7 +313,7 @@ Feature: Search
       await page.keyboard.press('Meta+k')
       await search.fill('all profiles')
       await palette.getByRole('option', { name: 'All profiles' }).click()
-      await page.getByLabel('Run target: All profiles').waitFor()
+      await page.getByText('Target: All profiles', { exact: true }).waitFor()
 
       await page.keyboard.press('Meta+k')
       await search.fill(started.id)
@@ -329,21 +343,22 @@ Feature: Search
     }
   }, 60_000)
 
-  test('Studio submits an explicit contextual cache refresh request', async () => {
+  test('Studio submits an explicit contextual cache refresh request through Cmd+K', async () => {
     const project = await createStudioProject('refresh-cache')
     const { child, url } = await startStudio(project)
     const page = await browser.newPage()
     try {
       await page.goto(url)
-      const refresh = page.getByRole('button', { name: 'Refresh cache' })
-      await refresh.waitFor({ timeout: 20_000 })
-      expect(await refresh.count()).toBe(1)
+      await page.getByRole('heading', { name: 'Checkout' }).waitFor()
+      expect(
+        await page.getByRole('button', { name: 'Refresh cache' }).count(),
+      ).toBe(0)
       const requestPromise = page.waitForRequest(
         (request) =>
           new URL(request.url()).pathname === '/api/runs' &&
           request.method() === 'POST',
       )
-      await refresh.click()
+      await startCacheRefresh(page)
       const request = await requestPromise
 
       expect(request.postDataJSON()).toEqual({
@@ -390,6 +405,9 @@ export default {
         if (!payload || typeof payload !== 'object') return undefined
         if (!Array.isArray(payload.operations)) return undefined
         return payload
+      },
+      prefixStepCount(payload) {
+        return payload.operations.length
       },
     },
     async openSession(input) {
@@ -444,8 +462,14 @@ export default {
         await route.continue()
       })
       await page.goto(url)
+      const running = page.getByRole('status').filter({ hasText: 'running' })
       await page.getByRole('button', { name: 'Run Specification' }).click()
-      await waitForIdleRun(page)
+      await running.waitFor()
+      await waitForScenarioResult(
+        page,
+        'Complete a purchase deterministic passed',
+      )
+      await expectRunningStatusCleared(page)
       const before = (await cache.inspect())[0]
       expect(before).toBeDefined()
       if (!before) throw new Error('Initial cache revision was not published')
@@ -454,8 +478,12 @@ export default {
 
       await Bun.write(payloadVersion, 'v2')
       await Bun.write(blockRefresh, 'block')
-      await page.getByRole('button', { name: 'Refresh cache' }).click()
-      await expectBusyRunControl(page, 'Refresh cache')
+      await startCacheRefresh(page)
+      await running.waitFor()
+      await waitForScenarioResult(
+        page,
+        'Pay for the order deterministic running',
+      )
       await waitForFile(refreshStarted)
       const during = (await cache.inspect()).find(
         (entry) => entry.payloadDigest === before.payloadDigest,
@@ -464,7 +492,11 @@ export default {
       expect(await cache.read(before.key)).toBe(beforeSource)
 
       await Bun.write(releaseRefresh, 'release')
-      await waitForRunToFinish(page)
+      await waitForScenarioResult(
+        page,
+        'Pay for the order deterministic passed',
+      )
+      await expectRunningStatusCleared(page)
       const after = (await cache.inspect()).find(
         (entry) => entry.key.scenarioId === before.key.scenarioId,
       )
@@ -508,6 +540,9 @@ export default {
       adapterCacheSchemaVersion: 'test.1',
       parse(payload) {
         return payload as CachePayload
+      },
+      prefixStepCount() {
+        return 1
       },
     }
     const envelope: ExecutionCacheEnvelope<CachePayload> = {
@@ -657,17 +692,12 @@ export default {
       ).toBe(0)
       expect(await finishedManifestCount(project)).toBe(0)
       await Bun.write(gate, 'continue')
-      const failed = page.getByRole('status').filter({ hasText: 'failed' })
-      await failed.waitFor({
-        timeout: 20_000,
+      await waitForScenarioResult(page, 'Pay for the order chrome failed')
+      await expectRunningStatusCleared(page)
+      const failedResult = page.getByRole('button', {
+        name: 'Pay for the order chrome failed',
       })
-      expect(await failed.locator('svg').count()).toBe(1)
-      expect(
-        await page
-          .getByRole('button', { name: 'Pay for the order chrome failed' })
-          .locator('svg')
-          .count(),
-      ).toBe(1)
+      expect(await failedResult.locator('svg').count()).toBe(1)
       const attention = page.getByRole('list', { name: 'Needs attention' })
       const items = attention.getByRole('listitem')
       expect(await items.count()).toBe(1)
@@ -687,7 +717,7 @@ export default {
       const timeline = page.getByRole('list', { name: 'Execution timeline' })
       expect(await timeline.textContent()).toContain('Then payment is captured')
       expect(await timeline.textContent()).toContain('Payment was declined')
-      expect(await timeline.textContent()).toContain('Run event')
+      expect(await timeline.textContent()).not.toContain('Run event')
       expect(
         await page.getByRole('list', { name: 'Timeline legend' }).count(),
       ).toBe(1)
@@ -701,6 +731,7 @@ export default {
         name: /Step Then payment is captured/,
       })
       await page.getByRole('tab', { name: 'Timeline' }).focus()
+      await page.keyboard.press('Tab')
       await page.keyboard.press('Tab')
       await page.keyboard.press('Tab')
       expect(
@@ -740,6 +771,8 @@ export default {
       expect(
         await page.getByRole('button', { name: 'Resume following' }).count(),
       ).toBe(1)
+      await page.getByRole('switch', { name: 'Verbose timeline' }).click()
+      expect(await timeline.textContent()).toContain('Run event')
       await page.setViewportSize({ width: 390, height: 844 })
       const timelineChart = page.getByRole('region', {
         name: 'Execution timeline chart',
@@ -1059,10 +1092,7 @@ Feature: Search
     try {
       await page.goto(url)
       await page.getByRole('button', { name: 'Run Specification' }).click()
-      await page
-        .getByRole('status')
-        .filter({ hasText: 'failed' })
-        .waitFor({ timeout: 20_000 })
+      await waitForScenarioResult(page, 'Pay for the order chrome failed')
       await page.getByRole('button', { name: 'Run Specification' }).waitFor({
         timeout: 20_000,
       })
@@ -1169,10 +1199,12 @@ Feature: Search
       })
       const timelineText = await evidenceTimeline.textContent()
       expect(timelineText).toContain('Step')
-      expect(timelineText).toContain('Run event')
+      expect(timelineText).not.toContain('Run event')
       expect(timelineText).toContain('Diagnostic entry')
       expect(timelineText).toContain('Test artifact')
       expect(timelineText).toContain('Failure context')
+      await page.getByRole('switch', { name: 'Verbose timeline' }).click()
+      expect(await evidenceTimeline.textContent()).toContain('Run event')
       await page.getByRole('tab', { name: 'Artifacts' }).click()
       expect(
         await page
@@ -1390,10 +1422,7 @@ Feature: Checkout
     try {
       await page.goto(url)
       await page.getByRole('button', { name: 'Run Specification' }).click()
-      await page
-        .getByRole('status')
-        .filter({ hasText: 'passed' })
-        .waitFor({ timeout: 20_000 })
+      await waitForScenarioResult(page, 'Complete a purchase chrome passed')
       await page.getByRole('button', { name: 'Runs', exact: true }).click()
       const history = page.getByRole('table', { name: 'Test run history' })
       await history
@@ -1493,14 +1522,14 @@ Feature: Checkout
       await page
         .getByRole('button', { name: 'Run Scenario Pay for the order' })
         .click()
-      await page.getByRole('status').filter({ hasText: 'running' }).waitFor()
+      const running = page.getByRole('status').filter({ hasText: 'running' })
+      await running.waitFor()
       await page
         .getByRole('button', { name: 'Pay for the order chrome running' })
         .waitFor()
       await Bun.write(gate, 'continue')
-      await page.getByRole('status').filter({ hasText: 'failed' }).waitFor({
-        timeout: 20_000,
-      })
+      await waitForScenarioResult(page, 'Pay for the order chrome failed')
+      await expectRunningStatusCleared(page)
       const attention = page.getByRole('list', { name: 'Needs attention' })
       expect(await attention.getByRole('listitem').count()).toBe(1)
       expect(await attention.textContent()).toContain('Pay for the order')

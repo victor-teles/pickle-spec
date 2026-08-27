@@ -155,4 +155,42 @@ describe('direct web actions', () => {
     expect(hover).toHaveBeenCalledTimes(1)
     expect(selectOption).toHaveBeenCalledWith(['one', 'two'])
   })
+
+  test('waits for a locator to attach before filling', async () => {
+    let counts = 0
+    const fill = mock(async () => {})
+    const locator = {
+      first() {
+        return this
+      },
+      nth() {
+        return this
+      },
+      count: mock(async () => {
+        counts++
+        return counts >= 2 ? 1 : 0
+      }),
+      isVisible: mock(async () => false),
+      fill,
+    } as unknown as Locator
+    const page = {
+      locator: mock(() => locator),
+    } as unknown as Page
+    const context = {
+      activePage: mock(async () => page),
+    } as unknown as BrowserContext
+    const browser = createDirectBrowser(context, {
+      actionTimeoutMs: 200,
+      navigationTimeoutMs: 100,
+    })
+
+    expect(
+      await browser.execute(
+        { kind: 'fill', locator: target, value: literal('standard_user') },
+        [],
+      ),
+    ).toEqual({ success: true })
+    expect(counts).toBeGreaterThanOrEqual(2)
+    expect(fill).toHaveBeenCalledWith('standard_user')
+  })
 })

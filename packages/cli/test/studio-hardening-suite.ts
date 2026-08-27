@@ -281,9 +281,12 @@ Feature: Checkout
 
       await Bun.write(gate, 'continue')
       await page
-        .getByRole('status')
-        .filter({ hasText: 'failed' })
+        .getByRole('table', { name: 'Scenarios' })
+        .getByRole('button', { name: 'Pay for the order chrome failed' })
         .waitFor({ timeout: 20_000 })
+      const running = page.getByRole('status').filter({ hasText: 'running' })
+      await running.waitFor({ state: 'hidden', timeout: 20_000 })
+      expect(await running.count()).toBe(0)
       const timeline = page.getByRole('list', {
         name: 'Execution timeline',
       })
