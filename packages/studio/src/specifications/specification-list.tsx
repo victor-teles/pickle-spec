@@ -60,7 +60,7 @@ export function SpecificationList(props: SpecificationListProps) {
   return (
     <nav
       aria-label="Specifications"
-      className="specification-rail flex min-h-0 flex-col border-b border-border lg:border-r lg:border-b-0"
+      className="specification-rail flex h-full min-h-0 flex-col overflow-hidden border-b border-border lg:border-r lg:border-b-0"
     >
       <div className="flex h-11 shrink-0 items-center px-3">
         <h2 className="studio-display text-sm">Specifications</h2>

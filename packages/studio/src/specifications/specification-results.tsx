@@ -42,7 +42,7 @@ export function SpecificationResults(props: SpecificationResultsProps) {
   }
 
   return (
-    <div className="min-h-0 flex-1 space-y-5 overflow-auto px-3 py-4 sm:px-5">
+    <div className="flex min-h-0 flex-1 flex-col gap-5 overflow-hidden px-3 py-4 sm:px-5">
       <ScenarioTable
         profiles={props.profiles}
         scenarios={props.specification.scenarios}

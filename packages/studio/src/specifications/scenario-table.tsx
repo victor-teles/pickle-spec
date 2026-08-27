@@ -58,7 +58,7 @@ export function ScenarioTable(props: ScenarioTableProps) {
   }
 
   return (
-    <div className="scenario-table w-full min-w-0 max-w-full overflow-auto rounded-xl border border-border bg-card">
+    <div className="scenario-table w-full min-w-0 max-w-full shrink-0 overflow-auto rounded-xl border border-border bg-card">
       <Table
         aria-label="Scenarios"
         className="text-xs"

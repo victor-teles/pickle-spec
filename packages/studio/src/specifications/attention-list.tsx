@@ -46,7 +46,7 @@ export function AttentionList(props: AttentionListProps) {
   }
 
   return (
-    <div>
+    <div className="shrink-0">
       <h3 className="studio-display mb-2 text-sm">Needs attention</h3>
       <ul
         aria-label="Needs attention"

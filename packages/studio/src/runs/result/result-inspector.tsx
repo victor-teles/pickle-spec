@@ -142,7 +142,7 @@ function InspectedResultView(
       aria-labelledby="result-inspector-title"
       className="min-h-0 flex-1 overflow-auto px-3 py-4 sm:px-5"
     >
-      <header className="sticky top-0 z-10 -mx-3 mb-4 flex flex-wrap items-start justify-between gap-3 border-b border-border bg-background px-3 pb-4 sm:-mx-5 sm:px-5">
+      <header className="mb-4 flex flex-wrap items-start justify-between gap-3 border-b border-border pb-4">
         <div className="min-w-0 space-y-2">
           {props.onBack ? (
             <Button
