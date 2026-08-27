@@ -126,6 +126,8 @@ function InspectedResultView(
   const { snapshot, inspected } = props
   const displayState = displayedAttemptState(inspected.attempt)
   const inProgress = isAttemptInProgress(inspected.attempt)
+  const resultState =
+    displayState === 'running' ? inspected.attempt.state : displayState
   const activeTab =
     props.location.tab ?? defaultResultInspectorTab(inspected.attempt.state)
   const artifacts = artifactsFor(inspected.attempt)
@@ -140,7 +142,7 @@ function InspectedResultView(
       aria-labelledby="result-inspector-title"
       className="min-h-0 flex-1 overflow-auto px-3 py-4 sm:px-5"
     >
-      <header className="sticky top-0 z-10 -mx-3 mb-4 flex flex-wrap items-start justify-between gap-3 border-b border-border bg-background px-3 pb-4 sm:-mx-5 sm:px-5">
+      <header className="mb-4 flex flex-wrap items-start justify-between gap-3 border-b border-border pb-4">
         <div className="min-w-0 space-y-2">
           {props.onBack ? (
             <Button
@@ -205,6 +207,8 @@ function InspectedResultView(
             startedAt={inspected.attempt.startedAt}
             durationMs={inspected.attempt.durationMs}
             state={displayState}
+            scenarioName={inspected.result.scenario.name}
+            resultState={resultState}
             follow={props.following}
             followedEntryId={props.followedEntryId}
             onPauseFollowing={props.onPauseFollowing}
@@ -215,11 +219,7 @@ function InspectedResultView(
             artifacts={artifacts}
             availability={inspected.attempt.evidenceAvailability}
             scenarioName={inspected.result.scenario.name}
-            resultState={
-              displayState === 'running'
-                ? inspected.attempt.state
-                : displayState
-            }
+            resultState={resultState}
           />
         </TabsContent>
         <TabsContent value="diagnostics">

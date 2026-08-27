@@ -1,6 +1,6 @@
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { basename, join, resolve, sep } from 'node:path'
+import { basename, join } from 'node:path'
 import type {
   DiagnosticEntry,
   ExecutionCacheEntryMetadata,
@@ -12,7 +12,6 @@ import type {
   TestRunStorageInspection,
   TestRunSummary,
 } from '@pickle-spec/runner'
-import { resolveLocalProjectStorage } from '@pickle-spec/runner'
 import type {
   SpecificationMetadata,
   StructuredSpecification,
@@ -27,6 +26,7 @@ import {
   type SpecificationWorkspace,
 } from '../authoring/documents'
 import { createGitWorkspace, type GitWorkspace } from './git'
+import { resolveStudioArtifactPath } from './studio-artifact-path'
 
 export interface StudioScenario {
   id: string
@@ -355,6 +355,7 @@ function secureResponse(response: Response, origin: string): Response {
       "form-action 'self'",
       "frame-ancestors 'none'",
       "img-src 'self' data: blob:",
+      "media-src 'self'",
       "script-src 'self'",
       "style-src 'self' 'unsafe-inline'",
     ].join('; '),
@@ -907,15 +908,17 @@ export async function startStudio(
       }
 
       function artifactPath(): string | Response {
-        const filePath = url.searchParams.get('path')
-        if (!filePath) return new Response('Missing path', { status: 400 })
-        const resolved = resolve(filePath)
-        const allowed = resolveLocalProjectStorage(
+        const resolved = resolveStudioArtifactPath(
+          url.searchParams.get('path'),
           options.project.root,
-        ).runsDirectory
-        return resolved === allowed || resolved.startsWith(`${allowed}${sep}`)
-          ? resolved
-          : new Response('Forbidden', { status: 403 })
+        )
+        if (resolved.kind === 'missing-query') {
+          return new Response('Missing path', { status: 400 })
+        }
+        if (resolved.kind === 'forbidden') {
+          return new Response('Forbidden', { status: 403 })
+        }
+        return resolved.path
       }
 
       function artifactResponse(

@@ -312,6 +312,96 @@ test('projects exact spans and points without replacing occurrence time with cau
       { label: 'Size', value: '2048 bytes' },
     ]),
   )
+  expect(
+    entries.find((entry) => entry.kind === 'Test artifact')?.artifact,
+  ).toMatchObject({
+    kind: 'screenshot',
+    path: '/tmp/checkout.png',
+  })
+  expect(entries.find((entry) => entry.kind === 'Step')?.artifacts).toEqual([
+    expect.objectContaining({
+      kind: 'screenshot',
+      path: '/tmp/checkout.png',
+    }),
+  ])
+})
+
+test('puts captured media on timeline entries and links the session recording to every step', () => {
+  const screenshot = {
+    kind: 'screenshot' as const,
+    path: '/tmp/step-01-passed.png',
+    mediaType: 'image/png',
+    name: 'step-01-passed.png',
+  }
+  const recording = {
+    kind: 'recording' as const,
+    path: '/tmp/scenario.mp4',
+    mediaType: 'video/mp4',
+    name: 'scenario.mp4',
+  }
+  const inspectedAttempt: ScenarioAttempt = {
+    ...attempt(1, 'failed'),
+    steps: [
+      {
+        index: 0,
+        startedAt: '2026-08-22T12:00:00.000Z',
+        finishedAt: '2026-08-22T12:00:00.400Z',
+        durationMs: 400,
+        step: { keyword: 'When ', text: 'I pay', type: 'action' },
+        state: 'passed',
+        resolvedActions: [],
+        artifacts: [screenshot],
+      },
+      {
+        index: 1,
+        startedAt: '2026-08-22T12:00:00.400Z',
+        finishedAt: '2026-08-22T12:00:01.000Z',
+        durationMs: 600,
+        step: {
+          keyword: 'Then ',
+          text: 'payment is captured',
+          type: 'outcome',
+        },
+        state: 'failed',
+        resolvedActions: [],
+        artifacts: [recording],
+      },
+    ],
+  }
+
+  const entries = timelineFor([], inspectedAttempt, {
+    specificationUri: 'features/checkout.feature',
+    runId: 'run-78',
+    scenarioId: 'scenario-outline',
+    examplesRowId: 'row-2',
+    profileId: 'chrome',
+    attempt: 1,
+  })
+  const firstStep = entries.find(
+    (entry) => timelineIdSuffix(entry.id) === 'step-0',
+  )
+  const failedStep = entries.find(
+    (entry) => timelineIdSuffix(entry.id) === 'step-1',
+  )
+  const recordingEntry = entries.find(
+    (entry) =>
+      entry.kind === 'Test artifact' && entry.artifact?.kind === 'recording',
+  )
+
+  expect(firstStep?.artifacts?.map((artifact) => artifact.kind)).toEqual([
+    'screenshot',
+    'recording',
+  ])
+  expect(failedStep?.artifacts?.map((artifact) => artifact.kind)).toEqual([
+    'recording',
+  ])
+  expect(recordingEntry?.artifact).toEqual(recording)
+  expect(
+    entries.find(
+      (entry) =>
+        entry.kind === 'Test artifact' && entry.artifact?.kind === 'screenshot',
+    )?.artifact,
+  ).toEqual(screenshot)
 })
 
 test('keeps Run events as a distinct timeline lane', () => {

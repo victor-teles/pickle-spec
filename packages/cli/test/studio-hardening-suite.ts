@@ -43,6 +43,9 @@ export function registerStudioHardeningTests(
       expect(unauthorized.headers.get('content-security-policy')).toContain(
         "default-src 'none'",
       )
+      expect(unauthorized.headers.get('content-security-policy')).toContain(
+        "media-src 'self'",
+      )
       expect(
         (
           await fetch(apiUrl, {
@@ -63,6 +66,9 @@ export function registerStudioHardeningTests(
       expect(response.status).toBe(200)
       expect(response.headers.get('content-security-policy')).toContain(
         "default-src 'none'",
+      )
+      expect(response.headers.get('content-security-policy')).toContain(
+        "media-src 'self'",
       )
       expect(response.headers.get('referrer-policy')).toBe('no-referrer')
       expect(response.headers.get('x-content-type-options')).toBe('nosniff')

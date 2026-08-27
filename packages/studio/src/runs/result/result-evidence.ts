@@ -113,6 +113,8 @@ export type TimelineEntry = {
   causalAt?: string
   causal?: boolean
   attributes: readonly TimelineEntryAttribute[]
+  artifact?: TestArtifact
+  artifacts?: readonly TestArtifact[]
 }
 
 export type TimelineDensity = 'essential' | 'verbose'
@@ -438,6 +440,7 @@ function artifactTimelineEntry(
     kind: 'Test artifact',
     title: artifact.kind,
     context: `${step.step.keyword.trim()} ${step.step.text}`,
+    artifact,
     attributes: [
       { label: 'Artifact kind', value: artifact.kind },
       { label: 'Step index', value: String(step.index) },
@@ -486,19 +489,33 @@ export function timelineFor(
     )
     .at(-1)
   const causalAt = causalEvidence?.causalAt
-  const stepEntries: TimelineEntry[] = attempt.steps.map((step) => ({
-    id: entryId(`step-${step.index}`),
-    startedAt: step.startedAt,
-    finishedAt: step.finishedAt,
-    timingPrecision: 'exact',
-    kind: 'Step',
-    title: `${step.step.keyword.trim()} ${step.step.text}`,
-    state: step.state,
-    causalAt:
-      causalStepId === entryId(`step-${step.index}`) ? causalAt : undefined,
-    causal: causalStepId === entryId(`step-${step.index}`) && !causalAt,
-    attributes: [{ label: 'Step index', value: String(step.index) }],
-  }))
+  const attemptRecordings = artifactsFor(attempt)
+    .filter((evidence) => evidence.artifact.kind === 'recording')
+    .map((evidence) => evidence.artifact)
+  const stepEntries: TimelineEntry[] = attempt.steps.map((step) => {
+    const own = step.artifacts ?? []
+    const linked = [
+      ...own,
+      ...attemptRecordings.filter(
+        (recording) =>
+          !own.some((artifact) => artifact.path === recording.path),
+      ),
+    ]
+    return {
+      id: entryId(`step-${step.index}`),
+      startedAt: step.startedAt,
+      finishedAt: step.finishedAt,
+      timingPrecision: 'exact' as const,
+      kind: 'Step' as const,
+      title: `${step.step.keyword.trim()} ${step.step.text}`,
+      state: step.state,
+      causalAt:
+        causalStepId === entryId(`step-${step.index}`) ? causalAt : undefined,
+      causal: causalStepId === entryId(`step-${step.index}`) && !causalAt,
+      attributes: [{ label: 'Step index', value: String(step.index) }],
+      artifacts: linked.length > 0 ? linked : undefined,
+    }
+  })
   const eventEntries: TimelineEntry[] = scopedEvents(events, location).map(
     (event) => ({
       id: entryId(`event-${event.sequence}`),

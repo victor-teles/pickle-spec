@@ -87,7 +87,7 @@ export function StudioApp({ loadingFallback }: { loadingFallback: ReactNode }) {
         (studio.navigation.route.kind === 'runs' ||
           studio.navigation.route.kind === 'run' ||
           studio.navigation.route.kind === 'result') ? (
-        <div className="studio-stage flex min-h-0 flex-1">
+        <div className="studio-stage flex min-h-0 flex-1 overflow-hidden">
           <RunsArea
             api={studioApi}
             index={data.runsIndex}

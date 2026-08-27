@@ -547,6 +547,31 @@ function attemptUncacheableReason(
   return undefined
 }
 
+async function finishPublishedAdaptive(
+  context: AdaptiveResultContext,
+  publicationReason: ExecutionCacheUncacheableReason | undefined,
+): Promise<ScenarioRun> {
+  if (context.result.state !== 'passed') {
+    return finishRun(context.input, context.events, context.result)
+  }
+  return finishSuccessfulAdaptiveRun(context, publicationReason)
+}
+
+async function finishUnpublishedAdaptive(
+  context: AdaptiveResultContext,
+  publishablePrefix: CachedStepPrefix | undefined,
+  policyReason: ExecutionCacheUncacheableReason | undefined,
+  publicationReason: ExecutionCacheUncacheableReason | undefined,
+): Promise<ScenarioRun> {
+  if (context.result.state !== 'passed') {
+    return finishFailedAdaptiveRun(context)
+  }
+  return finishSuccessfulAdaptiveRun(
+    context,
+    publishablePrefix ? publicationReason : (policyReason ?? publicationReason),
+  )
+}
+
 async function publishThenFinishAdaptive(
   context: AdaptiveResultContext,
   run: RetriedScenarioRun,
@@ -567,12 +592,14 @@ async function publishThenFinishAdaptive(
   }
   const publicationReason =
     publication?.status === 'uncacheable' ? publication.reason : undefined
-  if (result.state !== 'passed') {
-    return finishFailedAdaptiveRun(context)
+  if (publication?.status === 'published') {
+    return finishPublishedAdaptive(context, publicationReason)
   }
-  return finishSuccessfulAdaptiveRun(
+  return finishUnpublishedAdaptive(
     context,
-    publishablePrefix ? publicationReason : (policyReason ?? publicationReason),
+    publishablePrefix,
+    policyReason,
+    publicationReason,
   )
 }
 

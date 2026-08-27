@@ -1408,11 +1408,16 @@ export default {
       'Expected: "payment is captured" | Actual: Payment was declined',
     )
     expect(outcomeStep.artifacts).toHaveLength(1)
-    expect(outcomeStep.artifacts?.[0]).toEqual({
+    expect(outcomeStep.artifacts?.[0]).toMatchObject({
       kind: 'screenshot',
       path: expect.any(String),
       mediaType: 'image/png',
+      name: expect.stringMatching(/\.png$/),
+      sizeBytes: expect.any(Number),
     })
+    expect(outcomeStep.artifacts?.[0]?.capturedAt).toMatch(
+      /^\d{4}-\d{2}-\d{2}T/,
+    )
     expect(attempt.evidenceAvailability).toContainEqual({
       kind: 'screenshot',
       state: 'available',

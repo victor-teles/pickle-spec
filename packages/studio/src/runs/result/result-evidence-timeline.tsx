@@ -25,6 +25,8 @@ type ResultEvidenceTimelineProps = {
   startedAt: string
   durationMs: number
   state: TestResultState | 'running'
+  scenarioName: string
+  resultState: TestResultState
   follow?: boolean
   followedEntryId?: string
   onPauseFollowing?: () => void
@@ -121,7 +123,7 @@ export function ResultEvidenceTimeline(props: ResultEvidenceTimelineProps) {
             No Test evidence was recorded for this Scenario attempt.
           </p>
         ) : selectedEntry ? (
-          <div className="grid min-w-0 lg:grid-cols-[minmax(0,1fr)_minmax(16rem,22rem)]">
+          <div className="grid min-w-0 items-start lg:grid-cols-[minmax(0,1fr)_minmax(16rem,22rem)]">
             <TimelineWaterfall
               entries={visibleEntries}
               attemptStartedAt={props.startedAt}
@@ -135,6 +137,8 @@ export function ResultEvidenceTimeline(props: ResultEvidenceTimelineProps) {
             <TimelineEvidenceDetail
               entry={selectedEntry}
               attemptStartedAt={props.startedAt}
+              scenarioName={props.scenarioName}
+              resultState={props.resultState}
             />
           </div>
         ) : null}

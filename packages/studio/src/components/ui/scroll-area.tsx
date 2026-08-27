@@ -51,7 +51,12 @@ function ScrollArea({
       <ScrollAreaPrimitive.Viewport
         {...viewportProps}
         data-slot="scroll-area-viewport"
-        className="size-full rounded-[inherit] transition-[color,box-shadow] outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-1"
+        className={cn(
+          'rounded-[inherit] transition-[color,box-shadow] outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-1',
+          scrollbars === 'horizontal'
+            ? 'w-full overflow-x-auto overflow-y-hidden'
+            : 'size-full',
+        )}
         onKeyDown={handleViewportKeyDown}
       >
         {children}

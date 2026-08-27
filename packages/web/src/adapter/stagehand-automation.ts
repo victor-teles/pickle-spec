@@ -8,6 +8,7 @@ import {
   type createWebEvidenceCollector,
   instrumentWebEvidencePages,
 } from '../evidence/web-evidence'
+import { startWebRecording, type WebRecording } from '../evidence/web-recording'
 import {
   type WebAssertionDraft,
   webAssertionCompileSchema,
@@ -71,6 +72,17 @@ export async function createStagehandAutomation(
     return instrumentWebEvidencePages(pages, evidence)
   }
   await instrumentPages()
+  let recording: WebRecording | undefined
+
+  async function screenshot(options: WebScreenshotCapture) {
+    const page = await activePage(browser.context)
+    return new Uint8Array(
+      await page.screenshot({
+        type: options.format,
+        fullPage: options.fullPage,
+      }),
+    )
+  }
 
   return {
     async navigate(url, signal) {
@@ -130,8 +142,10 @@ export async function createStagehandAutomation(
       const result = await withAbort(
         stagehand.extract(
           'Extract locators that confirm this expectation. Use element types and ' +
-            'visible labels, not colors. Expected values must come from the ' +
-            `expectation text, never from the current page value: "${prompt}"`,
+            'visible labels, not colors. Named fields, inputs, or buttons that ' +
+            'should stay visible use kind visible, not inner text. Expected values ' +
+            'must come from the expectation text, never from the current page ' +
+            `value: "${prompt}"`,
           webAssertionCompileSchema,
           { timeout: timeouts.observeTimeoutMs },
         ),
@@ -155,19 +169,28 @@ export async function createStagehandAutomation(
       await instrumentPages()
       return direct.execute(instruction, bindings, signal)
     },
-    async screenshot(options: WebScreenshotCapture) {
-      const page = await activePage(browser.context)
-      return new Uint8Array(
-        await page.screenshot({
-          type: options.format,
-          fullPage: options.fullPage,
-        }),
-      )
+    screenshot,
+    async startRecording(path) {
+      if (recording) await recording.stop()
+      recording = await startWebRecording({
+        path,
+        captureFrame: () => screenshot({ format: 'jpeg', fullPage: false }),
+      })
+    },
+    async stopRecording() {
+      const active = recording
+      recording = undefined
+      if (!active) throw new Error('Web recording was not started')
+      return active.stop()
     },
     readIsolationState: () => readStagehandIsolation(browser.context),
     async consumeEvidence() {
       return evidence.collect(await instrumentPages())
     },
-    async close() {},
+    async close() {
+      const active = recording
+      recording = undefined
+      if (active) await active.discard()
+    },
   }
 }

@@ -28,6 +28,8 @@ test('default Execution timeline hides Run events and counts visible entries', (
       startedAt="2026-08-22T12:00:00.000Z"
       durationMs={1_000}
       state="failed"
+      scenarioName="Pay for the order"
+      resultState="failed"
     />,
   )
 

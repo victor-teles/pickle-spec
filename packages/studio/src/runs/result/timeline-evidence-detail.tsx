@@ -1,11 +1,15 @@
+import type { TestResultState } from '@pickle-spec/runner'
 import { Badge } from '../../components/ui/badge'
 import { durationLabel } from '../run-format'
+import { ArtifactViewer } from './artifact-viewer'
 import { relativeTimeLabel, type TimelineEntry } from './result-evidence'
 import { TimelineKindBadge } from './timeline-kind'
 
 type TimelineEvidenceDetailProps = {
   entry: TimelineEntry
   attemptStartedAt: string
+  scenarioName: string
+  resultState: TestResultState
 }
 
 type DetailItemProps = {
@@ -44,9 +48,16 @@ function timingPrecisionLabel(entry: TimelineEntry): string {
   return 'Recorded at attempt completion'
 }
 
+function entryMedia(entry: TimelineEntry) {
+  if (entry.artifact) return [entry.artifact]
+  return entry.artifacts ?? []
+}
+
 export function TimelineEvidenceDetail(props: TimelineEvidenceDetailProps) {
   const { entry } = props
   const durationMs = entryDurationMs(entry)
+  const media = entryMedia(entry)
+  const stepText = entry.context ?? entry.title
   return (
     <section
       aria-label="Selected timeline evidence"
@@ -67,6 +78,19 @@ export function TimelineEvidenceDetail(props: TimelineEvidenceDetailProps) {
         <p className="mt-1 break-words text-xs/relaxed text-muted-foreground">
           {entry.context}
         </p>
+      ) : null}
+      {media.length > 0 ? (
+        <div className="mt-4 space-y-4">
+          {media.map((artifact) => (
+            <ArtifactViewer
+              key={artifact.path}
+              artifact={artifact}
+              resultState={props.resultState}
+              scenarioName={props.scenarioName}
+              stepText={stepText}
+            />
+          ))}
+        </div>
       ) : null}
       <dl className="mt-5 grid gap-4 sm:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2">
         <DetailItem

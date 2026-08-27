@@ -35,6 +35,14 @@ function takeQuotedExpectation(
   return remaining.shift()
 }
 
+function isControlVisibilityPrompt(prompt: string): boolean {
+  if (/\b(?:hidden|not visible)\b/i.test(prompt)) return false
+  if (!/\bvisible\b/i.test(prompt)) return false
+  return /\b(?:fields?|inputs?|buttons?|checkboxes?|links?|menus?)\b/i.test(
+    prompt,
+  )
+}
+
 function outcomeDraftFor(
   selector: string,
   description: string,
@@ -42,7 +50,12 @@ function outcomeDraftFor(
   remainingTexts: string[],
 ): WebAssertionDraft {
   if (/\b(?:hidden|not visible)\b/i.test(prompt)) {
+    takeQuotedExpectation(description, remainingTexts)
     return { kind: 'hidden', selector }
+  }
+  if (isControlVisibilityPrompt(prompt)) {
+    takeQuotedExpectation(description, remainingTexts)
+    return { kind: 'visible', selector }
   }
   const quoted = takeQuotedExpectation(description, remainingTexts)
   if (quoted) return { kind: 'text-contains', selector, expected: quoted }

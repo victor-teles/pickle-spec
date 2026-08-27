@@ -1937,6 +1937,56 @@ describe('Execution cache lifecycle', () => {
     expect(finalScenarioAttempt(mixed.result).inferenceCount).toBeGreaterThan(0)
   })
 
+  test('keeps a failed Adaptive result after a leased prefix publish', async () => {
+    const cache = await localStore()
+    const failAt = 1
+    const compiled: Array<string | undefined> = []
+    const adapter: ExecutionTargetAdapter = {
+      executionCache,
+      async openSession() {
+        return {
+          async executeStep(_step, _signal, context) {
+            const stepIndex = context?.stepIndex ?? 0
+            if (stepIndex === failAt) {
+              return {
+                state: 'failed' as const,
+                resolvedActions: [],
+                message: 'assertion failed',
+              }
+            }
+            compiled[stepIndex] = stepIndex === 0 ? 'confirm' : 'assert-receipt'
+            return { state: 'passed' as const, resolvedActions: [] }
+          },
+          async complete() {
+            return {
+              inferenceCount: 1,
+              replayRepresentation: prefixRepresentation(
+                denseCompiledHead(compiled),
+              ),
+            }
+          },
+          async close() {},
+        }
+      },
+    }
+
+    const failed = await runScenario(
+      cacheRunInput({
+        adapter,
+        store: cache,
+        projectKey: cache.projectKey,
+      }),
+    )
+    expect(failed.result.state).toBe('failed')
+    expect(finalScenarioAttempt(failed.result)).toMatchObject({
+      state: 'failed',
+      message: 'assertion failed',
+      executionMode: 'adaptive',
+      cacheOutcome: 'miss',
+    })
+    expect(await cache.inspect()).toHaveLength(1)
+  })
+
   test('full Replay of a complete prefix remains a hit with zero inference', async () => {
     const { store } = memoryStore()
     const adapter: ExecutionTargetAdapter = {

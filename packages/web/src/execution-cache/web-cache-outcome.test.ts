@@ -80,6 +80,34 @@ describe('compileObservedOutcomes', () => {
     ).toBeUndefined()
   })
 
+  test('compiles visibility for quoted field names, not inner text', () => {
+    expect(
+      compileObservedOutcomes(
+        [
+          {
+            description: 'Username input field',
+            handle: { selector: '#user-name' },
+          },
+          {
+            description: 'Password input field',
+            handle: { selector: '#password' },
+          },
+        ],
+        'the "Username" and "Password" fields should remain visible',
+        [],
+      ),
+    ).toEqual([
+      {
+        kind: 'visible',
+        locator: { selector: { segments: [{ literal: '#user-name' }] } },
+      },
+      {
+        kind: 'visible',
+        locator: { selector: { segments: [{ literal: '#password' }] } },
+      },
+    ])
+  })
+
   test('compiles visibility for a page heading', () => {
     expect(
       compileObservedOutcomes(

@@ -66,8 +66,10 @@ export function SpecificationsScreen(props: SpecificationsScreenProps) {
   return (
     <div
       className={cn(
-        'studio-stage min-h-0 flex-1',
-        props.authoring ? 'flex' : 'grid lg:grid-cols-[16rem_1fr]',
+        'studio-stage min-h-0 flex-1 overflow-hidden',
+        props.authoring
+          ? 'flex'
+          : 'grid lg:grid-cols-[16rem_minmax(0,1fr)] lg:grid-rows-[minmax(0,1fr)]',
       )}
     >
       {props.authoring ? null : (
@@ -94,7 +96,7 @@ function SpecificationDetail(props: SpecificationDetailProps) {
   const { selected } = props.selection
   if (!selected) {
     return (
-      <main className="flex min-h-0 min-w-0 flex-1 flex-col">
+      <main className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
         <p className="p-5 text-sm text-muted-foreground">
           No Specifications found. Add a feature file matching the project
           configuration.
@@ -119,7 +121,7 @@ function SpecificationDetail(props: SpecificationDetailProps) {
   }
 
   return (
-    <main className="flex min-h-0 min-w-0 flex-1 flex-col">
+    <main className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
       {props.error ? (
         <p role="alert" className="px-5 pt-4 text-sm text-destructive">
           {props.error}
