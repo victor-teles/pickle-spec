@@ -2,19 +2,14 @@ import { SearchIcon } from '@hugeicons/core-free-icons'
 import { HugeiconsIcon } from '@hugeicons/react'
 import { Badge } from '../components/ui/badge'
 import { Button } from '../components/ui/button'
-import { ResultMark } from '../components/ui/result-mark'
-import { resultBadgeVariant } from '../runs/result/result-presentation'
-import type { TestResultState } from '../runs/result/run-view'
 import { type StudioArea, studioAreas } from './use-studio-navigation'
-
-type StatusBadgeState = TestResultState | 'idle' | 'running'
 
 type StudioTopbarProps = {
   activeProfileId?: string
   area: StudioArea
   authoring: boolean
   projectName: string
-  runStatus: StatusBadgeState
+  running: boolean
   onAreaChange: (area: StudioArea) => void
   onOpenCommands: () => void
 }
@@ -60,13 +55,13 @@ export function StudioTopbar(props: StudioTopbarProps) {
         </Button>
       )}
       {props.authoring ? null : (
-        <Badge
-          aria-label={`Run target: ${props.activeProfileId ?? 'All profiles'}`}
-        >
-          Target: {props.activeProfileId ?? 'All profiles'}
-        </Badge>
+        <Badge>Target: {props.activeProfileId ?? 'All profiles'}</Badge>
       )}
-      <StatusBadge state={props.runStatus} />
+      {props.running ? (
+        <Badge role="status" variant="running">
+          running
+        </Badge>
+      ) : null}
     </header>
   )
 }
@@ -93,28 +88,5 @@ function StudioAreaButton(props: StudioAreaButtonProps) {
     >
       {props.area}
     </Button>
-  )
-}
-
-function StatusBadge({ state }: { state: StatusBadgeState }) {
-  if (state === 'idle') {
-    return (
-      <Badge role="status" variant="default">
-        Ready
-      </Badge>
-    )
-  }
-  if (state === 'running') {
-    return (
-      <Badge role="status" variant="running">
-        running
-      </Badge>
-    )
-  }
-  return (
-    <Badge variant={resultBadgeVariant(state)} role="status">
-      <ResultMark key={state} state={state} />
-      {state}
-    </Badge>
   )
 }
