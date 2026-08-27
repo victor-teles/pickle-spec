@@ -66,22 +66,28 @@ Feature: Status
 `,
     })
     const scenario = specification.scenarios[0]!
+    const observe = mock(async () => [
+      {
+        description: 'Ready indicator',
+        handle: { selector: '#ready', method: 'click' },
+      },
+    ])
     const executeInstruction = mock(async (_instruction: WebInstruction) => ({
       success: true,
     }))
     const automation: WebAutomation = {
       async navigate() {},
-      async observe() {
-        throw new Error('outcome-only Scenario must not observe actions')
-      },
+      observe,
       async act() {
-        throw new Error('outcome-only Scenario must not act')
+        throw new Error('cacheable assertion must not act')
       },
       async verify() {
         throw new Error('cacheable assertion must not use legacy verification')
       },
       async compileAssertion() {
-        return { kind: 'visible', selector: '#ready' }
+        throw new Error(
+          'cacheable assertion must not extract when observe found the element',
+        )
       },
       executeInstruction,
       async screenshot() {
@@ -116,6 +122,7 @@ Feature: Status
     await adapter.dispose?.()
 
     expect(execution.state).toBe('passed')
+    expect(observe).toHaveBeenCalledTimes(1)
     expect(completion?.replayRepresentation?.cacheable).toBe(true)
     const payload = (
       completion?.replayRepresentation?.cacheable
@@ -128,6 +135,90 @@ Feature: Status
     expect(payload.steps[0]?.instructions.map(({ kind }) => kind)).toEqual([
       'navigate',
       'visible',
+    ])
+  })
+
+  test('compiles a compound cart Then from observe without extract', async () => {
+    const specification = parseSpecification({
+      uri: 'features/cart.feature',
+      source: `
+Feature: Shopping cart
+  Scenario: Cart contains items
+    Then the cart should contain "Sauce Labs Backpack" and "Sauce Labs Bike Light"
+`,
+    })
+    const scenario = specification.scenarios[0]!
+    const compileAssertion = mock(async () => {
+      throw new Error('compound Then must not extract')
+    })
+    const verify = mock(async () => {
+      throw new Error('compound Then must not verify')
+    })
+    const executeInstruction = mock(async () => ({ success: true }))
+    const automation: WebAutomation = {
+      async navigate() {},
+      async observe() {
+        return [
+          {
+            description: 'Sauce Labs Backpack cart item',
+            handle: { selector: '.inventory_item_name' },
+          },
+          {
+            description: 'Sauce Labs Bike Light cart item',
+            handle: { selector: '.inventory_item_name' },
+          },
+        ]
+      },
+      async act() {
+        throw new Error('compound Then must not act')
+      },
+      verify,
+      compileAssertion,
+      executeInstruction,
+      async screenshot() {
+        return new Uint8Array()
+      },
+      async readIsolationState() {
+        return { cookieCount: 0, storageKeyCount: 0 }
+      },
+      async close() {},
+    }
+    const adapter = createWebAdapter(
+      { baseUrl: 'https://example.test' },
+      factoryFor(automation),
+    )
+    const session = await adapter.openSession({
+      executionTargetProfile: { id: 'web' },
+      specification,
+      scenario,
+      mode: 'adaptive',
+      scenarioTemplate: scenario.template,
+      runtimeBindings: scenario.runtimeBindings,
+    })
+
+    const step = scenario.steps[0]!
+    const execution = await session.executeStep(step, undefined, {
+      stepIndex: 0,
+      templateStep: step,
+      runtimeBindings: [],
+    })
+    const completion = await session.complete?.()
+    await session.close()
+    await adapter.dispose?.()
+
+    expect(execution.state).toBe('passed')
+    expect(compileAssertion).not.toHaveBeenCalled()
+    expect(verify).not.toHaveBeenCalled()
+    expect(completion?.replayRepresentation?.cacheable).toBe(true)
+    const payload = (
+      completion?.replayRepresentation?.cacheable
+        ? completion.replayRepresentation.adapterPayload
+        : undefined
+    ) as WebExecutionCachePayload
+    expect(payload.steps[0]?.instructions.map(({ kind }) => kind)).toEqual([
+      'navigate',
+      'text-contains',
+      'text-contains',
     ])
   })
 

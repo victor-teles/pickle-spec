@@ -228,6 +228,23 @@ async function executeLocatorAssertion(
   }
 }
 
+function waitsForAttachment(instruction: WebInstruction): boolean {
+  switch (instruction.kind) {
+    case 'click':
+    case 'fill':
+    case 'type':
+    case 'hover':
+    case 'select-option':
+    case 'visible':
+    case 'text-equals':
+    case 'text-contains':
+    case 'value-equals':
+      return true
+    default:
+      return false
+  }
+}
+
 export function createDirectBrowser(
   context: BrowserContext,
   options: DirectBrowserOptions,
@@ -261,22 +278,55 @@ export function createDirectBrowser(
         const actual = await page.url()
         return comparison(actual === expected, expected, actual)
       }
-      const locator = locatorFor(page, instruction.locator, bindings)
-      const action = await executeLocatorAction(
-        instruction,
-        locator,
-        bindings,
-        signal,
-      )
-      if (action) return action
-      return executeLocatorAssertion(
+      return executeLocatorInstruction(
         page,
         instruction,
-        locator,
         bindings,
         options.actionTimeoutMs,
         signal,
       )
     },
   }
+}
+
+async function executeLocatorInstruction(
+  page: Page,
+  instruction: Extract<WebInstruction, { locator: WebLocator }>,
+  bindings: readonly ScenarioVariableBinding[],
+  timeoutMs: number,
+  signal?: AbortSignal,
+): Promise<WebDirectExecutionResult> {
+  const locator = locatorFor(page, instruction.locator, bindings)
+  if (waitsForAttachment(instruction)) {
+    const attached = await waitForNthLocator(
+      page,
+      instruction.locator,
+      'attached',
+      bindings,
+      timeoutMs,
+      signal,
+    )
+    if (!attached) {
+      return {
+        success: false,
+        actualState: 'not found',
+        message: 'Timed out waiting for locator to be attached',
+      }
+    }
+  }
+  const action = await executeLocatorAction(
+    instruction,
+    locator,
+    bindings,
+    signal,
+  )
+  if (action) return action
+  return executeLocatorAssertion(
+    page,
+    instruction,
+    locator,
+    bindings,
+    timeoutMs,
+    signal,
+  )
 }

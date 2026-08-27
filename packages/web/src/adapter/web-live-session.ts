@@ -9,6 +9,7 @@ import {
   errorMessage,
   navigationTarget,
   navigationUrl,
+  observeInstruction,
   promptFor,
 } from '../execution-cache/web-step'
 import { abortError, isAbortError } from './abort'
@@ -100,7 +101,9 @@ export function createWebLiveSession({
       }
     }
     await ensureNavigation(signal)
-    if (step.type !== 'outcome') return resolveByObservation(prompt, signal)
+    if (step.type !== 'outcome') {
+      return resolveByObservation(observeInstruction(step), signal)
+    }
     const verification = await automation.verify(prompt, signal)
     const resolvedActions = [{ description: `Verify: ${prompt}` }]
     return verification.meetsExpectation

@@ -15,9 +15,11 @@ export {
   instructionCoversStepVariables,
   parseObservedActionPayload,
   stepVariableNames,
+  webAssertionCompileSchema,
   webAssertionDraftSchema,
   webInstructionVariables,
 } from './web-cache-compilation'
+export { compileObservedOutcomes } from './web-cache-outcome'
 export type {
   WebExecutionCachePayload,
   WebInstruction,

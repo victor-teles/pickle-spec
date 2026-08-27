@@ -10,16 +10,23 @@ import type { WebAutomation } from '../adapter/web-automation'
 import type { WebAdapterOptions } from '../adapter/web-options'
 import { resolvedInstructions } from './web-cache-instructions'
 import {
+  compileObservedOutcomes,
   compileObservedWebAction,
   compileWebAssertion,
   compileWebNavigation,
   instructionCoversStepVariables,
   parseObservedActionPayload,
+  stepVariableNames,
   type WebAssertionDraft,
   type WebExecutionCachePayload,
   type WebInstruction,
 } from './web-execution-cache'
-import { navigationTarget, navigationUrl, promptFor } from './web-step'
+import {
+  navigationTarget,
+  navigationUrl,
+  observeInstruction,
+  promptFor,
+} from './web-step'
 
 type WebInstructionRuntime = {
   executeSequence(
@@ -50,15 +57,18 @@ function definedInstructions(
   return values.every((value) => value !== undefined)
 }
 
-async function compileAssertionDraft(
+async function compileAssertionDrafts(
   automation: WebAutomation,
   prompt: string,
   signal: AbortSignal | undefined,
-): Promise<WebAssertionDraft | undefined> {
+): Promise<WebAssertionDraft[]> {
   try {
-    return await automation.compileAssertion?.(prompt, signal)
+    const drafts = await automation.compileAssertion?.(prompt, signal)
+    if (drafts === undefined) return []
+    if ('kind' in drafts) return [drafts]
+    return [...drafts]
   } catch {
-    return undefined
+    return []
   }
 }
 
@@ -79,18 +89,26 @@ function verificationExecution(
 
 type ObservedActions = Awaited<ReturnType<WebAutomation['observe']>>
 
+async function observeOnce(
+  automation: WebAutomation,
+  prompt: string,
+  signal: AbortSignal | undefined,
+  onInference: () => void,
+): Promise<ObservedActions> {
+  const actions = await automation.observe(prompt, signal)
+  onInference()
+  return actions
+}
+
 async function observeActions(
   automation: WebAutomation,
   prompt: string,
   signal: AbortSignal | undefined,
   onInference: () => void,
 ): Promise<ObservedActions> {
-  let actions = await automation.observe(prompt, signal)
-  onInference()
+  const actions = await observeOnce(automation, prompt, signal, onInference)
   if (actions.length > 0) return actions
-  actions = await automation.observe(prompt, signal)
-  onInference()
-  return actions
+  return observeOnce(automation, prompt, signal, onInference)
 }
 
 async function executeObservedActions(
@@ -182,7 +200,55 @@ export function createWebAdaptiveRuntime({
     }
   }
 
+  function usableInstructions(
+    compiled: WebInstruction[] | undefined,
+    templateStep: ScenarioStep,
+  ): WebInstruction[] | undefined {
+    if (!compiled || compiled.length === 0) return undefined
+    return instructionCoversStepVariables(compiled, templateStep)
+      ? compiled
+      : undefined
+  }
+
+  async function compileObservedOutcomeInstructions(
+    step: ScenarioStep,
+    prompt: string,
+    templateStep: ScenarioStep,
+    signal: AbortSignal | undefined,
+  ): Promise<WebInstruction[] | undefined> {
+    if (stepVariableNames(templateStep).length > 0) return undefined
+    const actions = await observeOnce(
+      automation,
+      observeInstruction(step),
+      signal,
+      () => inference.count++,
+    )
+    return usableInstructions(
+      compileObservedOutcomes(actions, prompt, runtimeBindings),
+      templateStep,
+    )
+  }
+
+  async function compileExtractedOutcomeInstructions(
+    prompt: string,
+    templateStep: ScenarioStep,
+    signal: AbortSignal | undefined,
+  ): Promise<WebInstruction[] | undefined> {
+    inference.count++
+    const drafts = await compileAssertionDrafts(automation, prompt, signal)
+    const compiled = drafts.map((draft) =>
+      compileWebAssertion(draft, runtimeBindings),
+    )
+    const usable = definedInstructions(compiled)
+      ? usableInstructions(compiled, templateStep)
+      : undefined
+    if (usable) return usable
+    if (drafts.length > 0) uncacheable.reason = 'bound-parameter-value'
+    return undefined
+  }
+
   async function adaptiveOutcome(
+    step: ScenarioStep,
     prompt: string,
     templateStep: ScenarioStep,
     index: number,
@@ -194,21 +260,21 @@ export function createWebAdaptiveRuntime({
       signal,
     )
     if (navigationFailure) return navigationFailure
-    inference.count++
-    const draft = await compileAssertionDraft(automation, prompt, signal)
-    const assertion = draft
-      ? compileWebAssertion(draft, runtimeBindings)
-      : undefined
-    if (
-      assertion &&
-      instructionCoversStepVariables([assertion], templateStep)
-    ) {
-      instructions.push(assertion)
-      return executeCompiledStep(instructions, [assertion], index, signal)
+    const compiled =
+      (await compileObservedOutcomeInstructions(
+        step,
+        prompt,
+        templateStep,
+        signal,
+      )) ??
+      (await compileExtractedOutcomeInstructions(prompt, templateStep, signal))
+    if (compiled) {
+      instructions.push(...compiled)
+      return executeCompiledStep(instructions, compiled, index, signal)
     }
-    uncacheable.reason = draft
-      ? 'bound-parameter-value'
-      : 'non-deterministic-assertion'
+    if (uncacheable.reason === undefined) {
+      uncacheable.reason = 'non-deterministic-assertion'
+    }
     inference.count++
     const verification = await automation.verify(prompt, signal)
     return verificationExecution(
@@ -277,13 +343,14 @@ export function createWebAdaptiveRuntime({
       }
       return step.type === 'outcome'
         ? adaptiveOutcome(
+            step,
             prompt,
             context.templateStep,
             context.stepIndex,
             signal,
           )
         : adaptiveAction(
-            prompt,
+            observeInstruction(step),
             context.templateStep,
             context.stepIndex,
             signal,

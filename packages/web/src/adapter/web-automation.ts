@@ -53,7 +53,7 @@ export interface WebAutomation {
   compileAssertion?(
     prompt: string,
     signal?: AbortSignal,
-  ): Promise<WebAssertionDraft>
+  ): Promise<WebAssertionDraft | readonly WebAssertionDraft[]>
   executeInstruction?(
     instruction: WebInstruction,
     bindings: readonly ScenarioVariableBinding[],
