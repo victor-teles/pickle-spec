@@ -645,6 +645,43 @@ describe('runScenario', () => {
     expect(close).toHaveBeenCalledTimes(1)
   })
 
+  test('keeps an executeScenario infrastructure error when complete cannot run', async () => {
+    const complete = mock(async () => {
+      throw new Error('Mobile logical session did not execute')
+    })
+    const close = mock(async () => {})
+    const run = await runScenario({
+      specification,
+      scenario,
+      executionTargetProfile: { id: 'android' },
+      adapter: {
+        async openSession() {
+          return {
+            async executeScenario() {
+              throw new Error(
+                'Agent Device Replay called a semantic inference route outside replay.run',
+              )
+            },
+            complete,
+            close,
+          }
+        },
+      },
+    })
+
+    expect(run.result).toMatchObject({
+      state: 'infrastructure-error',
+      attempts: [
+        {
+          message:
+            'Agent Device Replay called a semantic inference route outside replay.run',
+        },
+      ],
+    })
+    expect(complete).not.toHaveBeenCalled()
+    expect(close).toHaveBeenCalledTimes(1)
+  })
+
   test('materializes a logical-session close exception as an infrastructure error', async () => {
     const run = await runScenario({
       specification,

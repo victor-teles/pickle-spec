@@ -1159,7 +1159,7 @@ Feature: Search
         .getByRole('button', { name: 'Review run' })
         .click()
       const results = page.getByRole('table', { name: 'Test run results' })
-      expect(await page.getByText('app-42').count()).toBeGreaterThan(0)
+      await page.getByText('app-42').waitFor()
       expect(await results.textContent()).toContain('Pay for the order')
       expect(await results.textContent()).toContain('adaptive')
       expect(await results.textContent()).toContain('uncacheable')

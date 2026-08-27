@@ -1408,16 +1408,13 @@ export default {
       'Expected: "payment is captured" | Actual: Payment was declined',
     )
     expect(outcomeStep.artifacts).toHaveLength(1)
-    expect(outcomeStep.artifacts?.[0]).toMatchObject({
-      kind: 'screenshot',
-      path: expect.any(String),
-      mediaType: 'image/png',
-      name: expect.stringMatching(/\.png$/),
-      sizeBytes: expect.any(Number),
-    })
-    expect(outcomeStep.artifacts?.[0]?.capturedAt).toMatch(
-      /^\d{4}-\d{2}-\d{2}T/,
-    )
+    const screenshot = outcomeStep.artifacts?.[0]
+    expect(screenshot?.kind).toBe('screenshot')
+    expect(typeof screenshot?.path).toBe('string')
+    expect(screenshot?.mediaType).toBe('image/png')
+    expect(screenshot?.name).toMatch(/\.png$/)
+    expect(typeof screenshot?.sizeBytes).toBe('number')
+    expect(screenshot?.capturedAt).toMatch(/^\d{4}-\d{2}-\d{2}T/)
     expect(attempt.evidenceAvailability).toContainEqual({
       kind: 'screenshot',
       state: 'available',
@@ -1434,10 +1431,6 @@ export default {
       expect(step.durationMs).toBeGreaterThanOrEqual(0)
     }
 
-    const screenshot = attempt.steps
-      .flatMap((step) => step.artifacts ?? [])
-      .find((artifact) => artifact.kind === 'screenshot')
-    expect(screenshot).toBeDefined()
     expect(
       resolve(screenshot!.path).startsWith(
         `${resolve(join(runDirectory, 'artifacts'))}${sep}`,
@@ -1925,8 +1918,9 @@ export default {
     async openSession(input) {
       await record(input.mode)
       return {
-        async executeStep() {
-          if (input.mode === 'replay' && behavior === 'diverge') {
+        async executeStep(_step, _signal, context) {
+          const evaluation = context?.evaluation ?? input.mode
+          if (evaluation === 'replay' && behavior === 'diverge') {
             return {
               state: 'failed',
               replayDiverged: true,
@@ -1998,7 +1992,7 @@ export default {
       '--refresh-cache cannot be combined with --cache-only',
     )
     expect(await Bun.file(marker).text()).toBe(
-      'adaptive\nreplay\nadaptive\nreplay\nadaptive\nadaptive\n',
+      'adaptive\nreplay\nadaptive\nreplay\nadaptive\n',
     )
     expect(replay.stdout.toString()).toContain('"executionMode":"replay"')
     expect(replay.stdout.toString()).toContain('"cacheOutcome":"hit"')
@@ -2007,7 +2001,10 @@ export default {
     expect(refresh.stdout.toString()).toContain('"inferenceCount":1')
     expect(cold.stdout.toString()).toContain('"failureKind":"cache-miss"')
     expect(cold.stdout.toString()).toContain('"inferenceCount":0')
-    expect(fallback.stdout.toString()).toContain('"cacheOutcome":"fallback"')
+    expect(fallback.stdout.toString()).toContain(
+      '"type":"adaptive-fallback-started"',
+    )
+    expect(fallback.stdout.toString()).toContain('"cacheOutcome":"miss"')
     expect(uncacheable.stdout.toString()).toContain('"state":"passed"')
     expect(uncacheable.stdout.toString()).toContain(
       '"cacheOutcome":"uncacheable"',

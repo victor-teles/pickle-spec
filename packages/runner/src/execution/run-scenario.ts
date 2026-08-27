@@ -585,6 +585,12 @@ async function executeTargetSession(
 ): Promise<TargetSessionCompletion | undefined> {
   try {
     await executeTargetSessionSteps(session, scenarioWallStartedAt, context)
+    if (
+      context.progress.state === 'infrastructure-error' ||
+      context.progress.state === 'cancelled'
+    ) {
+      return undefined
+    }
     return await completeTargetSession(session, context)
   } finally {
     await closeTargetSession(session, context)
