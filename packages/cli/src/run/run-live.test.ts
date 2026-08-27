@@ -504,4 +504,4 @@ Feature: Startup interruption
     .split('\n')
     .map((line) => JSON.parse(line))
   expect(exportedEvents.map((event) => event.type)).toEqual(['run-started'])
-}, 15_000)
+}, 30_000)

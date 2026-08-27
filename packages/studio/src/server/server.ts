@@ -274,7 +274,6 @@ export interface StudioServer {
 type HtmlAsset = {
   index: string
   files: Map<string, Blob>
-  outdir: string
 }
 
 type StudioStreamEvent = StudioRunStreamEvent
@@ -365,30 +364,39 @@ function secureResponse(response: Response, origin: string): Response {
   return response
 }
 
-async function buildUi(): Promise<HtmlAsset> {
+let uiBuild: Promise<HtmlAsset> | undefined
+
+async function compileUi(): Promise<HtmlAsset> {
   const outdir = await mkdtemp(join(tmpdir(), 'pickle-studio-ui-'))
-  const result = await Bun.build({
-    entrypoints: [htmlEntry],
-    outdir,
-    target: 'browser',
-    plugins: [tailwind],
+  try {
+    const result = await Bun.build({
+      entrypoints: [htmlEntry],
+      outdir,
+      target: 'browser',
+      plugins: [tailwind],
+    })
+    if (!result.success) throw new Error('Studio UI failed to build')
+    const files = new Map<string, Blob>()
+    for (const output of result.outputs) {
+      const name = basename(output.path)
+      const blob = new Blob([await output.arrayBuffer()], { type: output.type })
+      files.set(name, blob)
+      files.set(`/${name}`, blob)
+    }
+    const index = files.get('index.html')
+    if (!index) throw new Error('Studio UI build did not produce index.html')
+    return { index: await index.text(), files }
+  } finally {
+    await rm(outdir, { recursive: true, force: true })
+  }
+}
+
+function buildUi(): Promise<HtmlAsset> {
+  uiBuild ??= compileUi().catch((error: unknown) => {
+    uiBuild = undefined
+    throw error
   })
-  if (!result.success) {
-    await rm(outdir, { recursive: true, force: true })
-    throw new Error('Studio UI failed to build')
-  }
-  const files = new Map<string, Blob>()
-  for (const output of result.outputs) {
-    const name = basename(output.path)
-    files.set(name, output)
-    files.set(`/${name}`, output)
-  }
-  const index = files.get('index.html')
-  if (!index) {
-    await rm(outdir, { recursive: true, force: true })
-    throw new Error('Studio UI build did not produce index.html')
-  }
-  return { index: await index.text(), files, outdir }
+  return uiBuild
 }
 
 function requestToken(request: Request): string | undefined {
@@ -1089,7 +1097,6 @@ export async function startStudio(
     stop() {
       stopWatch()
       server.stop(true)
-      void rm(ui.outdir, { recursive: true, force: true })
     },
   }
 }
