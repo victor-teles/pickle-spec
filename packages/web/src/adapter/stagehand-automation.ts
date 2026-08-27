@@ -142,8 +142,10 @@ export async function createStagehandAutomation(
       const result = await withAbort(
         stagehand.extract(
           'Extract locators that confirm this expectation. Use element types and ' +
-            'visible labels, not colors. Expected values must come from the ' +
-            `expectation text, never from the current page value: "${prompt}"`,
+            'visible labels, not colors. Named fields, inputs, or buttons that ' +
+            'should stay visible use kind visible, not inner text. Expected values ' +
+            'must come from the expectation text, never from the current page ' +
+            `value: "${prompt}"`,
           webAssertionCompileSchema,
           { timeout: timeouts.observeTimeoutMs },
         ),

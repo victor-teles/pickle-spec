@@ -355,6 +355,7 @@ function secureResponse(response: Response, origin: string): Response {
       "form-action 'self'",
       "frame-ancestors 'none'",
       "img-src 'self' data: blob:",
+      "media-src 'self'",
       "script-src 'self'",
       "style-src 'self' 'unsafe-inline'",
     ].join('; '),

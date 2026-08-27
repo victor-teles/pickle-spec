@@ -78,6 +78,10 @@ test('serves a live web screenshot that is not yet copied into the run directory
       expect(preview.status).toBe(200)
       expect(await preview.text()).toBe('png-bytes')
       expect(head.status).toBe(200)
+      const page = await fetch(`${origin}/?token=artifact-token`)
+      expect(page.headers.get('content-security-policy')).toContain(
+        "media-src 'self'",
+      )
     } finally {
       server.stop()
     }

@@ -1,6 +1,13 @@
 import type { TestArtifact, TestResultState } from '@pickle-spec/runner'
 import { type ChangeEvent, useEffect, useRef, useState } from 'react'
-import { Button, ButtonLink } from '../../components/ui/button'
+import { Button } from '../../components/ui/button'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from '../../components/ui/dialog'
 import { Input } from '../../components/ui/input'
 import { Label } from '../../components/ui/label'
 import {
@@ -87,6 +94,9 @@ function ImageArtifact(props: ArtifactViewerProps) {
   const href = artifactUrl(props.artifact.path)
   const [revision, setRevision] = useState(0)
   const [failure, setFailure] = useState<ArtifactLoadFailure>()
+  const [previewOpen, setPreviewOpen] = useState(false)
+  const alt = `${props.artifact.kind} from ${props.resultState} result for ${props.scenarioName}: ${props.stepText}`
+  const previewSrc = `${href}&preview=${revision}`
   if (failure) {
     return (
       <ArtifactFailure
@@ -100,20 +110,38 @@ function ImageArtifact(props: ArtifactViewerProps) {
     )
   }
   return (
-    <ButtonLink
-      variant="ghost"
-      href={href}
-      className="h-auto w-full justify-start overflow-hidden border-border bg-muted/20 p-0 hover:bg-muted/30"
-    >
-      <img
-        key={revision}
-        alt={`${props.artifact.kind} from ${props.resultState} result for ${props.scenarioName}: ${props.stepText}`}
-        src={`${href}&preview=${revision}`}
-        loading="lazy"
-        className="max-h-[32rem] w-full object-contain"
-        onError={() => void classifyMediaFailure(href).then(setFailure)}
-      />
-    </ButtonLink>
+    <>
+      <Button
+        type="button"
+        variant="ghost"
+        aria-label="Open screenshot preview"
+        aria-haspopup="dialog"
+        className="h-auto w-full cursor-zoom-in justify-start overflow-hidden border-border bg-muted/20 p-0 hover:bg-muted/30"
+        onClick={() => setPreviewOpen(true)}
+      >
+        <img
+          key={revision}
+          alt={alt}
+          src={previewSrc}
+          loading="lazy"
+          className="max-h-[32rem] w-full object-contain"
+          onError={() => void classifyMediaFailure(href).then(setFailure)}
+        />
+      </Button>
+      <Dialog open={previewOpen} onOpenChange={setPreviewOpen}>
+        <DialogContent className="sm:max-w-[min(96vw,80rem)]">
+          <DialogHeader>
+            <DialogTitle>{props.artifact.kind}</DialogTitle>
+            <DialogDescription>{props.stepText}</DialogDescription>
+          </DialogHeader>
+          <img
+            alt={alt}
+            src={previewSrc}
+            className="max-h-[75vh] w-full object-contain"
+          />
+        </DialogContent>
+      </Dialog>
+    </>
   )
 }
 
@@ -149,6 +177,7 @@ function VideoArtifact(props: ArtifactViewerProps) {
     <video
       aria-label={`Recording for ${props.scenarioName}: ${props.stepText}`}
       controls
+      playsInline
       preload="metadata"
       className="max-h-[32rem] w-full rounded-md border border-border bg-black"
       onError={() =>

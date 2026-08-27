@@ -1,4 +1,5 @@
 import type { TestArtifact } from '@pickle-spec/runner'
+import type { FileSink } from 'bun'
 import { capturedWebArtifact } from './web-artifact'
 
 export type WebRecording = {
@@ -13,38 +14,65 @@ type StartWebRecordingInput = {
 
 const frameIntervalMs = 500
 
+function browserSafeRecordingArgs(path: string): string[] {
+  return [
+    'ffmpeg',
+    '-hide_banner',
+    '-loglevel',
+    'error',
+    '-y',
+    '-f',
+    'image2pipe',
+    '-vcodec',
+    'mjpeg',
+    '-framerate',
+    '2',
+    '-i',
+    'pipe:0',
+    '-an',
+    '-vf',
+    'scale=trunc(iw/2)*2:trunc(ih/2)*2,format=yuv420p',
+    '-c:v',
+    'libx264',
+    '-pix_fmt',
+    'yuv420p',
+    '-profile:v',
+    'baseline',
+    '-color_range',
+    'tv',
+    '-colorspace',
+    'bt709',
+    '-color_primaries',
+    'bt709',
+    '-color_trc',
+    'bt709',
+    '-map_metadata',
+    '-1',
+    '-movflags',
+    '+faststart',
+    path,
+  ]
+}
+
+async function writeRecordingFrame(
+  stdin: FileSink,
+  frame: Uint8Array,
+): Promise<void> {
+  const written = stdin.write(frame)
+  if (typeof written !== 'number') await written
+}
+
 export async function startWebRecording(
   input: StartWebRecordingInput,
 ): Promise<WebRecording> {
   if (!Bun.which('ffmpeg')) {
     throw new Error('ffmpeg is required to capture a web recording')
   }
-  const ffmpeg = Bun.spawn(
-    [
-      'ffmpeg',
-      '-hide_banner',
-      '-loglevel',
-      'error',
-      '-y',
-      '-f',
-      'image2pipe',
-      '-vcodec',
-      'mjpeg',
-      '-framerate',
-      '2',
-      '-i',
-      'pipe:0',
-      '-an',
-      '-c:v',
-      'libx264',
-      '-pix_fmt',
-      'yuv420p',
-      '-movflags',
-      '+faststart',
-      input.path,
-    ],
-    { stdin: 'pipe', stdout: 'ignore', stderr: 'pipe' },
-  )
+  const ffmpeg = Bun.spawn(browserSafeRecordingArgs(input.path), {
+    stdin: 'pipe',
+    stdout: 'ignore',
+    stderr: 'pipe',
+  })
   if (!ffmpeg.stdin) {
     ffmpeg.kill()
     throw new Error('Recording encoder did not accept frame input')
@@ -65,7 +93,7 @@ export async function startWebRecording(
     if (stopped) return
     const frame = await nextFrame()
     if (!frame || stopped) return
-    stdin.write(frame)
+    await writeRecordingFrame(stdin, frame)
   }
 
   function enqueueFrame() {
@@ -83,7 +111,7 @@ export async function startWebRecording(
       clearInterval(timer)
       await writes
       const frame = await nextFrame()
-      if (frame) stdin.write(frame)
+      if (frame) await writeRecordingFrame(stdin, frame)
       stdin.end()
       const code = await ffmpeg.exited
       if (code !== 0) {
