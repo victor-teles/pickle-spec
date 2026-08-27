@@ -187,6 +187,67 @@ async function waitForPoll(
   })
 }
 
+async function reusableServer(
+  config: ServerConfig,
+  url: string,
+  deadline: number,
+  serverRuntime: ServerRuntime,
+  signal?: AbortSignal,
+): Promise<ManagedServer | undefined> {
+  if (!config.reuseExisting) return undefined
+  if (!(await isHealthy(config, url, deadline, serverRuntime, signal))) {
+    return undefined
+  }
+  throwIfCancelled(signal)
+  return {
+    mode: 'reused',
+    url,
+    outputAvailability: outputAvailability(config, false),
+    outputComplete: Promise.resolve(),
+    stop() {},
+  }
+}
+
+function observeConfiguredOutput(
+  config: ServerConfig,
+  child: ManagedApplicationProcess,
+  now: () => Date,
+  onOutput?: StartServerOptions['onOutput'],
+): Promise<void> {
+  const tasks: Promise<void>[] = []
+  if (config.output?.stdout && child.stdout instanceof ReadableStream) {
+    tasks.push(observeOutput(child.stdout, 'stdout', now, onOutput))
+  }
+  if (config.output?.stderr && child.stderr instanceof ReadableStream) {
+    tasks.push(observeOutput(child.stderr, 'stderr', now, onOutput))
+  }
+  return Promise.all(tasks).then(() => undefined)
+}
+
+async function waitForServer(
+  config: ServerConfig,
+  url: string,
+  deadline: number,
+  serverRuntime: ServerRuntime,
+  signal?: AbortSignal,
+): Promise<boolean> {
+  while (Date.now() < deadline) {
+    throwIfCancelled(signal)
+    if (await isHealthy(config, url, deadline, serverRuntime, signal)) {
+      return true
+    }
+    throwIfCancelled(signal)
+    const remaining = deadline - Date.now()
+    if (remaining <= 0) return false
+    await waitForPoll(
+      Math.min(config.pollIntervalMs ?? 500, remaining),
+      serverRuntime,
+      signal,
+    )
+  }
+  return false
+}
+
 export async function startServer(
   config: ServerConfig,
   options: StartServerOptions = {},
@@ -200,19 +261,14 @@ export async function startServer(
   const timeoutMs = config.startupTimeoutMs ?? 30_000
   const deadline = Date.now() + timeoutMs
 
-  if (
-    config.reuseExisting &&
-    (await isHealthy(config, url, deadline, serverRuntime, signal))
-  ) {
-    throwIfCancelled(signal)
-    return {
-      mode: 'reused',
-      url,
-      outputAvailability: outputAvailability(config, false),
-      outputComplete: Promise.resolve(),
-      stop() {},
-    }
-  }
+  const existing = await reusableServer(
+    config,
+    url,
+    deadline,
+    serverRuntime,
+    signal,
+  )
+  if (existing) return existing
 
   throwIfCancelled(signal)
   const child = serverRuntime.spawn(commandForShell(config.command), {
@@ -221,39 +277,29 @@ export async function startServer(
     stdout: config.output?.stdout ? 'pipe' : 'ignore',
     stderr: config.output?.stderr ? 'pipe' : 'ignore',
   })
-  const outputTasks: Promise<void>[] = []
-  if (config.output?.stdout && child.stdout instanceof ReadableStream) {
-    outputTasks.push(
-      observeOutput(child.stdout, 'stdout', now, options.onOutput),
-    )
-  }
-  if (config.output?.stderr && child.stderr instanceof ReadableStream) {
-    outputTasks.push(
-      observeOutput(child.stderr, 'stderr', now, options.onOutput),
-    )
-  }
-  const outputComplete = Promise.all(outputTasks).then(() => undefined)
+  const outputComplete = observeConfiguredOutput(
+    config,
+    child,
+    now,
+    options.onOutput,
+  )
   try {
-    while (Date.now() < deadline) {
-      throwIfCancelled(signal)
-      if (await isHealthy(config, url, deadline, serverRuntime, signal)) {
-        throwIfCancelled(signal)
-        return {
-          mode: 'spawned',
-          url,
-          outputAvailability: outputAvailability(config, true),
-          outputComplete,
-          stop: () => stopServerProcess(child),
-        }
+    const started = await waitForServer(
+      config,
+      url,
+      deadline,
+      serverRuntime,
+      signal,
+    )
+    throwIfCancelled(signal)
+    if (started) {
+      return {
+        mode: 'spawned',
+        url,
+        outputAvailability: outputAvailability(config, true),
+        outputComplete,
+        stop: () => stopServerProcess(child),
       }
-      throwIfCancelled(signal)
-      const remaining = deadline - Date.now()
-      if (remaining <= 0) break
-      await waitForPoll(
-        Math.min(config.pollIntervalMs ?? 500, remaining),
-        serverRuntime,
-        signal,
-      )
     }
     throw new Error(
       `Server failed to start within ${timeoutMs}ms. Command: "${config.command}", URL: "${url}"`,

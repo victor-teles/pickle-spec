@@ -178,136 +178,167 @@ export function createApplicationDiagnosticBuffer(
     }
   }
 
+  function recordForProfile(
+    profileId: string,
+    line: ApplicationOutputLine,
+  ): void {
+    const scenarios = [...active.values()].filter(
+      (scenario) => scenario.scope.executionTargetProfileId === profileId,
+    )
+    if (scenarios.length === 1) {
+      const scenario = scenarios[0]!
+      const diagnostic = appendDiagnostic(scenario, line)
+      options.onDiagnostic?.({ profileId, scope: scenario.scope, diagnostic })
+      return
+    }
+    pending.set(profileId, [...(pending.get(profileId) ?? []), line])
+    options.onDiagnostic?.({
+      profileId,
+      diagnostic: unscopedDiagnostic(profileId, line),
+    })
+  }
+
   function record(line: ApplicationOutputLine): void {
     const profiles = line.stream === 'stdout' ? stdoutProfiles : stderrProfiles
-    for (const profileId of profiles) {
-      const scenarios = [...active.values()].filter(
-        (scenario) => scenario.scope.executionTargetProfileId === profileId,
-      )
-      if (scenarios.length === 0) {
-        pending.set(profileId, [...(pending.get(profileId) ?? []), line])
-        options.onDiagnostic?.({
-          profileId,
-          diagnostic: unscopedDiagnostic(profileId, line),
-        })
-        continue
-      }
-      if (scenarios.length === 1) {
-        const scenario = scenarios[0]!
-        const diagnostic = appendDiagnostic(scenario, line)
-        options.onDiagnostic?.({
-          profileId,
-          scope: scenario.scope,
-          diagnostic,
-        })
-        continue
-      }
-      pending.set(profileId, [...(pending.get(profileId) ?? []), line])
-      options.onDiagnostic?.({
-        profileId,
-        diagnostic: unscopedDiagnostic(profileId, line),
-      })
+    for (const profileId of profiles) recordForProfile(profileId, line)
+  }
+
+  function startScenario(
+    event: Extract<RunEvent, { type: 'scenario-started' }>,
+  ): RunEvent {
+    active.set(scopeKey(event.scope), {
+      scenario: event.scenario,
+      scope: event.scope,
+      diagnostics: [],
+      stepDiagnostics: new Map(),
+    })
+    return event
+  }
+
+  function finishStep(
+    event: Extract<RunEvent, { type: 'step-finished' }>,
+    scenario: ActiveScenario,
+  ): RunEvent {
+    const stepIndex = event.scope.stepIndex ?? event.result.index
+    const diagnostics = scenario.diagnostics.filter(
+      (entry) => entry.stepIndex === stepIndex,
+    )
+    scenario.diagnostics = scenario.diagnostics.filter(
+      (entry) => entry.stepIndex !== stepIndex,
+    )
+    if (diagnostics.length > 0) {
+      scenario.stepDiagnostics.set(stepIndex, diagnostics)
+    }
+    scenario.step = undefined
+    if (diagnostics.length === 0) return event
+    return {
+      ...event,
+      result: {
+        ...event.result,
+        diagnostics: [...(event.result.diagnostics ?? []), ...diagnostics],
+      },
     }
   }
 
-  function project(event: RunEvent): RunEvent {
-    if (event.type === 'scenario-started') {
-      const scenario: ActiveScenario = {
-        scenario: event.scenario,
-        scope: event.scope,
-        diagnostics: [],
-        stepDiagnostics: new Map(),
-      }
-      active.set(scopeKey(event.scope), scenario)
-      return event
+  function claimPendingOutput(
+    event: Extract<RunEvent, { type: 'scenario-finished' }>,
+    scenario: ActiveScenario,
+  ): void {
+    const profileId = event.scope.executionTargetProfileId
+    const hasOtherActiveScenario = [...active.values()].some(
+      (candidate) =>
+        candidate !== scenario &&
+        candidate.scope.executionTargetProfileId === profileId,
+    )
+    const ownsSharedOutput =
+      event.attempt.state === 'failed' ||
+      event.attempt.state === 'infrastructure-error' ||
+      !hasOtherActiveScenario
+    if (!ownsSharedOutput) return
+    for (const line of pending.get(profileId) ?? []) {
+      appendDiagnostic(scenario, line, false)
     }
+    pending.delete(profileId)
+  }
 
-    const scenario = 'scope' in event ? active.get(scopeKey(event.scope)) : null
-    if (event.type === 'step-started' && scenario) {
-      scenario.step = {
-        index: event.scope.stepIndex ?? 0,
-        text: `${event.step.keyword.trim()} ${event.step.text}`,
-      }
-      return event
+  function finishScenario(
+    event: Extract<RunEvent, { type: 'scenario-finished' }>,
+    scenario: ActiveScenario,
+  ): RunEvent {
+    claimPendingOutput(event, scenario)
+    active.delete(scopeKey(event.scope))
+    const steps = event.attempt.steps.map((step) => {
+      const diagnostics = scenario.stepDiagnostics.get(step.index) ?? []
+      return diagnostics.length === 0
+        ? step
+        : {
+            ...step,
+            diagnostics: [...(step.diagnostics ?? []), ...diagnostics],
+          }
+    })
+    const diagnostics = [
+      ...(event.attempt.diagnostics ?? []),
+      ...scenario.diagnostics,
+    ]
+    const stepDiagnostics = steps.flatMap((step) => step.diagnostics ?? [])
+    return {
+      ...event,
+      attempt: {
+        ...event.attempt,
+        steps,
+        diagnostics: diagnostics.length > 0 ? diagnostics : undefined,
+        evidenceAvailability: availabilityFor(
+          event.attempt.evidenceAvailability,
+          options,
+          event.scope.executionTargetProfileId,
+          diagnostics.length > 0 || stepDiagnostics.length > 0,
+        ),
+        applicationOutputAvailability: applicationOutputAvailabilityFor(
+          options,
+          event.scope.executionTargetProfileId,
+          [...diagnostics, ...stepDiagnostics],
+        ),
+      },
     }
-    if (event.type === 'step-finished' && scenario) {
-      const stepIndex = event.scope.stepIndex ?? event.result.index
-      const diagnostics = scenario.diagnostics.filter(
-        (entry) => entry.stepIndex === stepIndex,
-      )
-      scenario.diagnostics = scenario.diagnostics.filter(
-        (entry) => entry.stepIndex !== stepIndex,
-      )
-      if (diagnostics.length > 0) {
-        scenario.stepDiagnostics.set(stepIndex, diagnostics)
-      }
-      scenario.step = undefined
-      if (diagnostics.length === 0) return event
-      return {
-        ...event,
-        result: {
-          ...event.result,
-          diagnostics: [...(event.result.diagnostics ?? []), ...diagnostics],
-        },
-      }
-    }
-    if (event.type === 'scenario-finished' && scenario) {
-      const profileId = event.scope.executionTargetProfileId
-      const otherActiveScenarios = [...active.values()].filter(
-        (candidate) =>
-          candidate !== scenario &&
-          candidate.scope.executionTargetProfileId === profileId,
-      )
-      const ownsSharedOutput =
-        event.attempt.state === 'failed' ||
-        event.attempt.state === 'infrastructure-error' ||
-        otherActiveScenarios.length === 0
-      if (ownsSharedOutput) {
-        for (const line of pending.get(profileId) ?? []) {
-          appendDiagnostic(scenario, line, false)
-        }
-        pending.delete(profileId)
-      }
-      active.delete(scopeKey(event.scope))
-      const steps = event.attempt.steps.map((step) => {
-        const diagnostics = scenario.stepDiagnostics.get(step.index) ?? []
-        if (diagnostics.length === 0) return step
-        return {
-          ...step,
-          diagnostics: [...(step.diagnostics ?? []), ...diagnostics],
-        }
-      })
-      const diagnostics = [
-        ...(event.attempt.diagnostics ?? []),
-        ...scenario.diagnostics,
-      ]
-      const stepsHaveDiagnostics = steps.some(
-        (step) => (step.diagnostics?.length ?? 0) > 0,
-      )
-      return {
-        ...event,
-        attempt: {
-          ...event.attempt,
-          steps,
-          diagnostics: diagnostics.length > 0 ? diagnostics : undefined,
-          evidenceAvailability: availabilityFor(
-            event.attempt.evidenceAvailability,
-            options,
-            event.scope.executionTargetProfileId,
-            diagnostics.length > 0 || stepsHaveDiagnostics,
-          ),
-          applicationOutputAvailability: applicationOutputAvailabilityFor(
-            options,
-            event.scope.executionTargetProfileId,
-            [
-              ...diagnostics,
-              ...steps.flatMap((step) => step.diagnostics ?? []),
-            ],
-          ),
-        },
-      }
+  }
+
+  function startStep(
+    event: Extract<RunEvent, { type: 'step-started' }>,
+  ): RunEvent {
+    const scenario = active.get(scopeKey(event.scope))
+    if (!scenario) return event
+    scenario.step = {
+      index: event.scope.stepIndex ?? 0,
+      text: `${event.step.keyword.trim()} ${event.step.text}`,
     }
     return event
+  }
+
+  function finishActiveStep(
+    event: Extract<RunEvent, { type: 'step-finished' }>,
+  ): RunEvent {
+    const scenario = active.get(scopeKey(event.scope))
+    return scenario ? finishStep(event, scenario) : event
+  }
+
+  function finishActiveScenario(
+    event: Extract<RunEvent, { type: 'scenario-finished' }>,
+  ): RunEvent {
+    const scenario = active.get(scopeKey(event.scope))
+    return scenario ? finishScenario(event, scenario) : event
+  }
+
+  function projectActiveEvent(event: RunEvent): RunEvent {
+    if (event.type === 'step-started') return startStep(event)
+    if (event.type === 'step-finished') return finishActiveStep(event)
+    if (event.type === 'scenario-finished') return finishActiveScenario(event)
+    return event
+  }
+
+  function project(event: RunEvent): RunEvent {
+    return event.type === 'scenario-started'
+      ? startScenario(event)
+      : projectActiveEvent(event)
   }
 
   return { record, project }

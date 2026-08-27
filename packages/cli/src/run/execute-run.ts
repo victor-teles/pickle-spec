@@ -207,6 +207,34 @@ function configuredAdapter(
   return createWebAdapter(web, extensions.webAutomationFactory)
 }
 
+function configureProfileAdapter(
+  adapters: Record<string, ExecutionTargetAdapter>,
+  extensions: Extensions,
+  config: PickleConfig,
+  args: ProjectRunOptions,
+  profile: ExecutionTargetProfile,
+): void {
+  if (adapters[profile.id]) return
+  if (profile.adapter === 'mobile') {
+    if (!adapters.mobile) {
+      adapters[profile.id] = configuredMobileAdapter(config, profile.id)
+    }
+    return
+  }
+  if (profile.adapter !== 'web') return
+  if (adapters.web) {
+    adapters[profile.id] = adapters.web
+    return
+  }
+  const web = configuredWebOptions(config, args, profile.id)
+  if (!web) {
+    throw new Error(
+      'Configure web.baseUrl or export an adapter from pickle.extensions.ts',
+    )
+  }
+  adapters[profile.id] = createWebAdapter(web, extensions.webAutomationFactory)
+}
+
 function configuredRunExtensions(
   extensions: Extensions,
   config: PickleConfig,
@@ -219,27 +247,7 @@ function configuredRunExtensions(
   if (extensions.adapter) adapters.custom ??= extensions.adapter
 
   for (const profile of profiles) {
-    if (profile.adapter === 'mobile') {
-      if (!adapters[profile.id] && !adapters.mobile) {
-        adapters[profile.id] = configuredMobileAdapter(config, profile.id)
-      }
-      continue
-    }
-    if (profile.adapter !== 'web' || adapters[profile.id]) continue
-    const web = configuredWebOptions(config, args, profile.id)
-    if (adapters.web) {
-      adapters[profile.id] = adapters.web
-      continue
-    }
-    if (!web) {
-      throw new Error(
-        'Configure web.baseUrl or export an adapter from pickle.extensions.ts',
-      )
-    }
-    adapters[profile.id] = createWebAdapter(
-      web,
-      extensions.webAutomationFactory,
-    )
+    configureProfileAdapter(adapters, extensions, config, args, profile)
   }
 
   return {
@@ -318,6 +326,355 @@ async function runSelectedResultPairs(
   return runs
 }
 
+type ProjectRunStore = ReturnType<typeof openTestRunStore>
+type PersistedProjectRun = Awaited<ReturnType<ProjectRunStore['create']>>
+type ResolvedProjectRunConfiguration = ReturnType<
+  typeof resolveRunConfiguration
+>
+type SelectedScenarios = ReturnType<typeof selectScenarios>
+type ManagedProjectServer = Awaited<ReturnType<typeof startServer>>
+
+type PreparedRunSelection = {
+  selections: SelectedScenarios
+  selectedResults?: TestResult[]
+  profileIds?: string[]
+}
+
+function requireSelections(
+  selections: SelectedScenarios,
+  rerun: boolean,
+): void {
+  if (selections.length > 0) return
+  throw new Error(
+    rerun
+      ? 'No Scenarios match the current rerun selection'
+      : 'No Scenarios match the current selection',
+  )
+}
+
+function selectedProfileIds(
+  args: ProjectRunOptions,
+  config: PickleConfig,
+  selectedResults: readonly TestResult[],
+): string[] | undefined {
+  if (args.profiles?.length) return args.profiles
+  if (!config.executionTargetProfiles) return undefined
+  return [
+    ...new Set(
+      selectedResults.map((result) => result.executionTargetProfile.id),
+    ),
+  ]
+}
+
+async function prepareRerunSelection(
+  root: string,
+  args: ProjectRunOptions,
+  config: PickleConfig,
+  specifications: Awaited<ReturnType<typeof discoverSpecifications>>,
+  baseSelection: SelectionOptions | undefined,
+  shardSelection: SelectionOptions['shard'],
+  historicalDurations: Record<string, number> | undefined,
+): Promise<PreparedRunSelection> {
+  const rerunId = args.rerunId!
+  const { manifest: sourceManifest } = await loadPersistedRun(root, rerunId)
+  const selectedResults = selectRerunResults(sourceManifest, {
+    failures: args.failures,
+    ...(args.scenarioIds?.length
+      ? { scenarioIds: args.scenarioIds }
+      : args.selection?.scenarioName
+        ? { scenarioNames: [args.selection.scenarioName] }
+        : {}),
+    ...(args.profiles?.length ? { profileIds: args.profiles } : {}),
+  })
+  if (selectedResults.length === 0) {
+    throw new Error('No results match the current rerun selection')
+  }
+  const selections = selectScenarios(
+    specifications,
+    {
+      ...baseSelection,
+      ...args.selection,
+      scenarioName: undefined,
+      shard: shardSelection,
+    },
+    historicalDurations ? { historicalDurations } : {},
+  ).filter((selection) =>
+    selectedResults.some((result) => selectionMatchesResult(selection, result)),
+  )
+  requireSelections(selections, true)
+  return {
+    selections,
+    selectedResults,
+    profileIds: selectedProfileIds(args, config, selectedResults),
+  }
+}
+
+function filterScenarioIds(
+  selections: SelectedScenarios,
+  scenarioIds: readonly string[] | undefined,
+): SelectedScenarios {
+  if (!scenarioIds?.length) return selections
+  const ids = new Set(scenarioIds)
+  return selections.filter((selection) =>
+    ids.has(scenarioSelectionId(selection)),
+  )
+}
+
+async function prepareRunSelection(
+  store: ProjectRunStore,
+  root: string,
+  config: PickleConfig,
+  args: ProjectRunOptions,
+): Promise<PreparedRunSelection> {
+  const specifications = await discoverSpecifications(
+    args.pattern ?? config.specifications ?? defaultSpecificationGlob,
+    args.language ?? config.language,
+    root,
+  )
+  const suiteSelection = args.suite ? config.suites?.[args.suite] : undefined
+  if (args.suite && !suiteSelection) {
+    throw new Error(`Unknown test suite "${args.suite}"`)
+  }
+  const baseSelection = suiteSelection ?? config.selection
+  const shardSelection = args.selection?.shard ?? baseSelection?.shard
+  const historicalDurations = shardSelection
+    ? await latestHistoricalDurations(store)
+    : undefined
+  if (args.rerunId) {
+    return prepareRerunSelection(
+      root,
+      args,
+      config,
+      specifications,
+      baseSelection,
+      shardSelection,
+      historicalDurations,
+    )
+  }
+  const selections = filterScenarioIds(
+    selectScenarios(
+      specifications,
+      { ...baseSelection, ...args.selection, shard: shardSelection },
+      historicalDurations ? { historicalDurations } : {},
+    ),
+    args.scenarioIds,
+  )
+  requireSelections(selections, false)
+  return { selections, profileIds: args.profiles }
+}
+
+async function resolveProjectRunConfiguration(
+  config: PickleConfig,
+  args: ProjectRunOptions,
+  applicationRevision: string | undefined,
+  profileIds: string[] | undefined,
+  root: string,
+): Promise<ResolvedProjectRunConfiguration> {
+  const extensions = await loadExtensions(args.extensionsPath, root)
+  const runConfiguration = {
+    ...runConfigurationFrom(config, profileIds),
+    concurrency: args.concurrency ?? config.concurrency,
+    applicationRevision,
+    execution: {
+      infrastructureRetries:
+        args.retries ?? config.execution?.infrastructureRetries,
+      functionalRetries: config.execution?.functionalRetries,
+      stepTimeoutMs: args.stepTimeoutMs ?? config.execution?.stepTimeoutMs,
+      scenarioTimeoutMs:
+        args.scenarioTimeoutMs ?? config.execution?.scenarioTimeoutMs,
+    },
+  }
+  return resolveRunConfiguration(
+    runConfiguration,
+    configuredRunExtensions(
+      extensions,
+      config,
+      args,
+      runConfiguration.executionTargetProfiles ?? [],
+    ),
+  )
+}
+
+function selectedTargetFilter(
+  selectedResults: readonly TestResult[] | undefined,
+) {
+  if (!selectedResults) return undefined
+  return (
+    selection: ScenarioSelection,
+    executionTargetProfile: ExecutionTargetProfile,
+  ) =>
+    selectedResults.some(
+      (result) =>
+        result.executionTargetProfile.id === executionTargetProfile.id &&
+        selectionMatchesResult(selection, result),
+    )
+}
+
+async function publishRunSchedule(
+  input: StartProjectRunInput,
+  selection: PreparedRunSelection,
+  configuration: ResolvedProjectRunConfiguration,
+): Promise<void> {
+  await input.onSchedule?.(
+    scheduleScenarios({
+      selections: selection.selections,
+      executionTargetProfiles: configuration.targets.map(
+        ({ executionTargetProfile }) => executionTargetProfile,
+      ),
+      includeTarget: selectedTargetFilter(selection.selectedResults),
+    }),
+  )
+}
+
+async function startApplicationDiagnostics(
+  input: StartProjectRunInput,
+  args: ProjectRunOptions,
+  targets: ResolvedProjectRunConfiguration['targets'],
+): Promise<{
+  server: ManagedProjectServer
+  diagnostics: ApplicationDiagnosticBuffer
+}> {
+  const applicationOutput = resolveApplicationOutput(
+    input.config,
+    targets.map(({ executionTargetProfile }) => executionTargetProfile),
+    args.applicationOutput,
+  )
+  const pendingOutput: ApplicationOutputLine[] = []
+  let diagnostics: ApplicationDiagnosticBuffer | undefined
+  const server = await startServer(
+    {
+      ...input.config.server,
+      output: applicationOutput.capture,
+      ...(args.reuseServer ? { reuseExisting: true } : {}),
+    },
+    {
+      signal: input.signal,
+      onOutput(line) {
+        if (diagnostics) diagnostics.record(line)
+        else pendingOutput.push(line)
+      },
+    },
+  )
+  const unavailableOutput: ApplicationOutputAvailability = {
+    stdout: applicationOutput.capture.stdout
+      ? 'not-supported'
+      : 'not-requested',
+    stderr: applicationOutput.capture.stderr
+      ? 'not-supported'
+      : 'not-requested',
+  }
+  diagnostics = createApplicationDiagnosticBuffer({
+    profiles: applicationOutput.profiles,
+    availability: server?.outputAvailability ?? unavailableOutput,
+    onDiagnostic: input.onApplicationDiagnostic,
+  })
+  for (const line of pendingOutput) diagnostics.record(line)
+  return { server, diagnostics }
+}
+
+function createPersistedEventHandler(
+  input: StartProjectRunInput,
+  testRun: PersistedProjectRun,
+  diagnostics: ApplicationDiagnosticBuffer,
+): (event: RunEvent) => Promise<void> {
+  return async (event) => {
+    const projected = diagnostics.project(event)
+    const persisted = await testRun.append(projected)
+    if (projected.type === 'scenario-finished') {
+      await testRun.materialize({ finished: false })
+    }
+    await input.onEvent?.(persisted)
+  }
+}
+
+async function replayPersistedEvents(
+  input: StartProjectRunInput,
+  testRun: PersistedProjectRun,
+): Promise<void> {
+  for (const event of await testRun.events()) await input.onEvent?.(event)
+}
+
+async function configuredExecutionCache(
+  input: StartProjectRunInput,
+  root: string,
+  targets: ResolvedProjectRunConfiguration['targets'],
+) {
+  if (!targets.some((target) => target.adapter.executionCache !== undefined)) {
+    return undefined
+  }
+  return openLocalExecutionCache({
+    projectRoot: root,
+    cacheRoot: process.env.PICKLE_CACHE_ROOT,
+    maxBytes: input.config.cache?.maxBytes,
+  })
+}
+
+async function executePreparedRun(
+  input: StartProjectRunInput,
+  args: ProjectRunOptions,
+  selection: PreparedRunSelection,
+  configuration: ResolvedProjectRunConfiguration,
+  testRun: PersistedProjectRun,
+  root: string,
+  onEvent: (event: RunEvent) => Promise<void>,
+): Promise<ScenarioRun[]> {
+  const executionCache = await configuredExecutionCache(
+    input,
+    root,
+    configuration.targets,
+  )
+  const shared = {
+    executionCache: executionCache
+      ? {
+          store: executionCache,
+          projectKey: executionCache.projectKey,
+          sourceRunId: testRun.id,
+        }
+      : undefined,
+    cachePolicy: args.cacheOnly
+      ? ('cache-only' as const)
+      : args.refreshCache
+        ? ('refresh' as const)
+        : ('prefer-cache' as const),
+    signal: input.signal,
+    onEvent,
+    onResult: input.onResult
+      ? (completion: ScenarioCompletion) => input.onResult?.(completion.result)
+      : undefined,
+  }
+  if (selection.selectedResults) {
+    return runSelectedResultPairs({
+      selectedResults: selection.selectedResults,
+      selections: selection.selections,
+      targets: configuration.targets,
+      retry: configuration.retry,
+      timeout: configuration.timeout,
+      concurrency: configuration.concurrency,
+      applicationRevision: configuration.applicationRevision,
+      ...shared,
+    })
+  }
+  return runScenarios({
+    selections: selection.selections,
+    ...configuration,
+    ...shared,
+  })
+}
+
+async function stopProjectResources(
+  server: ManagedProjectServer,
+  configuration: ResolvedProjectRunConfiguration | undefined,
+): Promise<void> {
+  if (server) {
+    server.stop()
+    await Promise.race([
+      server.outputComplete.catch(() => undefined),
+      Bun.sleep(1_000),
+    ])
+  }
+  if (configuration) await disposeAdapters(configuration.targets)
+}
+
 export async function loadPersistedRun(root: string, runId: string) {
   const store = openTestRunStore({ root })
   const run = await store.open(runId)
@@ -371,250 +728,49 @@ export async function startProjectRun(
   })
 
   async function runWork() {
-    let resolvedConfiguration:
-      | ReturnType<typeof resolveRunConfiguration>
-      | undefined
-    let server: Awaited<ReturnType<typeof startServer>> | undefined
+    let configuration: ResolvedProjectRunConfiguration | undefined
+    let server: ManagedProjectServer
     try {
-      const specifications = await discoverSpecifications(
-        args.pattern ?? input.config.specifications ?? defaultSpecificationGlob,
-        args.language ?? input.config.language,
+      const selection = await prepareRunSelection(
+        store,
+        root,
+        input.config,
+        args,
+      )
+      configuration = await resolveProjectRunConfiguration(
+        input.config,
+        args,
+        applicationRevision,
+        selection.profileIds,
         root,
       )
-      const suiteSelection = args.suite
-        ? input.config.suites?.[args.suite]
-        : undefined
-      if (args.suite && !suiteSelection) {
-        throw new Error(`Unknown test suite "${args.suite}"`)
-      }
-      const baseSelection = suiteSelection ?? input.config.selection
-      const shardSelection = args.selection?.shard ?? baseSelection?.shard
-      const historicalDurations = shardSelection
-        ? await latestHistoricalDurations(store)
-        : undefined
-
-      let selections = selectScenarios(
-        specifications,
-        {
-          ...baseSelection,
-          ...args.selection,
-          shard: shardSelection,
-        },
-        historicalDurations ? { historicalDurations } : {},
+      validateTargetSelection(selection.selections, configuration.targets)
+      await publishRunSchedule(input, selection, configuration)
+      const application = await startApplicationDiagnostics(
+        input,
+        args,
+        configuration.targets,
       )
-      if (args.scenarioIds?.length && !args.rerunId) {
-        const scenarioIds = new Set(args.scenarioIds)
-        selections = selections.filter((selection) =>
-          scenarioIds.has(scenarioSelectionId(selection)),
-        )
-      }
-      let profileIds = args.profiles
-      let selectedResults: TestResult[] | undefined
-
-      if (args.rerunId) {
-        const { manifest: sourceManifest } = await loadPersistedRun(
-          root,
-          args.rerunId,
-        )
-        selectedResults = selectRerunResults(sourceManifest, {
-          failures: args.failures,
-          ...(args.scenarioIds?.length
-            ? { scenarioIds: args.scenarioIds }
-            : args.selection?.scenarioName
-              ? { scenarioNames: [args.selection.scenarioName] }
-              : {}),
-          ...(args.profiles?.length ? { profileIds: args.profiles } : {}),
-        })
-        if (selectedResults.length === 0) {
-          throw new Error('No results match the current rerun selection')
-        }
-        selections = selectScenarios(
-          specifications,
-          {
-            ...baseSelection,
-            ...args.selection,
-            scenarioName: undefined,
-            shard: shardSelection,
-          },
-          historicalDurations ? { historicalDurations } : {},
-        ).filter((selection) =>
-          selectedResults!.some((result) =>
-            selectionMatchesResult(selection, result),
-          ),
-        )
-        if (selections.length === 0) {
-          throw new Error('No Scenarios match the current rerun selection')
-        }
-        profileIds = args.profiles?.length
-          ? args.profiles
-          : input.config.executionTargetProfiles
-            ? [
-                ...new Set(
-                  selectedResults.map(
-                    (result) => result.executionTargetProfile.id,
-                  ),
-                ),
-              ]
-            : undefined
-      }
-
-      if (selections.length === 0)
-        throw new Error('No Scenarios match the current selection')
-
-      const extensions = await loadExtensions(args.extensionsPath, root)
-      const runConfiguration = {
-        ...runConfigurationFrom(input.config, profileIds),
-        concurrency: args.concurrency ?? input.config.concurrency,
-        applicationRevision,
-        execution: {
-          infrastructureRetries:
-            args.retries ?? input.config.execution?.infrastructureRetries,
-          functionalRetries: input.config.execution?.functionalRetries,
-          stepTimeoutMs:
-            args.stepTimeoutMs ?? input.config.execution?.stepTimeoutMs,
-          scenarioTimeoutMs:
-            args.scenarioTimeoutMs ?? input.config.execution?.scenarioTimeoutMs,
-        },
-      }
-      resolvedConfiguration = resolveRunConfiguration(
-        runConfiguration,
-        configuredRunExtensions(
-          extensions,
-          input.config,
-          args,
-          runConfiguration.executionTargetProfiles ?? [],
-        ),
+      server = application.server
+      const onEvent = createPersistedEventHandler(
+        input,
+        testRun,
+        application.diagnostics,
       )
-      validateTargetSelection(selections, resolvedConfiguration.targets)
-      const includeTarget = selectedResults
-        ? (
-            selection: ScenarioSelection,
-            executionTargetProfile: ExecutionTargetProfile,
-          ) =>
-            selectedResults.some(
-              (result) =>
-                result.executionTargetProfile.id ===
-                  executionTargetProfile.id &&
-                selectionMatchesResult(selection, result),
-            )
-        : undefined
-      await input.onSchedule?.(
-        scheduleScenarios({
-          selections,
-          executionTargetProfiles: resolvedConfiguration.targets.map(
-            ({ executionTargetProfile }) => executionTargetProfile,
-          ),
-          includeTarget,
-        }),
-      )
-      const applicationOutput = resolveApplicationOutput(
-        input.config,
-        resolvedConfiguration.targets.map(
-          ({ executionTargetProfile }) => executionTargetProfile,
-        ),
-        args.applicationOutput,
-      )
-      const pendingApplicationOutput: ApplicationOutputLine[] = []
-      let applicationDiagnostics: ApplicationDiagnosticBuffer | undefined
-      server = await startServer(
-        {
-          ...input.config.server,
-          output: applicationOutput.capture,
-          ...(args.reuseServer ? { reuseExisting: true } : {}),
-        },
-        {
-          signal: input.signal,
-          onOutput(line) {
-            if (applicationDiagnostics) applicationDiagnostics.record(line)
-            else pendingApplicationOutput.push(line)
-          },
-        },
-      )
-      const unavailableOutput: ApplicationOutputAvailability = {
-        stdout: applicationOutput.capture.stdout
-          ? 'not-supported'
-          : 'not-requested',
-        stderr: applicationOutput.capture.stderr
-          ? 'not-supported'
-          : 'not-requested',
-      }
-      applicationDiagnostics = createApplicationDiagnosticBuffer({
-        profiles: applicationOutput.profiles,
-        availability: server?.outputAvailability ?? unavailableOutput,
-        onDiagnostic: input.onApplicationDiagnostic,
-      })
-      for (const line of pendingApplicationOutput)
-        applicationDiagnostics.record(line)
-      const onEvent = async (event: RunEvent) => {
-        const projected = applicationDiagnostics.project(event)
-        const persisted = await testRun.append(projected)
-        if (projected.type === 'scenario-finished') {
-          await testRun.materialize({ finished: false })
-        }
-        await input.onEvent?.(persisted)
-      }
-      for (const event of await testRun.events()) {
-        await input.onEvent?.(event)
-      }
-      const cacheCapable = resolvedConfiguration.targets.some(
-        (target) => target.adapter.executionCache !== undefined,
-      )
-      const executionCache = cacheCapable
-        ? await openLocalExecutionCache({
-            projectRoot: root,
-            cacheRoot: process.env.PICKLE_CACHE_ROOT,
-            maxBytes: input.config.cache?.maxBytes,
-          })
-        : undefined
-      const shared = {
-        executionCache: executionCache
-          ? {
-              store: executionCache,
-              projectKey: executionCache.projectKey,
-              sourceRunId: testRun.id,
-            }
-          : undefined,
-        cachePolicy: args.cacheOnly
-          ? ('cache-only' as const)
-          : args.refreshCache
-            ? ('refresh' as const)
-            : ('prefer-cache' as const),
-        signal: input.signal,
+      await replayPersistedEvents(input, testRun)
+      const runs = await executePreparedRun(
+        input,
+        args,
+        selection,
+        configuration,
+        testRun,
+        root,
         onEvent,
-        onResult: input.onResult
-          ? (completion: ScenarioCompletion) =>
-              input.onResult?.(completion.result)
-          : undefined,
-      }
-      const runs = selectedResults
-        ? await runSelectedResultPairs({
-            selectedResults,
-            selections,
-            targets: resolvedConfiguration.targets,
-            retry: resolvedConfiguration.retry,
-            timeout: resolvedConfiguration.timeout,
-            concurrency: resolvedConfiguration.concurrency,
-            applicationRevision: resolvedConfiguration.applicationRevision,
-            ...shared,
-          })
-        : await runScenarios({
-            selections,
-            ...resolvedConfiguration,
-            ...shared,
-          })
+      )
       const manifest = await testRun.materialize()
       return { runs, manifest }
     } finally {
-      if (server) {
-        server.stop()
-        await Promise.race([
-          server.outputComplete.catch(() => undefined),
-          Bun.sleep(1_000),
-        ])
-      }
-      if (resolvedConfiguration) {
-        await disposeAdapters(resolvedConfiguration.targets)
-      }
+      await stopProjectResources(server, configuration)
     }
   }
 

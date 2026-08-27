@@ -48,22 +48,21 @@ type ResultInspectorProps = {
   onPauseFollowing?: () => void
 }
 
-export function ResultInspector(props: ResultInspectorProps) {
-  const [fetched, setFetched] = useState<StudioRunSnapshot>()
+function useFetchedRunSnapshot(props: ResultInspectorProps) {
+  const [snapshot, setSnapshot] = useState<StudioRunSnapshot>()
   const [error, setError] = useState<string>()
-
   useEffect(() => {
     if (props.snapshot) return
     let cancelled = false
-    setFetched(undefined)
+    setSnapshot(undefined)
     setError(undefined)
-    props
+    void props
       .api<StudioRunSnapshot>(
         `/api/runs/${encodeURIComponent(props.location.runId)}`,
       )
       .then(
         (value) => {
-          if (!cancelled) setFetched(value)
+          if (!cancelled) setSnapshot(value)
         },
         (reason: unknown) => {
           if (!cancelled) setError(reasonMessage(reason))
@@ -73,17 +72,21 @@ export function ResultInspector(props: ResultInspectorProps) {
       cancelled = true
     }
   }, [props.api, props.location.runId, props.snapshot])
+  return { snapshot, error }
+}
 
-  const snapshot = props.snapshot ?? fetched
+export function ResultInspector(props: ResultInspectorProps) {
+  const fetched = useFetchedRunSnapshot(props)
+  const snapshot = props.snapshot ?? fetched.snapshot
   const inspected = snapshot
     ? findInspectedResult(snapshot, props.location)
     : undefined
 
-  if (error) {
+  if (fetched.error) {
     return (
       <div className="p-4">
         <p role="alert" className="text-sm text-destructive">
-          {error}
+          {fetched.error}
         </p>
       </div>
     )
@@ -109,7 +112,18 @@ export function ResultInspector(props: ResultInspectorProps) {
       </div>
     )
   }
+  return (
+    <InspectedResultView {...props} snapshot={snapshot} inspected={inspected} />
+  )
+}
 
+function InspectedResultView(
+  props: ResultInspectorProps & {
+    snapshot: StudioRunSnapshot
+    inspected: NonNullable<ReturnType<typeof findInspectedResult>>
+  },
+) {
+  const { snapshot, inspected } = props
   const displayState = displayedAttemptState(inspected.attempt)
   const inProgress = isAttemptInProgress(inspected.attempt)
   const resultState =

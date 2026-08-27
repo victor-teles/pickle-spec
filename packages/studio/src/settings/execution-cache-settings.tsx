@@ -41,6 +41,97 @@ function errorMessage(reason: unknown): string {
   return reason instanceof Error ? reason.message : String(reason)
 }
 
+function ExecutionCacheTable(props: {
+  inspection: StudioExecutionCacheInspection
+}) {
+  const usedBytes = props.inspection.entries.reduce(
+    (total, entry) => total + entry.sizeBytes,
+    0,
+  )
+  if (props.inspection.entries.length === 0) {
+    return (
+      <p
+        className="rounded-md border border-dashed p-4 text-sm text-muted-foreground"
+        role="status"
+      >
+        No cached replay revisions for this checkout.
+      </p>
+    )
+  }
+  return (
+    <div className="space-y-2">
+      <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
+        <Badge>
+          {props.inspection.entries.length}{' '}
+          {props.inspection.entries.length === 1 ? 'revision' : 'revisions'}
+        </Badge>
+        <span>
+          {byteCount(usedBytes)} of {byteCount(props.inspection.maxBytes)} used
+        </span>
+      </div>
+      <Table aria-label="Execution cache revisions">
+        <TableHeader>
+          <TableRow>
+            <TableHead>Scenario</TableHead>
+            <TableHead>Target</TableHead>
+            <TableHead>Scenario revision</TableHead>
+            <TableHead>Application revision</TableHead>
+            <TableHead>Adapter revision</TableHead>
+            <TableHead>Size</TableHead>
+            <TableHead>Last used</TableHead>
+            <TableHead>Hits</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {props.inspection.entries.map((entry) => (
+            <TableRow key={entry.payloadDigest}>
+              <TableCell className="font-mono">
+                {entry.key.scenarioId}
+              </TableCell>
+              <TableCell>{entry.key.executionTargetProfileId}</TableCell>
+              <TableCell className="font-mono">
+                {entry.key.scenarioRevision}
+              </TableCell>
+              <TableCell className="font-mono">
+                {entry.key.applicationRevision}
+              </TableCell>
+              <TableCell className="font-mono">
+                {entry.key.adapterCacheSchemaVersion}
+              </TableCell>
+              <TableCell>{byteCount(entry.sizeBytes)}</TableCell>
+              <TableCell>{dateTime(entry.lastUsedAt)}</TableCell>
+              <TableCell>{entry.hitCount}</TableCell>
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
+    </div>
+  )
+}
+
+function ExecutionCacheContent(props: {
+  loading: boolean
+  error?: string
+  inspection?: StudioExecutionCacheInspection
+  onRetry: () => void
+}) {
+  if (props.loading)
+    return <LedgerRowsSkeleton label="Loading Execution cache" />
+  if (props.error) {
+    return (
+      <div className="space-y-2" role="alert">
+        <p className="text-sm text-destructive">{props.error}</p>
+        <Button type="button" variant="outline" onClick={props.onRetry}>
+          Retry
+        </Button>
+      </div>
+    )
+  }
+  return props.inspection ? (
+    <ExecutionCacheTable inspection={props.inspection} />
+  ) : null
+}
+
 export function ExecutionCacheSettings(props: ExecutionCacheSettingsProps) {
   const [inspection, setInspection] = useState<StudioExecutionCacheInspection>()
   const [error, setError] = useState<string>()
@@ -89,9 +180,22 @@ export function ExecutionCacheSettings(props: ExecutionCacheSettingsProps) {
     }
   }
 
-  const usedBytes =
-    inspection?.entries.reduce((total, entry) => total + entry.sizeBytes, 0) ??
-    0
+  function openConfirmation() {
+    setClearError(undefined)
+    setConfirmOpen(true)
+  }
+
+  function retry() {
+    void load()
+  }
+
+  function closeConfirmation() {
+    setConfirmOpen(false)
+  }
+
+  function confirmClear() {
+    void clear()
+  }
 
   return (
     <section
@@ -112,82 +216,18 @@ export function ExecutionCacheSettings(props: ExecutionCacheSettingsProps) {
           type="button"
           variant="destructive"
           disabled={loading || !inspection?.entries.length}
-          onClick={() => {
-            setClearError(undefined)
-            setConfirmOpen(true)
-          }}
+          onClick={openConfirmation}
         >
           Clear Execution cache
         </Button>
       </div>
 
-      {loading ? <LedgerRowsSkeleton label="Loading Execution cache" /> : null}
-      {!loading && error ? (
-        <div className="space-y-2" role="alert">
-          <p className="text-sm text-destructive">{error}</p>
-          <Button type="button" variant="outline" onClick={() => void load()}>
-            Retry
-          </Button>
-        </div>
-      ) : null}
-      {!loading && !error && inspection ? (
-        inspection.entries.length === 0 ? (
-          <p
-            className="rounded-md border border-dashed p-4 text-sm text-muted-foreground"
-            role="status"
-          >
-            No cached replay revisions for this checkout.
-          </p>
-        ) : (
-          <div className="space-y-2">
-            <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
-              <Badge>
-                {inspection.entries.length}{' '}
-                {inspection.entries.length === 1 ? 'revision' : 'revisions'}
-              </Badge>
-              <span>
-                {byteCount(usedBytes)} of {byteCount(inspection.maxBytes)} used
-              </span>
-            </div>
-            <Table aria-label="Execution cache revisions">
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Scenario</TableHead>
-                  <TableHead>Target</TableHead>
-                  <TableHead>Scenario revision</TableHead>
-                  <TableHead>Application revision</TableHead>
-                  <TableHead>Adapter revision</TableHead>
-                  <TableHead>Size</TableHead>
-                  <TableHead>Last used</TableHead>
-                  <TableHead>Hits</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {inspection.entries.map((entry) => (
-                  <TableRow key={entry.payloadDigest}>
-                    <TableCell className="font-mono">
-                      {entry.key.scenarioId}
-                    </TableCell>
-                    <TableCell>{entry.key.executionTargetProfileId}</TableCell>
-                    <TableCell className="font-mono">
-                      {entry.key.scenarioRevision}
-                    </TableCell>
-                    <TableCell className="font-mono">
-                      {entry.key.applicationRevision}
-                    </TableCell>
-                    <TableCell className="font-mono">
-                      {entry.key.adapterCacheSchemaVersion}
-                    </TableCell>
-                    <TableCell>{byteCount(entry.sizeBytes)}</TableCell>
-                    <TableCell>{dateTime(entry.lastUsedAt)}</TableCell>
-                    <TableCell>{entry.hitCount}</TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </div>
-        )
-      ) : null}
+      <ExecutionCacheContent
+        loading={loading}
+        error={error}
+        inspection={inspection}
+        onRetry={retry}
+      />
 
       <Dialog open={confirmOpen} onOpenChange={setConfirmOpen}>
         <DialogContent>
@@ -208,7 +248,7 @@ export function ExecutionCacheSettings(props: ExecutionCacheSettingsProps) {
               type="button"
               variant="outline"
               disabled={clearing}
-              onClick={() => setConfirmOpen(false)}
+              onClick={closeConfirmation}
             >
               Cancel
             </Button>
@@ -216,7 +256,7 @@ export function ExecutionCacheSettings(props: ExecutionCacheSettingsProps) {
               type="button"
               variant="destructive"
               disabled={clearing}
-              onClick={() => void clear()}
+              onClick={confirmClear}
             >
               {clearing ? 'Clearing…' : 'Clear cache'}
             </Button>

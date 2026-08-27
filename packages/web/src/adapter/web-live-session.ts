@@ -9,6 +9,7 @@ import {
   errorMessage,
   navigationTarget,
   navigationUrl,
+  observeInstruction,
   promptFor,
 } from '../execution-cache/web-step'
 import { abortError, isAbortError } from './abort'
@@ -84,6 +85,36 @@ export function createWebLiveSession({
     return { state: 'passed', resolvedActions }
   }
 
+  async function executePrompt(
+    step: ScenarioStep,
+    prompt: string,
+    signal: AbortSignal | undefined,
+  ): Promise<StepExecution> {
+    const target = navigationTarget(prompt)
+    if (target) {
+      const url = navigationUrl(options.baseUrl, target)
+      await automation.navigate(url, signal)
+      navigated = true
+      return {
+        state: 'passed',
+        resolvedActions: [{ description: `Navigate to ${url}` }],
+      }
+    }
+    await ensureNavigation(signal)
+    if (step.type !== 'outcome') {
+      return resolveByObservation(observeInstruction(step), signal)
+    }
+    const verification = await automation.verify(prompt, signal)
+    const resolvedActions = [{ description: `Verify: ${prompt}` }]
+    return verification.meetsExpectation
+      ? { state: 'passed', resolvedActions }
+      : {
+          state: 'failed',
+          resolvedActions,
+          message: `Expected: "${prompt}" | Actual: ${verification.actualState}`,
+        }
+  }
+
   return {
     async executeStep(step, signal) {
       const operationSignal = signal ?? input.signal
@@ -91,41 +122,7 @@ export function createWebLiveSession({
       const prompt = promptFor(step)
 
       try {
-        const target = navigationTarget(prompt)
-        if (target) {
-          const url = navigationUrl(options.baseUrl, target)
-          await automation.navigate(url, operationSignal)
-          navigated = true
-          return finish(
-            {
-              state: 'passed',
-              resolvedActions: [{ description: `Navigate to ${url}` }],
-            },
-            step,
-          )
-        }
-
-        await ensureNavigation(operationSignal)
-        if (step.type !== 'outcome') {
-          return finish(
-            await resolveByObservation(prompt, operationSignal),
-            step,
-          )
-        }
-
-        const verification = await automation.verify(prompt, operationSignal)
-        const resolvedActions = [{ description: `Verify: ${prompt}` }]
-        if (verification.meetsExpectation) {
-          return finish({ state: 'passed', resolvedActions }, step)
-        }
-        return finish(
-          {
-            state: 'failed',
-            resolvedActions,
-            message: `Expected: "${prompt}" | Actual: ${verification.actualState}`,
-          },
-          step,
-        )
+        return finish(await executePrompt(step, prompt, operationSignal), step)
       } catch (error) {
         if (isAbortError(error, operationSignal)) throw abortError()
         return finish(

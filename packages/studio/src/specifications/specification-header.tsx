@@ -40,13 +40,6 @@ export function SpecificationHeader(props: SpecificationHeaderProps) {
     props.onRun({ paths: [props.specification.uri] })
   }
 
-  function handleRefreshCache() {
-    props.onRun({
-      paths: [props.specification.uri],
-      refreshCache: true,
-    })
-  }
-
   return (
     <header
       className={cn(
@@ -99,7 +92,6 @@ export function SpecificationHeader(props: SpecificationHeaderProps) {
               canRun={props.canRun}
               hasRunId={Boolean(props.runId)}
               onCancel={handleCancel}
-              onRefreshCache={handleRefreshCache}
               onRun={handleRun}
               origin={props.origin}
               running={props.running}
@@ -125,7 +117,6 @@ type SpecificationRunActionsProps = {
   canRun: boolean
   hasRunId: boolean
   onCancel: () => void
-  onRefreshCache: () => void
   onRun: () => void
   origin?: RunOrigin
   running: boolean
@@ -141,14 +132,6 @@ function SpecificationRunActions(props: SpecificationRunActionsProps) {
         onClick={props.onRun}
       >
         Run Specification
-      </RunControlButton>
-      <RunControlButton
-        variant="outline"
-        busy={isBusyOrigin(props.origin, { kind: 'refresh' })}
-        blocked={props.running}
-        onClick={props.onRefreshCache}
-      >
-        Refresh cache
       </RunControlButton>
       {props.running && props.hasRunId ? (
         <Button type="button" variant="destructive" onClick={props.onCancel}>

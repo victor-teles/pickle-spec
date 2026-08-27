@@ -129,19 +129,6 @@ export function scenarioRows(
   return rows
 }
 
-export function statusLabel(
-  view: RunView,
-): TestResultState | 'idle' | 'running' {
-  if (view.phase === 'idle') return 'idle'
-  if (view.phase === 'running') return 'running'
-  const terminal = view.cells.filter((cell) => cell.state !== 'running')
-  if (terminal.length === 0) return 'idle'
-  const worst = [...terminal].sort(
-    (left, right) => resultPriority(left.state) - resultPriority(right.state),
-  )[0]
-  return worst?.state ?? 'idle'
-}
-
 export function pinCell(view: RunView, cell: MatrixCell): RunView {
   const current =
     view.cells.find(

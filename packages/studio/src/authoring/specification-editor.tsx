@@ -231,7 +231,15 @@ export function SpecificationEditor(props: {
       setConflict(nextConflict)
       return
     }
-    if (options.create && options.uri && options.uri !== buffer.uri) {
+    await acceptWrittenSpecification(written, options, buffer.uri)
+  }
+
+  async function acceptWrittenSpecification(
+    written: SpecificationBuffer,
+    options: { create?: boolean; uri?: string },
+    currentUri: string,
+  ) {
+    if (options.create && options.uri && options.uri !== currentUri) {
       setReview(undefined)
       setConflict(undefined)
       await props.onCatalogChange()

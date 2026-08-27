@@ -1,5 +1,5 @@
 import type { TestArtifact, TestResultState } from '@pickle-spec/runner'
-import { useEffect, useRef, useState } from 'react'
+import { type ChangeEvent, useEffect, useRef, useState } from 'react'
 import { Button, ButtonLink } from '../../components/ui/button'
 import { Input } from '../../components/ui/input'
 import { Label } from '../../components/ui/label'
@@ -25,9 +25,50 @@ type TextLoadState =
 
 const maximumInlineLogBytes = 10 * 1024 * 1024
 const maximumRenderedLogLines = 1_000
+const oversizedLogDetail =
+  'This log is larger than the 10 MiB inline-view limit. Download it to inspect the complete file.'
 
 function errorMessage(reason: unknown): string {
   return reason instanceof Error ? reason.message : String(reason)
+}
+
+function failedResponse(response: Response): TextLoadState {
+  return {
+    kind: 'error',
+    failure: response.status === 404 ? 'missing' : 'load-failed',
+    detail: `Artifact request returned ${response.status}.`,
+  }
+}
+
+function oversizedLog(
+  sizeBytes: number | undefined,
+): TextLoadState | undefined {
+  return sizeBytes !== undefined && sizeBytes > maximumInlineLogBytes
+    ? { kind: 'error', failure: 'load-failed', detail: oversizedLogDetail }
+    : undefined
+}
+
+async function fetchTextArtifact(
+  href: string,
+  signal: AbortSignal,
+): Promise<TextLoadState> {
+  const metadata = await fetch(href, { method: 'HEAD', signal })
+  if (!metadata.ok) return failedResponse(metadata)
+  const contentLength = Number(metadata.headers.get('content-length'))
+  if (Number.isFinite(contentLength) && contentLength > maximumInlineLogBytes) {
+    return { kind: 'error', failure: 'load-failed', detail: oversizedLogDetail }
+  }
+  const response = await fetch(href, { signal })
+  if (!response.ok) return failedResponse(response)
+  const bytes = await response.arrayBuffer()
+  try {
+    return {
+      kind: 'loaded',
+      text: new TextDecoder('utf-8', { fatal: true }).decode(bytes),
+    }
+  } catch {
+    return { kind: 'error', failure: 'corrupt' }
+  }
 }
 
 async function classifyMediaFailure(
@@ -137,16 +178,9 @@ function TextArtifact(props: ArtifactViewerProps) {
   )
 
   async function loadText() {
-    if (
-      props.artifact.sizeBytes !== undefined &&
-      props.artifact.sizeBytes > maximumInlineLogBytes
-    ) {
-      setLoadState({
-        kind: 'error',
-        failure: 'load-failed',
-        detail:
-          'This log is larger than the 10 MiB inline-view limit. Download it to inspect the complete file.',
-      })
+    const sizeFailure = oversizedLog(props.artifact.sizeBytes)
+    if (sizeFailure) {
+      setLoadState(sizeFailure)
       return
     }
     request.current?.abort()
@@ -154,52 +188,12 @@ function TextArtifact(props: ArtifactViewerProps) {
     request.current = controller
     setLoadState({ kind: 'loading' })
     try {
-      const href = artifactUrl(props.artifact.path)
-      const metadata = await fetch(href, {
-        method: 'HEAD',
-        signal: controller.signal,
-      })
-      if (!metadata.ok) {
-        setLoadState({
-          kind: 'error',
-          failure: metadata.status === 404 ? 'missing' : 'load-failed',
-          detail: `Artifact request returned ${metadata.status}.`,
-        })
-        return
-      }
-      const contentLength = Number(metadata.headers.get('content-length'))
-      if (
-        Number.isFinite(contentLength) &&
-        contentLength > maximumInlineLogBytes
-      ) {
-        setLoadState({
-          kind: 'error',
-          failure: 'load-failed',
-          detail:
-            'This log is larger than the 10 MiB inline-view limit. Download it to inspect the complete file.',
-        })
-        return
-      }
-      const response = await fetch(href, {
-        signal: controller.signal,
-      })
-      if (!response.ok) {
-        setLoadState({
-          kind: 'error',
-          failure: response.status === 404 ? 'missing' : 'load-failed',
-          detail: `Artifact request returned ${response.status}.`,
-        })
-        return
-      }
-      const bytes = await response.arrayBuffer()
-      try {
-        setLoadState({
-          kind: 'loaded',
-          text: new TextDecoder('utf-8', { fatal: true }).decode(bytes),
-        })
-      } catch {
-        setLoadState({ kind: 'error', failure: 'corrupt' })
-      }
+      setLoadState(
+        await fetchTextArtifact(
+          artifactUrl(props.artifact.path),
+          controller.signal,
+        ),
+      )
     } catch (reason) {
       if (controller.signal.aborted) return
       setLoadState({
@@ -211,34 +205,63 @@ function TextArtifact(props: ArtifactViewerProps) {
   }
 
   if (loadState.kind !== 'loaded') {
-    return (
-      <div className="flex min-h-32 flex-col items-center justify-center gap-3 rounded-md border border-dashed border-border px-4 text-center text-muted-foreground">
-        <p>
-          {loadState.kind === 'error'
-            ? artifactLoadFailureGuidance(loadState.failure)
-            : 'The device log stays unloaded until you need to search it.'}
-        </p>
-        {loadState.kind === 'error' && loadState.detail ? (
-          <p className="break-words text-xs">{loadState.detail}</p>
-        ) : null}
-        <Button
-          type="button"
-          variant="outline"
-          disabled={loadState.kind === 'loading'}
-          onClick={() => void loadText()}
-        >
-          {loadState.kind === 'loading'
-            ? 'Loading device log…'
-            : loadState.kind === 'error'
-              ? 'Retry loading device log'
-              : 'Load device log'}
-        </Button>
-      </div>
-    )
+    return <UnloadedTextArtifact state={loadState} onLoad={loadText} />
   }
 
-  const normalizedQuery = query.toLocaleLowerCase()
-  const matchingLines = loadState.text
+  return (
+    <LoadedTextArtifact
+      artifactPath={props.artifact.path}
+      text={loadState.text}
+      query={query}
+      onQueryChange={setQuery}
+    />
+  )
+}
+
+function UnloadedTextArtifact(props: {
+  state: Exclude<TextLoadState, { kind: 'loaded' }>
+  onLoad: () => Promise<void>
+}) {
+  const guidance =
+    props.state.kind === 'error'
+      ? artifactLoadFailureGuidance(props.state.failure)
+      : 'The device log stays unloaded until you need to search it.'
+  const label =
+    props.state.kind === 'loading'
+      ? 'Loading device log…'
+      : props.state.kind === 'error'
+        ? 'Retry loading device log'
+        : 'Load device log'
+  return (
+    <div className="flex min-h-32 flex-col items-center justify-center gap-3 rounded-md border border-dashed border-border px-4 text-center text-muted-foreground">
+      <p>{guidance}</p>
+      {props.state.kind === 'error' && props.state.detail ? (
+        <p className="break-words text-xs">{props.state.detail}</p>
+      ) : null}
+      <Button
+        type="button"
+        variant="outline"
+        disabled={props.state.kind === 'loading'}
+        onClick={() => void props.onLoad()}
+      >
+        {label}
+      </Button>
+    </div>
+  )
+}
+
+function LoadedTextArtifact(props: {
+  artifactPath: string
+  text: string
+  query: string
+  onQueryChange: (query: string) => void
+}) {
+  function handleQueryChange(event: ChangeEvent<HTMLInputElement>) {
+    props.onQueryChange(event.target.value)
+  }
+
+  const normalizedQuery = props.query.toLocaleLowerCase()
+  const matchingLines = props.text
     .split('\n')
     .filter(
       (line) =>
@@ -248,14 +271,14 @@ function TextArtifact(props: ArtifactViewerProps) {
   return (
     <div className="min-w-0 space-y-3">
       <div className="space-y-1">
-        <Label htmlFor={`device-log-search-${props.artifact.path}`}>
+        <Label htmlFor={`device-log-search-${props.artifactPath}`}>
           Search device log
         </Label>
         <Input
-          id={`device-log-search-${props.artifact.path}`}
+          id={`device-log-search-${props.artifactPath}`}
           type="search"
-          value={query}
-          onChange={(event) => setQuery(event.target.value)}
+          value={props.query}
+          onChange={handleQueryChange}
           placeholder="Find text in the complete log"
         />
       </div>

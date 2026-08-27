@@ -161,36 +161,54 @@ function validateEvidenceAvailability(
     }
     availabilityByKind.set(availability.kind, availability)
   }
-  for (const kind of evidenceKinds) {
-    if (!availabilityByKind.has(kind)) {
-      context.addIssue({
-        code: 'custom',
-        path: ['evidenceAvailability'],
-        message: `Evidence availability must include "${kind}"`,
-      })
-    }
-  }
+  validateRequiredEvidenceKinds(availabilityByKind, context)
 
   const availableKinds = persistedEvidenceKinds(
     attempt.steps,
     attempt.diagnostics,
   )
   for (const [kind, availability] of availabilityByKind) {
-    const hasPersistedEvidence = availableKinds.has(kind)
-    if (hasPersistedEvidence && availability.state !== 'available') {
-      context.addIssue({
-        code: 'custom',
-        path: ['evidenceAvailability'],
-        message: `Evidence availability for "${kind}" must be available when persisted evidence exists`,
-      })
-    }
-    if (!hasPersistedEvidence && availability.state === 'available') {
-      context.addIssue({
-        code: 'custom',
-        path: ['evidenceAvailability'],
-        message: `Available evidence for "${kind}" requires persisted evidence`,
-      })
-    }
+    validatePersistedEvidenceKind(kind, availability, availableKinds, context)
+  }
+}
+
+type EvidenceKind = ScenarioAttempt['evidenceAvailability'][number]['kind']
+type EvidenceAvailability = ScenarioAttempt['evidenceAvailability'][number]
+
+function validateRequiredEvidenceKinds(
+  availabilityByKind: ReadonlyMap<EvidenceKind, EvidenceAvailability>,
+  context: z.RefinementCtx,
+): void {
+  for (const kind of evidenceKinds) {
+    if (availabilityByKind.has(kind)) continue
+    context.addIssue({
+      code: 'custom',
+      path: ['evidenceAvailability'],
+      message: `Evidence availability must include "${kind}"`,
+    })
+  }
+}
+
+function validatePersistedEvidenceKind(
+  kind: EvidenceKind,
+  availability: EvidenceAvailability,
+  availableKinds: ReadonlySet<EvidenceKind>,
+  context: z.RefinementCtx,
+): void {
+  const hasPersistedEvidence = availableKinds.has(kind)
+  if (hasPersistedEvidence && availability.state !== 'available') {
+    context.addIssue({
+      code: 'custom',
+      path: ['evidenceAvailability'],
+      message: `Evidence availability for "${kind}" must be available when persisted evidence exists`,
+    })
+  }
+  if (!hasPersistedEvidence && availability.state === 'available') {
+    context.addIssue({
+      code: 'custom',
+      path: ['evidenceAvailability'],
+      message: `Available evidence for "${kind}" requires persisted evidence`,
+    })
   }
 }
 
@@ -250,9 +268,17 @@ const scenarioAttemptSchema: z.ZodType<ScenarioAttempt> = z
     steps: z.array(testStepResultSchema),
     executionMode: z.enum(['adaptive', 'replay']).optional(),
     cacheOutcome: z
-      .enum(['hit', 'miss', 'refresh', 'fallback', 'uncacheable'])
+      .enum([
+        'hit',
+        'partial-hit',
+        'miss',
+        'refresh',
+        'fallback',
+        'uncacheable',
+      ])
       .optional(),
     inferenceCount: nonNegativeIntegerSchema.optional(),
+    prefixStepCount: positiveIntegerSchema.optional(),
     cacheUncacheableReason: z
       .enum([
         'application-revision-missing',

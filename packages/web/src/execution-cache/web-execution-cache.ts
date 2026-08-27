@@ -15,9 +15,11 @@ export {
   instructionCoversStepVariables,
   parseObservedActionPayload,
   stepVariableNames,
+  webAssertionCompileSchema,
   webAssertionDraftSchema,
   webInstructionVariables,
 } from './web-cache-compilation'
+export { compileObservedOutcomes } from './web-cache-outcome'
 export type {
   WebExecutionCachePayload,
   WebInstruction,
@@ -48,6 +50,21 @@ export function parseWebExecutionCachePayload(
     ),
   )
   return referencesUnknownVariable ? undefined : parsed.data
+}
+
+export function webPrefixStepCount(payload: WebExecutionCachePayload): number {
+  return payload.steps.length
+}
+
+export function sealWebCompiledSteps(
+  compiledSteps: Array<WebExecutionCachePayload['steps'][number] | undefined>,
+): WebExecutionCachePayload['steps'] {
+  const steps: WebExecutionCachePayload['steps'] = []
+  for (const step of compiledSteps) {
+    if (step === undefined) break
+    steps.push(step)
+  }
+  return steps
 }
 
 interface WebFingerprintInput {

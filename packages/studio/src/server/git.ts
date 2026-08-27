@@ -114,6 +114,50 @@ async function pullRequestAvailability(root: string): Promise<{
   return { available: true }
 }
 
+function statusPath(line: string): string | undefined {
+  return line
+    .slice(3)
+    .replace(/^"(.*)"$/, '$1')
+    .split(' -> ')
+    .at(-1)
+}
+
+function statusLabel(line: string, staged: boolean, unstaged: boolean): string {
+  if (line.startsWith('??')) return 'untracked'
+  if (line.includes('D')) return 'deleted'
+  if (staged && !unstaged && line[0] === 'A') return 'added'
+  return 'modified'
+}
+
+async function gitFileFromStatus(
+  root: string,
+  line: string,
+): Promise<StudioGitFile | undefined> {
+  const path = statusPath(line)
+  if (!path) return undefined
+  const untracked = line.startsWith('??')
+  const staged = fileStaged(line)
+  const unstaged = fileUnstaged(line)
+  return {
+    path,
+    status: statusLabel(line, staged, unstaged),
+    staged: staged && !unstaged,
+    diff: await diffFor(root, path, unstaged ? false : staged, untracked),
+  }
+}
+
+async function statusFiles(
+  root: string,
+  output: string,
+): Promise<StudioGitFile[]> {
+  const files: StudioGitFile[] = []
+  for (const line of output.split('\n').filter(Boolean)) {
+    const file = await gitFileFromStatus(root, line)
+    if (file) files.push(file)
+  }
+  return files
+}
+
 export function createGitWorkspace(root: string): GitWorkspace {
   async function status(): Promise<StudioGitStatus> {
     const repo = git(root, ['rev-parse', '--is-inside-work-tree'])
@@ -127,34 +171,7 @@ export function createGitWorkspace(root: string): GitWorkspace {
     const branch = git(root, ['branch', '--show-current']).stdout.trim()
     const porcelain = git(root, ['status', '--porcelain', '-uall'])
     assertGitSuccess(porcelain, 'read repository status')
-    const files: StudioGitFile[] = []
-    for (const line of porcelain.stdout.split('\n').filter(Boolean)) {
-      const path = line
-        .slice(3)
-        .replace(/^"(.*)"$/, '$1')
-        .split(' -> ')
-        .at(-1)
-      if (!path) continue
-      const untracked = line.startsWith('??')
-      const staged = fileStaged(line)
-      const unstaged = fileUnstaged(line)
-      const statusLabel = untracked
-        ? 'untracked'
-        : line.includes('D')
-          ? 'deleted'
-          : staged && !unstaged && line[0] === 'A'
-            ? 'added'
-            : 'modified'
-      const diff = unstaged
-        ? await diffFor(root, path, false, untracked)
-        : await diffFor(root, path, staged, untracked)
-      files.push({
-        path,
-        status: statusLabel,
-        staged: staged && !unstaged,
-        diff,
-      })
-    }
+    const files = await statusFiles(root, porcelain.stdout)
     const pullRequest = await pullRequestAvailability(root)
     return {
       ...(branch ? { branch } : {}),

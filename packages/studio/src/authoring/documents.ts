@@ -136,6 +136,48 @@ export function createSpecificationWorkspace(
     }
   }
 
+  async function validateWriteTarget(input: {
+    uri: string
+    expectedRevision?: string
+    create?: boolean
+  }): Promise<string> {
+    const path = resolveUri(input.uri)
+    const file = Bun.file(path)
+    const exists = await file.exists()
+    if (!exists) {
+      if (!input.create)
+        throw new Error(`Specification ${input.uri} was not found`)
+      return path
+    }
+    const diskSource = await file.text()
+    const revision = revisionFor(diskSource)
+    if (
+      input.create ||
+      (input.expectedRevision !== undefined &&
+        revision !== input.expectedRevision)
+    ) {
+      throw new DocumentConflictError({ uri: input.uri, diskSource, revision })
+    }
+    return path
+  }
+
+  async function collectCompletions(
+    pattern: string,
+    tags: Set<string>,
+    steps: Set<string>,
+  ): Promise<void> {
+    for await (const path of new Bun.Glob(pattern).scan({
+      cwd: root,
+      onlyFiles: true,
+    })) {
+      const catalog = catalogFromSource(
+        await Bun.file(resolve(root, path)).text(),
+      )
+      for (const tag of catalog.tags) tags.add(tag)
+      for (const step of catalog.steps) steps.add(step)
+    }
+  }
+
   return {
     async read(uri) {
       const path = resolveUri(uri)
@@ -168,34 +210,7 @@ export function createSpecificationWorkspace(
     },
 
     async write(input) {
-      const path = resolveUri(input.uri)
-      const file = Bun.file(path)
-      const exists = await file.exists()
-      if (input.create && exists) {
-        const diskSource = await file.text()
-        throw new DocumentConflictError({
-          uri: input.uri,
-          diskSource,
-          revision: revisionFor(diskSource),
-        })
-      }
-      if (!input.create && !exists) {
-        throw new Error(`Specification ${input.uri} was not found`)
-      }
-      if (!input.create && exists) {
-        const diskSource = await file.text()
-        const revision = revisionFor(diskSource)
-        if (
-          input.expectedRevision !== undefined &&
-          revision !== input.expectedRevision
-        ) {
-          throw new DocumentConflictError({
-            uri: input.uri,
-            diskSource,
-            revision,
-          })
-        }
-      }
+      const path = await validateWriteTarget(input)
       const source = applySpecificationSource({
         uri: input.uri,
         source: input.source,
@@ -229,16 +244,7 @@ export function createSpecificationWorkspace(
       const tags = new Set<string>()
       const steps = new Set<string>()
       for (const pattern of globs) {
-        for await (const path of new Bun.Glob(pattern).scan({
-          cwd: root,
-          onlyFiles: true,
-        })) {
-          const catalog = catalogFromSource(
-            await Bun.file(resolve(root, path)).text(),
-          )
-          for (const tag of catalog.tags) tags.add(tag)
-          for (const step of catalog.steps) steps.add(step)
-        }
+        await collectCompletions(pattern, tags, steps)
       }
       return {
         tags: [...tags].sort((left, right) => left.localeCompare(right)),

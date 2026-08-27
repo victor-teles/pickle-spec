@@ -40,6 +40,7 @@ export type {
   ScenarioIdentity,
   ScenarioRun,
   ScenarioTargetSession,
+  StepEvaluation,
   StepExecution,
   StepExecutionContext,
   StepExecutionTargetAdapter,
@@ -89,6 +90,7 @@ export type {
   ExecutionCacheLeasePublicationResult,
   ExecutionCacheLeaseWaitResult,
   ExecutionCachePayloadValidator,
+  ExecutionCachePrefixPolicy,
   ExecutionCacheStore,
   ExecutionCacheTerminalOutcome,
   ExecutionCacheUncacheableReason,
@@ -100,6 +102,7 @@ export type {
 export {
   deserializeExecutionCacheEnvelope,
   deserializeExecutionCacheTerminalOutcome,
+  prefixPolicyOf,
   resolveExecutionCacheKey,
   serializeExecutionCacheEnvelope,
   serializeExecutionCacheTerminalOutcome,

@@ -69,11 +69,10 @@ function stepEndLine(step: Step): number {
   return step.location.line
 }
 
-function stepReplacements(
+function sharedStepReplacements(
   source: string,
   steps: readonly Step[],
   nextSteps: readonly StructuredStep[],
-  fallbackLocation: SourceLocation | undefined,
 ): Replacement[] {
   const replacements: Replacement[] = []
   const shared = Math.min(steps.length, nextSteps.length)
@@ -97,33 +96,61 @@ function stepReplacements(
       })
     }
   }
-  if (nextSteps.length > steps.length) {
-    const last = steps[steps.length - 1]
-    const indent = Math.max(
-      (last?.location.column ?? fallbackLocation?.column ?? 5) - 1,
-      0,
-    )
-    const afterLine = last ? stepEndLine(last) : (fallbackLocation?.line ?? 1)
-    const insertAt = offsetAt(source, { line: afterLine + 1, column: 1 })
-    const newline = newlineFor(source)
-    const added = nextSteps
-      .slice(steps.length)
-      .map((step) => `${' '.repeat(indent)}${step.keyword} ${step.text}`)
-      .join(newline)
-    replacements.push({
-      start: insertAt,
-      end: insertAt,
-      text: `${added}${newline}`,
-    })
+  return replacements
+}
+
+function addedStepsReplacement(
+  source: string,
+  steps: readonly Step[],
+  nextSteps: readonly StructuredStep[],
+  fallbackLocation: SourceLocation | undefined,
+): Replacement | undefined {
+  if (nextSteps.length <= steps.length) return undefined
+  const last = steps[steps.length - 1]
+  const indent = Math.max(
+    (last?.location.column ?? fallbackLocation?.column ?? 5) - 1,
+    0,
+  )
+  const afterLine = last ? stepEndLine(last) : (fallbackLocation?.line ?? 1)
+  const insertAt = offsetAt(source, { line: afterLine + 1, column: 1 })
+  const newline = newlineFor(source)
+  const added = nextSteps
+    .slice(steps.length)
+    .map((step) => `${' '.repeat(indent)}${step.keyword} ${step.text}`)
+    .join(newline)
+  return { start: insertAt, end: insertAt, text: `${added}${newline}` }
+}
+
+function removedStepReplacements(
+  source: string,
+  steps: readonly Step[],
+  nextStepCount: number,
+): Replacement[] {
+  const replacements: Replacement[] = []
+  for (let index = steps.length - 1; index >= nextStepCount; index--) {
+    const step = steps[index]!
+    const start = offsetAt(source, { line: step.location.line, column: 1 })
+    const end = offsetAt(source, { line: stepEndLine(step) + 1, column: 1 })
+    replacements.push({ start, end, text: '' })
   }
-  if (steps.length > nextSteps.length) {
-    for (let index = steps.length - 1; index >= nextSteps.length; index--) {
-      const step = steps[index]!
-      const start = offsetAt(source, { line: step.location.line, column: 1 })
-      const end = offsetAt(source, { line: stepEndLine(step) + 1, column: 1 })
-      replacements.push({ start, end, text: '' })
-    }
-  }
+  return replacements
+}
+
+function stepReplacements(
+  source: string,
+  steps: readonly Step[],
+  nextSteps: readonly StructuredStep[],
+  fallbackLocation: SourceLocation | undefined,
+): Replacement[] {
+  const replacements = sharedStepReplacements(source, steps, nextSteps)
+  const addition = addedStepsReplacement(
+    source,
+    steps,
+    nextSteps,
+    fallbackLocation,
+  )
+  if (addition) replacements.push(addition)
+  replacements.push(...removedStepReplacements(source, steps, nextSteps.length))
   return replacements
 }
 

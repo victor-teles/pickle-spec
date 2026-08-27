@@ -97,6 +97,31 @@ function createBufferedRunReporter(options: RunReporterOptions): RunReporter {
     writeCompletedResult(result)
   }
 
+  function finishReport(
+    runs: readonly ScenarioRun[],
+    durationMs: number,
+    exitStatus: TestRunExitStatus,
+  ): void {
+    const results = runs.map((run) => run.result)
+    if (completedResults.length === 0) {
+      prepare(orderedScheduleFromResults(results))
+    }
+    if (completedResults.some((result) => !result)) {
+      for (const result of results) complete(result)
+    }
+    const lines = [
+      ...diagnosticLines(results, {
+        projectRoot,
+        color,
+        columns: options.columns,
+        multipleProfiles,
+      }),
+      ...interruptionLines(exitStatus, options.columns),
+      ...summaryLines(groupResults(results), results, startTime, durationMs),
+    ]
+    for (const line of lines) write(line)
+  }
+
   return {
     start() {
       startTime = clockLabel(now())
@@ -114,35 +139,7 @@ function createBufferedRunReporter(options: RunReporterOptions): RunReporter {
     prepare,
     event() {},
     complete,
-    finish(runs, durationMs, exitStatus) {
-      const results = runs.map((run) => run.result)
-      if (completedResults.length === 0) {
-        prepare(orderedScheduleFromResults(results))
-      }
-      if (completedResults.some((result) => !result)) {
-        for (const result of results) complete(result)
-      }
-      const specifications = groupResults(results)
-      for (const line of diagnosticLines(results, {
-        projectRoot,
-        color,
-        columns: options.columns,
-        multipleProfiles,
-      })) {
-        write(line)
-      }
-      for (const line of interruptionLines(exitStatus, options.columns)) {
-        write(line)
-      }
-      for (const line of summaryLines(
-        specifications,
-        results,
-        startTime,
-        durationMs,
-      )) {
-        write(line)
-      }
-    },
+    finish: finishReport,
   }
 }
 

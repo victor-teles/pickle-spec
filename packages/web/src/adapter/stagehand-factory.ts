@@ -22,7 +22,7 @@ import {
 } from './fidelity'
 import { createStagehandAutomation } from './stagehand-automation'
 import type { WebAutomationFactory, WebClientContext } from './web-automation'
-import { defaultModelName } from './web-options'
+import { type BrowserOptions, defaultModelName } from './web-options'
 
 const defaultDomSettleTimeoutMs = 3_000
 const defaultObserveTimeoutMs = 10_000
@@ -87,6 +87,44 @@ async function applyFidelity(
   }
 }
 
+function stagehandModel(
+  context: WebClientContext,
+  defaults: BrowserOptions,
+): ModelConfig {
+  const modelName =
+    context.browser.modelName ?? defaults.modelName ?? defaultModelName
+  const modelApiKey = context.browser.modelApiKey ?? defaults.modelApiKey
+  const model: ModelConfig = {
+    modelName: modelName as ModelConfig['modelName'],
+  }
+  if (modelApiKey !== undefined) model.apiKey = modelApiKey
+  return model
+}
+
+function stagehandCreateOptions(
+  browser: StagehandCreateOptions['browser'],
+  context: WebClientContext,
+  defaults: BrowserOptions,
+): StagehandCreateOptions {
+  const selfHeal = context.browser.selfHeal ?? defaults.selfHeal ?? true
+  const domSettleTimeoutMs =
+    context.browser.domSettleTimeoutMs ??
+    defaults.domSettleTimeoutMs ??
+    defaultDomSettleTimeoutMs
+  const cache = context.browser.cache ?? defaults.cache
+  const createOptions: StagehandCreateOptions = {
+    browser,
+    logging: { level: 'off', format: 'json' },
+    selfHeal,
+    domSettleTimeoutMs,
+  }
+  if (context.mode !== 'replay') {
+    createOptions.model = stagehandModel(context, defaults)
+  }
+  if (cache !== undefined) createOptions.cache = cache
+  return createOptions
+}
+
 export const stagehandFactory: WebAutomationFactory = {
   async launch({ browser: options, signal }) {
     if (signal?.aborted) throw abortError()
@@ -108,32 +146,9 @@ export const stagehandFactory: WebAutomationFactory = {
       context: WebClientContext,
     ): Promise<Stagehand> {
       if (stagehand) return stagehand
-      const selfHeal = context.browser.selfHeal ?? options.selfHeal ?? true
-      const domSettleTimeoutMs =
-        context.browser.domSettleTimeoutMs ??
-        options.domSettleTimeoutMs ??
-        defaultDomSettleTimeoutMs
-      const cache = context.browser.cache ?? options.cache
-
-      const createOptions: StagehandCreateOptions = {
-        browser,
-        logging: { level: 'off', format: 'json' },
-        selfHeal,
-        domSettleTimeoutMs,
-      }
-      if (context.mode !== 'replay') {
-        const modelName =
-          context.browser.modelName ?? options.modelName ?? defaultModelName
-        const modelApiKey = context.browser.modelApiKey ?? options.modelApiKey
-        const model: ModelConfig = {
-          modelName: modelName as ModelConfig['modelName'],
-        }
-        if (modelApiKey !== undefined) model.apiKey = modelApiKey
-        createOptions.model = model
-      }
-      if (cache !== undefined) createOptions.cache = cache
-
-      stagehand = await Stagehand.create(createOptions)
+      stagehand = await Stagehand.create(
+        stagehandCreateOptions(browser, context, options),
+      )
       return stagehand
     }
 

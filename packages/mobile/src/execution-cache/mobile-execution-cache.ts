@@ -6,6 +6,15 @@ import type { MobilePlatform } from '../worker/worker-protocol'
 export const mobileExecutionCacheAdapterKind = 'mobile.agent-device'
 export const mobileExecutionCacheSchemaVersion = 'agent-device-ad.1+0.20.10'
 
+export type MobilePrefixPolicy = {
+  readonly mixedReplay: false
+  readonly write: 'complete-scenario-only'
+}
+
+export function mobilePrefixPolicy(): MobilePrefixPolicy {
+  return { mixedReplay: false, write: 'complete-scenario-only' }
+}
+
 const stepRangeSchema = z.strictObject({
   from: z.number().int().positive(),
   to: z.number().int().positive(),
@@ -143,6 +152,12 @@ function hasExactVariables(
   return variables.every((name) => required.has(name))
 }
 
+export function mobilePrefixStepCount(
+  _payload: MobileExecutionCachePayload,
+): number {
+  return 1
+}
+
 function fingerprint(input: CreateMobileExecutionCacheInput): string {
   const source = JSON.stringify({
     executionTarget: input.executionTarget,
@@ -162,6 +177,8 @@ export function createMobileExecutionCache(
     adapterKind: mobileExecutionCacheAdapterKind,
     adapterCacheSchemaVersion: mobileExecutionCacheSchemaVersion,
     targetConfigurationFingerprint: fingerprint(input),
+    prefixPolicy: mobilePrefixPolicy(),
+    prefixStepCount: mobilePrefixStepCount,
     parse(payload, requiredVariables) {
       const parsed = mobileExecutionCachePayloadSchema.safeParse(payload)
       if (!parsed.success) return undefined

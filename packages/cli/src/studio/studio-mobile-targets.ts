@@ -51,6 +51,58 @@ export function configuredMobileAdapter(
   return createAdapter(profile.mobile)
 }
 
+type MobileProfile = NonNullable<
+  PickleConfig['executionTargetProfiles']
+>[string]
+
+async function discoverMobileProfile(
+  config: PickleConfig,
+  profileId: string,
+  profile: MobileProfile,
+  createAdapter: StudioMobileAdapterFactory,
+  extensionAdapters?: Readonly<Record<string, ExecutionTargetAdapter>>,
+): Promise<StudioMobileTargetDiscovery> {
+  const executionTarget = profile.mobile?.executionTarget
+  if (!executionTarget) {
+    throw new Error(
+      `Mobile execution target profile "${profileId}" is incomplete`,
+    )
+  }
+  let adapter = discoverableMobileAdapter(
+    extensionAdapters?.[profileId] ?? extensionAdapters?.[profile.adapter],
+    profileId,
+  )
+  const ownsAdapter = !adapter
+  let discovery: StudioMobileTargetDiscovery
+  try {
+    adapter ??= configuredMobileAdapter(config, profileId, createAdapter)
+    discovery = {
+      profileId,
+      executionTarget,
+      targets: (await adapter.discoverTargets()).map((target) => ({
+        id: target.id,
+        name: target.name,
+        state: target.state,
+        capabilities: [...target.capabilities],
+      })),
+    }
+  } catch (reason) {
+    discovery = {
+      profileId,
+      executionTarget,
+      targets: [],
+      error: errorMessage(reason),
+    }
+  }
+  if (!ownsAdapter) return discovery
+  try {
+    await adapter?.dispose?.()
+    return discovery
+  } catch (reason) {
+    return { ...discovery, error: errorMessage(reason) }
+  }
+}
+
 export async function discoverStudioMobileTargets(
   config: PickleConfig,
   createAdapter: StudioMobileAdapterFactory = defaultMobileAdapterFactory,
@@ -69,53 +121,55 @@ export async function discoverStudioMobileTargets(
     ) {
       continue
     }
-    const executionTarget = profile.mobile.executionTarget
-    if (!executionTarget) continue
-    let adapter: MobileExecutionTargetAdapter | undefined
-    let ownsAdapter = false
-    try {
-      adapter = discoverableMobileAdapter(
-        extensionAdapters?.[profileId] ?? extensionAdapters?.[profile.adapter],
+    if (!profile.mobile.executionTarget) continue
+    discoveries.push(
+      await discoverMobileProfile(
+        config,
         profileId,
-      )
-      if (!adapter) {
-        adapter = configuredMobileAdapter(config, profileId, createAdapter)
-        ownsAdapter = true
-      }
-      discoveries.push({
-        profileId,
-        executionTarget,
-        targets: (await adapter.discoverTargets()).map((target) => ({
-          id: target.id,
-          name: target.name,
-          state: target.state,
-          capabilities: [...target.capabilities],
-        })),
-      })
-    } catch (reason) {
-      discoveries.push({
-        profileId,
-        executionTarget,
-        targets: [],
-        error: errorMessage(reason),
-      })
-    } finally {
-      if (ownsAdapter) {
-        try {
-          await adapter?.dispose?.()
-        } catch (reason) {
-          const current = discoveries.at(-1)
-          if (current?.profileId === profileId) {
-            discoveries[discoveries.length - 1] = {
-              ...current,
-              error: errorMessage(reason),
-            }
-          }
-        }
-      }
-    }
+        profile,
+        createAdapter,
+        extensionAdapters,
+      ),
+    )
   }
   return discoveries
+}
+
+function validateMobileProfileCapabilities(
+  profileId: string,
+  profile: MobileProfile,
+  discoveries: readonly StudioMobileTargetDiscovery[],
+): void {
+  const discovery = discoveries.find((item) => item.profileId === profileId)
+  if (!discovery) {
+    throw new Error(
+      `Execution target profile "${profileId}" was not discovered before the test run`,
+    )
+  }
+  if (discovery.error) throw new Error(discovery.error)
+  const target = discovery.targets.find(
+    (item) =>
+      item.state === 'booted' &&
+      (profile.mobile?.targetId === undefined ||
+        item.id === profile.mobile.targetId),
+  )
+  if (!target) {
+    const targetDescription = profile.mobile?.targetId
+      ? `Booted mobile target "${profile.mobile.targetId}" was not found`
+      : 'No booted mobile target was found'
+    throw new Error(
+      `${targetDescription} for execution target profile "${profileId}"`,
+    )
+  }
+  const available = new Set(target.capabilities)
+  const missing = (profile.capabilities ?? []).filter(
+    (capability) => !available.has(capability),
+  )
+  if (missing.length > 0) {
+    throw new Error(
+      `Selected target "${target.name}" for execution target profile "${profileId}" lacks configured capabilities: ${missing.join(', ')}`,
+    )
+  }
 }
 
 export function validateStudioMobileTargetCapabilities(
@@ -134,35 +188,6 @@ export function validateStudioMobileTargetCapabilities(
     if (profile.adapter !== 'mobile' || !selectedProfiles.has(profileId)) {
       continue
     }
-    const discovery = discoveries.find((item) => item.profileId === profileId)
-    if (!discovery) {
-      throw new Error(
-        `Execution target profile "${profileId}" was not discovered before the test run`,
-      )
-    }
-    if (discovery.error) throw new Error(discovery.error)
-    const target = discovery.targets.find(
-      (item) =>
-        item.state === 'booted' &&
-        (profile.mobile?.targetId === undefined ||
-          item.id === profile.mobile.targetId),
-    )
-    if (!target) {
-      const targetDescription = profile.mobile?.targetId
-        ? `Booted mobile target "${profile.mobile.targetId}" was not found`
-        : 'No booted mobile target was found'
-      throw new Error(
-        `${targetDescription} for execution target profile "${profileId}"`,
-      )
-    }
-    const available = new Set(target.capabilities)
-    const missing = (profile.capabilities ?? []).filter(
-      (capability) => !available.has(capability),
-    )
-    if (missing.length > 0) {
-      throw new Error(
-        `Selected target "${target.name}" for execution target profile "${profileId}" lacks configured capabilities: ${missing.join(', ')}`,
-      )
-    }
+    validateMobileProfileCapabilities(profileId, profile, discoveries)
   }
 }

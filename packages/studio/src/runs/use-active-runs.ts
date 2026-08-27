@@ -34,56 +34,64 @@ export function useActiveRuns(options: ActiveRunsOptions) {
       void connect(runId)
     }
 
+    function inspectionFrom(snapshot: StudioRunSnapshot, runId: string) {
+      let inspection = startLiveInspection({ runId, specificationUri: '' })
+      for (const event of snapshot.events) {
+        inspection = receiveLiveStreamEvent(inspection, event)
+      }
+      return inspection
+    }
+
+    async function finishRun(runId: string): Promise<void> {
+      try {
+        const snapshot = await options.api<StudioRunSnapshot>(
+          `/api/runs/${encodeURIComponent(runId)}`,
+        )
+        updateInspection(runId, (current) =>
+          hydrateLiveInspection(current, snapshot),
+        )
+        onFinished.current(runId)
+      } catch (reason) {
+        onError.current(messageFrom(reason))
+      }
+    }
+
+    function openRunSocket(runId: string): void {
+      const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:'
+      const socket = new WebSocket(
+        `${protocol}//${location.host}/api/runs/${encodeURIComponent(runId)}/events`,
+      )
+      sockets.push(socket)
+      socket.onmessage = (message) => {
+        const event = JSON.parse(String(message.data)) as LiveStreamEvent
+        updateInspection(runId, (current) =>
+          receiveLiveStreamEvent(current, event),
+        )
+        if (event.type === 'run-finished') void finishRun(runId)
+      }
+      socket.onclose = () => disconnectRun(runId)
+    }
+
+    function disconnectRun(runId: string): void {
+      if (cancelled) return
+      updateInspection(runId, (current) =>
+        current.phase === 'running'
+          ? disconnectLiveInspection(
+              current,
+              'The live event stream closed. Reopen the Test run to reconnect.',
+            )
+          : current,
+      )
+    }
+
     async function connect(runId: string) {
       try {
         const snapshot = await options.api<StudioRunSnapshot>(
           `/api/runs/${encodeURIComponent(runId)}`,
         )
         if (cancelled) return
-        let inspection = startLiveInspection({
-          runId,
-          specificationUri: '',
-        })
-        for (const event of snapshot.events) {
-          inspection = receiveLiveStreamEvent(inspection, event)
-        }
-        updateInspection(runId, inspection)
-
-        const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:'
-        const socket = new WebSocket(
-          `${protocol}//${location.host}/api/runs/${encodeURIComponent(runId)}/events`,
-        )
-        sockets.push(socket)
-        socket.onmessage = (message) => {
-          const event = JSON.parse(String(message.data)) as LiveStreamEvent
-          updateInspection(runId, (current) =>
-            receiveLiveStreamEvent(current, event),
-          )
-          if (event.type === 'run-finished') {
-            void options
-              .api<StudioRunSnapshot>(`/api/runs/${encodeURIComponent(runId)}`)
-              .then(
-                (finalSnapshot) => {
-                  updateInspection(runId, (current) =>
-                    hydrateLiveInspection(current, finalSnapshot),
-                  )
-                  onFinished.current(runId)
-                },
-                (reason: unknown) => onError.current(messageFrom(reason)),
-              )
-          }
-        }
-        socket.onclose = () => {
-          if (cancelled) return
-          updateInspection(runId, (current) =>
-            current.phase === 'running'
-              ? disconnectLiveInspection(
-                  current,
-                  'The live event stream closed. Reopen the Test run to reconnect.',
-                )
-              : current,
-          )
-        }
+        updateInspection(runId, inspectionFrom(snapshot, runId))
+        openRunSocket(runId)
       } catch (reason) {
         if (!cancelled) onError.current(messageFrom(reason))
       }

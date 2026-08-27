@@ -18,7 +18,11 @@ import {
   type WebAdapterOptions,
 } from '@pickle-spec/web'
 import cliPackage from '../package.json' with { type: 'json' }
-import { defaultSpecificationGlob, loadConfig } from './configuration/config'
+import {
+  defaultSpecificationGlob,
+  loadConfig,
+  type PickleConfig,
+} from './configuration/config'
 import {
   checkProject,
   initializeProject,
@@ -44,7 +48,10 @@ import {
   type RunReporterName,
   terminalReporterCapabilities,
 } from './run/run-reporter'
-import { createRunReportingSession } from './run/run-reporting-session'
+import {
+  createRunReportingSession,
+  type RunReportingSession,
+} from './run/run-reporting-session'
 import { evaluateTestRunExitStatus } from './run/test-run-exit-status'
 import { createStudioExecutionCacheGateway } from './studio/studio-cache'
 import { createStudioHistoryGateway } from './studio/studio-history'
@@ -124,6 +131,163 @@ function parseShard(value: string): { index: number; total: number } {
   return { index: Number(match[1]), total: Number(match[2]) }
 }
 
+function parseRunSelectionOption(
+  args: RunArguments,
+  argv: string[],
+  index: number,
+): number | undefined {
+  const flag = argv[index]!
+  switch (flag) {
+    case '--suite':
+      args.suite = valueAfter(argv, index)
+      return index + 2
+    case '--profile':
+      args.profiles = [...(args.profiles ?? []), valueAfter(argv, index)]
+      return index + 2
+    case '--scenario':
+      args.selection.scenarioName = valueAfter(argv, index)
+      return index + 2
+    case '--tag':
+    case '-t':
+      args.selection.tagExpression = valueAfter(argv, index)
+      return index + 2
+    case '--state':
+      args.selection.states = [
+        ...(args.selection.states ?? []),
+        valueAfter(argv, index) as SpecificationState,
+      ]
+      return index + 2
+    case '--shard':
+      args.selection.shard = parseShard(valueAfter(argv, index))
+      return index + 2
+    default:
+      return undefined
+  }
+}
+
+function parseRunConfigurationOption(
+  args: RunArguments,
+  argv: string[],
+  index: number,
+): number | undefined {
+  const flag = argv[index]!
+  switch (flag) {
+    case '--config':
+      args.configPath = valueAfter(argv, index)
+      return index + 2
+    case '--extensions':
+      args.extensionsPath = valueAfter(argv, index)
+      return index + 2
+    case '--retries':
+      args.retries = integer(valueAfter(argv, index), flag, 0)
+      return index + 2
+    case '--concurrency':
+    case '-j':
+      args.concurrency = integer(valueAfter(argv, index), flag, 1)
+      return index + 2
+    case '--language':
+    case '-l':
+      args.language = valueAfter(argv, index)
+      return index + 2
+    case '--scenario-timeout':
+      args.scenarioTimeoutMs = integer(valueAfter(argv, index), flag, 1)
+      return index + 2
+    case '--step-timeout':
+      args.stepTimeoutMs = integer(valueAfter(argv, index), flag, 1)
+      return index + 2
+    case '--application-revision':
+      args.applicationRevision = valueAfter(argv, index)
+      return index + 2
+    default:
+      return undefined
+  }
+}
+
+function parseRunEvidenceOption(
+  args: RunArguments,
+  argv: string[],
+  index: number,
+): number | undefined {
+  const flag = argv[index]!
+  if (flag === '--screenshot') {
+    const mode = valueAfter(argv, index)
+    if (!screenshotModes.includes(mode as (typeof screenshotModes)[number])) {
+      throw new Error('--screenshot requires off, on-failure, or on-step')
+    }
+    args.screenshotMode = mode as RunArguments['screenshotMode']
+    return index + 2
+  }
+  if (flag === '--application-output') {
+    const stream = valueAfter(argv, index)
+    if (stream !== 'stdout' && stream !== 'stderr') {
+      throw new Error('--application-output requires stdout or stderr')
+    }
+    args.applicationOutput = { ...args.applicationOutput, [stream]: true }
+    return index + 2
+  }
+  if (flag !== '--evidence') return undefined
+  const persistence = valueAfter(argv, index)
+  if (
+    persistence !== 'off' &&
+    persistence !== 'on-failure' &&
+    persistence !== 'always'
+  ) {
+    throw new Error('--evidence requires off, on-failure, or always')
+  }
+  args.evidencePersistence = persistence
+  return index + 2
+}
+
+function parseRunOutputOption(
+  args: RunArguments,
+  argv: string[],
+  index: number,
+): number | undefined {
+  const flag = argv[index]!
+  switch (flag) {
+    case '--output':
+      args.outputs = [
+        ...(args.outputs ?? []),
+        parseTestRunOutput(valueAfter(argv, index)),
+      ]
+      return index + 2
+    case '--rerun':
+      args.rerunId = valueAfter(argv, index)
+      return index + 2
+    case '--reporter': {
+      const reporter = valueAfter(argv, index)
+      if (reporter !== 'default' && reporter !== 'ndjson') {
+        throw new Error('--reporter requires default or ndjson')
+      }
+      args.reporter = reporter
+      return index + 2
+    }
+    default:
+      return undefined
+  }
+}
+
+function parseRunBooleanOption(
+  args: RunArguments,
+  flag: string,
+  index: number,
+): number | undefined {
+  const fields: Partial<Record<string, keyof RunArguments>> = {
+    '--reuse-server': 'reuseServer',
+    '--headed': 'headed',
+    '--force': 'force',
+    '--all-artifacts': 'allArtifacts',
+    '--failures': 'failures',
+    '--fast': 'fast',
+    '--refresh-cache': 'refreshCache',
+    '--cache-only': 'cacheOnly',
+  }
+  const field = fields[flag]
+  if (!field) return undefined
+  Object.assign(args, { [field]: true })
+  return index + 1
+}
+
 function parseRunArguments(argv: string[]): RunArguments {
   if (argv[0] !== 'run')
     throw new Error('Usage: pickle run [specifications] [options]')
@@ -133,141 +297,166 @@ function parseRunArguments(argv: string[]): RunArguments {
 
   while (index < argv.length) {
     const flag = argv[index]!
-    switch (flag) {
-      case '--config':
-        args.configPath = valueAfter(argv, index++)
-        break
-      case '--extensions':
-        args.extensionsPath = valueAfter(argv, index++)
-        break
-      case '--suite':
-        args.suite = valueAfter(argv, index++)
-        break
-      case '--profile':
-        args.profiles = [...(args.profiles ?? []), valueAfter(argv, index++)]
-        break
-      case '--scenario':
-        args.selection.scenarioName = valueAfter(argv, index++)
-        break
-      case '--tag':
-      case '-t':
-        args.selection.tagExpression = valueAfter(argv, index++)
-        break
-      case '--state': {
-        const state = valueAfter(argv, index++)
-        args.selection.states = [
-          ...(args.selection.states ?? []),
-          state as SpecificationState,
-        ]
-        break
-      }
-      case '--shard':
-        args.selection.shard = parseShard(valueAfter(argv, index++))
-        break
-      case '--retries':
-        args.retries = integer(valueAfter(argv, index++), flag, 0)
-        break
-      case '--concurrency':
-      case '-j':
-        args.concurrency = integer(valueAfter(argv, index++), flag, 1)
-        break
-      case '--language':
-      case '-l':
-        args.language = valueAfter(argv, index++)
-        break
-      case '--scenario-timeout': {
-        args.scenarioTimeoutMs = integer(valueAfter(argv, index++), flag, 1)
-        break
-      }
-      case '--step-timeout':
-        args.stepTimeoutMs = integer(valueAfter(argv, index++), flag, 1)
-        break
-      case '--reuse-server':
-        args.reuseServer = true
-        break
-      case '--headed':
-        args.headed = true
-        break
-      case '--screenshot': {
-        const mode = valueAfter(argv, index++)
-        if (
-          !screenshotModes.includes(mode as (typeof screenshotModes)[number])
-        ) {
-          throw new Error('--screenshot requires off, on-failure, or on-step')
-        }
-        args.screenshotMode = mode as RunArguments['screenshotMode']
-        break
-      }
-      case '--application-revision':
-        args.applicationRevision = valueAfter(argv, index++)
-        break
-      case '--application-output': {
-        const stream = valueAfter(argv, index++)
-        if (stream !== 'stdout' && stream !== 'stderr') {
-          throw new Error('--application-output requires stdout or stderr')
-        }
-        args.applicationOutput = {
-          ...args.applicationOutput,
-          [stream]: true,
-        }
-        break
-      }
-      case '--evidence': {
-        const persistence = valueAfter(argv, index++)
-        if (
-          persistence !== 'off' &&
-          persistence !== 'on-failure' &&
-          persistence !== 'always'
-        ) {
-          throw new Error('--evidence requires off, on-failure, or always')
-        }
-        args.evidencePersistence = persistence
-        break
-      }
-      case '--output':
-        args.outputs = [
-          ...(args.outputs ?? []),
-          parseTestRunOutput(valueAfter(argv, index++)),
-        ]
-        break
-      case '--force':
-        args.force = true
-        break
-      case '--all-artifacts':
-        args.allArtifacts = true
-        break
-      case '--rerun':
-        args.rerunId = valueAfter(argv, index++)
-        break
-      case '--failures':
-        args.failures = true
-        break
-      case '--fast':
-        args.fast = true
-        break
-      case '--refresh-cache':
-        args.refreshCache = true
-        break
-      case '--cache-only':
-        args.cacheOnly = true
-        break
-      case '--reporter': {
-        const reporter = valueAfter(argv, index++)
-        if (reporter !== 'default' && reporter !== 'ndjson') {
-          throw new Error('--reporter requires default or ndjson')
-        }
-        args.reporter = reporter
-        break
-      }
-      default:
-        throw new Error(`Unknown option: ${flag}`)
-    }
-    index++
+    const nextIndex =
+      parseRunSelectionOption(args, argv, index) ??
+      parseRunConfigurationOption(args, argv, index) ??
+      parseRunEvidenceOption(args, argv, index) ??
+      parseRunOutputOption(args, argv, index) ??
+      parseRunBooleanOption(args, flag, index)
+    if (nextIndex === undefined) throw new Error(`Unknown option: ${flag}`)
+    index = nextIndex
   }
   if (args.refreshCache && args.cacheOnly) {
     throw new Error('--refresh-cache cannot be combined with --cache-only')
   }
   return args
+}
+
+interface RunCommandState {
+  startedRunId?: string
+  outputsWritten: boolean
+}
+
+interface RunCommandContext {
+  args: RunArguments
+  config: PickleConfig
+  root: string
+  controller: AbortController
+  reporting: RunReportingSession
+  startedAt: number
+  state: RunCommandState
+}
+
+async function executeRunCommand(context: RunCommandContext): Promise<number> {
+  const started = await startProjectRun({
+    root: context.root,
+    config: context.config,
+    options: context.args,
+    signal: context.controller.signal,
+    onEvent: context.reporting.event,
+    onSchedule: context.reporting.prepare,
+    onResult: context.reporting.complete,
+  })
+  context.state.startedRunId = started.id
+  context.reporting.start()
+  const { runs } = await started.done
+  const store = openTestRunStore({ root: context.root })
+  const outputOutcomes = await writeRunOutputs(
+    context.args,
+    context.root,
+    started.id,
+  )
+  context.state.outputsWritten = true
+  reportTestRunExportOutcomes(outputOutcomes, console.error)
+  const retention = await store.applyRetention({
+    maxAgeMs: context.config.retention?.days
+      ? context.config.retention.days * dayMs
+      : undefined,
+    maxBytes: context.config.retention?.maxBytes,
+  })
+  if (context.config.retention?.days || context.config.retention?.maxBytes) {
+    console.error(
+      `RETENTION removed ${retention.removed.length} Test runs (${retention.beforeBytes} → ${retention.afterBytes} bytes)${retention.removed.length > 0 ? `: ${retention.removed.join(', ')}` : ''}`,
+    )
+  }
+  const exitStatus = evaluateTestRunExitStatus(
+    runs.map(({ result }) => result),
+    { interrupted: context.controller.signal.aborted },
+  )
+  context.reporting.finish(
+    runs,
+    performance.now() - context.startedAt,
+    exitStatus,
+  )
+  const reporterFailure = context.reporting.failure()
+  if (reporterFailure) throw reporterFailure.error
+  return testRunExportFailed(outputOutcomes) ? 2 : exitStatus.exitCode
+}
+
+async function recoverMaterializedEvidence(
+  context: RunCommandContext,
+  commandError: unknown,
+  message: string,
+  includeEmptyRun = false,
+): Promise<unknown> {
+  const runId = context.state.startedRunId
+  if (!runId || context.state.outputsWritten) return commandError
+  try {
+    const outcomes = await finalizeMaterializedEvidence(
+      context.args,
+      context.root,
+      runId,
+      includeEmptyRun ? { includeEmptyRun: true } : undefined,
+    )
+    reportTestRunExportOutcomes(outcomes, console.error)
+    context.state.outputsWritten = true
+    return commandError
+  } catch (recoveryError) {
+    return withRecoveryFailure(commandError, message, recoveryError)
+  }
+}
+
+function isInterruptedRun(error: unknown, context: RunCommandContext): boolean {
+  return (
+    context.controller.signal.aborted &&
+    error instanceof Error &&
+    error.name === 'AbortError'
+  )
+}
+
+async function recoverInterruptedRun(
+  context: RunCommandContext,
+  commandError: unknown,
+): Promise<{ commandError: unknown; exitCode?: number }> {
+  if (!isInterruptedRun(commandError, context)) return { commandError }
+  commandError = await recoverMaterializedEvidence(
+    context,
+    commandError,
+    'Failed to finalize interrupted evidence',
+    true,
+  )
+  const exitStatus = evaluateTestRunExitStatus([], { interrupted: true })
+  context.reporting.finish(
+    [],
+    performance.now() - context.startedAt,
+    exitStatus,
+  )
+  const reporterFailure = context.reporting.failure()
+  if (reporterFailure) {
+    commandError = withRecoveryFailure(
+      commandError,
+      'Failed to render interrupted summary',
+      reporterFailure.error,
+    )
+  } else if (context.state.outputsWritten) {
+    return { commandError, exitCode: 130 }
+  }
+  return { commandError }
+}
+
+async function recoverRunCommand(
+  context: RunCommandContext,
+  error: unknown,
+): Promise<number> {
+  const interrupted = await recoverInterruptedRun(context, error)
+  if (interrupted.exitCode !== undefined) return interrupted.exitCode
+  let commandError = await recoverMaterializedEvidence(
+    context,
+    interrupted.commandError,
+    'Failed to finalize materialized evidence',
+  )
+  const reporterFailure = context.reporting.fail(
+    commandError,
+    performance.now() - context.startedAt,
+  )
+  if (reporterFailure) {
+    commandError = withRecoveryFailure(
+      commandError,
+      'Failed to restore reporter output',
+      reporterFailure.error,
+    )
+  }
+  throw commandError
 }
 
 async function run(argv: string[]): Promise<number> {
@@ -289,113 +478,21 @@ async function run(argv: string[]): Promise<number> {
   const reporting = createRunReportingSession(reporter)
   const onResize = reporting.refresh
   const startedAt = performance.now()
-  let startedRunId: string | undefined
-  let outputsWritten = false
+  const context: RunCommandContext = {
+    args,
+    config,
+    root,
+    controller,
+    reporting,
+    startedAt,
+    state: { outputsWritten: false },
+  }
   process.on('SIGINT', onSigint)
   if (process.stdout.isTTY) process.on('SIGWINCH', onResize)
   try {
-    const started = await startProjectRun({
-      root,
-      config,
-      options: args,
-      signal: controller.signal,
-      onEvent: reporting.event,
-      onSchedule: reporting.prepare,
-      onResult: reporting.complete,
-    })
-    startedRunId = started.id
-    reporting.start()
-    const { runs } = await started.done
-    const store = openTestRunStore({ root })
-    const outputOutcomes = await writeRunOutputs(args, root, started.id)
-    outputsWritten = true
-    reportTestRunExportOutcomes(outputOutcomes, console.error)
-    const retention = await store.applyRetention({
-      maxAgeMs: config.retention?.days
-        ? config.retention.days * dayMs
-        : undefined,
-      maxBytes: config.retention?.maxBytes,
-    })
-    if (config.retention?.days || config.retention?.maxBytes) {
-      console.error(
-        `RETENTION removed ${retention.removed.length} Test runs (${retention.beforeBytes} → ${retention.afterBytes} bytes)${retention.removed.length > 0 ? `: ${retention.removed.join(', ')}` : ''}`,
-      )
-    }
-
-    const exitStatus = evaluateTestRunExitStatus(
-      runs.map(({ result }) => result),
-      { interrupted: controller.signal.aborted },
-    )
-    reporting.finish(runs, performance.now() - startedAt, exitStatus)
-    const reporterFailure = reporting.failure()
-    if (reporterFailure) throw reporterFailure.error
-    return testRunExportFailed(outputOutcomes) ? 2 : exitStatus.exitCode
+    return await executeRunCommand(context)
   } catch (error) {
-    let commandError: unknown = error
-    if (
-      controller.signal.aborted &&
-      error instanceof Error &&
-      error.name === 'AbortError'
-    ) {
-      const exitStatus = evaluateTestRunExitStatus([], { interrupted: true })
-      if (startedRunId && !outputsWritten) {
-        try {
-          const outcomes = await finalizeMaterializedEvidence(
-            args,
-            root,
-            startedRunId,
-            { includeEmptyRun: true },
-          )
-          reportTestRunExportOutcomes(outcomes, console.error)
-          outputsWritten = true
-        } catch (recoveryError) {
-          commandError = withRecoveryFailure(
-            commandError,
-            'Failed to finalize interrupted evidence',
-            recoveryError,
-          )
-        }
-      }
-      reporting.finish([], performance.now() - startedAt, exitStatus)
-      const reporterFailure = reporting.failure()
-      if (reporterFailure) {
-        commandError = withRecoveryFailure(
-          commandError,
-          'Failed to render interrupted summary',
-          reporterFailure.error,
-        )
-      } else if (outputsWritten) {
-        return 130
-      }
-    }
-    if (startedRunId && !outputsWritten) {
-      try {
-        const outcomes = await finalizeMaterializedEvidence(
-          args,
-          root,
-          startedRunId,
-        )
-        reportTestRunExportOutcomes(outcomes, console.error)
-      } catch (recoveryError) {
-        commandError = withRecoveryFailure(
-          commandError,
-          'Failed to finalize materialized evidence',
-          recoveryError,
-        )
-      }
-    }
-    const reporterRecoveryFailure = reporting.fail(
-      commandError,
-      performance.now() - startedAt,
-    )
-    if (reporterRecoveryFailure) {
-      commandError = withRecoveryFailure(
-        commandError,
-        'Failed to restore reporter output',
-        reporterRecoveryFailure.error,
-      )
-    }
-    throw commandError
+    return recoverRunCommand(context, error)
   } finally {
     process.off('SIGINT', onSigint)
     process.off('SIGWINCH', onResize)
@@ -463,13 +560,24 @@ async function importArchive(argv: string[]): Promise<number> {
   return 0
 }
 
-async function exportRun(argv: string[]): Promise<number> {
+interface ExportArguments {
+  runId: string
+  outputs: TestRunExportRequest[]
+  allArtifacts: boolean
+  force: boolean
+}
+
+function exportRunId(argv: string[]): string {
   if (argv[0] !== 'export' || !argv[1]) {
     throw new Error(
       'Usage: pickle export <id> --output format=path [--output format=path] [--force] [--all-artifacts]',
     )
   }
-  const runId = argv[1]
+  return argv[1]
+}
+
+function parseExportArguments(argv: string[]): ExportArguments {
+  const runId = exportRunId(argv)
   const outputs: TestRunExportRequest[] = []
   let allArtifacts = false
   let force = false
@@ -485,6 +593,25 @@ async function exportRun(argv: string[]): Promise<number> {
   if (outputs.length === 0) {
     throw new Error('pickle export requires at least one --output format=path')
   }
+  return { runId, outputs, allArtifacts, force }
+}
+
+async function warnForLargeHtmlExports(
+  outputs: readonly TestRunExportRequest[],
+): Promise<void> {
+  const warningThreshold = 10 * 1024 * 1024
+  for (const output of outputs) {
+    if (output.format !== 'html') continue
+    const file = Bun.file(output.path)
+    if (!(await file.exists()) || file.size <= warningThreshold) continue
+    console.error(
+      `Warning: HTML export includes every available test artifact and is larger than 10 MB (${file.size} bytes).`,
+    )
+  }
+}
+
+async function exportRun(argv: string[]): Promise<number> {
+  const { runId, outputs, allArtifacts, force } = parseExportArguments(argv)
   const outcomes = await publishTestRunExports({
     root: process.cwd(),
     runId,
@@ -494,21 +621,7 @@ async function exportRun(argv: string[]): Promise<number> {
   })
   reportTestRunExportOutcomes(outcomes, console.log)
 
-  const warningThreshold = 10 * 1024 * 1024
-  if (allArtifacts) {
-    for (const output of outputs) {
-      const file = Bun.file(output.path)
-      if (
-        output.format === 'html' &&
-        (await file.exists()) &&
-        file.size > warningThreshold
-      ) {
-        console.error(
-          `Warning: HTML export includes every available test artifact and is larger than 10 MB (${file.size} bytes).`,
-        )
-      }
-    }
-  }
+  if (allArtifacts) await warnForLargeHtmlExports(outputs)
   return testRunExportFailed(outcomes) ? 2 : 0
 }
 
@@ -517,14 +630,25 @@ function parseStudioArguments(argv: string[]): StudioArguments {
   const options: StudioArguments = { open: true }
   for (let index = 1; index < argv.length; index++) {
     const flag = argv[index]!
-    if (flag === '--no-open') options.open = false
-    else if (flag === '--port')
-      options.port = integer(valueAfter(argv, index++), flag, 0)
-    else if (flag === '--config') options.configPath = valueAfter(argv, index++)
-    else if (flag === '--extensions')
-      options.extensionsPath = valueAfter(argv, index++)
-    else if (flag === '--remote') options.remoteHost = valueAfter(argv, index++)
-    else throw new Error(`Unknown option: ${flag}`)
+    switch (flag) {
+      case '--no-open':
+        options.open = false
+        break
+      case '--port':
+        options.port = integer(valueAfter(argv, index++), flag, 0)
+        break
+      case '--config':
+        options.configPath = valueAfter(argv, index++)
+        break
+      case '--extensions':
+        options.extensionsPath = valueAfter(argv, index++)
+        break
+      case '--remote':
+        options.remoteHost = valueAfter(argv, index++)
+        break
+      default:
+        throw new Error(`Unknown option: ${flag}`)
+    }
   }
   return options
 }

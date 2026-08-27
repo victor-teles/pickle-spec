@@ -9,18 +9,27 @@ import {
   instrumentWebEvidencePages,
 } from '../evidence/web-evidence'
 import { startWebRecording, type WebRecording } from '../evidence/web-recording'
-import { webAssertionDraftSchema } from '../execution-cache/web-execution-cache'
+import {
+  type WebAssertionDraft,
+  webAssertionCompileSchema,
+} from '../execution-cache/web-execution-cache'
 import { withAbort } from './abort'
 import { createDirectBrowser } from './direct-browser'
+import { stabilizeSelector } from './stable-selector'
 import type {
   WebAutomation,
   WebIsolationState,
+  WebObservedAction,
   WebScreenshotCapture,
 } from './web-automation'
 
 const verificationSchema = z.object({
-  meetsExpectation: z.boolean(),
-  actualState: z.string(),
+  meetsExpectation: z
+    .boolean()
+    .describe('Whether the current page satisfies the stated expectation'),
+  actualState: z
+    .string()
+    .describe('Short description of the relevant page state actually observed'),
 })
 
 export type StagehandTimeouts = {
@@ -87,10 +96,20 @@ export async function createStagehandAutomation(
         stagehand.observe(prompt, { timeout: timeouts.observeTimeoutMs }),
         signal,
       )
-      return result.data.map((action) => ({
-        description: action.description,
-        handle: action,
-      }))
+      const page = await browser.context.activePage()
+      const actions: WebObservedAction[] = []
+      for (const action of result.data) {
+        actions.push({
+          description: action.description,
+          handle: {
+            ...action,
+            selector: page
+              ? await stabilizeSelector(page, action.selector)
+              : action.selector,
+          },
+        })
+      }
+      return actions
     },
     async act(action, signal) {
       await instrumentPages()
@@ -109,9 +128,10 @@ export async function createStagehandAutomation(
       await instrumentPages()
       const result = await withAbort(
         stagehand.extract(
-          `Verify the following condition on the current page: "${prompt}". ` +
-            'Determine if the page currently meets this expectation.',
+          `Extract whether the page currently satisfies this expectation: "${prompt}". ` +
+            'Judge only the stated condition. Describe the relevant visible state.',
           verificationSchema,
+          { timeout: timeouts.observeTimeoutMs },
         ),
         signal,
       )
@@ -121,14 +141,27 @@ export async function createStagehandAutomation(
       await instrumentPages()
       const result = await withAbort(
         stagehand.extract(
-          'Compile the following Scenario outcome into exactly one deterministic ' +
-            'browser assertion. Use only the requested expectation, never the ' +
-            `current page value as the expected value: "${prompt}"`,
-          webAssertionDraftSchema,
+          'Extract locators that confirm this expectation. Use element types and ' +
+            'visible labels, not colors. Expected values must come from the ' +
+            `expectation text, never from the current page value: "${prompt}"`,
+          webAssertionCompileSchema,
+          { timeout: timeouts.observeTimeoutMs },
         ),
         signal,
       )
-      return result.data
+      const page = await activePage(browser.context)
+      const assertions: WebAssertionDraft[] = []
+      for (const draft of result.data.assertions) {
+        if (!('selector' in draft)) {
+          assertions.push(draft)
+          continue
+        }
+        assertions.push({
+          ...draft,
+          selector: await stabilizeSelector(page, draft.selector),
+        })
+      }
+      return assertions
     },
     async executeInstruction(instruction, bindings, signal) {
       await instrumentPages()

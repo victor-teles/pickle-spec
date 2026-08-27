@@ -20,6 +20,7 @@ import {
   diagnosticsFor,
   findInspectedResult,
   timelineFor,
+  visibleTimelineEntries,
 } from './result-evidence'
 
 const specificationUri = 'features/checkout.feature'
@@ -194,13 +195,12 @@ test('live Run events update the same Overview, Timeline, Artifacts, and Diagnos
   )
   expect(inspected?.attempt.state).toBe('failed')
   expect(defaultResultInspectorTab(inspected!.attempt.state)).toBe('timeline')
-  expect(
-    timelineFor(
-      inspection.snapshot!.events,
-      inspected!.attempt,
-      inspection.location!,
-    ).map((entry) => entry.kind),
-  ).toEqual([
+  const entries = timelineFor(
+    inspection.snapshot!.events,
+    inspected!.attempt,
+    inspection.location!,
+  )
+  expect(entries.map((entry) => entry.kind)).toEqual([
     'Run event',
     'Step',
     'Run event',
@@ -210,6 +210,9 @@ test('live Run events update the same Overview, Timeline, Artifacts, and Diagnos
     'Test artifact',
     'Run event',
   ])
+  expect(
+    visibleTimelineEntries(entries, 'essential').map((entry) => entry.kind),
+  ).toEqual(['Step', 'Diagnostic entry', 'Test artifact'])
   expect(artifactsFor(inspected!.attempt)).toHaveLength(1)
   expect(
     diagnosticsFor(inspected!.attempt).map((item) => item.message),
@@ -262,11 +265,10 @@ test('follows the newest causal activity until the user intervenes', () => {
   inspection = receiveLiveStreamEvent(inspection, runStarted())
   inspection = receiveLiveStreamEvent(inspection, scenarioStarted())
   inspection = receiveLiveStreamEvent(inspection, stepStarted())
-  const followedThroughStart = inspection.followedEntryId
-  expect(followedThroughStart).toBeTruthy()
+  expect(inspection.followedEntryId?.endsWith(':step-0')).toBe(true)
 
   inspection = receiveLiveStreamEvent(inspection, stepFinished())
-  expect(inspection.followedEntryId).not.toBe(followedThroughStart)
+  expect(inspection.followedEntryId?.endsWith(':step-0')).toBe(true)
   expect(inspection.following).toBe(true)
 
   inspection = pauseLiveFollowing(inspection)
@@ -343,12 +345,11 @@ test('resumes following after manual navigation', () => {
   inspection = pauseLiveFollowing(inspection)
   inspection = receiveLiveStreamEvent(inspection, stepFinished())
   inspection = receiveLiveStreamEvent(inspection, scenarioFinished())
-  const pausedEntry = inspection.followedEntryId
 
   inspection = resumeLiveFollowing(inspection)
   expect(inspection.following).toBe(true)
-  expect(inspection.followedEntryId).not.toBe(pausedEntry)
   expect(inspection.followedEntryId?.endsWith(':step-0')).toBe(true)
+  expect(inspection.followedEntryId?.includes(':event-')).toBe(false)
 })
 
 test('keeps a pinned investigation when a later failure arrives', () => {

@@ -17,7 +17,9 @@ import {
   filterDiagnostics,
   findInspectedResult,
   recoveryGuidance,
+  type TimelineEntry,
   timelineFor,
+  visibleTimelineEntries,
 } from './result-evidence'
 
 const evidenceAvailability: ScenarioAttempt['evidenceAvailability'] = [
@@ -106,6 +108,22 @@ function scenarioStarted(examplesRowId: string, sequence: number): RunEvent {
 
 function timelineIdSuffix(id: string): string {
   return id.slice(id.lastIndexOf(':') + 1)
+}
+
+function timelineEntry(
+  kind: TimelineEntry['kind'],
+  title: string,
+  options?: Pick<TimelineEntry, 'causal'>,
+): TimelineEntry {
+  return {
+    id: title,
+    startedAt: '2026-08-22T12:00:00.000Z',
+    timingPrecision: 'exact',
+    kind,
+    title,
+    causal: options?.causal,
+    attributes: [],
+  }
 }
 
 test('selects one persisted attempt by Specification and Examples-row identity', () => {
@@ -402,6 +420,32 @@ test('keeps Run events as a distinct timeline lane', () => {
 
   expect(entries.map((entry) => entry.kind)).toEqual(['Run event'])
   expect(entries[0]?.title).toBe('Scenario Started')
+  expect(visibleTimelineEntries(entries, 'essential')).toEqual([])
+})
+
+test('essential timeline keeps Step, Diagnostic, artifact, and causal Resolved action', () => {
+  const entries = [
+    timelineEntry('Step', 'Then payment is captured'),
+    timelineEntry('Run event', 'Scenario Started'),
+    timelineEntry('Browser activity', 'Navigate to checkout'),
+    timelineEntry('Resolved action', 'Click pay'),
+    timelineEntry('Resolved action', 'Confirm payment', { causal: true }),
+    timelineEntry('Diagnostic entry', 'Payment was declined'),
+    timelineEntry('Test artifact', 'screenshot'),
+  ]
+
+  expect(
+    visibleTimelineEntries(entries, 'essential').map((entry) => ({
+      kind: entry.kind,
+      title: entry.title,
+    })),
+  ).toEqual([
+    { kind: 'Step', title: 'Then payment is captured' },
+    { kind: 'Resolved action', title: 'Confirm payment' },
+    { kind: 'Diagnostic entry', title: 'Payment was declined' },
+    { kind: 'Test artifact', title: 'screenshot' },
+  ])
+  expect(visibleTimelineEntries(entries, 'verbose')).toBe(entries)
 })
 
 test('marks action timestamps inherited from step completion without downgrading exact artifacts', () => {

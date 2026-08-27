@@ -70,7 +70,7 @@ export function StudioApp({ loadingFallback }: { loadingFallback: ReactNode }) {
         area={studio.navigation.area}
         authoring={studio.authoring}
         projectName={data.project.name}
-        runStatus={studio.run.aggregate}
+        running={studio.run.running}
         onAreaChange={studio.actions.selectArea}
         onOpenCommands={studio.actions.openCommands}
       />

@@ -4,34 +4,51 @@ import type {
   ResolvedAction,
   StepExecution,
   StepExecutionContext,
-  TargetSessionCompletion,
 } from '@pickle-spec/runner'
 import type { ScenarioStep } from '@pickle-spec/spec'
 import type { WebAutomation } from '../adapter/web-automation'
+import type { WebAdapterOptions } from '../adapter/web-options'
+import { resolvedInstructions } from './web-cache-instructions'
 import {
-  defaultModelName,
-  type WebAdapterOptions,
-} from '../adapter/web-options'
-import {
-  createWebInstructionExecutor,
-  resolvedInstructions,
-} from './web-cache-instructions'
-import {
+  compileObservedOutcomes,
   compileObservedWebAction,
   compileWebAssertion,
   compileWebNavigation,
   instructionCoversStepVariables,
   parseObservedActionPayload,
+  stepVariableNames,
   type WebAssertionDraft,
   type WebExecutionCachePayload,
   type WebInstruction,
 } from './web-execution-cache'
-import { navigationTarget, navigationUrl, promptFor } from './web-step'
+import {
+  navigationTarget,
+  navigationUrl,
+  observeInstruction,
+  promptFor,
+} from './web-step'
 
-interface CreateAdaptiveSessionInput {
+type WebInstructionRuntime = {
+  executeSequence(
+    instructions: readonly WebInstruction[],
+    signal: AbortSignal | undefined,
+  ): Promise<StepExecution>
+  implicitNavigation(
+    instructions: WebInstruction[],
+    signal: AbortSignal | undefined,
+    persist?: boolean,
+  ): Promise<StepExecution | undefined>
+  markNavigated(): void
+}
+
+interface CreateAdaptiveRuntimeInput {
   input: OpenSessionInput
   options: WebAdapterOptions
   automation: WebAutomation
+  executor: WebInstructionRuntime
+  compiledSteps: Array<WebExecutionCachePayload['steps'][number] | undefined>
+  inference: { count: number }
+  uncacheable: { reason?: ExecutionCacheUncacheableReason }
 }
 
 function definedInstructions(
@@ -40,33 +57,98 @@ function definedInstructions(
   return values.every((value) => value !== undefined)
 }
 
-function definedSteps(
-  values: readonly (WebExecutionCachePayload['steps'][number] | undefined)[],
-): values is WebExecutionCachePayload['steps'] {
-  return values.every((value) => value !== undefined)
+async function compileAssertionDrafts(
+  automation: WebAutomation,
+  prompt: string,
+  signal: AbortSignal | undefined,
+): Promise<WebAssertionDraft[]> {
+  try {
+    const drafts = await automation.compileAssertion?.(prompt, signal)
+    if (drafts === undefined) return []
+    if ('kind' in drafts) return [drafts]
+    return [...drafts]
+  } catch {
+    return []
+  }
 }
 
-export function createWebAdaptiveSession({
+function verificationExecution(
+  prompt: string,
+  meetsExpectation: boolean,
+  actualState: string,
+): StepExecution {
+  const resolvedActions = [{ description: `Verify: ${prompt}` }]
+  return meetsExpectation
+    ? { state: 'passed', resolvedActions }
+    : {
+        state: 'failed',
+        resolvedActions,
+        message: `Expected: "${prompt}" | Actual: ${actualState}`,
+      }
+}
+
+type ObservedActions = Awaited<ReturnType<WebAutomation['observe']>>
+
+async function observeOnce(
+  automation: WebAutomation,
+  prompt: string,
+  signal: AbortSignal | undefined,
+  onInference: () => void,
+): Promise<ObservedActions> {
+  const actions = await automation.observe(prompt, signal)
+  onInference()
+  return actions
+}
+
+async function observeActions(
+  automation: WebAutomation,
+  prompt: string,
+  signal: AbortSignal | undefined,
+  onInference: () => void,
+): Promise<ObservedActions> {
+  const actions = await observeOnce(automation, prompt, signal, onInference)
+  if (actions.length > 0) return actions
+  return observeOnce(automation, prompt, signal, onInference)
+}
+
+async function executeObservedActions(
+  automation: WebAutomation,
+  actions: ObservedActions,
+  signal: AbortSignal | undefined,
+  onInference: () => void,
+): Promise<StepExecution> {
+  const resolvedActions: ResolvedAction[] = []
+  for (const action of actions) {
+    onInference()
+    const result = await automation.act(action, signal)
+    resolvedActions.push({ description: action.description })
+    if (!result.success) {
+      return {
+        state: 'failed',
+        resolvedActions,
+        message: result.message ?? 'Web action failed',
+      }
+    }
+  }
+  return actions.length > 0
+    ? { state: 'passed', resolvedActions }
+    : {
+        state: 'failed',
+        resolvedActions,
+        message: 'Observe returned no actions',
+      }
+}
+
+export function createWebAdaptiveRuntime({
   input,
   options,
   automation,
-}: CreateAdaptiveSessionInput) {
+  executor,
+  compiledSteps,
+  inference,
+  uncacheable,
+}: CreateAdaptiveRuntimeInput) {
   const runtimeBindings = input.runtimeBindings ?? []
-  const requiredVariables =
-    input.scenarioTemplate?.variableNames ??
-    input.scenario.template?.variableNames ??
-    []
-  const executor = createWebInstructionExecutor({
-    automation,
-    baseUrl: options.baseUrl,
-    bindings: runtimeBindings,
-    replay: false,
-  })
-  const compiledSteps: Array<
-    WebExecutionCachePayload['steps'][number] | undefined
-  > = []
-  let uncacheableReason: ExecutionCacheUncacheableReason | undefined
-  let inferenceCount = 0
 
   async function executeCompiledStep(
     instructions: WebInstruction[],
@@ -78,7 +160,9 @@ export function createWebAdaptiveSession({
       executableInstructions,
       signal,
     )
-    if (result.state === 'passed') compiledSteps[index] = { instructions }
+    if (result.state === 'passed' && uncacheable.reason === undefined) {
+      compiledSteps[index] = { instructions }
+    }
     return {
       ...result,
       resolvedActions: resolvedInstructions(instructions, 'resolved'),
@@ -107,7 +191,7 @@ export function createWebAdaptiveSession({
     ) {
       return executeCompiledStep([instruction], [instruction], index, signal)
     }
-    uncacheableReason = 'bound-parameter-value'
+    uncacheable.reason = 'bound-parameter-value'
     await automation.navigate(url, signal)
     executor.markNavigated()
     return {
@@ -116,7 +200,55 @@ export function createWebAdaptiveSession({
     }
   }
 
+  function usableInstructions(
+    compiled: WebInstruction[] | undefined,
+    templateStep: ScenarioStep,
+  ): WebInstruction[] | undefined {
+    if (!compiled || compiled.length === 0) return undefined
+    return instructionCoversStepVariables(compiled, templateStep)
+      ? compiled
+      : undefined
+  }
+
+  async function compileObservedOutcomeInstructions(
+    step: ScenarioStep,
+    prompt: string,
+    templateStep: ScenarioStep,
+    signal: AbortSignal | undefined,
+  ): Promise<WebInstruction[] | undefined> {
+    if (stepVariableNames(templateStep).length > 0) return undefined
+    const actions = await observeOnce(
+      automation,
+      observeInstruction(step),
+      signal,
+      () => inference.count++,
+    )
+    return usableInstructions(
+      compileObservedOutcomes(actions, prompt, runtimeBindings),
+      templateStep,
+    )
+  }
+
+  async function compileExtractedOutcomeInstructions(
+    prompt: string,
+    templateStep: ScenarioStep,
+    signal: AbortSignal | undefined,
+  ): Promise<WebInstruction[] | undefined> {
+    inference.count++
+    const drafts = await compileAssertionDrafts(automation, prompt, signal)
+    const compiled = drafts.map((draft) =>
+      compileWebAssertion(draft, runtimeBindings),
+    )
+    const usable = definedInstructions(compiled)
+      ? usableInstructions(compiled, templateStep)
+      : undefined
+    if (usable) return usable
+    if (drafts.length > 0) uncacheable.reason = 'bound-parameter-value'
+    return undefined
+  }
+
   async function adaptiveOutcome(
+    step: ScenarioStep,
     prompt: string,
     templateStep: ScenarioStep,
     index: number,
@@ -128,38 +260,28 @@ export function createWebAdaptiveSession({
       signal,
     )
     if (navigationFailure) return navigationFailure
-    inferenceCount++
-    let draft: WebAssertionDraft | undefined
-    try {
-      draft = await automation.compileAssertion?.(prompt, signal)
-    } catch {
-      draft = undefined
+    const compiled =
+      (await compileObservedOutcomeInstructions(
+        step,
+        prompt,
+        templateStep,
+        signal,
+      )) ??
+      (await compileExtractedOutcomeInstructions(prompt, templateStep, signal))
+    if (compiled) {
+      instructions.push(...compiled)
+      return executeCompiledStep(instructions, compiled, index, signal)
     }
-    const assertion = draft
-      ? compileWebAssertion(draft, runtimeBindings)
-      : undefined
-    if (
-      assertion &&
-      instructionCoversStepVariables([assertion], templateStep)
-    ) {
-      instructions.push(assertion)
-      return executeCompiledStep(instructions, [assertion], index, signal)
+    if (uncacheable.reason === undefined) {
+      uncacheable.reason = 'non-deterministic-assertion'
     }
-    uncacheableReason = draft
-      ? 'bound-parameter-value'
-      : 'non-deterministic-assertion'
-    inferenceCount++
+    inference.count++
     const verification = await automation.verify(prompt, signal)
-    return verification.meetsExpectation
-      ? {
-          state: 'passed',
-          resolvedActions: [{ description: `Verify: ${prompt}` }],
-        }
-      : {
-          state: 'failed',
-          resolvedActions: [{ description: `Verify: ${prompt}` }],
-          message: `Expected: "${prompt}" | Actual: ${verification.actualState}`,
-        }
+    return verificationExecution(
+      prompt,
+      verification.meetsExpectation,
+      verification.actualState,
+    )
   }
 
   async function adaptiveAction(
@@ -174,12 +296,12 @@ export function createWebAdaptiveSession({
       signal,
     )
     if (navigationFailure) return navigationFailure
-    let actions = await automation.observe(prompt, signal)
-    inferenceCount++
-    if (actions.length === 0) {
-      actions = await automation.observe(prompt, signal)
-      inferenceCount++
-    }
+    const actions = await observeActions(
+      automation,
+      prompt,
+      signal,
+      () => inference.count++,
+    )
     const compiled = actions.map((action) => {
       const payload = parseObservedActionPayload(action.handle)
       return payload
@@ -194,27 +316,13 @@ export function createWebAdaptiveSession({
       instructions.push(...compiled)
       return executeCompiledStep(instructions, compiled, index, signal)
     }
-    uncacheableReason = 'non-deterministic-action'
-    const resolvedActions: ResolvedAction[] = []
-    for (const action of actions) {
-      inferenceCount++
-      const result = await automation.act(action, signal)
-      resolvedActions.push({ description: action.description })
-      if (!result.success) {
-        return {
-          state: 'failed',
-          resolvedActions,
-          message: result.message ?? 'Web action failed',
-        }
-      }
-    }
-    return actions.length > 0
-      ? { state: 'passed', resolvedActions }
-      : {
-          state: 'failed',
-          resolvedActions,
-          message: 'Observe returned no actions',
-        }
+    uncacheable.reason = 'non-deterministic-action'
+    return executeObservedActions(
+      automation,
+      actions,
+      signal,
+      () => inference.count++,
+    )
   }
 
   return {
@@ -235,52 +343,18 @@ export function createWebAdaptiveSession({
       }
       return step.type === 'outcome'
         ? adaptiveOutcome(
+            step,
             prompt,
             context.templateStep,
             context.stepIndex,
             signal,
           )
         : adaptiveAction(
-            prompt,
+            observeInstruction(step),
             context.templateStep,
             context.stepIndex,
             signal,
           )
-    },
-    async complete(): Promise<TargetSessionCompletion> {
-      const evaluationModel = options.browser?.modelName ?? defaultModelName
-      if (uncacheableReason) {
-        return {
-          inferenceCount,
-          evaluationModel,
-          replayRepresentation: { cacheable: false, reason: uncacheableReason },
-        }
-      }
-      if (
-        compiledSteps.length !== input.scenario.steps.length ||
-        !definedSteps(compiledSteps)
-      ) {
-        return {
-          inferenceCount,
-          evaluationModel,
-          replayRepresentation: {
-            cacheable: false,
-            reason: 'non-deterministic-action',
-          },
-        }
-      }
-      return {
-        inferenceCount,
-        evaluationModel,
-        replayRepresentation: {
-          cacheable: true,
-          requiredVariables,
-          adapterPayload: {
-            schemaVersion: 1,
-            steps: compiledSteps,
-          },
-        },
-      }
     },
   }
 }

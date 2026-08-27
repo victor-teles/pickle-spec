@@ -1918,6 +1918,9 @@ export default {
         if (!Array.isArray(payload.operations)) return undefined
         return payload
       },
+      prefixStepCount(payload) {
+        return payload.operations.length
+      },
     },
     async openSession(input) {
       await record(input.mode)
