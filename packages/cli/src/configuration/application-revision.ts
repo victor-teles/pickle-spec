@@ -6,6 +6,7 @@ export function resolveApplicationRevision(
   const resolved = Bun.spawnSync({
     cmd: ['git', 'rev-parse', '--verify', 'HEAD'],
     cwd: projectRoot,
+    stdin: 'ignore',
     stdout: 'pipe',
     stderr: 'pipe',
   })

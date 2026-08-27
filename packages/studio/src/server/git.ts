@@ -37,6 +37,7 @@ function run(
   const result = Bun.spawnSync({
     cmd,
     cwd,
+    stdin: 'ignore',
     stdout: 'pipe',
     stderr: 'pipe',
   })
