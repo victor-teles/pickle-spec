@@ -117,7 +117,7 @@ export function createWebAdapter(
   })
 
   return {
-    capabilities: ['web', 'screenshots', 'traces', 'diagnostics'],
+    capabilities: ['web', 'screenshots', 'traces', 'diagnostics', 'recordings'],
     executionCache: {
       adapterKind: 'web',
       adapterCacheSchemaVersion: '1',

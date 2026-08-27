@@ -14,9 +14,14 @@ import type {
   ScreenshotOptions,
   WebAdapterOptions,
 } from '../adapter/web-options'
+import {
+  capturedWebArtifact,
+  resolveWebArtifactCapture,
+  shouldFinishRecording,
+} from './web-artifact'
 import { projectWebStepEvidence } from './web-step-evidence'
 
-interface ScreenshotCaptureResult {
+interface CaptureResult {
   artifact?: TestArtifact
   availability: EvidenceAvailability
 }
@@ -62,28 +67,36 @@ export function createWebStepFinalizer({
     ? screenshotIdentity('examples-row', input.scenario.examplesRowId)
     : undefined
   let previousResolvedActionTrace: StepExecution['trace'] = []
+  let recordingStarted = false
+  let recordingStopped = false
+  const capture = resolveWebArtifactCapture({
+    screenshotMode: options.screenshots?.mode ?? 'off',
+  })
+
+  function evidenceDirectory(): string {
+    const defaultOutputDirectory = join(
+      resolveLocalProjectStorage(process.cwd()).projectDirectory,
+      'artifacts',
+    )
+    return resolve(
+      options.screenshots?.outputDir ?? defaultOutputDirectory,
+      specificationArtifactId,
+      scenarioArtifactId,
+      ...(examplesRowArtifactId ? [examplesRowArtifactId] : []),
+    )
+  }
 
   async function captureScreenshot(
     state: StepExecution['state'],
-  ): Promise<ScreenshotCaptureResult> {
+  ): Promise<CaptureResult> {
     const screenshotOptions = options.screenshots
-    const mode = screenshotOptions?.mode ?? 'off'
-    if (!shouldCaptureScreenshot(mode, state)) {
+    if (!shouldCaptureScreenshot(capture.screenshots, state)) {
       return { availability: { kind: 'screenshot', state: 'not-requested' } }
     }
 
     try {
       const format = screenshotOptions?.format ?? 'png'
-      const defaultOutputDirectory = join(
-        resolveLocalProjectStorage(process.cwd()).projectDirectory,
-        'artifacts',
-      )
-      const directory = resolve(
-        screenshotOptions?.outputDir ?? defaultOutputDirectory,
-        specificationArtifactId,
-        scenarioArtifactId,
-        ...(examplesRowArtifactId ? [examplesRowArtifactId] : []),
-      )
+      const directory = evidenceDirectory()
       await mkdir(directory, { recursive: true })
       const path = join(
         directory,
@@ -97,7 +110,11 @@ export function createWebStepFinalizer({
         }),
       )
       return {
-        artifact: { kind: 'screenshot', path, mediaType: `image/${format}` },
+        artifact: await capturedWebArtifact(
+          'screenshot',
+          path,
+          `image/${format}`,
+        ),
         availability: { kind: 'screenshot', state: 'available' },
       }
     } catch {
@@ -106,6 +123,58 @@ export function createWebStepFinalizer({
           kind: 'screenshot',
           state: 'capture-failed',
           message: 'Screenshot capture failed',
+        },
+      }
+    }
+  }
+
+  async function ensureRecording(): Promise<EvidenceAvailability | undefined> {
+    if (!capture.recording) return
+    if (!automation.startRecording) return
+    if (recordingStarted) return
+    recordingStarted = true
+    try {
+      const directory = evidenceDirectory()
+      await mkdir(directory, { recursive: true })
+      await automation.startRecording(join(directory, 'scenario.mp4'))
+    } catch (error) {
+      recordingStopped = true
+      return {
+        kind: 'recording',
+        state: 'capture-failed',
+        message:
+          error instanceof Error ? error.message : 'Recording capture failed',
+      }
+    }
+  }
+
+  async function finishRecording(
+    state: StepExecution['state'],
+  ): Promise<CaptureResult | undefined> {
+    const startFailure = await ensureRecording()
+    if (startFailure) return { availability: startFailure }
+    if (!recordingStarted || recordingStopped) return
+    if (
+      !shouldFinishRecording(state, stepNumber(), input.scenario.steps.length)
+    ) {
+      return
+    }
+    recordingStopped = true
+    if (!automation.stopRecording) {
+      return { availability: { kind: 'recording', state: 'not-requested' } }
+    }
+    try {
+      return {
+        artifact: await automation.stopRecording(),
+        availability: { kind: 'recording', state: 'available' },
+      }
+    } catch (error) {
+      return {
+        availability: {
+          kind: 'recording',
+          state: 'capture-failed',
+          message:
+            error instanceof Error ? error.message : 'Recording capture failed',
         },
       }
     }
@@ -125,16 +194,21 @@ export function createWebStepFinalizer({
       previousResolvedActionTrace: previousResolvedActionTrace ?? [],
     })
     previousResolvedActionTrace = projected.nextResolvedActionTrace
-    const capture = await captureScreenshot(execution.state)
-
+    const screenshot = await captureScreenshot(execution.state)
+    const recording = await finishRecording(execution.state)
+    const artifacts = [
+      ...(projected.execution.artifacts ?? []),
+      ...(screenshot.artifact ? [screenshot.artifact] : []),
+      ...(recording?.artifact ? [recording.artifact] : []),
+    ]
     return {
       ...projected.execution,
-      artifacts: capture.artifact
-        ? [...(projected.execution.artifacts ?? []), capture.artifact]
-        : projected.execution.artifacts,
+      artifacts:
+        artifacts.length > 0 ? artifacts : projected.execution.artifacts,
       evidenceAvailability: [
         ...(projected.execution.evidenceAvailability ?? []),
-        capture.availability,
+        screenshot.availability,
+        ...(recording ? [recording.availability] : []),
       ],
     }
   }

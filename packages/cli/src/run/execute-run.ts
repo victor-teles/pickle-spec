@@ -30,7 +30,11 @@ import {
   selectScenarios,
   validateSpecificationMetadata,
 } from '@pickle-spec/spec'
-import { createWebAdapter, type WebAdapterOptions } from '@pickle-spec/web'
+import {
+  createWebAdapter,
+  resolveWebArtifactCapture,
+  type WebAdapterOptions,
+} from '@pickle-spec/web'
 import { resolveApplicationRevision } from '../configuration/application-revision'
 import {
   defaultExtensionsFile,
@@ -183,7 +187,10 @@ function configuredWebOptions(
     },
     screenshots: {
       ...web.screenshots,
-      ...(args.screenshotMode ? { mode: args.screenshotMode } : {}),
+      mode: resolveWebArtifactCapture({
+        screenshotMode: args.screenshotMode ?? web.screenshots?.mode,
+        artifactsCapture: config.artifacts?.capture,
+      }).screenshots,
     },
   }
 }

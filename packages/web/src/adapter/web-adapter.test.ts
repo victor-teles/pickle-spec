@@ -164,6 +164,141 @@ describe('createWebAdapter', () => {
     expect(close).toHaveBeenCalledTimes(1)
   })
 
+  test('attaches screenshots to each step and the recording to the failing step', async () => {
+    const artifactDirectory = await mkdtemp(
+      join(tmpdir(), 'pickle-web-recording-'),
+    )
+    artifactDirectories.push(artifactDirectory)
+    let recordingPath = ''
+    const adapter = createWebAdapter(
+      {
+        baseUrl: 'https://example.test',
+        screenshots: { mode: 'on-step', outputDir: artifactDirectory },
+      },
+      factoryFor(
+        stubAutomation({
+          async observe() {
+            return [
+              {
+                description: 'Fill the search field',
+                handle: { selector: '#search' },
+              },
+            ]
+          },
+          async verify() {
+            return {
+              meetsExpectation: false,
+              actualState: 'No results were shown',
+            }
+          },
+          async screenshot() {
+            return new Uint8Array([137, 80, 78, 71])
+          },
+          async startRecording(path) {
+            recordingPath = path
+            await Bun.write(path, 'video-bytes')
+          },
+          async stopRecording() {
+            return {
+              kind: 'recording',
+              path: recordingPath,
+              mediaType: 'video/mp4',
+              name: 'scenario.mp4',
+            }
+          },
+        }),
+      ),
+    )
+    const session = await adapter.openSession({
+      executionTargetProfile: { id: 'web' },
+      specification,
+      scenario,
+    })
+    const navigation = await session.executeStep(scenario.steps[0]!)
+    const action = await session.executeStep(scenario.steps[1]!)
+    const outcome = await session.executeStep(scenario.steps[2]!)
+    await session.close()
+
+    expect(navigation.artifacts?.map((artifact) => artifact.kind)).toEqual([
+      'screenshot',
+    ])
+    expect(action.artifacts?.map((artifact) => artifact.kind)).toEqual([
+      'screenshot',
+    ])
+    expect(outcome.artifacts?.map((artifact) => artifact.kind)).toEqual([
+      'screenshot',
+      'recording',
+    ])
+    expect(outcome.evidenceAvailability).toContainEqual({
+      kind: 'recording',
+      state: 'available',
+    })
+    expect(recordingPath).toContain(artifactDirectory)
+    expect(await Bun.file(recordingPath).exists()).toBe(true)
+  })
+
+  test('attaches the recording to the last passed step', async () => {
+    const artifactDirectory = await mkdtemp(
+      join(tmpdir(), 'pickle-web-recording-pass-'),
+    )
+    artifactDirectories.push(artifactDirectory)
+    let recordingPath = ''
+    const adapter = createWebAdapter(
+      {
+        baseUrl: 'https://example.test',
+        screenshots: { mode: 'on-step', outputDir: artifactDirectory },
+      },
+      factoryFor(
+        stubAutomation({
+          async observe() {
+            return [
+              {
+                description: 'Fill the search field',
+                handle: { selector: '#search' },
+              },
+            ]
+          },
+          async screenshot() {
+            return new Uint8Array([137, 80, 78, 71])
+          },
+          async startRecording(path) {
+            recordingPath = path
+            await Bun.write(path, 'video-bytes')
+          },
+          async stopRecording() {
+            return {
+              kind: 'recording',
+              path: recordingPath,
+              mediaType: 'video/mp4',
+              name: 'scenario.mp4',
+            }
+          },
+        }),
+      ),
+    )
+    const session = await adapter.openSession({
+      executionTargetProfile: { id: 'web' },
+      specification,
+      scenario,
+    })
+    const navigation = await session.executeStep(scenario.steps[0]!)
+    const action = await session.executeStep(scenario.steps[1]!)
+    const outcome = await session.executeStep(scenario.steps[2]!)
+    await session.close()
+
+    expect(navigation.artifacts?.map((artifact) => artifact.kind)).toEqual([
+      'screenshot',
+    ])
+    expect(action.artifacts?.map((artifact) => artifact.kind)).toEqual([
+      'screenshot',
+    ])
+    expect(outcome.state).toBe('passed')
+    expect(outcome.artifacts?.map((artifact) => artifact.kind)).toEqual([
+      'screenshot',
+      'recording',
+    ])
+  })
+
   test('reports a requested screenshot that could not be captured', async () => {
     const adapter = createWebAdapter(
       {

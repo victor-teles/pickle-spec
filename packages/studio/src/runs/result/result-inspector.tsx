@@ -112,6 +112,8 @@ export function ResultInspector(props: ResultInspectorProps) {
 
   const displayState = displayedAttemptState(inspected.attempt)
   const inProgress = isAttemptInProgress(inspected.attempt)
+  const resultState =
+    displayState === 'running' ? inspected.attempt.state : displayState
   const activeTab =
     props.location.tab ?? defaultResultInspectorTab(inspected.attempt.state)
   const artifacts = artifactsFor(inspected.attempt)
@@ -191,6 +193,8 @@ export function ResultInspector(props: ResultInspectorProps) {
             startedAt={inspected.attempt.startedAt}
             durationMs={inspected.attempt.durationMs}
             state={displayState}
+            scenarioName={inspected.result.scenario.name}
+            resultState={resultState}
             follow={props.following}
             followedEntryId={props.followedEntryId}
             onPauseFollowing={props.onPauseFollowing}
@@ -201,11 +205,7 @@ export function ResultInspector(props: ResultInspectorProps) {
             artifacts={artifacts}
             availability={inspected.attempt.evidenceAvailability}
             scenarioName={inspected.result.scenario.name}
-            resultState={
-              displayState === 'running'
-                ? inspected.attempt.state
-                : displayState
-            }
+            resultState={resultState}
           />
         </TabsContent>
         <TabsContent value="diagnostics">

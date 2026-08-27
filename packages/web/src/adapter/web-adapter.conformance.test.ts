@@ -64,5 +64,11 @@ defineAdapterConformanceSuite({
   executionTargetProfile: { id: 'web' },
   specification,
   scenario,
-  expectedCapabilities: ['web', 'screenshots', 'traces', 'diagnostics'],
+  expectedCapabilities: [
+    'web',
+    'screenshots',
+    'traces',
+    'diagnostics',
+    'recordings',
+  ],
 })

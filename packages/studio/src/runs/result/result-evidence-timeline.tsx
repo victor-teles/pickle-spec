@@ -18,6 +18,8 @@ type ResultEvidenceTimelineProps = {
   startedAt: string
   durationMs: number
   state: TestResultState | 'running'
+  scenarioName: string
+  resultState: TestResultState
   follow?: boolean
   followedEntryId?: string
   onPauseFollowing?: () => void
@@ -94,6 +96,8 @@ export function ResultEvidenceTimeline(props: ResultEvidenceTimelineProps) {
             <TimelineEvidenceDetail
               entry={selectedEntry}
               attemptStartedAt={props.startedAt}
+              scenarioName={props.scenarioName}
+              resultState={props.resultState}
             />
           </div>
         ) : null}

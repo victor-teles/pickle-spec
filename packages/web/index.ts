@@ -30,6 +30,7 @@ export {
   IsolationVerificationError,
   WebProcessPool,
 } from './src/adapter/web-pool'
+export { resolveWebArtifactCapture } from './src/evidence/web-artifact'
 export type {
   WebExecutionCachePayload,
   WebInstruction,
