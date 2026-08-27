@@ -58,6 +58,7 @@ import {
   type ApplicationOutputOptions,
   resolveApplicationOutput,
 } from './application-output'
+import { resolveEvidencePersistence } from './evidence-persistence'
 
 export interface ProjectRunOptions {
   pattern?: string
@@ -696,10 +697,14 @@ export async function startProjectRun(
     args.applicationRevision ?? input.config.applicationRevision,
     root,
   )
+  const evidencePersistence = resolveEvidencePersistence({
+    argument: args.evidencePersistence,
+    configured: input.config.evidence?.persistence,
+    artifactsCapture: input.config.artifacts?.capture,
+  })
   const store = openTestRunStore({
     root,
-    evidencePersistence:
-      input.config.evidence?.persistence ?? input.config.artifacts?.capture,
+    evidencePersistence,
     evidencePersistenceByProfile: Object.fromEntries(
       Object.entries(input.config.executionTargetProfiles ?? {}).flatMap(
         ([profileId, profile]) =>
@@ -713,9 +718,7 @@ export async function startProjectRun(
     ...(args.rerunId ? { sourceRunId: args.rerunId } : {}),
     ...(args.suite ? { suite: args.suite } : {}),
     ...(applicationRevision ? { applicationRevision } : {}),
-    ...(args.evidencePersistence
-      ? { evidencePersistence: args.evidencePersistence }
-      : {}),
+    evidencePersistence,
   })
 
   const done = new Promise<{
