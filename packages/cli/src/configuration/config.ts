@@ -427,39 +427,44 @@ function validateConfig(value: unknown): PickleConfig {
   return parseConfiguration(pickleConfigSchema, value, 'Invalid configuration')
 }
 
+function quotedJsonEnd(source: string, start: number): number {
+  let escaped = false
+  for (let index = start + 1; index < source.length; index++) {
+    const character = source[index]!
+    if (escaped) escaped = false
+    else if (character === '\\') escaped = true
+    else if (character === '"') return index
+  }
+  return source.length - 1
+}
+
+function lineCommentEnd(source: string, start: number): number {
+  const newline = source.indexOf('\n', start + 2)
+  return newline === -1 ? source.length : newline
+}
+
+function blockCommentEnd(source: string, start: number): number {
+  const closing = source.indexOf('*/', start + 2)
+  return closing === -1 ? source.length : closing + 2
+}
+
 function removeJsonComments(source: string): string {
   let result = ''
-  let inString = false
-  let escaped = false
-
   for (let index = 0; index < source.length; index++) {
     const character = source[index]!
-    const next = source[index + 1]
-    if (inString) {
-      result += character
-      if (escaped) escaped = false
-      else if (character === '\\') escaped = true
-      else if (character === '"') inString = false
-      continue
-    }
     if (character === '"') {
-      inString = true
-      result += character
+      const end = quotedJsonEnd(source, index)
+      result += source.slice(index, end + 1)
+      index = end
       continue
     }
-    if (character === '/' && next === '/') {
-      while (index < source.length && source[index] !== '\n') index++
-      result += '\n'
+    if (source.startsWith('//', index)) {
+      index = lineCommentEnd(source, index)
+      if (index < source.length) result += '\n'
       continue
     }
-    if (character === '/' && next === '*') {
-      index += 2
-      while (
-        index < source.length &&
-        !(source[index] === '*' && source[index + 1] === '/')
-      )
-        index++
-      index++
+    if (source.startsWith('/*', index)) {
+      index = blockCommentEnd(source, index) - 1
       continue
     }
     result += character

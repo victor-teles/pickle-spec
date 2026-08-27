@@ -190,6 +190,55 @@ function runPickle(options: PickleRunOptions) {
   ])
 }
 
+type InspectedCache = Awaited<ReturnType<typeof inspectCache>>
+
+async function expectRuntimeSentinelsAbsent(
+  runtimeSentinels: readonly string[],
+  processOutput: string,
+  inferenceMarkers: readonly string[],
+  caches: readonly InspectedCache[],
+): Promise<void> {
+  for (const runtimeSentinel of runtimeSentinels) {
+    expect(processOutput).not.toContain(runtimeSentinel)
+    for (const marker of inferenceMarkers) {
+      expect(await fileContains(marker, runtimeSentinel)).toBe(false)
+    }
+    for (const cache of caches) {
+      expect(JSON.stringify(cache.keys)).not.toContain(runtimeSentinel)
+      expect(JSON.stringify(cache.entries)).not.toContain(runtimeSentinel)
+      expect(JSON.stringify(cache.leases)).not.toContain(runtimeSentinel)
+      expect(JSON.stringify(cache.leaseOutcomes)).not.toContain(runtimeSentinel)
+    }
+  }
+}
+
+async function expectPersistentFilesSanitized(
+  runtimeSentinels: readonly string[],
+  persistentFiles: readonly string[],
+  caches: readonly InspectedCache[],
+): Promise<void> {
+  for (const runtimeSentinel of runtimeSentinels) {
+    for (const path of persistentFiles) {
+      expect(await fileContains(path, runtimeSentinel)).toBe(false)
+    }
+    for (const cache of caches) {
+      await expectDatabaseFilesSanitized(cache, runtimeSentinel)
+    }
+  }
+}
+
+async function expectDatabaseFilesSanitized(
+  cache: InspectedCache,
+  runtimeSentinel: string,
+): Promise<void> {
+  for (const suffix of ['', '-wal', '-shm']) {
+    const path = `${cache.databasePath}${suffix}`
+    if (await Bun.file(path).exists()) {
+      expect(await fileContains(path, runtimeSentinel)).toBe(false)
+    }
+  }
+}
+
 test('keeps runtime values and model credentials out of public cache-only and concurrent runs', async () => {
   const projectRoot = await tempRoot('pickle-confidentiality-project')
   const cacheRoot = await tempRoot('pickle-confidentiality-cache')
@@ -449,19 +498,13 @@ export default {
     .map(outputText)
     .join('\n')
   const runtimeSentinels = [runtimeSentinelA, runtimeSentinelB]
-  for (const runtimeSentinel of runtimeSentinels) {
-    expect(processOutput).not.toContain(runtimeSentinel)
-    expect(await fileContains(inferenceMarker, runtimeSentinel)).toBe(false)
-    expect(await fileContains(concurrentInferenceMarker, runtimeSentinel)).toBe(
-      false,
-    )
-    for (const cache of [sequentialCache, concurrentCache]) {
-      expect(JSON.stringify(cache.keys)).not.toContain(runtimeSentinel)
-      expect(JSON.stringify(cache.entries)).not.toContain(runtimeSentinel)
-      expect(JSON.stringify(cache.leases)).not.toContain(runtimeSentinel)
-      expect(JSON.stringify(cache.leaseOutcomes)).not.toContain(runtimeSentinel)
-    }
-  }
+  const caches = [sequentialCache, concurrentCache]
+  await expectRuntimeSentinelsAbsent(
+    runtimeSentinels,
+    processOutput,
+    [inferenceMarker, concurrentInferenceMarker],
+    caches,
+  )
 
   const runStateFiles = (
     await Promise.all(
@@ -496,17 +539,9 @@ export default {
     ...sequentialCache.files,
     ...concurrentCache.files,
   ]
-  for (const runtimeSentinel of runtimeSentinels) {
-    for (const path of persistentFiles) {
-      expect(await fileContains(path, runtimeSentinel)).toBe(false)
-    }
-    for (const cache of [sequentialCache, concurrentCache]) {
-      for (const suffix of ['', '-wal', '-shm']) {
-        const path = `${cache.databasePath}${suffix}`
-        if (await Bun.file(path).exists()) {
-          expect(await fileContains(path, runtimeSentinel)).toBe(false)
-        }
-      }
-    }
-  }
+  await expectPersistentFilesSanitized(
+    runtimeSentinels,
+    persistentFiles,
+    caches,
+  )
 }, 30_000)

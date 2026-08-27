@@ -202,6 +202,14 @@ function resultSuffix(result: TestResult): string {
     : resultPresentations[result.state].detail
   if (stateDetail) details.push(stateDetail)
   if (result.flaky) details.push(`flaky, ${result.attempts.length} attempts`)
+  appendExecutionDetails(details, attempt)
+  return details.length > 0 ? ` (${details.join('; ')})` : ''
+}
+
+function appendExecutionDetails(
+  details: string[],
+  attempt: ReturnType<typeof finalScenarioAttempt>,
+): void {
   if (attempt.executionMode) {
     const mode = attempt.executionMode === 'replay' ? 'Replay' : 'Adaptive'
     details.push(`mode ${mode}`)
@@ -216,7 +224,6 @@ function resultSuffix(result: TestResult): string {
     const noun = attempt.inferenceCount === 1 ? 'inference' : 'inferences'
     details.push(`${attempt.inferenceCount} ${noun}`)
   }
-  return details.length > 0 ? ` (${details.join('; ')})` : ''
 }
 
 function scenarioKey(result: TestResult): string {
@@ -452,31 +459,41 @@ function writeDiagnostic(
     '                  ',
     options.columns,
   )
-  if (options.multipleProfiles) {
-    writeWrapped(
-      options.write,
-      '   Profile        ',
-      result.executionTargetProfile.id,
-      '                  ',
-      options.columns,
-    )
-  }
-  if (attempt.steps.length > 0) {
-    options.write('   Steps')
-    for (const step of attempt.steps) {
-      for (const line of renderTestStepResult(step, options)) {
-        options.write(line)
-      }
-      if (step.message) writeMessage(step.message, options)
-      writeArtifacts(step, options)
-    }
-  }
+  writeDiagnosticProfile(result, options)
+  writeDiagnosticSteps(attempt.steps, options)
   const messageBelongsToStep = attempt.steps.some(
     (step) => step.state === result.state && step.message === attempt.message,
   )
   if (attempt.message && !messageBelongsToStep) {
     options.write('   Message')
     writeMessage(attempt.message, options, '     ')
+  }
+}
+
+function writeDiagnosticProfile(
+  result: TestResult,
+  options: DiagnosticWriterOptions,
+): void {
+  if (!options.multipleProfiles) return
+  writeWrapped(
+    options.write,
+    '   Profile        ',
+    result.executionTargetProfile.id,
+    '                  ',
+    options.columns,
+  )
+}
+
+function writeDiagnosticSteps(
+  steps: readonly TestStepResult[],
+  options: DiagnosticWriterOptions,
+): void {
+  if (steps.length === 0) return
+  options.write('   Steps')
+  for (const step of steps) {
+    for (const line of renderTestStepResult(step, options)) options.write(line)
+    if (step.message) writeMessage(step.message, options)
+    writeArtifacts(step, options)
   }
 }
 

@@ -202,25 +202,25 @@ class NodeWorkerClient implements MobileWorkerClient {
       const { done, value } = await reader.read()
       if (done) return
       buffer += decoder.decode(value, { stream: true })
-      let newline = buffer.indexOf('\n')
-      while (newline !== -1) {
-        const line = buffer.slice(0, newline)
-        buffer = buffer.slice(newline + 1)
-        try {
-          if (!this.ready) {
-            const message = workerReadyMessageSchema.parse(JSON.parse(line))
-            assertSupportedNodeVersion(message.nodeVersion)
-            onReady()
-          } else {
-            this.handleResponse(line)
-          }
-        } catch (error) {
-          throw new Error(
-            `Invalid mobile worker message: ${errorMessage(error)}`,
-          )
-        }
-        newline = buffer.indexOf('\n')
+      const lines = buffer.split('\n')
+      buffer = lines.pop() ?? ''
+      for (const line of lines) {
+        this.handleMessage(line, onReady)
       }
+    }
+  }
+
+  private handleMessage(line: string, onReady: () => void): void {
+    try {
+      if (this.ready) {
+        this.handleResponse(line)
+        return
+      }
+      const message = workerReadyMessageSchema.parse(JSON.parse(line))
+      assertSupportedNodeVersion(message.nodeVersion)
+      onReady()
+    } catch (error) {
+      throw new Error(`Invalid mobile worker message: ${errorMessage(error)}`)
     }
   }
 

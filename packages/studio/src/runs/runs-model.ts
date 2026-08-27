@@ -82,24 +82,32 @@ export function filterRuns(
   specificationNames: ReadonlyMap<string, string>,
 ): RunListItem[] {
   const query = filters.q?.trim().toLocaleLowerCase()
-  return items.filter(({ summary, state }) => {
-    if (filters.state && filters.state !== state) return false
-    if (
-      filters.specification &&
-      !summary.specificationUris.includes(filters.specification)
-    ) {
-      return false
-    }
-    if (
-      filters.profile &&
-      !summary.executionTargetProfileIds.includes(filters.profile)
-    ) {
-      return false
-    }
-    if (filters.suite && summary.suite !== filters.suite) return false
-    if (!query) return true
-    return searchableRunText(summary, specificationNames).includes(query)
-  })
+  return items.filter((item) =>
+    runMatchesFilters(item, filters, query, specificationNames),
+  )
+}
+
+function runMatchesFilters(
+  { summary, state }: RunListItem,
+  filters: RunsFilters,
+  query: string | undefined,
+  specificationNames: ReadonlyMap<string, string>,
+): boolean {
+  if (filters.state && filters.state !== state) return false
+  if (
+    filters.specification &&
+    !summary.specificationUris.includes(filters.specification)
+  )
+    return false
+  if (
+    filters.profile &&
+    !summary.executionTargetProfileIds.includes(filters.profile)
+  )
+    return false
+  if (filters.suite && summary.suite !== filters.suite) return false
+  return (
+    !query || searchableRunText(summary, specificationNames).includes(query)
+  )
 }
 
 export function runProgress(inspection: LiveResultInspection): RunProgress {

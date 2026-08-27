@@ -381,6 +381,199 @@ interface SessionExecutionContext {
   recordStep: RecordStep
 }
 
+interface FinishAttemptInput {
+  input: ScenarioAttemptInput
+  now: () => Date
+  scenarioStartedAt: string
+  events: RunEvent[]
+  completion: TargetSessionCompletion | undefined
+  progress: AttemptProgress
+  emit: EmitAttemptEvent
+  state: TestResultState
+  steps: TestStepResult[]
+  message?: string
+}
+
+async function finishAttempt(
+  context: FinishAttemptInput,
+): Promise<AttemptScenarioRun> {
+  const finishedAt = context.now().toISOString()
+  const attempt: ScenarioAttempt = {
+    attempt: context.input.attempt,
+    startedAt: context.scenarioStartedAt,
+    finishedAt,
+    durationMs: durationMs(context.scenarioStartedAt, finishedAt),
+    state: context.state,
+    steps: context.steps,
+    executionMode: context.input.mode,
+    inferenceCount: context.completion?.inferenceCount ?? 0,
+    ...(context.input.adapter.fidelityPolicy
+      ? { fidelityPolicy: context.input.adapter.fidelityPolicy }
+      : {}),
+    ...(context.message !== undefined ? { message: context.message } : {}),
+    ...(context.progress.diagnostics.length > 0
+      ? { diagnostics: context.progress.diagnostics }
+      : {}),
+    evidenceAvailability: attemptEvidence(
+      context.input,
+      context.steps,
+      context.progress.evidenceAvailability,
+      context.progress.diagnostics,
+    ),
+  }
+  const result = createTestResult(context.input, [attempt])
+  await context.emit(scenarioFinishedPayload(result), finishedAt)
+  return {
+    events: context.events,
+    result,
+    attempt,
+    completion: context.completion,
+    replayDiverged: context.progress.replayDiverged,
+    runtimeValueExposed: context.progress.runtimeValueExposed,
+  }
+}
+
+interface RecordExecutionInput {
+  input: ScenarioAttemptInput
+  bindings: readonly ScenarioVariableBinding[]
+  progress: AttemptProgress
+  recordStep: RecordStep
+}
+
+async function recordStepExecution(
+  context: RecordExecutionInput,
+  stepIndex: number,
+  startedAt: string,
+  execution: StepExecution,
+): Promise<boolean> {
+  const templateStep = templateStepAt(context.input.scenario, stepIndex)
+  const projected = publicStepExecution(execution, context.bindings)
+  context.progress.runtimeValueExposed ||= projected.runtimeValueExposed
+  context.progress.evidenceAvailability.push(
+    ...(projected.execution.evidenceAvailability ?? []),
+  )
+  if (context.input.signal?.aborted) {
+    context.progress.state = 'cancelled'
+    context.progress.message = 'Scenario cancelled during step execution'
+    await context.recordStep(stepIndex, startedAt, {
+      step: templateStep,
+      state: context.progress.state,
+      resolvedActions: projected.execution.resolvedActions,
+      message: context.progress.message,
+    })
+    return false
+  }
+  await context.recordStep(stepIndex, startedAt, {
+    step: templateStep,
+    state: projected.execution.state,
+    resolvedActions: projected.execution.resolvedActions,
+    message: projected.execution.message,
+    artifacts: projected.execution.artifacts?.length
+      ? projected.execution.artifacts
+      : undefined,
+    diagnostics: projected.execution.diagnostics?.length
+      ? projected.execution.diagnostics.map((entry) =>
+          stampDiagnostic(entry, context.input, stepIndex, templateStep),
+        )
+      : undefined,
+    trace: projected.execution.trace?.length
+      ? projected.execution.trace
+      : undefined,
+  })
+  if (execution.replayDiverged) {
+    context.progress.replayDiverged = true
+    context.progress.state = 'failed'
+    context.progress.message = projected.execution.message
+    return false
+  }
+  if (execution.state === 'passed') return true
+  context.progress.state = execution.state
+  context.progress.message = projected.execution.message
+  return false
+}
+
+async function executeTargetSessionSteps(
+  session: TargetSession,
+  scenarioWallStartedAt: number,
+  context: SessionExecutionContext,
+): Promise<void> {
+  if (Boolean(session.executeScenario) === Boolean(session.executeStep)) {
+    recordExecutionError(
+      context.progress,
+      new Error(
+        'Target session must provide exactly one of executeStep or executeScenario',
+      ),
+      context.bindings,
+      context.input,
+      context.latestOccurredAt(),
+      undefined,
+    )
+    return
+  }
+  if (session.executeScenario) {
+    await executeScenarioSession(session, context)
+    return
+  }
+  await executeStepSession(session, scenarioWallStartedAt, context)
+}
+
+async function completeTargetSession(
+  session: TargetSession,
+  context: SessionExecutionContext,
+): Promise<TargetSessionCompletion | undefined> {
+  if (
+    context.progress.state !== 'passed' ||
+    context.input.signal?.aborted ||
+    !session.complete
+  ) {
+    return undefined
+  }
+  try {
+    return validateCompletion(await session.complete())
+  } catch (error) {
+    recordExecutionError(
+      context.progress,
+      error,
+      context.bindings,
+      context.input,
+      context.latestOccurredAt(),
+      undefined,
+    )
+    return undefined
+  }
+}
+
+async function closeTargetSession(
+  session: TargetSession,
+  context: SessionExecutionContext,
+): Promise<void> {
+  try {
+    await session.close()
+  } catch (error) {
+    recordExecutionError(
+      context.progress,
+      error,
+      context.bindings,
+      context.input,
+      context.latestOccurredAt(),
+      undefined,
+    )
+  }
+}
+
+async function executeTargetSession(
+  session: TargetSession,
+  scenarioWallStartedAt: number,
+  context: SessionExecutionContext,
+): Promise<TargetSessionCompletion | undefined> {
+  try {
+    await executeTargetSessionSteps(session, scenarioWallStartedAt, context)
+    return await completeTargetSession(session, context)
+  } finally {
+    await closeTargetSession(session, context)
+  }
+}
+
 function recordExecutionError(
   progress: AttemptProgress,
   error: unknown,
@@ -556,42 +749,19 @@ export async function runScenarioAttempt(
     state: TestResultState,
     steps: TestStepResult[],
     message?: string,
-  ): Promise<AttemptScenarioRun> => {
-    const finishedAt = now().toISOString()
-    const attempt: ScenarioAttempt = {
-      attempt: input.attempt,
-      startedAt: scenarioStartedAt,
-      finishedAt,
-      durationMs: durationMs(scenarioStartedAt, finishedAt),
+  ): Promise<AttemptScenarioRun> =>
+    finishAttempt({
+      input,
+      now,
+      scenarioStartedAt,
+      events,
+      completion,
+      progress,
+      emit,
       state,
       steps,
-      executionMode: input.mode,
-      inferenceCount: completion?.inferenceCount ?? 0,
-      ...(input.adapter.fidelityPolicy
-        ? { fidelityPolicy: input.adapter.fidelityPolicy }
-        : {}),
-      ...(message !== undefined ? { message } : {}),
-      ...(progress.diagnostics.length > 0
-        ? { diagnostics: progress.diagnostics }
-        : {}),
-      evidenceAvailability: attemptEvidence(
-        input,
-        steps,
-        progress.evidenceAvailability,
-        progress.diagnostics,
-      ),
-    }
-    const result = createTestResult(input, [attempt])
-    await emit(scenarioFinishedPayload(result), finishedAt)
-    return {
-      events,
-      result,
-      attempt,
-      completion,
-      replayDiverged: progress.replayDiverged,
-      runtimeValueExposed: progress.runtimeValueExposed,
-    }
-  }
+      message,
+    })
 
   const initialOutcome = initialAttemptOutcome(input)
   if (initialOutcome)
@@ -657,55 +827,13 @@ export async function runScenarioAttempt(
     stepIndex: number,
     startedAt: string,
     execution: StepExecution,
-  ): Promise<boolean> => {
-    const templateStep = templateStepAt(input.scenario, stepIndex)
-    const projected = publicStepExecution(execution, bindings)
-    progress.runtimeValueExposed ||= projected.runtimeValueExposed
-    progress.evidenceAvailability.push(
-      ...(projected.execution.evidenceAvailability ?? []),
+  ): Promise<boolean> =>
+    recordStepExecution(
+      { input, bindings, progress, recordStep },
+      stepIndex,
+      startedAt,
+      execution,
     )
-    if (input.signal?.aborted) {
-      progress.state = 'cancelled'
-      progress.message = 'Scenario cancelled during step execution'
-      await recordStep(stepIndex, startedAt, {
-        step: templateStep,
-        state: progress.state,
-        resolvedActions: projected.execution.resolvedActions,
-        message: progress.message,
-      })
-      return false
-    }
-    await recordStep(stepIndex, startedAt, {
-      step: templateStep,
-      state: projected.execution.state,
-      resolvedActions: projected.execution.resolvedActions,
-      message: projected.execution.message,
-      artifacts: projected.execution.artifacts?.length
-        ? projected.execution.artifacts
-        : undefined,
-      diagnostics: projected.execution.diagnostics?.length
-        ? projected.execution.diagnostics.map((entry) =>
-            stampDiagnostic(entry, input, stepIndex, templateStep),
-          )
-        : undefined,
-      trace: projected.execution.trace?.length
-        ? projected.execution.trace
-        : undefined,
-    })
-
-    if (execution.replayDiverged) {
-      progress.replayDiverged = true
-      progress.state = 'failed'
-      progress.message = projected.execution.message
-      return false
-    }
-    if (execution.state !== 'passed') {
-      progress.state = execution.state
-      progress.message = projected.execution.message
-      return false
-    }
-    return true
-  }
 
   const executionContext: SessionExecutionContext = {
     input,
@@ -717,55 +845,11 @@ export async function runScenarioAttempt(
     recordStep,
   }
 
-  try {
-    if (Boolean(session.executeScenario) === Boolean(session.executeStep)) {
-      recordExecutionError(
-        progress,
-        new Error(
-          'Target session must provide exactly one of executeStep or executeScenario',
-        ),
-        bindings,
-        input,
-        executionContext.latestOccurredAt(),
-        undefined,
-      )
-    } else if (session.executeScenario) {
-      await executeScenarioSession(session, executionContext)
-    } else {
-      await executeStepSession(session, scenarioWallStartedAt, executionContext)
-    }
-    if (
-      progress.state === 'passed' &&
-      !input.signal?.aborted &&
-      session.complete
-    ) {
-      try {
-        completion = validateCompletion(await session.complete())
-      } catch (error) {
-        recordExecutionError(
-          progress,
-          error,
-          bindings,
-          input,
-          executionContext.latestOccurredAt(),
-          undefined,
-        )
-      }
-    }
-  } finally {
-    try {
-      await session.close()
-    } catch (error) {
-      recordExecutionError(
-        progress,
-        error,
-        bindings,
-        input,
-        executionContext.latestOccurredAt(),
-        undefined,
-      )
-    }
-  }
+  completion = await executeTargetSession(
+    session,
+    scenarioWallStartedAt,
+    executionContext,
+  )
 
   return finish(progress.state, steps, progress.message)
 }

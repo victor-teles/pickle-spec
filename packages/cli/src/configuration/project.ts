@@ -108,6 +108,37 @@ async function readSpecificationFiles(
   return files
 }
 
+function migrationConfirmed(
+  options: ProjectCommandOptions,
+  report: (message: string) => void,
+): boolean {
+  if (options.yes) return true
+  if (!process.stdin.isTTY) {
+    report(
+      'No files were changed. Re-run pickle migrate --yes after reviewing the preview.',
+    )
+    return false
+  }
+  if (/^[yY]/.test((prompt('Apply these changes? [y/N]') ?? '').trim())) {
+    return true
+  }
+  report('No files were changed')
+  return false
+}
+
+async function writeMigration(
+  cwd: string,
+  files: readonly { uri: string; source: string; nextSource: string }[],
+): Promise<number> {
+  let updated = 0
+  for (const file of files) {
+    if (file.source === file.nextSource) continue
+    await Bun.write(resolve(cwd, file.uri), file.nextSource)
+    updated++
+  }
+  return updated
+}
+
 export async function migrateProject(
   options: ProjectCommandOptions = {},
 ): Promise<void> {
@@ -125,24 +156,8 @@ export async function migrateProject(
   const plan = planSpecificationMigration(files, config.language)
   report(formatMigrationPreview(plan))
   if (plan.changes.length === 0) return
-  if (!options.yes) {
-    if (!process.stdin.isTTY) {
-      report(
-        'No files were changed. Re-run pickle migrate --yes after reviewing the preview.',
-      )
-      return
-    }
-    if (!/^[yY]/.test((prompt('Apply these changes? [y/N]') ?? '').trim())) {
-      report('No files were changed')
-      return
-    }
-  }
-  let updated = 0
-  for (const file of plan.files) {
-    if (file.source === file.nextSource) continue
-    await Bun.write(resolve(cwd, file.uri), file.nextSource)
-    updated++
-  }
+  if (!migrationConfirmed(options, report)) return
+  const updated = await writeMigration(cwd, plan.files)
   report(`Updated ${updated} Specification file(s)`)
 }
 

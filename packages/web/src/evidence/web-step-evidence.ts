@@ -18,6 +18,38 @@ type ProjectedWebStepEvidence = {
   nextResolvedActionTrace: TraceEntry[]
 }
 
+function adapterDiagnostics(
+  input: ProjectWebStepEvidenceInput,
+  occurredAt: string,
+): DiagnosticEntry[] {
+  if (!input.execution.message) return []
+  return [
+    {
+      occurredAt,
+      level:
+        input.execution.state === 'infrastructure-error' ? 'error' : 'warning',
+      origin: 'adapter',
+      message: input.execution.message,
+    },
+  ]
+}
+
+function evidenceAvailability(
+  input: ProjectWebStepEvidenceInput,
+  diagnostics: readonly DiagnosticEntry[],
+  trace: readonly TraceEntry[],
+) {
+  return [
+    ...(input.execution.evidenceAvailability ?? []),
+    ...(diagnostics.length > 0
+      ? [{ kind: 'diagnostics' as const, state: 'available' as const }]
+      : []),
+    ...(trace.length > 0
+      ? [{ kind: 'trace' as const, state: 'available' as const }]
+      : []),
+  ]
+}
+
 export function projectWebStepEvidence(
   input: ProjectWebStepEvidenceInput,
   now = () => new Date().toISOString(),
@@ -26,23 +58,10 @@ export function projectWebStepEvidence(
     input.collected.diagnostics.at(-1)?.occurredAt ??
     input.collected.activity.at(-1)?.occurredAt ??
     now()
-  const adapterDiagnostics: DiagnosticEntry[] = input.execution.message
-    ? [
-        {
-          occurredAt,
-          level:
-            input.execution.state === 'infrastructure-error'
-              ? 'error'
-              : 'warning',
-          origin: 'adapter',
-          message: input.execution.message,
-        },
-      ]
-    : []
   const diagnostics = [
     ...(input.execution.diagnostics ?? []),
     ...input.collected.diagnostics,
-    ...adapterDiagnostics,
+    ...adapterDiagnostics(input, occurredAt),
   ].map((entry) => ({ ...entry, causalAt: occurredAt }))
   const resolvedActionTrace: TraceEntry[] = input.execution.resolvedActions.map(
     (action) => ({
@@ -74,15 +93,7 @@ export function projectWebStepEvidence(
       ...input.execution,
       diagnostics: diagnostics.length > 0 ? diagnostics : undefined,
       trace: trace.length > 0 ? trace : undefined,
-      evidenceAvailability: [
-        ...(input.execution.evidenceAvailability ?? []),
-        ...(diagnostics.length > 0
-          ? [{ kind: 'diagnostics' as const, state: 'available' as const }]
-          : []),
-        ...(trace.length > 0
-          ? [{ kind: 'trace' as const, state: 'available' as const }]
-          : []),
-      ],
+      evidenceAvailability: evidenceAvailability(input, diagnostics, trace),
     },
     nextResolvedActionTrace:
       input.step.type === 'outcome' ? [] : resolvedActionTrace,

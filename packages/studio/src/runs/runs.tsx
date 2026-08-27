@@ -510,6 +510,117 @@ type RunTableProps = {
   onSelect: React.Dispatch<React.SetStateAction<string[]>>
 }
 
+function RunTableRow(
+  props: Omit<RunTableProps, 'items' | 'window'> & RunListItem,
+) {
+  const { summary, state } = props
+  const selected = props.selectedRunIds.includes(summary.id)
+  const pinned = props.pinnedRunIds.has(summary.id)
+  const rerunDisabled =
+    props.runsBlocked ||
+    (summary.state !== 'failed' && summary.state !== 'infrastructure-error')
+
+  function handleSelectionChange(checked: boolean) {
+    props.onSelect((current) =>
+      checked
+        ? [...current, summary.id]
+        : current.filter((id) => id !== summary.id),
+    )
+  }
+
+  function handlePin() {
+    props.onPin(summary.id, !pinned)
+  }
+
+  function handleOpen() {
+    props.onOpen(summary.id)
+  }
+
+  function handleRerun() {
+    void props.onRerun({ rerunId: summary.id, failures: true })
+  }
+
+  return (
+    <TableRow style={{ height: runRowHeight }}>
+      <TableCell>
+        <Checkbox
+          aria-label={`Select ${summary.id} for comparison`}
+          checked={selected}
+          disabled={!selected && props.selectedRunIds.length === 2}
+          onCheckedChange={handleSelectionChange}
+        />
+      </TableCell>
+      <TableCell>
+        <Tooltip>
+          <TooltipTrigger
+            type="button"
+            className={buttonVariants({ variant: 'outline', size: 'sm' })}
+            aria-pressed={pinned}
+            onClick={handlePin}
+          >
+            {pinned ? 'Unpin' : 'Pin'}
+          </TooltipTrigger>
+          <TooltipContent side="right">
+            {pinned
+              ? 'Allow retention to delete this Test run.'
+              : 'Protect this Test run from retention deletion.'}
+          </TooltipContent>
+        </Tooltip>
+      </TableCell>
+      <TableCell>
+        <span className="block">
+          {new Date(summary.startedAt).toLocaleString()}
+        </span>
+        <span className="font-mono text-muted-foreground">{summary.id}</span>
+      </TableCell>
+      <TableCell>
+        {summary.specificationUris
+          .map((uri) => props.specificationNames.get(uri) ?? uri)
+          .join(', ') || 'None'}
+      </TableCell>
+      <TableCell>{summary.suite ?? 'Ad hoc selection'}</TableCell>
+      <TableCell>
+        {summary.executionTargetProfileIds.join(', ') || 'None'}
+      </TableCell>
+      <TableCell>{durationLabel(summary.durationMs)}</TableCell>
+      <TableCell>
+        <Badge
+          variant={state === 'running' ? 'running' : resultBadgeVariant(state)}
+        >
+          <ResultMark state={state} /> {state}
+        </Badge>
+      </TableCell>
+      <TableCell>{resultCountLabel(summary.resultCount)}</TableCell>
+      <TableCell>
+        <div className="flex items-center gap-2">
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={handleOpen}
+          >
+            Review run
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            disabled={rerunDisabled}
+            onClick={handleRerun}
+          >
+            Rerun failures
+          </Button>
+        </div>
+        {summary.sourceRunId ? (
+          <span className="mt-1 block text-muted-foreground">
+            Rerun of {summary.sourceRunId}
+          </span>
+        ) : null}
+      </TableCell>
+    </TableRow>
+  )
+}
+
 function RunTable(props: RunTableProps) {
   const visibleItems = props.items.slice(props.window.start, props.window.end)
   return (
@@ -537,114 +648,8 @@ function RunTable(props: RunTableProps) {
         </TableHeader>
         <TableBody>
           <VirtualTableSpacer height={props.window.before} colSpan={10} />
-          {visibleItems.map(({ summary, state }) => (
-            <TableRow key={summary.id} style={{ height: runRowHeight }}>
-              <TableCell>
-                <Checkbox
-                  aria-label={`Select ${summary.id} for comparison`}
-                  checked={props.selectedRunIds.includes(summary.id)}
-                  disabled={
-                    !props.selectedRunIds.includes(summary.id) &&
-                    props.selectedRunIds.length === 2
-                  }
-                  onCheckedChange={(checked) =>
-                    props.onSelect((current) =>
-                      checked
-                        ? [...current, summary.id]
-                        : current.filter((id) => id !== summary.id),
-                    )
-                  }
-                />
-              </TableCell>
-              <TableCell>
-                <Tooltip>
-                  <TooltipTrigger
-                    type="button"
-                    className={buttonVariants({
-                      variant: 'outline',
-                      size: 'sm',
-                    })}
-                    aria-pressed={props.pinnedRunIds.has(summary.id)}
-                    onClick={() =>
-                      props.onPin(
-                        summary.id,
-                        !props.pinnedRunIds.has(summary.id),
-                      )
-                    }
-                  >
-                    {props.pinnedRunIds.has(summary.id) ? 'Unpin' : 'Pin'}
-                  </TooltipTrigger>
-                  <TooltipContent side="right">
-                    {props.pinnedRunIds.has(summary.id)
-                      ? 'Allow retention to delete this Test run.'
-                      : 'Protect this Test run from retention deletion.'}
-                  </TooltipContent>
-                </Tooltip>
-              </TableCell>
-              <TableCell>
-                <span className="block">
-                  {new Date(summary.startedAt).toLocaleString()}
-                </span>
-                <span className="font-mono text-muted-foreground">
-                  {summary.id}
-                </span>
-              </TableCell>
-              <TableCell>
-                {summary.specificationUris
-                  .map((uri) => props.specificationNames.get(uri) ?? uri)
-                  .join(', ') || 'None'}
-              </TableCell>
-              <TableCell>{summary.suite ?? 'Ad hoc selection'}</TableCell>
-              <TableCell>
-                {summary.executionTargetProfileIds.join(', ') || 'None'}
-              </TableCell>
-              <TableCell>{durationLabel(summary.durationMs)}</TableCell>
-              <TableCell>
-                <Badge
-                  variant={
-                    state === 'running' ? 'running' : resultBadgeVariant(state)
-                  }
-                >
-                  <ResultMark state={state} /> {state}
-                </Badge>
-              </TableCell>
-              <TableCell>{resultCountLabel(summary.resultCount)}</TableCell>
-              <TableCell>
-                <div className="flex items-center gap-2">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={() => props.onOpen(summary.id)}
-                  >
-                    Review run
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    disabled={
-                      props.runsBlocked ||
-                      (summary.state !== 'failed' &&
-                        summary.state !== 'infrastructure-error')
-                    }
-                    onClick={() =>
-                      void props.onRerun({
-                        rerunId: summary.id,
-                        failures: true,
-                      })
-                    }
-                  >
-                    Rerun failures
-                  </Button>
-                </div>
-                {summary.sourceRunId ? (
-                  <span className="mt-1 block text-muted-foreground">
-                    Rerun of {summary.sourceRunId}
-                  </span>
-                ) : null}
-              </TableCell>
-            </TableRow>
+          {visibleItems.map((item) => (
+            <RunTableRow {...props} {...item} key={item.summary.id} />
           ))}
           <VirtualTableSpacer height={props.window.after} colSpan={10} />
         </TableBody>

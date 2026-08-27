@@ -531,504 +531,546 @@ export async function startStudio(
     async fetch(request, server) {
       const url = new URL(request.url)
       const origin = `http://${browserHostname(hostname)}:${server.port}`
-      async function routeHistory(): Promise<Response | null> {
-        if (
-          (url.pathname === '/api/history' || url.pathname === '/api/runs') &&
-          request.method === 'GET'
-        ) {
-          if (!options.history) {
-            return new Response('Test run history is unavailable', {
-              status: 501,
-            })
-          }
-          return Response.json({
-            ...(await options.history.list()),
-            activeRunIds: [...activeRuns].sort(),
-          } satisfies StudioRunsIndex)
+      const requestKey = `${request.method} ${url.pathname}`
+
+      function historyUnavailable(): Response {
+        return new Response('Test run history is unavailable', { status: 501 })
+      }
+
+      function requestError(error: unknown, status = 400): Response {
+        const message = error instanceof Error ? error.message : String(error)
+        return new Response(message, { status })
+      }
+
+      async function historyIndex(): Promise<Response> {
+        if (!options.history) return historyUnavailable()
+        return Response.json({
+          ...(await options.history.list()),
+          activeRunIds: [...activeRuns].sort(),
+        } satisfies StudioRunsIndex)
+      }
+
+      async function compareHistory(): Promise<Response> {
+        if (!options.history) return historyUnavailable()
+        const body = (await request.json()) as HistoryComparisonRequest
+        if (!body.baselineRunId || !body.candidateRunId) {
+          return new Response('Select two test runs to compare', {
+            status: 400,
+          })
         }
-        if (
-          url.pathname === '/api/history/compare' &&
-          request.method === 'POST'
-        ) {
-          if (!options.history) {
-            return new Response('Test run history is unavailable', {
-              status: 501,
-            })
-          }
-          const body = (await request.json()) as HistoryComparisonRequest
-          if (!body.baselineRunId || !body.candidateRunId) {
-            return new Response('Select two test runs to compare', {
-              status: 400,
-            })
-          }
-          return Response.json(
-            await options.history.compare(
-              body.baselineRunId,
-              body.candidateRunId,
-            ),
-          )
-        }
-        if (
-          url.pathname === '/api/history/import' &&
-          request.method === 'POST'
-        ) {
-          if (!options.history) {
-            return new Response('Test run history is unavailable', {
-              status: 501,
-            })
-          }
-          try {
-            return Response.json(
-              await options.history.importArchive(
-                new Uint8Array(await request.arrayBuffer()),
-              ),
-            )
-          } catch (error) {
-            const message =
-              error instanceof Error ? error.message : String(error)
-            return new Response(message, { status: 400 })
-          }
-        }
-        if (
-          url.pathname === '/api/history/retention' &&
-          request.method === 'POST'
-        ) {
-          if (!options.history) {
-            return new Response('Test run history is unavailable', {
-              status: 501,
-            })
-          }
-          return Response.json(await options.history.deleteEligible())
-        }
-        const historyPinMatch = url.pathname.match(
-          /^\/api\/history\/([^/]+)\/pin$/,
+        return Response.json(
+          await options.history.compare(
+            body.baselineRunId,
+            body.candidateRunId,
+          ),
         )
-        if (
-          historyPinMatch &&
-          (request.method === 'POST' || request.method === 'DELETE')
-        ) {
-          if (!options.history) {
-            return new Response('Test run history is unavailable', {
-              status: 501,
-            })
-          }
-          const runId = decodeURIComponent(historyPinMatch[1]!)
-          if (request.method === 'POST') await options.history.pin(runId)
-          else await options.history.unpin(runId)
-          return Response.json({ runId, pinned: request.method === 'POST' })
+      }
+
+      async function importHistory(): Promise<Response> {
+        if (!options.history) return historyUnavailable()
+        try {
+          const archive = new Uint8Array(await request.arrayBuffer())
+          return Response.json(await options.history.importArchive(archive))
+        } catch (error) {
+          return requestError(error)
         }
-        const historyExportMatch = url.pathname.match(
-          /^\/api\/history\/([^/]+)\/(html|archive|allure)$/,
-        )
-        if (historyExportMatch && request.method === 'GET') {
-          if (!options.history) {
-            return new Response('Test run history is unavailable', {
-              status: 501,
-            })
-          }
-          const runId = decodeURIComponent(historyExportMatch[1]!)
-          const kind = historyExportMatch[2]
-          if (kind === 'archive') {
-            return new Response(await options.history.exportArchive(runId), {
+      }
+
+      async function deleteHistoryEligible(): Promise<Response> {
+        return options.history
+          ? Response.json(await options.history.deleteEligible())
+          : historyUnavailable()
+      }
+
+      async function pinHistory(match: RegExpMatchArray): Promise<Response> {
+        if (!options.history) return historyUnavailable()
+        const runId = decodeURIComponent(match[1]!)
+        if (request.method === 'POST') await options.history.pin(runId)
+        else await options.history.unpin(runId)
+        return Response.json({ runId, pinned: request.method === 'POST' })
+      }
+
+      async function exportHistory(match: RegExpMatchArray): Promise<Response> {
+        if (!options.history) return historyUnavailable()
+        const runId = decodeURIComponent(match[1]!)
+        const kind = match[2]
+        const exporters: Record<string, () => Promise<Response>> = {
+          archive: async () =>
+            new Response(await options.history!.exportArchive(runId), {
               headers: {
                 'content-type': 'application/json; charset=utf-8',
                 'content-disposition': `attachment; filename="${runId}.pickle-run.json"`,
               },
-            })
-          }
-          if (kind === 'allure') {
-            const bytes = await options.history.exportAllure(runId)
+            }),
+          allure: async () => {
+            const bytes = await options.history!.exportAllure(runId)
             return new Response(bytes.buffer as ArrayBuffer, {
               headers: {
                 'content-type': 'application/zip',
                 'content-disposition': `attachment; filename="${runId}-allure-results.zip"`,
               },
             })
-          }
-          const artifacts =
-            url.searchParams.get('artifacts') === 'all' ? 'all' : 'failures'
-          return new Response(
-            await options.history.exportHtml(runId, artifacts),
-            {
-              headers: {
-                'content-type': 'text/html; charset=utf-8',
-                'content-disposition': `attachment; filename="${runId}.html"`,
+          },
+          html: async () => {
+            const artifacts =
+              url.searchParams.get('artifacts') === 'all' ? 'all' : 'failures'
+            return new Response(
+              await options.history!.exportHtml(runId, artifacts),
+              {
+                headers: {
+                  'content-type': 'text/html; charset=utf-8',
+                  'content-disposition': `attachment; filename="${runId}.html"`,
+                },
               },
-            },
-          )
+            )
+          },
         }
-        return null
+        const exporter = kind ? exporters[kind] : undefined
+        return exporter?.() ?? new Response('Not found', { status: 404 })
+      }
+
+      async function dynamicHistoryRoute(): Promise<Response | null> {
+        const pinMatch = url.pathname.match(/^\/api\/history\/([^/]+)\/pin$/)
+        if (pinMatch && ['POST', 'DELETE'].includes(request.method)) {
+          return pinHistory(pinMatch)
+        }
+        const exportMatch = url.pathname.match(
+          /^\/api\/history\/([^/]+)\/(html|archive|allure)$/,
+        )
+        return exportMatch && request.method === 'GET'
+          ? exportHistory(exportMatch)
+          : null
+      }
+
+      async function routeHistory(): Promise<Response | null> {
+        const exactRoutes: Record<string, () => Promise<Response>> = {
+          'GET /api/history': historyIndex,
+          'GET /api/runs': historyIndex,
+          'POST /api/history/compare': compareHistory,
+          'POST /api/history/import': importHistory,
+          'POST /api/history/retention': deleteHistoryEligible,
+        }
+        const exact = exactRoutes[requestKey]
+        return exact ? exact() : dynamicHistoryRoute()
+      }
+
+      async function executeCacheAction(
+        action: () => Promise<unknown>,
+      ): Promise<Response> {
+        try {
+          return Response.json(await action())
+        } catch (error) {
+          return requestError(error, 500)
+        }
       }
 
       async function routeExecutionCache(): Promise<Response | null> {
         if (url.pathname !== '/api/execution-cache') return null
         if (!options.executionCache) {
-          return new Response('Execution cache is unavailable', {
+          return new Response('Execution cache is unavailable', { status: 501 })
+        }
+        const actions: Record<string, () => Promise<unknown>> = {
+          GET: () => options.executionCache!.inspect(),
+          DELETE: () => options.executionCache!.clear(),
+        }
+        const action = actions[request.method]
+        return action ? executeCacheAction(action) : null
+      }
+
+      async function saveProjectConfig(): Promise<Response> {
+        if (!options.management) {
+          return new Response('Project configuration is unavailable', {
             status: 501,
           })
         }
         try {
-          if (request.method === 'GET') {
-            return Response.json(await options.executionCache.inspect())
-          }
-          if (request.method === 'DELETE') {
-            return Response.json(await options.executionCache.clear())
-          }
+          const patch = (await request.json()) as StudioConfigPatch
+          return Response.json(await options.management.saveConfig(patch))
         } catch (error) {
-          const message = error instanceof Error ? error.message : String(error)
-          return new Response(message, { status: 500 })
+          return requestError(error)
         }
-        return null
+      }
+
+      async function saveCredential(): Promise<Response> {
+        if (!options.management) {
+          return new Response('Credentials are unavailable', { status: 501 })
+        }
+        try {
+          const body = (await request.json()) as CredentialWriteRequest
+          return Response.json(
+            await options.management.saveCredential({
+              name: body.name ?? '',
+              secret: body.secret ?? '',
+            }),
+          )
+        } catch (error) {
+          return requestError(error)
+        }
+      }
+
+      async function runReadiness(): Promise<Response> {
+        if (!options.management) {
+          return Response.json(
+            (await currentProject()).readiness ?? { ready: true, reasons: [] },
+          )
+        }
+        const body = (await request
+          .json()
+          .catch(() => ({}))) as StudioRunRequest
+        return Response.json(await options.management.readiness(body))
+      }
+
+      async function mobileTargets(): Promise<Response> {
+        if (!options.management?.discoverMobileTargets) {
+          return new Response('Mobile target discovery is unavailable', {
+            status: 501,
+          })
+        }
+        return Response.json(await options.management.discoverMobileTargets())
+      }
+
+      async function stageGit(): Promise<Response> {
+        const body = (await request.json()) as GitPathsRequest
+        try {
+          return Response.json(await git.stage(body.paths ?? []))
+        } catch (error) {
+          return requestError(error)
+        }
+      }
+
+      async function commitGit(): Promise<Response> {
+        const body = (await request.json()) as GitCommitRequest
+        try {
+          return Response.json(
+            await git.commit({
+              message: body.message ?? '',
+              confirmed: Boolean(body.confirmed),
+              paths: body.paths ?? [],
+            }),
+          )
+        } catch (error) {
+          return requestError(error)
+        }
+      }
+
+      async function createPullRequest(): Promise<Response> {
+        try {
+          return Response.json(await git.pullRequest())
+        } catch (error) {
+          return requestError(error)
+        }
       }
 
       async function routeManagement(): Promise<Response | null> {
-        if (url.pathname === '/api/config' && request.method === 'PUT') {
-          if (!options.management) {
-            return new Response('Project configuration is unavailable', {
-              status: 501,
-            })
-          }
-          try {
-            const patch = (await request.json()) as StudioConfigPatch
-            return Response.json(await options.management.saveConfig(patch))
-          } catch (error) {
-            const message =
-              error instanceof Error ? error.message : String(error)
-            return new Response(message, { status: 400 })
-          }
+        const routes: Record<string, () => Promise<Response>> = {
+          'PUT /api/config': saveProjectConfig,
+          'PUT /api/credentials': saveCredential,
+          'POST /api/run-readiness': runReadiness,
+          'GET /api/mobile-targets': mobileTargets,
+          'GET /api/git': async () => Response.json(await git.status()),
+          'POST /api/git/stage': stageGit,
+          'POST /api/git/commit': commitGit,
+          'POST /api/git/pull-request': createPullRequest,
         }
-        if (url.pathname === '/api/credentials' && request.method === 'PUT') {
-          if (!options.management) {
-            return new Response('Credentials are unavailable', { status: 501 })
-          }
-          try {
-            const body = (await request.json()) as CredentialWriteRequest
-            return Response.json(
-              await options.management.saveCredential({
-                name: body.name ?? '',
-                secret: body.secret ?? '',
-              }),
-            )
-          } catch (error) {
-            const message =
-              error instanceof Error ? error.message : String(error)
-            return new Response(message, { status: 400 })
-          }
+        return routes[requestKey]?.() ?? null
+      }
+
+      async function readDocument(): Promise<Response> {
+        const uri = url.searchParams.get('uri')
+        if (!uri) return new Response('Missing uri', { status: 400 })
+        try {
+          return Response.json(await documents.read(uri))
+        } catch (error) {
+          return requestError(error, 404)
         }
-        if (
-          url.pathname === '/api/run-readiness' &&
-          request.method === 'POST'
-        ) {
-          if (!options.management) {
-            return Response.json(
-              (await currentProject()).readiness ?? {
-                ready: true,
-                reasons: [],
-              },
-            )
-          }
-          const body = (await request
-            .json()
-            .catch(() => ({}))) as StudioRunRequest
-          return Response.json(await options.management.readiness(body))
+      }
+
+      async function previewDocument(): Promise<Response> {
+        const body = (await request.json()) as DocumentPreviewRequest
+        try {
+          return Response.json(
+            documents.preview({
+              uri: body.uri,
+              source: body.source,
+              specification: body.specification,
+              metadata: body.metadata,
+              diffAgainst: body.diffAgainst,
+            }),
+          )
+        } catch (error) {
+          return requestError(error)
         }
-        if (
-          url.pathname === '/api/mobile-targets' &&
-          request.method === 'GET'
-        ) {
-          if (!options.management?.discoverMobileTargets) {
-            return new Response('Mobile target discovery is unavailable', {
-              status: 501,
-            })
-          }
-          return Response.json(await options.management.discoverMobileTargets())
+      }
+
+      async function writeDocument(): Promise<Response> {
+        const body = (await request.json()) as DocumentWriteRequest
+        try {
+          return Response.json(
+            await documents.write({
+              uri: body.uri,
+              source: body.source,
+              expectedRevision: body.expectedRevision,
+              create: body.create,
+            }),
+          )
+        } catch (error) {
+          return error instanceof DocumentConflictError
+            ? conflictResponse(error, body.source)
+            : requestError(error)
         }
-        if (url.pathname === '/api/git' && request.method === 'GET') {
-          return Response.json(await git.status())
+      }
+
+      async function proposeDocument(): Promise<Response> {
+        if (!options.authoring?.propose) {
+          return new Response('AI assistance is unavailable', { status: 501 })
         }
-        if (url.pathname === '/api/git/stage' && request.method === 'POST') {
-          const body = (await request.json()) as GitPathsRequest
-          try {
-            return Response.json(await git.stage(body.paths ?? []))
-          } catch (error) {
-            const message =
-              error instanceof Error ? error.message : String(error)
-            return new Response(message, { status: 400 })
-          }
+        const body = (await request.json()) as DocumentProposeRequest
+        try {
+          return Response.json(
+            await documents.propose({
+              prompt: body.prompt,
+              uri: body.uri,
+              currentSource: body.currentSource,
+              author: options.authoring.propose,
+            }),
+          )
+        } catch (error) {
+          return requestError(error)
         }
-        if (url.pathname === '/api/git/commit' && request.method === 'POST') {
-          const body = (await request.json()) as GitCommitRequest
-          try {
-            return Response.json(
-              await git.commit({
-                message: body.message ?? '',
-                confirmed: Boolean(body.confirmed),
-                paths: body.paths ?? [],
-              }),
-            )
-          } catch (error) {
-            const message =
-              error instanceof Error ? error.message : String(error)
-            return new Response(message, { status: 400 })
-          }
-        }
-        if (
-          url.pathname === '/api/git/pull-request' &&
-          request.method === 'POST'
-        ) {
-          try {
-            return Response.json(await git.pullRequest())
-          } catch (error) {
-            const message =
-              error instanceof Error ? error.message : String(error)
-            return new Response(message, { status: 400 })
-          }
-        }
-        return null
       }
 
       async function routeDocuments(): Promise<Response | null> {
-        if (url.pathname === '/api/documents' && request.method === 'GET') {
-          const uri = url.searchParams.get('uri')
-          if (!uri) return new Response('Missing uri', { status: 400 })
-          try {
-            return Response.json(await documents.read(uri))
-          } catch (error) {
-            const message =
-              error instanceof Error ? error.message : String(error)
-            return new Response(message, { status: 404 })
-          }
+        const routes: Record<string, () => Promise<Response>> = {
+          'GET /api/documents': readDocument,
+          'GET /api/documents/completions': async () =>
+            Response.json(await documents.completions()),
+          'POST /api/documents/preview': previewDocument,
+          'PUT /api/documents': writeDocument,
+          'POST /api/documents/propose': proposeDocument,
         }
-        if (
-          url.pathname === '/api/documents/completions' &&
-          request.method === 'GET'
-        ) {
-          return Response.json(await documents.completions())
+        return routes[requestKey]?.() ?? null
+      }
+
+      function upgradeWorkspaceEvents(): Response | undefined {
+        const upgraded = server.upgrade(request, {
+          data: { kind: 'workspace' },
+        })
+        return upgraded
+          ? undefined
+          : new Response('WebSocket upgrade failed', { status: 400 })
+      }
+
+      function publishRunEvent(
+        state: { runId: string; pending: StudioStreamEvent[] },
+        event: StudioStreamEvent,
+      ): void {
+        if (event.type === 'run-started') state.runId = event.run.id
+        if (!state.runId) {
+          state.pending.push(event)
+          return
         }
-        if (
-          url.pathname === '/api/documents/preview' &&
-          request.method === 'POST'
-        ) {
-          const body = (await request.json()) as DocumentPreviewRequest
-          try {
-            return Response.json(
-              documents.preview({
-                uri: body.uri,
-                source: body.source,
-                specification: body.specification,
-                metadata: body.metadata,
-                diffAgainst: body.diffAgainst,
-              }),
-            )
-          } catch (error) {
-            const message =
-              error instanceof Error ? error.message : String(error)
-            return new Response(message, { status: 400 })
-          }
+        for (const pendingEvent of state.pending.splice(0)) {
+          publish(state.runId, pendingEvent)
         }
-        if (url.pathname === '/api/documents' && request.method === 'PUT') {
-          const body = (await request.json()) as DocumentWriteRequest
-          try {
-            return Response.json(
-              await documents.write({
-                uri: body.uri,
-                source: body.source,
-                expectedRevision: body.expectedRevision,
-                create: body.create,
-              }),
-            )
-          } catch (error) {
-            if (error instanceof DocumentConflictError) {
-              return conflictResponse(error, body.source)
-            }
-            const message =
-              error instanceof Error ? error.message : String(error)
-            return new Response(message, { status: 400 })
-          }
+        publish(state.runId, event)
+      }
+
+      async function startRun(): Promise<Response> {
+        if (!options.gateway) {
+          return new Response('Test runs are unavailable', { status: 501 })
         }
-        if (
-          url.pathname === '/api/documents/propose' &&
-          request.method === 'POST'
-        ) {
-          if (!options.authoring?.propose) {
-            return new Response('AI assistance is unavailable', { status: 501 })
+        const body = (await request
+          .json()
+          .catch(() => ({}))) as StudioRunRequest
+        const state = { runId: '', pending: [] as StudioStreamEvent[] }
+        try {
+          const started = await options.gateway.start(body, (event) =>
+            publishRunEvent(state, event),
+          )
+          state.runId = started.id
+          for (const event of state.pending.splice(0))
+            publish(state.runId, event)
+          activeRuns.add(started.id)
+          const finishRun = () => {
+            publish(state.runId, {
+              type: 'run-finished',
+              run: { id: state.runId },
+            })
           }
-          const body = (await request.json()) as DocumentProposeRequest
-          try {
-            return Response.json(
-              await documents.propose({
-                prompt: body.prompt,
-                uri: body.uri,
-                currentSource: body.currentSource,
-                author: options.authoring.propose,
-              }),
-            )
-          } catch (error) {
-            const message =
-              error instanceof Error ? error.message : String(error)
-            return new Response(message, { status: 400 })
-          }
+          void started.done
+            .then(finishRun, finishRun)
+            .finally(() => activeRuns.delete(started.id))
+          return Response.json({ id: started.id })
+        } catch (error) {
+          return requestError(error, 500)
         }
-        return null
+      }
+
+      function artifactPath(): string | Response {
+        const filePath = url.searchParams.get('path')
+        if (!filePath) return new Response('Missing path', { status: 400 })
+        const resolved = resolve(filePath)
+        const allowed = resolveLocalProjectStorage(
+          options.project.root,
+        ).runsDirectory
+        return resolved === allowed || resolved.startsWith(`${allowed}${sep}`)
+          ? resolved
+          : new Response('Forbidden', { status: 403 })
+      }
+
+      function artifactResponse(
+        path: string,
+        file: ReturnType<typeof Bun.file>,
+      ): Response {
+        const headers = {
+          'content-type': file.type || 'application/octet-stream',
+          'content-length': String(file.size),
+        }
+        if (request.method === 'HEAD') return new Response(null, { headers })
+        if (url.searchParams.get('download') !== 'true') {
+          return new Response(file, { headers })
+        }
+        const requestedName = url.searchParams.get('name')
+        const downloadName = basename(requestedName || path).replace(
+          /["\r\n]/g,
+          '_',
+        )
+        return new Response(file, {
+          headers: {
+            'content-disposition': `attachment; filename="${downloadName}"`,
+          },
+        })
+      }
+
+      async function readArtifact(): Promise<Response> {
+        const path = artifactPath()
+        if (path instanceof Response) return path
+        const file = Bun.file(path)
+        if (!(await file.exists()))
+          return new Response('Not found', { status: 404 })
+        return artifactResponse(path, file)
+      }
+
+      async function cancelRun(match: RegExpMatchArray): Promise<Response> {
+        if (!options.gateway) {
+          return new Response('Test runs are unavailable', { status: 501 })
+        }
+        await options.gateway.cancel(decodeURIComponent(match[1]!))
+        return new Response(null, { status: 204 })
+      }
+
+      function upgradeRunEvents(match: RegExpMatchArray): Response | undefined {
+        const runId = decodeURIComponent(match[1]!)
+        const upgraded = server.upgrade(request, {
+          data: { kind: 'run', runId },
+        })
+        return upgraded
+          ? undefined
+          : new Response('WebSocket upgrade failed', { status: 400 })
+      }
+
+      async function runSnapshot(match: RegExpMatchArray): Promise<Response> {
+        if (!options.gateway) {
+          return new Response('Test runs are unavailable', { status: 501 })
+        }
+        return Response.json(
+          await options.gateway.snapshot(decodeURIComponent(match[1]!)),
+        )
       }
 
       async function routeExecution(): Promise<Response | undefined> {
-        if (
-          url.pathname === '/api/workspace/events' &&
-          request.method === 'GET'
-        ) {
-          const upgraded = server.upgrade(request, {
-            data: { kind: 'workspace' },
-          })
-          if (upgraded) return
-          return new Response('WebSocket upgrade failed', { status: 400 })
+        const exactRoutes: Record<
+          string,
+          () => Response | undefined | Promise<Response>
+        > = {
+          'GET /api/workspace/events': upgradeWorkspaceEvents,
+          'POST /api/runs': startRun,
+          'GET /api/artifact': readArtifact,
+          'HEAD /api/artifact': readArtifact,
         }
-        if (url.pathname === '/api/runs' && request.method === 'POST') {
-          if (!options.gateway) {
-            return new Response('Test runs are unavailable', { status: 501 })
-          }
-          const body = (await request
-            .json()
-            .catch(() => ({}))) as StudioRunRequest
-          let runId = ''
-          const pendingEvents: StudioStreamEvent[] = []
-          try {
-            const started = await options.gateway.start(body, (event) => {
-              if (event.type === 'run-started') runId = event.run.id
-              if (!runId) {
-                pendingEvents.push(event)
-                return
-              }
-              for (const pendingEvent of pendingEvents.splice(0)) {
-                publish(runId, pendingEvent)
-              }
-              publish(runId, event)
-            })
-            runId = started.id
-            for (const pendingEvent of pendingEvents.splice(0)) {
-              publish(runId, pendingEvent)
-            }
-            activeRuns.add(started.id)
-            const finishRun = () => {
-              publish(runId, { type: 'run-finished', run: { id: runId } })
-            }
-            void started.done
-              .then(finishRun, finishRun)
-              .finally(() => activeRuns.delete(started.id))
-            return Response.json({ id: started.id })
-          } catch (error) {
-            const message =
-              error instanceof Error ? error.message : String(error)
-            return new Response(message, { status: 500 })
-          }
+        const exact = exactRoutes[requestKey]
+        if (exact) return exact()
+        return routeRunResource()
+      }
+
+      async function routeRunResource(): Promise<Response | undefined> {
+        const routes: Record<string, () => Promise<Response | undefined>> = {
+          POST: postRunResource,
+          GET: getRunResource,
         }
-        if (
-          url.pathname === '/api/artifact' &&
-          (request.method === 'GET' || request.method === 'HEAD')
-        ) {
-          const filePath = url.searchParams.get('path')
-          if (!filePath) return new Response('Missing path', { status: 400 })
-          const resolved = resolve(filePath)
-          const allowed = resolveLocalProjectStorage(
-            options.project.root,
-          ).runsDirectory
-          if (
-            resolved !== allowed &&
-            !resolved.startsWith(`${allowed}${sep}`)
-          ) {
-            return new Response('Forbidden', { status: 403 })
-          }
-          const file = Bun.file(resolved)
-          if (!(await file.exists()))
-            return new Response('Not found', { status: 404 })
-          const headers = {
-            'content-type': file.type || 'application/octet-stream',
-            'content-length': String(file.size),
-          }
-          if (request.method === 'HEAD') return new Response(null, { headers })
-          if (url.searchParams.get('download') !== 'true') {
-            return new Response(file, { headers })
-          }
-          const requestedName = url.searchParams.get('name')
-          const downloadName = basename(requestedName || resolved).replace(
-            /["\r\n]/g,
-            '_',
-          )
-          return new Response(file, {
-            headers: {
-              'content-disposition': `attachment; filename="${downloadName}"`,
-            },
-          })
-        }
+        return (
+          routes[request.method]?.() ??
+          new Response('Not found', { status: 404 })
+        )
+      }
+
+      async function postRunResource(): Promise<Response> {
         const cancelMatch = url.pathname.match(/^\/api\/runs\/([^/]+)\/cancel$/)
-        if (cancelMatch && request.method === 'POST') {
-          if (!options.gateway) {
-            return new Response('Test runs are unavailable', { status: 501 })
-          }
-          await options.gateway.cancel(decodeURIComponent(cancelMatch[1]!))
-          return new Response(null, { status: 204 })
-        }
+        return cancelMatch
+          ? cancelRun(cancelMatch)
+          : new Response('Not found', { status: 404 })
+      }
+
+      async function getRunResource(): Promise<Response | undefined> {
         const eventsMatch = url.pathname.match(/^\/api\/runs\/([^/]+)\/events$/)
-        if (eventsMatch && request.method === 'GET') {
-          const runId = decodeURIComponent(eventsMatch[1]!)
-          const upgraded = server.upgrade(request, {
-            data: { kind: 'run', runId },
-          })
-          if (upgraded) return
-          return new Response('WebSocket upgrade failed', { status: 400 })
-        }
+        if (eventsMatch) return upgradeRunEvents(eventsMatch)
         const runMatch = url.pathname.match(/^\/api\/runs\/([^/]+)$/)
-        if (runMatch && request.method === 'GET') {
-          if (!options.gateway) {
-            return new Response('Test runs are unavailable', { status: 501 })
-          }
-          return Response.json(
-            await options.gateway.snapshot(decodeURIComponent(runMatch[1]!)),
-          )
-        }
+        if (runMatch) return runSnapshot(runMatch)
         return new Response('Not found', { status: 404 })
       }
 
-      async function routeRequest(): Promise<Response | undefined> {
+      function staticAsset(): Response | null {
         const asset =
           ui.files.get(url.pathname) ?? ui.files.get(basename(url.pathname))
-        if (asset && request.method === 'GET') {
-          if (!authorized(request, origin)) {
-            return new Response('Unauthorized', { status: 401 })
-          }
-          return new Response(asset)
+        return asset && request.method === 'GET' ? new Response(asset) : null
+      }
+
+      function studioPage(): Response | null {
+        if (request.method !== 'GET') return null
+        const routeKind = parseStudioRoute(url.href).kind
+        const page =
+          url.pathname === '/' ||
+          url.pathname === '/index.html' ||
+          ['runs', 'run', 'result'].includes(routeKind)
+        if (!page) return null
+        return new Response(ui.index, {
+          headers: {
+            'content-type': 'text/html; charset=utf-8',
+            'set-cookie': `${sessionCookie}=${encodeURIComponent(token)}; Path=/; HttpOnly; SameSite=Strict`,
+          },
+        })
+      }
+
+      async function routeAuthenticatedApi(): Promise<Response | undefined> {
+        if (requestKey === 'GET /api/project') {
+          return Response.json(await currentProject())
         }
-        if (
-          request.method === 'GET' &&
-          (url.pathname === '/' ||
-            url.pathname === '/index.html' ||
-            ['runs', 'run', 'result'].includes(parseStudioRoute(url.href).kind))
-        ) {
-          if (!authorized(request, origin)) {
-            return new Response('Unauthorized', { status: 401 })
-          }
-          return new Response(ui.index, {
-            headers: {
-              'content-type': 'text/html; charset=utf-8',
-              'set-cookie': `${sessionCookie}=${encodeURIComponent(token)}; Path=/; HttpOnly; SameSite=Strict`,
-            },
-          })
+        const routes = [
+          routeHistory,
+          routeExecutionCache,
+          routeManagement,
+          routeDocuments,
+        ]
+        for (const route of routes) {
+          const response = await route()
+          if (response) return response
         }
+        return routeExecution()
+      }
+
+      async function routeRequest(): Promise<Response | undefined> {
+        const publicResponse = staticAsset() ?? studioPage()
+        if (publicResponse) return authorizePublicResponse(publicResponse)
         if (!authorized(request, origin)) {
           return new Response('Unauthorized', { status: 401 })
         }
-        if (url.pathname === '/api/project' && request.method === 'GET') {
-          return Response.json(await currentProject())
-        }
-        const historyResponse = await routeHistory()
-        if (historyResponse) return historyResponse
-        const executionCacheResponse = await routeExecutionCache()
-        if (executionCacheResponse) return executionCacheResponse
-        const managementResponse = await routeManagement()
-        if (managementResponse) return managementResponse
-        const documentResponse = await routeDocuments()
-        if (documentResponse) return documentResponse
-        return routeExecution()
+        return routeAuthenticatedApi()
+      }
+
+      function authorizePublicResponse(response: Response): Response {
+        return authorized(request, origin)
+          ? response
+          : new Response('Unauthorized', { status: 401 })
       }
       const response = await routeRequest()
       return response ? secureResponse(response, origin) : undefined

@@ -4,6 +4,7 @@ import type {
   ExecutionCacheCoordination,
   ExecutionCacheKey,
   ExecutionCacheLease,
+  ExecutionCacheLeaseAcquisition,
   ExecutionCacheLeasePublicationResult,
   ExecutionCacheLeaseWaitResult,
   ExecutionCacheWriteMetadata,
@@ -258,6 +259,77 @@ function publishLeaseEntry(
   return { published: true, stored, evictedEntries }
 }
 
+function acquireLease(
+  db: Database,
+  key: ExecutionCacheKey,
+  projectKey: string,
+  timing: ExecutionCacheLeaseTiming,
+  now: () => Date,
+): ExecutionCacheLeaseAcquisition {
+  const digestKey = executionCacheKeyDigest(key)
+  const timestamp = now().getTime()
+  db.run('DELETE FROM lease_outcomes WHERE completed_at <= ?', [
+    timestamp - timing.waitTimeoutMs,
+  ])
+  const existing = db
+    .query(
+      `SELECT owner_token AS ownerToken, expires_at AS expiresAt,
+              baseline_revision AS baselineRevision
+       FROM leases WHERE key_digest = ?`,
+    )
+    .get(digestKey) as LeaseRow | null
+  if (existing && existing.expiresAt > timestamp) {
+    return {
+      acquired: false,
+      ownerToken: existing.ownerToken,
+      baselineRevision: existing.baselineRevision ?? undefined,
+    }
+  }
+
+  const ownerToken = randomUUID()
+  const baselineRevision = readExecutionCacheEntrySnapshot(
+    db,
+    digestKey,
+  )?.revision
+  db.run(
+    `INSERT INTO leases (
+       key_digest, project_key, owner_token, expires_at, baseline_revision
+     ) VALUES (?, ?, ?, ?, ?)
+     ON CONFLICT(key_digest) DO UPDATE SET
+       project_key = excluded.project_key,
+       owner_token = excluded.owner_token,
+       expires_at = excluded.expires_at,
+       baseline_revision = excluded.baseline_revision
+     WHERE leases.expires_at <= ?`,
+    [
+      digestKey,
+      projectKey,
+      ownerToken,
+      timestamp + timing.ttlMs,
+      baselineRevision ?? null,
+      timestamp,
+    ],
+  )
+  const acquired = db
+    .query(
+      `SELECT owner_token AS ownerToken, expires_at AS expiresAt,
+              baseline_revision AS baselineRevision
+       FROM leases WHERE key_digest = ?`,
+    )
+    .get(digestKey) as LeaseRow
+  if (acquired.ownerToken !== ownerToken) {
+    return {
+      acquired: false,
+      ownerToken: acquired.ownerToken,
+      baselineRevision: acquired.baselineRevision ?? undefined,
+    }
+  }
+  return {
+    acquired: true,
+    lease: leaseFromRow(key, acquired, timing.heartbeatMs),
+  }
+}
+
 export function createLocalExecutionCacheCoordination(
   options: LocalExecutionCacheCoordinationOptions,
 ): ExecutionCacheCoordination {
@@ -274,70 +346,7 @@ export function createLocalExecutionCacheCoordination(
       assertExecutionCacheProjectKey(projectKey, key)
       return database.use((db) =>
         db
-          .transaction(() => {
-            const digestKey = executionCacheKeyDigest(key)
-            const timestamp = now().getTime()
-            db.run('DELETE FROM lease_outcomes WHERE completed_at <= ?', [
-              timestamp - timing.waitTimeoutMs,
-            ])
-            const existing = db
-              .query(
-                `SELECT owner_token AS ownerToken, expires_at AS expiresAt,
-                      baseline_revision AS baselineRevision
-               FROM leases WHERE key_digest = ?`,
-              )
-              .get(digestKey) as LeaseRow | null
-            if (existing && existing.expiresAt > timestamp) {
-              return {
-                acquired: false as const,
-                ownerToken: existing.ownerToken,
-                baselineRevision: existing.baselineRevision ?? undefined,
-              }
-            }
-            const ownerToken = randomUUID()
-            const baselineRevision = readExecutionCacheEntrySnapshot(
-              db,
-              digestKey,
-            )?.revision
-            db.run(
-              `INSERT INTO leases (
-               key_digest, project_key, owner_token, expires_at,
-               baseline_revision
-             ) VALUES (?, ?, ?, ?, ?)
-             ON CONFLICT(key_digest) DO UPDATE SET
-               project_key = excluded.project_key,
-               owner_token = excluded.owner_token,
-               expires_at = excluded.expires_at,
-               baseline_revision = excluded.baseline_revision
-             WHERE leases.expires_at <= ?`,
-              [
-                digestKey,
-                projectKey,
-                ownerToken,
-                timestamp + timing.ttlMs,
-                baselineRevision ?? null,
-                timestamp,
-              ],
-            )
-            const acquired = db
-              .query(
-                `SELECT owner_token AS ownerToken, expires_at AS expiresAt,
-                      baseline_revision AS baselineRevision
-               FROM leases WHERE key_digest = ?`,
-              )
-              .get(digestKey) as LeaseRow
-            if (acquired.ownerToken !== ownerToken) {
-              return {
-                acquired: false as const,
-                ownerToken: acquired.ownerToken,
-                baselineRevision: acquired.baselineRevision ?? undefined,
-              }
-            }
-            return {
-              acquired: true as const,
-              lease: leaseFromRow(key, acquired, timing.heartbeatMs),
-            }
-          })
+          .transaction(() => acquireLease(db, key, projectKey, timing, now))
           .immediate(),
       )
     },

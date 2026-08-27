@@ -7,6 +7,17 @@ type ScrollAreaProps = ScrollAreaPrimitive.Root.Props & {
   viewportProps?: ScrollAreaPrimitive.Viewport.Props
 }
 
+function horizontalScrollLeft(
+  viewport: HTMLDivElement,
+  key: string,
+): number | undefined {
+  if (key === 'ArrowRight') return viewport.scrollLeft + 44
+  if (key === 'ArrowLeft') return viewport.scrollLeft - 44
+  if (key === 'Home') return 0
+  if (key === 'End') return viewport.scrollWidth
+  return undefined
+}
+
 function ScrollArea({
   className,
   children,
@@ -25,16 +36,7 @@ function ScrollArea({
       return
     }
     const viewport = event.currentTarget
-    const nextScrollLeft =
-      event.key === 'ArrowRight'
-        ? viewport.scrollLeft + 44
-        : event.key === 'ArrowLeft'
-          ? viewport.scrollLeft - 44
-          : event.key === 'Home'
-            ? 0
-            : event.key === 'End'
-              ? viewport.scrollWidth
-              : undefined
+    const nextScrollLeft = horizontalScrollLeft(viewport, event.key)
     if (nextScrollLeft === undefined) return
     event.preventDefault()
     viewport.scrollLeft = nextScrollLeft

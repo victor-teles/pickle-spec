@@ -186,23 +186,30 @@ export function compileWebAssertion(
     return { kind: draft.kind, locator }
   }
   if (draft.kind === 'count-equals') {
-    if (draft.nth !== undefined) return undefined
-    if (typeof draft.expected === 'number') {
-      return { kind: draft.kind, locator, expected: draft.expected }
-    }
-    const expected = parameterizeWebValue(draft.expected, bindings)
-    if (expected?.segments.length !== 1) return undefined
-    const segment = expected.segments[0]!
-    if ('literal' in segment) {
-      const count = Number(segment.literal)
-      return Number.isSafeInteger(count) && count >= 0
-        ? { kind: draft.kind, locator, expected: count }
-        : undefined
-    }
-    return { kind: draft.kind, locator, expected: segment }
+    return compileCountAssertion(draft, locator, bindings)
   }
   const expected = parameterizeWebValue(draft.expected, bindings)
   return expected ? { kind: draft.kind, locator, expected } : undefined
+}
+
+function compileCountAssertion(
+  draft: Extract<WebAssertionDraft, { kind: 'count-equals' }>,
+  locator: WebLocator,
+  bindings: readonly ScenarioVariableBinding[],
+): WebInstruction | undefined {
+  if (draft.nth !== undefined) return undefined
+  if (typeof draft.expected === 'number') {
+    return { kind: draft.kind, locator, expected: draft.expected }
+  }
+  const expected = parameterizeWebValue(draft.expected, bindings)
+  if (expected?.segments.length !== 1) return undefined
+  const segment = expected.segments[0]!
+  if (!('literal' in segment))
+    return { kind: draft.kind, locator, expected: segment }
+  const count = Number(segment.literal)
+  return Number.isSafeInteger(count) && count >= 0
+    ? { kind: draft.kind, locator, expected: count }
+    : undefined
 }
 
 export function compileObservedWebAction(
@@ -213,19 +220,61 @@ export function compileObservedWebAction(
   if (!locator) return undefined
   const method = payload.method ?? 'click'
   const args = payload.arguments ?? []
-  if (method === 'click' && args.length === 0) return { kind: 'click', locator }
-  if (method === 'hover' && args.length === 0) return { kind: 'hover', locator }
-  if ((method === 'fill' || method === 'type') && args.length === 1) {
-    const value = parameterizeWebValue(args[0]!, bindings)
-    return value ? { kind: method, locator, value } : undefined
+  const simple = compileSimpleAction(method, args, locator)
+  if (simple) return simple
+  return compileActionWithArguments(method, args, locator, bindings)
+}
+
+function compileSimpleAction(
+  method: string,
+  args: readonly string[],
+  locator: WebLocator,
+): WebInstruction | undefined {
+  if (args.length !== 0) return undefined
+  if (method === 'click') return { kind: 'click', locator }
+  if (method === 'hover') return { kind: 'hover', locator }
+  return undefined
+}
+
+function compileActionWithArguments(
+  method: string,
+  args: readonly string[],
+  locator: WebLocator,
+  bindings: readonly ScenarioVariableBinding[],
+): WebInstruction | undefined {
+  switch (method) {
+    case 'fill':
+    case 'type': {
+      if (args.length !== 1) return undefined
+      const value = parameterizeWebValue(args[0]!, bindings)
+      return value ? { kind: method, locator, value } : undefined
+    }
+    case 'selectOption':
+      return compileSelectOption(locator, args, bindings)
+    case 'waitForSelector':
+      return compileWaitFor(locator, args)
+    default:
+      return undefined
   }
-  if (method === 'selectOption' && args.length > 0) {
-    const values = args.map((value) => parameterizeWebValue(value, bindings))
-    return values.every((value) => value !== undefined)
-      ? { kind: 'select-option', locator, values: values as WebTemplate[] }
-      : undefined
-  }
-  if (method !== 'waitForSelector' || args.length !== 1) return undefined
+}
+
+function compileSelectOption(
+  locator: WebLocator,
+  args: readonly string[],
+  bindings: readonly ScenarioVariableBinding[],
+): WebInstruction | undefined {
+  if (args.length === 0) return undefined
+  const values = args.map((value) => parameterizeWebValue(value, bindings))
+  return values.every((value) => value !== undefined)
+    ? { kind: 'select-option', locator, values: values as WebTemplate[] }
+    : undefined
+}
+
+function compileWaitFor(
+  locator: WebLocator,
+  args: readonly string[],
+): WebInstruction | undefined {
+  if (args.length !== 1) return undefined
   const state = args[0]
   if (
     state !== 'attached' &&

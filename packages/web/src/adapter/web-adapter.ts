@@ -1,4 +1,5 @@
 import type {
+  OpenSessionInput,
   StepExecutionTargetAdapter,
   StepTargetSession,
 } from '@pickle-spec/runner'
@@ -99,6 +100,39 @@ function resolveBrowserLaunchOptions({
   return resolvedBrowser
 }
 
+function browserOptionsForSession(
+  input: OpenSessionInput,
+  options: WebAdapterOptions,
+  requireProviderApiKey: boolean,
+): BrowserOptions {
+  const executionMode = input.mode ?? 'adaptive'
+  const cacheReplay =
+    executionMode === 'replay' && input.executionCache !== undefined
+  return resolveBrowserLaunchOptions({
+    browser: {
+      ...options.browser,
+      selfHeal:
+        executionMode === 'replay'
+          ? false
+          : (options.browser?.selfHeal ?? true),
+    },
+    requireProviderApiKey,
+    requiresInference: !cacheReplay,
+  })
+}
+
+function shouldNavigateEagerly(
+  behavior: WebAdapterBehavior,
+  cacheReplay: boolean,
+  supportsInstructions: boolean,
+): boolean {
+  return (
+    behavior.navigationPolicy === 'eager' &&
+    !cacheReplay &&
+    !supportsInstructions
+  )
+}
+
 export interface WebAdapterBehavior {
   navigationPolicy?: 'delayed' | 'eager'
 }
@@ -139,17 +173,11 @@ export function createWebAdapter(
       const executionMode = input.mode ?? 'adaptive'
       const cacheReplay =
         executionMode === 'replay' && input.executionCache !== undefined
-      const browserOptions = resolveBrowserLaunchOptions({
-        browser: {
-          ...options.browser,
-          selfHeal:
-            executionMode === 'replay'
-              ? false
-              : (options.browser?.selfHeal ?? true),
-        },
+      const browserOptions = browserOptionsForSession(
+        input,
+        options,
         requireProviderApiKey,
-        requiresInference: !cacheReplay,
-      })
+      )
       const logicalSession = await pool.openLogicalSession(
         browserOptions,
         input.signal,
@@ -182,9 +210,11 @@ export function createWebAdapter(
 
       let eagerlyNavigated = false
       if (
-        behavior.navigationPolicy === 'eager' &&
-        !cacheReplay &&
-        !automation.executeInstruction
+        shouldNavigateEagerly(
+          behavior,
+          cacheReplay,
+          Boolean(automation.executeInstruction),
+        )
       ) {
         await automation.navigate(options.baseUrl, input.signal)
         eagerlyNavigated = true

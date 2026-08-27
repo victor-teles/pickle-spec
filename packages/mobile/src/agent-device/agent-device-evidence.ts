@@ -34,6 +34,11 @@ export interface FinishedScenarioEvidence {
   availability: MobileEvidenceAvailability[]
 }
 
+interface CapturedEvidence {
+  artifact?: MobileArtifact
+  availability: MobileEvidenceAvailability
+}
+
 const screenshotResultSchema = z.object({ path: z.string().min(1) })
 
 function errorMessage(error: unknown): string {
@@ -80,6 +85,74 @@ async function capturedArtifact(
     capturedAt,
     sizeBytes,
   }
+}
+
+async function captureEvidence(
+  kind: MobileArtifactKind,
+  capture: () => Promise<MobileArtifact>,
+): Promise<CapturedEvidence> {
+  try {
+    return {
+      artifact: await capture(),
+      availability: { kind, state: 'available' },
+    }
+  } catch (error) {
+    return { availability: unavailableEvidence(kind, error) }
+  }
+}
+
+function appendCapturedEvidence(
+  result: CapturedEvidence,
+  artifacts: MobileArtifact[],
+  availability: MobileEvidenceAvailability[],
+): void {
+  if (result.artifact) artifacts.push(result.artifact)
+  availability.push(result.availability)
+}
+
+async function stopRecording(
+  session: AgentDeviceEvidenceSession,
+  path: string,
+): Promise<MobileArtifact> {
+  await session.client.recording.record({ action: 'stop', path })
+  return capturedArtifact('recording', path, 'video/mp4')
+}
+
+async function stopTrace(
+  session: AgentDeviceEvidenceSession,
+  path: string,
+): Promise<MobileArtifact> {
+  await session.client.recording.trace({ action: 'stop', path })
+  return capturedArtifact('trace', path)
+}
+
+async function captureDeviceLog(
+  session: AgentDeviceEvidenceSession,
+  directory: string,
+): Promise<MobileArtifact> {
+  if (!session.deviceLogPath) {
+    throw new Error('Agent Device did not provide an app log path')
+  }
+  const path = join(directory, 'scenario.log')
+  const log = await readFile(session.deviceLogPath, 'utf8')
+  await writeFile(path, redactText(log, session.redactions), 'utf8')
+  return capturedArtifact('device-log', path, 'text/plain')
+}
+
+async function captureScreenshot(
+  session: AgentDeviceEvidenceSession,
+  directory: string,
+): Promise<MobileArtifact> {
+  const requestedPath = join(directory, 'scenario.png')
+  const screenshot = screenshotResultSchema.parse(
+    await session.client.capture.screenshot({ path: requestedPath }),
+  )
+  if (resolve(screenshot.path) !== resolve(requestedPath)) {
+    throw new Error(
+      'Agent Device returned a screenshot path outside the requested evidence location',
+    )
+  }
+  return capturedArtifact('screenshot', screenshot.path, 'image/png')
 }
 
 export async function startScenarioEvidence(
@@ -141,63 +214,40 @@ export async function finishScenarioEvidence(
   if (!active.directory) return { artifacts, availability }
 
   if (active.recordingPath) {
-    try {
-      await session.client.recording.record({
-        action: 'stop',
-        path: active.recordingPath,
-      })
-      artifacts.push(
-        await capturedArtifact('recording', active.recordingPath, 'video/mp4'),
-      )
-      availability.push({ kind: 'recording', state: 'available' })
-    } catch (error) {
-      availability.push(unavailableEvidence('recording', error))
-    }
+    appendCapturedEvidence(
+      await captureEvidence('recording', () =>
+        stopRecording(session, active.recordingPath!),
+      ),
+      artifacts,
+      availability,
+    )
   }
   if (active.tracePath) {
-    try {
-      await session.client.recording.trace({
-        action: 'stop',
-        path: active.tracePath,
-      })
-      artifacts.push(await capturedArtifact('trace', active.tracePath))
-      availability.push({ kind: 'trace', state: 'available' })
-    } catch (error) {
-      availability.push(unavailableEvidence('trace', error))
-    }
+    appendCapturedEvidence(
+      await captureEvidence('trace', () =>
+        stopTrace(session, active.tracePath!),
+      ),
+      artifacts,
+      availability,
+    )
   }
   if (session.artifacts.has('device-log')) {
-    try {
-      if (!session.deviceLogPath) {
-        throw new Error('Agent Device did not provide an app log path')
-      }
-      const path = join(active.directory, 'scenario.log')
-      const log = await readFile(session.deviceLogPath, 'utf8')
-      await writeFile(path, redactText(log, session.redactions), 'utf8')
-      artifacts.push(await capturedArtifact('device-log', path, 'text/plain'))
-      availability.push({ kind: 'device-log', state: 'available' })
-    } catch (error) {
-      availability.push(unavailableEvidence('device-log', error))
-    }
+    appendCapturedEvidence(
+      await captureEvidence('device-log', () =>
+        captureDeviceLog(session, active.directory!),
+      ),
+      artifacts,
+      availability,
+    )
   }
   if (session.artifacts.has('screenshot')) {
-    try {
-      const requestedPath = join(active.directory, 'scenario.png')
-      const screenshot = screenshotResultSchema.parse(
-        await session.client.capture.screenshot({ path: requestedPath }),
-      )
-      if (resolve(screenshot.path) !== resolve(requestedPath)) {
-        throw new Error(
-          'Agent Device returned a screenshot path outside the requested evidence location',
-        )
-      }
-      artifacts.push(
-        await capturedArtifact('screenshot', screenshot.path, 'image/png'),
-      )
-      availability.push({ kind: 'screenshot', state: 'available' })
-    } catch (error) {
-      availability.push(unavailableEvidence('screenshot', error))
-    }
+    appendCapturedEvidence(
+      await captureEvidence('screenshot', () =>
+        captureScreenshot(session, active.directory!),
+      ),
+      artifacts,
+      availability,
+    )
   }
   return { artifacts, availability }
 }

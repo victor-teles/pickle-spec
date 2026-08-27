@@ -23,6 +23,18 @@ type ResultEvidenceTimelineProps = {
   onPauseFollowing?: () => void
 }
 
+function selectedTimelineEntry(
+  entries: readonly TimelineEntry[],
+  activeEntryId: string | undefined,
+  causalEntry: TimelineEntry | undefined,
+): TimelineEntry | undefined {
+  return (
+    entries.find((entry) => entry.id === activeEntryId) ??
+    causalEntry ??
+    entries.at(-1)
+  )
+}
+
 export function ResultEvidenceTimeline(props: ResultEvidenceTimelineProps) {
   const [selectedEntryId, setSelectedEntryId] = useState<string>()
   const causalEntry = causalTimelineEntry(props.entries)
@@ -32,10 +44,11 @@ export function ResultEvidenceTimeline(props: ResultEvidenceTimelineProps) {
     props.follow === true
       ? followedEntryId
       : (selectedEntryId ?? followedEntryId)
-  const selectedEntry =
-    props.entries.find((entry) => entry.id === activeEntryId) ??
-    causalEntry ??
-    props.entries.at(-1)
+  const selectedEntry = selectedTimelineEntry(
+    props.entries,
+    activeEntryId,
+    causalEntry,
+  )
   const causalPointUnavailable =
     !props.entries.some((entry) => entry.causalAt) &&
     (props.state === 'failed' || props.state === 'infrastructure-error')

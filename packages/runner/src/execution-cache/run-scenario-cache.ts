@@ -884,22 +884,39 @@ export async function runScenarioWithExecutionCache(
   }
 
   if (cachePolicy === 'refresh') {
-    await appendEvent(events, input, {
-      type: 'cache-refresh',
-      cacheKey,
-      scope: nextAttemptScope(input),
-    })
-    const observedSnapshot =
-      await input.executionCache!.store.coordination?.readCurrent(cacheKey)
-    return runCoordinatedAdaptive({
-      input,
-      events,
-      cacheKey,
-      cacheOutcome: 'refresh',
-      observedRevision: observedSnapshot?.revision,
-    })
+    return runCacheRefresh(input, events, cacheKey)
   }
 
+  return runCachedScenario(input, events, cachePolicy, cacheKey)
+}
+
+async function runCacheRefresh(
+  input: RunScenarioInput,
+  events: RunEvent[],
+  cacheKey: ExecutionCacheKey,
+): Promise<ScenarioRun> {
+  await appendEvent(events, input, {
+    type: 'cache-refresh',
+    cacheKey,
+    scope: nextAttemptScope(input),
+  })
+  const observedSnapshot =
+    await input.executionCache!.store.coordination?.readCurrent(cacheKey)
+  return runCoordinatedAdaptive({
+    input,
+    events,
+    cacheKey,
+    cacheOutcome: 'refresh',
+    observedRevision: observedSnapshot?.revision,
+  })
+}
+
+async function runCachedScenario(
+  input: RunScenarioInput,
+  events: RunEvent[],
+  cachePolicy: ExecutionCachePolicy,
+  cacheKey: ExecutionCacheKey,
+): Promise<ScenarioRun> {
   const observedSnapshot =
     await input.executionCache!.store.coordination?.readCurrent(cacheKey)
   const source = await input.executionCache!.store.read(cacheKey)

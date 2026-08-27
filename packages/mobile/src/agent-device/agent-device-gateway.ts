@@ -50,6 +50,63 @@ function replayScenarioStepIndex(
   return Math.max(0, payload.stepRanges.length - 1)
 }
 
+function passedScenarioExecution(
+  session: GatewaySession,
+): WorkerScenarioExecution {
+  return {
+    stepExecutions: session.compiled.descriptions.map((description) => ({
+      state: 'passed',
+      resolvedActions: [{ description }],
+    })),
+  }
+}
+
+function divergentScenarioExecution(
+  session: GatewaySession,
+  error: unknown,
+): WorkerScenarioExecution {
+  const failedStep = replayScenarioStepIndex(error, session.compiled.payload)
+  return {
+    stepExecutions: session.compiled.descriptions
+      .slice(0, failedStep + 1)
+      .map((description, index) =>
+        index === failedStep
+          ? {
+              state: 'failed' as const,
+              resolvedActions: [{ description }],
+              replayDiverged: true,
+              message: `Agent Device Replay diverged at Scenario step ${failedStep + 1}`,
+            }
+          : {
+              state: 'passed' as const,
+              resolvedActions: [{ description }],
+            },
+      ),
+    replayDiverged: true,
+  }
+}
+
+function attachFinishedEvidence(
+  session: GatewaySession,
+  finished: Awaited<ReturnType<typeof finishScenarioEvidence>>,
+): void {
+  const finalStep = session.execution?.stepExecutions.at(-1)
+  if (!finalStep) return
+  if (finished.artifacts.length > 0) finalStep.artifacts = finished.artifacts
+  const availability = [
+    ...session.evidenceAvailability,
+    ...finished.availability,
+  ]
+  if (availability.length === 0) return
+  const byKind = new Map(availability.map((item) => [item.kind, item]))
+  finalStep.evidenceAvailability = session.requestedArtifacts.flatMap(
+    (kind) => {
+      const item = byKind.get(kind)
+      return item ? [item] : []
+    },
+  )
+}
+
 export class AgentDeviceGateway {
   private readonly createClient: AgentDeviceClientFactory
   private readonly sessions = new Map<string, GatewaySession>()
@@ -144,60 +201,16 @@ export class AgentDeviceGateway {
         script: session.compiled.payload.script,
         runtimeEnv: session.compiled.runtimeEnv,
       })
-      session.execution = {
-        stepExecutions: session.compiled.descriptions.map((description) => ({
-          state: 'passed',
-          resolvedActions: [{ description }],
-        })),
-      }
+      session.execution = passedScenarioExecution(session)
     } catch (error) {
       if (!isAgentDeviceReplayDivergence(error)) throw error
-      const failedStep = replayScenarioStepIndex(
-        error,
-        session.compiled.payload,
-      )
-      session.execution = {
-        stepExecutions: session.compiled.descriptions
-          .slice(0, failedStep + 1)
-          .map((description, index) =>
-            index === failedStep
-              ? {
-                  state: 'failed' as const,
-                  resolvedActions: [{ description }],
-                  replayDiverged: true,
-                  message: `Agent Device Replay diverged at Scenario step ${failedStep + 1}`,
-                }
-              : {
-                  state: 'passed' as const,
-                  resolvedActions: [{ description }],
-                },
-          ),
-        replayDiverged: true,
-      }
+      session.execution = divergentScenarioExecution(session, error)
     } finally {
       const finishedEvidence = await finishScenarioEvidence(
         session,
         activeEvidence,
       )
-      const finalStep = session.execution?.stepExecutions.at(-1)
-      if (finalStep) {
-        if (finishedEvidence.artifacts.length > 0) {
-          finalStep.artifacts = finishedEvidence.artifacts
-        }
-        const availability = [
-          ...session.evidenceAvailability,
-          ...finishedEvidence.availability,
-        ]
-        if (availability.length > 0) {
-          const byKind = new Map(availability.map((item) => [item.kind, item]))
-          finalStep.evidenceAvailability = session.requestedArtifacts.flatMap(
-            (kind) => {
-              const item = byKind.get(kind)
-              return item ? [item] : []
-            },
-          )
-        }
-      }
+      attachFinishedEvidence(session, finishedEvidence)
     }
     return session.execution
   }

@@ -121,6 +121,28 @@ const indexSchemaVersion = 5
 export const defaultRetention: Readonly<RetentionPolicy> = {}
 export const defaultRunStorageWarningBytes = 5 * 1024 * 1024 * 1024
 
+function runStartedEvent(
+  id: string,
+  startedAt: string,
+  options: CreateTestRunOptions,
+): RunEventPayload {
+  return {
+    type: 'run-started',
+    run: {
+      id,
+      startedAt,
+      ...(options.sourceRunId ? { sourceRunId: options.sourceRunId } : {}),
+      ...(options.suite ? { suite: options.suite } : {}),
+      ...(options.applicationRevision
+        ? { applicationRevision: options.applicationRevision }
+        : {}),
+      ...(options.evidencePersistence
+        ? { evidencePersistence: options.evidencePersistence }
+        : {}),
+    },
+  }
+}
+
 const stateRank: Record<TestResultState, number> = {
   skipped: 0,
   passed: 1,
@@ -400,23 +422,7 @@ export function openTestRunStore(options: TestRunStoreOptions): TestRunStore {
       }
       const run = persistedRunFor(id, startedAt, options)
       try {
-        await run.append({
-          type: 'run-started',
-          run: {
-            id,
-            startedAt,
-            ...(options.sourceRunId
-              ? { sourceRunId: options.sourceRunId }
-              : {}),
-            ...(options.suite ? { suite: options.suite } : {}),
-            ...(options.applicationRevision
-              ? { applicationRevision: options.applicationRevision }
-              : {}),
-            ...(options.evidencePersistence
-              ? { evidencePersistence: options.evidencePersistence }
-              : {}),
-          },
-        })
+        await run.append(runStartedEvent(id, startedAt, options))
         return run
       } catch (error) {
         await rm(runDirectory, { recursive: true, force: true })
@@ -487,47 +493,73 @@ function persistedTestRun(
     return manifest.finishedAt ? manifest : undefined
   }
 
+  async function appendEvent(
+    event: RunEvent | RunEventPayload,
+  ): Promise<RunEvent> {
+    if (await finalizedManifest()) {
+      throw new Error(`Test run "${id}" is finalized and cannot be changed`)
+    }
+    const current = await readEvents(eventsPath, incompatibleSchema)
+    const recordable = recordableRunEventPayloadData(eventPayload(event))
+    const policy =
+      'scope' in recordable
+        ? evidencePersistenceFor(recordable.scope.executionTargetProfileId)
+        : evidencePersistenceFor('')
+    const envelope = {
+      schemaVersion: testRunSchemaVersion,
+      sequence: current.length + 1,
+      occurredAt:
+        'occurredAt' in event ? event.occurredAt : now().toISOString(),
+    } as const
+    const persisted = await persistEventArtifacts(
+      recordable,
+      current,
+      policy,
+      artifactsDirectory,
+    )
+    const versioned = { ...persisted.event, ...envelope } as RunEvent
+    try {
+      await appendFile(eventsPath, `${JSON.stringify(versioned)}\n`)
+    } catch (error) {
+      await Promise.all(
+        persisted.publishedPaths.map((path) => rm(path, { force: true })),
+      )
+      throw error
+    }
+    return !shouldPersistEventEvidence(recordable, policy)
+      ? ({ ...recordable, ...envelope } as RunEvent)
+      : versioned
+  }
+
+  async function materializeRun(input?: {
+    finished?: boolean
+  }): Promise<TestRunManifest> {
+    const finalized = await finalizedManifest()
+    if (finalized) return finalized
+    const recorded = await readEvents(eventsPath, incompatibleSchema)
+    const results = materializeTestResults(recorded)
+    const manifest: TestRunManifest = {
+      schemaVersion: testRunSchemaVersion,
+      id,
+      startedAt: startedAtFrom(recorded, startedAt),
+      ...(input?.finished === false ? {} : { finishedAt: now().toISOString() }),
+      ...(metadata.sourceRunId ? { sourceRunId: metadata.sourceRunId } : {}),
+      ...(metadata.suite ? { suite: metadata.suite } : {}),
+      ...(metadata.applicationRevision
+        ? { applicationRevision: metadata.applicationRevision }
+        : {}),
+      state: aggregateTestResultState(results),
+      results,
+    }
+    await Bun.write(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`)
+    await onMaterialize(manifest)
+    return manifest
+  }
+
   return {
     id,
     async append(event) {
-      return serializeOperation(async () => {
-        if (await finalizedManifest()) {
-          throw new Error(`Test run "${id}" is finalized and cannot be changed`)
-        }
-        const current = await readEvents(eventsPath, incompatibleSchema)
-        const recordable = recordableRunEventPayloadData(eventPayload(event))
-        const policy =
-          'scope' in recordable
-            ? evidencePersistenceFor(recordable.scope.executionTargetProfileId)
-            : evidencePersistenceFor('')
-        const envelope = {
-          schemaVersion: testRunSchemaVersion,
-          sequence: current.length + 1,
-          occurredAt:
-            'occurredAt' in event ? event.occurredAt : now().toISOString(),
-        } as const
-        const persisted = await persistEventArtifacts(
-          recordable,
-          current,
-          policy,
-          artifactsDirectory,
-        )
-        const versioned = {
-          ...persisted.event,
-          ...envelope,
-        } as RunEvent
-        try {
-          await appendFile(eventsPath, `${JSON.stringify(versioned)}\n`)
-        } catch (error) {
-          await Promise.all(
-            persisted.publishedPaths.map((path) => rm(path, { force: true })),
-          )
-          throw error
-        }
-        return !shouldPersistEventEvidence(recordable, policy)
-          ? ({ ...recordable, ...envelope } as RunEvent)
-          : versioned
-      })
+      return serializeOperation(() => appendEvent(event))
     },
     async events() {
       return serializeOperation(() =>
@@ -535,32 +567,7 @@ function persistedTestRun(
       )
     },
     async materialize(input) {
-      return serializeOperation(async () => {
-        const finalized = await finalizedManifest()
-        if (finalized) return finalized
-        const recorded = await readEvents(eventsPath, incompatibleSchema)
-        const results = materializeTestResults(recorded)
-        const manifest: TestRunManifest = {
-          schemaVersion: testRunSchemaVersion,
-          id,
-          startedAt: startedAtFrom(recorded, startedAt),
-          ...(input?.finished === false
-            ? {}
-            : { finishedAt: now().toISOString() }),
-          ...(metadata.sourceRunId
-            ? { sourceRunId: metadata.sourceRunId }
-            : {}),
-          ...(metadata.suite ? { suite: metadata.suite } : {}),
-          ...(metadata.applicationRevision
-            ? { applicationRevision: metadata.applicationRevision }
-            : {}),
-          state: aggregateTestResultState(results),
-          results,
-        }
-        await Bun.write(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`)
-        await onMaterialize(manifest)
-        return manifest
-      })
+      return serializeOperation(() => materializeRun(input))
     },
   }
 }
@@ -580,6 +587,32 @@ interface IndexedRun {
   executionModes: string
   cacheOutcomes: string
   inferenceCount: number | null
+}
+
+function testRunSummaryFrom(row: unknown): TestRunSummary {
+  const indexed = row as IndexedRun
+  const executionModes = JSON.parse(indexed.executionModes) as ExecutionMode[]
+  const cacheOutcomes = JSON.parse(indexed.cacheOutcomes) as CacheOutcome[]
+  return {
+    id: indexed.id,
+    startedAt: indexed.startedAt,
+    ...(indexed.finishedAt ? { finishedAt: indexed.finishedAt } : {}),
+    ...(indexed.sourceRunId ? { sourceRunId: indexed.sourceRunId } : {}),
+    ...(indexed.suite ? { suite: indexed.suite } : {}),
+    executionTargetProfileIds: JSON.parse(
+      indexed.executionTargetProfileIds,
+    ) as string[],
+    specificationUris: JSON.parse(indexed.specificationUris) as string[],
+    ...(indexed.applicationRevision
+      ? { applicationRevision: indexed.applicationRevision }
+      : {}),
+    ...(indexed.durationMs !== null ? { durationMs: indexed.durationMs } : {}),
+    state: indexed.state,
+    resultCount: indexed.resultCount,
+    executionModes: executionModes.length > 0 ? executionModes : undefined,
+    cacheOutcomes: cacheOutcomes.length > 0 ? cacheOutcomes : undefined,
+    inferenceCount: indexed.inferenceCount ?? undefined,
+  }
 }
 
 type IndexColumn = { name: string }
@@ -827,35 +860,7 @@ function listRuns(db: Database): TestRunSummary[] {
        FROM runs ORDER BY id`,
     )
     .all()
-    .map((row) => {
-      const indexed = row as IndexedRun
-      const executionModes = JSON.parse(
-        indexed.executionModes,
-      ) as ExecutionMode[]
-      const cacheOutcomes = JSON.parse(indexed.cacheOutcomes) as CacheOutcome[]
-      return {
-        id: indexed.id,
-        startedAt: indexed.startedAt,
-        ...(indexed.finishedAt ? { finishedAt: indexed.finishedAt } : {}),
-        ...(indexed.sourceRunId ? { sourceRunId: indexed.sourceRunId } : {}),
-        ...(indexed.suite ? { suite: indexed.suite } : {}),
-        executionTargetProfileIds: JSON.parse(
-          indexed.executionTargetProfileIds,
-        ) as string[],
-        specificationUris: JSON.parse(indexed.specificationUris) as string[],
-        ...(indexed.applicationRevision
-          ? { applicationRevision: indexed.applicationRevision }
-          : {}),
-        ...(indexed.durationMs !== null
-          ? { durationMs: indexed.durationMs }
-          : {}),
-        state: indexed.state,
-        resultCount: indexed.resultCount,
-        executionModes: executionModes.length > 0 ? executionModes : undefined,
-        cacheOutcomes: cacheOutcomes.length > 0 ? cacheOutcomes : undefined,
-        inferenceCount: indexed.inferenceCount ?? undefined,
-      }
-    })
+    .map(testRunSummaryFrom)
 }
 
 function listRunIds(db: Database): string[] {
@@ -1148,32 +1153,19 @@ async function copyStepArtifacts(
   const artifacts: TestArtifact[] = []
   try {
     for (const [index, artifact] of step.artifacts.entries()) {
-      const path = artifactDestination(
+      const copied = await copyStepArtifact(
         artifact,
         index,
         artifactsDirectory,
+        stagingDirectory,
         name,
       )
-      const filename = basename(path)
-      if (artifact.path === path) {
-        artifacts.push(artifact)
-        continue
-      }
-      const stagedPath = join(stagingDirectory, filename)
-      try {
-        await copyFile(artifact.path, stagedPath)
-        if (await pathExists(path)) {
-          throw new Error(`Test artifact destination already exists: ${path}`)
-        }
-        await rename(stagedPath, path)
-        publishedPaths.push(path)
-        artifacts.push({ ...artifact, path })
-      } catch (error) {
-        captureFailures.push({
-          kind: artifact.kind,
-          message: `${artifact.path}: ${errorMessage(error)}`,
-        })
-      }
+      appendCopiedStepArtifact(
+        copied,
+        artifacts,
+        publishedPaths,
+        captureFailures,
+      )
     }
   } finally {
     await rm(stagingDirectory, { recursive: true, force: true })
@@ -1186,6 +1178,50 @@ async function copyStepArtifacts(
     },
     publishedPaths,
     captureFailures,
+  }
+}
+
+interface CopiedStepArtifact {
+  artifact?: TestArtifact
+  publishedPath?: string
+  captureFailure?: EvidenceCaptureFailure
+}
+
+function appendCopiedStepArtifact(
+  copied: CopiedStepArtifact,
+  artifacts: TestArtifact[],
+  publishedPaths: string[],
+  captureFailures: EvidenceCaptureFailure[],
+): void {
+  if (copied.artifact) artifacts.push(copied.artifact)
+  if (copied.publishedPath) publishedPaths.push(copied.publishedPath)
+  if (copied.captureFailure) captureFailures.push(copied.captureFailure)
+}
+
+async function copyStepArtifact(
+  artifact: TestArtifact,
+  index: number,
+  artifactsDirectory: string,
+  stagingDirectory: string,
+  name: string,
+): Promise<CopiedStepArtifact> {
+  const path = artifactDestination(artifact, index, artifactsDirectory, name)
+  if (artifact.path === path) return { artifact }
+  const stagedPath = join(stagingDirectory, basename(path))
+  try {
+    await copyFile(artifact.path, stagedPath)
+    if (await pathExists(path)) {
+      throw new Error(`Test artifact destination already exists: ${path}`)
+    }
+    await rename(stagedPath, path)
+    return { artifact: { ...artifact, path }, publishedPath: path }
+  } catch (error) {
+    return {
+      captureFailure: {
+        kind: artifact.kind,
+        message: `${artifact.path}: ${errorMessage(error)}`,
+      },
+    }
   }
 }
 
