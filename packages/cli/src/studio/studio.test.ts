@@ -391,6 +391,9 @@ export default {
         if (!Array.isArray(payload.operations)) return undefined
         return payload
       },
+      prefixStepCount(payload) {
+        return payload.operations.length
+      },
     },
     async openSession(input) {
       return {
@@ -508,6 +511,9 @@ export default {
       adapterCacheSchemaVersion: 'test.1',
       parse(payload) {
         return payload as CachePayload
+      },
+      prefixStepCount() {
+        return 1
       },
     }
     const envelope: ExecutionCacheEnvelope<CachePayload> = {
@@ -687,7 +693,7 @@ export default {
       const timeline = page.getByRole('list', { name: 'Execution timeline' })
       expect(await timeline.textContent()).toContain('Then payment is captured')
       expect(await timeline.textContent()).toContain('Payment was declined')
-      expect(await timeline.textContent()).toContain('Run event')
+      expect(await timeline.textContent()).not.toContain('Run event')
       expect(
         await page.getByRole('list', { name: 'Timeline legend' }).count(),
       ).toBe(1)
@@ -701,6 +707,7 @@ export default {
         name: /Step Then payment is captured/,
       })
       await page.getByRole('tab', { name: 'Timeline' }).focus()
+      await page.keyboard.press('Tab')
       await page.keyboard.press('Tab')
       await page.keyboard.press('Tab')
       expect(
@@ -740,6 +747,8 @@ export default {
       expect(
         await page.getByRole('button', { name: 'Resume following' }).count(),
       ).toBe(1)
+      await page.getByRole('switch', { name: 'Verbose timeline' }).click()
+      expect(await timeline.textContent()).toContain('Run event')
       await page.setViewportSize({ width: 390, height: 844 })
       const timelineChart = page.getByRole('region', {
         name: 'Execution timeline chart',
@@ -1169,10 +1178,12 @@ Feature: Search
       })
       const timelineText = await evidenceTimeline.textContent()
       expect(timelineText).toContain('Step')
-      expect(timelineText).toContain('Run event')
+      expect(timelineText).not.toContain('Run event')
       expect(timelineText).toContain('Diagnostic entry')
       expect(timelineText).toContain('Test artifact')
       expect(timelineText).toContain('Failure context')
+      await page.getByRole('switch', { name: 'Verbose timeline' }).click()
+      expect(await evidenceTimeline.textContent()).toContain('Run event')
       await page.getByRole('tab', { name: 'Artifacts' }).click()
       expect(
         await page

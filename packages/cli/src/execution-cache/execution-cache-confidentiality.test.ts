@@ -294,6 +294,9 @@ export default {
           ? payload
           : undefined
       },
+      prefixStepCount(payload) {
+        return payload.operations.length
+      },
     },
     async openSession(input) {
       const forbiddenEnvironmentNames = process.env

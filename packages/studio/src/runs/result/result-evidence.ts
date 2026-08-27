@@ -115,6 +115,44 @@ export type TimelineEntry = {
   attributes: readonly TimelineEntryAttribute[]
 }
 
+export type TimelineDensity = 'essential' | 'verbose'
+
+type TimelineDensityEntry = Pick<TimelineEntry, 'kind' | 'causal'>
+
+export function isEssentialTimelineEntry(entry: TimelineDensityEntry): boolean {
+  switch (entry.kind) {
+    case 'Step':
+    case 'Diagnostic entry':
+    case 'Test artifact':
+      return true
+    case 'Resolved action':
+      return entry.causal === true
+    case 'Browser activity':
+    case 'Run event':
+      return false
+    default: {
+      const exhaustive: never = entry.kind
+      return exhaustive
+    }
+  }
+}
+
+export function visibleTimelineEntries<Entry extends TimelineDensityEntry>(
+  entries: readonly Entry[],
+  density: TimelineDensity,
+): readonly Entry[] {
+  switch (density) {
+    case 'verbose':
+      return entries
+    case 'essential':
+      return entries.filter(isEssentialTimelineEntry)
+    default: {
+      const exhaustive: never = density
+      return exhaustive
+    }
+  }
+}
+
 export function causalTimelineEntry(
   entries: readonly TimelineEntry[],
 ): TimelineEntry | undefined {

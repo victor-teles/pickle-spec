@@ -7,6 +7,7 @@ import { createWebStepFinalizer } from '../evidence/web-step-finalizer'
 import { createWebCacheSession } from '../execution-cache/web-cache-session'
 import {
   parseWebExecutionCachePayload,
+  webPrefixStepCount,
   webTargetConfigurationFingerprint,
 } from '../execution-cache/web-execution-cache'
 import { resolveFidelityPolicy } from './fidelity'
@@ -161,6 +162,7 @@ export function createWebAdapter(
         fidelity,
       }),
       parse: parseWebExecutionCachePayload,
+      prefixStepCount: webPrefixStepCount,
     },
     fidelityPolicy: {
       profile: fidelity.profile,

@@ -4,10 +4,18 @@ import {
   type ScenarioVariableBinding,
 } from '@pickle-spec/spec'
 import { persistedEvidenceKinds } from '../evidence/evidence'
+import {
+  cachedStepPrefixFrom,
+  evaluationAt,
+  type GapCursor,
+  gapCursor,
+  reseatGap,
+} from '../execution-cache/cached-step-prefix'
 import type { ExecutionCacheEnvelope } from '../execution-cache/execution-cache'
 import type {
   DiagnosticEntry,
   EvidenceAvailability,
+  ExecutionCachePolicy,
   ExecutionMode,
   ExecutionTimeouts,
   RunEvent,
@@ -17,6 +25,7 @@ import type {
   ScenarioAttempt,
   ScenarioRun,
   ScenarioTargetSession,
+  StepEvaluation,
   StepExecution,
   StepTargetSession,
   TargetSession,
@@ -128,6 +137,8 @@ export interface AttemptScenarioRun extends ScenarioRun {
   completion?: TargetSessionCompletion
   replayDiverged: boolean
   runtimeValueExposed: boolean
+  replayedStepCount: number
+  adaptiveEvaluated: boolean
 }
 
 interface InitialAttemptOutcome {
@@ -350,6 +361,8 @@ interface AttemptProgress {
   runtimeValueExposed: boolean
   evidenceAvailability: EvidenceAvailability[]
   diagnostics: DiagnosticEntry[]
+  replayedStepCount: number
+  adaptiveEvaluated: boolean
 }
 
 type EmitAttemptEvent = (
@@ -405,7 +418,9 @@ async function finishAttempt(
     durationMs: durationMs(context.scenarioStartedAt, finishedAt),
     state: context.state,
     steps: context.steps,
-    executionMode: context.input.mode,
+    executionMode: context.progress.adaptiveEvaluated
+      ? 'adaptive'
+      : context.input.mode,
     inferenceCount: context.completion?.inferenceCount ?? 0,
     ...(context.input.adapter.fidelityPolicy
       ? { fidelityPolicy: context.input.adapter.fidelityPolicy }
@@ -430,6 +445,8 @@ async function finishAttempt(
     completion: context.completion,
     replayDiverged: context.progress.replayDiverged,
     runtimeValueExposed: context.progress.runtimeValueExposed,
+    replayedStepCount: context.progress.replayedStepCount,
+    adaptiveEvaluated: context.progress.adaptiveEvaluated,
   }
 }
 
@@ -522,7 +539,7 @@ async function completeTargetSession(
   context: SessionExecutionContext,
 ): Promise<TargetSessionCompletion | undefined> {
   if (
-    context.progress.state !== 'passed' ||
+    context.progress.state === 'cancelled' ||
     context.input.signal?.aborted ||
     !session.complete
   ) {
@@ -639,6 +656,8 @@ async function executeScenarioSession(
       progress.replayDiverged = true
       progress.state = 'failed'
       progress.message ??= 'Replay diverged from the deterministic Scenario'
+    } else if (input.mode === 'replay') {
+      progress.replayedStepCount = input.scenario.steps.length
     }
   } catch (error) {
     recordExecutionError(
@@ -652,61 +671,140 @@ async function executeScenarioSession(
   }
 }
 
+async function executeEvaluatedStep(input: {
+  session: StepTargetSession
+  scenarioStartedAt: number
+  context: SessionExecutionContext
+  stepIndex: number
+  step: ScenarioStep
+  templateStep: ScenarioStep
+  evaluation: StepEvaluation
+  startedAt: string
+}): Promise<StepExecution | undefined> {
+  const { bindings, progress, recordStep } = input.context
+  try {
+    const deadline = stepDeadline(
+      input.context.input.timeout,
+      input.scenarioStartedAt,
+    )
+    return await executeWithDeadline(
+      (operationSignal) =>
+        input.session.executeStep(input.step, operationSignal, {
+          stepIndex: input.stepIndex,
+          templateStep: input.templateStep,
+          runtimeBindings: input.context.input.scenario.runtimeBindings ?? [],
+          evaluation: input.evaluation,
+        }),
+      input.context.input.signal,
+      deadline.timeoutMs,
+      deadline.timeoutMessage,
+    )
+  } catch (error) {
+    recordExecutionError(
+      progress,
+      error,
+      bindings,
+      input.context.input,
+      input.startedAt,
+      input.context.input.signal,
+      input.stepIndex,
+    )
+    await recordStep(input.stepIndex, input.startedAt, {
+      step: input.templateStep,
+      state: progress.state,
+      resolvedActions: [],
+      message: progress.message,
+    })
+    return undefined
+  }
+}
+
+async function advanceGapStep(input: {
+  session: StepTargetSession
+  scenarioStartedAt: number
+  context: SessionExecutionContext
+  stepIndex: number
+  step: ScenarioStep
+  cursor: GapCursor
+  cachePolicy: ExecutionCachePolicy
+}): Promise<{ cursor: GapCursor; stop: boolean }> {
+  const { context, stepIndex } = input
+  const { emit, input: attempt, progress, recordExecution } = context
+  if (attempt.signal?.aborted) {
+    progress.state = 'cancelled'
+    progress.message = 'Scenario cancelled before the next step started'
+    return { cursor: input.cursor, stop: true }
+  }
+  const templateStep = templateStepAt(attempt.scenario, stepIndex)
+  const started = await emit({
+    type: 'step-started',
+    step: templateStep,
+    ...attemptIdentity(attempt, stepIndex),
+  })
+  let evaluation = evaluationAt(input.cursor, stepIndex)
+  if (evaluation === 'adaptive') progress.adaptiveEvaluated = true
+  const stepInput = {
+    session: input.session,
+    scenarioStartedAt: input.scenarioStartedAt,
+    context,
+    stepIndex,
+    step: input.step,
+    templateStep,
+    startedAt: started.occurredAt,
+  }
+  let execution = await executeEvaluatedStep({ ...stepInput, evaluation })
+  if (!execution) return { cursor: input.cursor, stop: true }
+  let cursor = input.cursor
+  if (
+    evaluation === 'replay' &&
+    execution.replayDiverged &&
+    input.cachePolicy !== 'cache-only'
+  ) {
+    cursor = reseatGap(cursor, stepIndex)
+    evaluation = 'adaptive'
+    progress.adaptiveEvaluated = true
+    execution = await executeEvaluatedStep({ ...stepInput, evaluation })
+    if (!execution) return { cursor, stop: true }
+  }
+  const recorded = await recordExecution(
+    stepIndex,
+    started.occurredAt,
+    execution,
+  )
+  return { cursor, stop: !recorded }
+}
+
 async function executeStepSession(
   session: StepTargetSession,
   scenarioStartedAt: number,
   context: SessionExecutionContext,
 ): Promise<void> {
-  const { bindings, emit, input, progress, recordExecution, recordStep } =
-    context
+  const { input, progress } = context
+  const adapter = input.adapter.executionCache
+  const prefix =
+    input.cacheEntry && adapter
+      ? cachedStepPrefixFrom(
+          input.cacheEntry,
+          input.scenario.steps.length,
+          adapter,
+        )
+      : undefined
+  let cursor = gapCursor(prefix)
+  const cachePolicy = input.cachePolicy ?? 'prefer-cache'
   for (const [stepIndex, step] of input.scenario.steps.entries()) {
-    if (input.signal?.aborted) {
-      progress.state = 'cancelled'
-      progress.message = 'Scenario cancelled before the next step started'
-      break
-    }
-
-    const templateStep = templateStepAt(input.scenario, stepIndex)
-    const started = await emit({
-      type: 'step-started',
-      step: templateStep,
-      ...attemptIdentity(input, stepIndex),
+    const advanced = await advanceGapStep({
+      session,
+      scenarioStartedAt,
+      context,
+      stepIndex,
+      step,
+      cursor,
+      cachePolicy,
     })
-    let execution: StepExecution
-    try {
-      const deadline = stepDeadline(input.timeout, scenarioStartedAt)
-      execution = await executeWithDeadline(
-        (operationSignal) =>
-          session.executeStep(step, operationSignal, {
-            stepIndex,
-            templateStep,
-            runtimeBindings: input.scenario.runtimeBindings ?? [],
-          }),
-        input.signal,
-        deadline.timeoutMs,
-        deadline.timeoutMessage,
-      )
-    } catch (error) {
-      recordExecutionError(
-        progress,
-        error,
-        bindings,
-        input,
-        started.occurredAt,
-        input.signal,
-        stepIndex,
-      )
-      await recordStep(stepIndex, started.occurredAt, {
-        step: templateStep,
-        state: progress.state,
-        resolvedActions: [],
-        message: progress.message,
-      })
-      break
-    }
-    if (!(await recordExecution(stepIndex, started.occurredAt, execution)))
-      break
+    cursor = advanced.cursor
+    if (advanced.stop) break
   }
+  progress.replayedStepCount = cursor.replayUntil
 }
 
 export async function runScenarioAttempt(
@@ -738,6 +836,8 @@ export async function runScenarioAttempt(
     runtimeValueExposed: false,
     evidenceAvailability: [],
     diagnostics: [],
+    replayedStepCount: 0,
+    adaptiveEvaluated: false,
   }
   const started = await emit({
     type: 'scenario-started',

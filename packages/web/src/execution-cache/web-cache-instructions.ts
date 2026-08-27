@@ -82,25 +82,25 @@ export function createWebInstructionExecutor({
   replay,
 }: CreateInstructionExecutorInput) {
   let navigated = false
-  const instructionOrigin = replay ? 'cached' : 'resolved'
+  let instructionOrigin: InstructionOrigin = replay ? 'cached' : 'resolved'
 
   function failure(
     instruction: WebInstruction,
     message: string,
   ): StepExecution {
-    const execution: StepExecution = {
+    return {
       state: 'failed',
       resolvedActions: [
         { description: instructionDescription(instruction, instructionOrigin) },
       ],
       message,
     }
-    if (replay) execution.replayDiverged = true
-    return execution
   }
 
   function failurePrefix(): string {
-    return replay ? 'Replay diverged' : 'Deterministic web instruction failed'
+    return instructionOrigin === 'cached'
+      ? 'Replay diverged'
+      : 'Deterministic web instruction failed'
   }
 
   function unavailableMessage(): string {
@@ -179,6 +179,9 @@ export function createWebInstructionExecutor({
     implicitNavigation,
     markNavigated() {
       navigated = true
+    },
+    setOrigin(origin: InstructionOrigin) {
+      instructionOrigin = origin
     },
   }
 }

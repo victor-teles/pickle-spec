@@ -1,6 +1,10 @@
 import { expect, test } from 'bun:test'
 import { createMobileAdapter } from '../../index'
-import { mobileReplayVariableName } from './mobile-execution-cache'
+import {
+  mobilePrefixPolicy,
+  mobilePrefixStepCount,
+  mobileReplayVariableName,
+} from './mobile-execution-cache'
 
 const productVariable = mobileReplayVariableName('product')
 const productPlaceholder = ['$', `{${productVariable}}`].join('')
@@ -154,4 +158,24 @@ test('fingerprints deterministic mobile configuration rather than local paths', 
   expect(first?.targetConfigurationFingerprint).not.toBe(
     ios?.targetConfigurationFingerprint,
   )
+})
+
+test('names mixed Replay as an explicit complete-scenario-only deferral', () => {
+  const executionCache = adapter().executionCache
+  const payload = {
+    format: 'agent-device-ad' as const,
+    script: androidScript,
+    stepRanges: [
+      { from: 2, to: 2 },
+      { from: 3, to: 3 },
+    ],
+  }
+
+  expect(mobilePrefixPolicy()).toEqual({
+    mixedReplay: false,
+    write: 'complete-scenario-only',
+  })
+  expect(executionCache?.prefixPolicy).toEqual(mobilePrefixPolicy())
+  expect(mobilePrefixStepCount(payload)).toBe(1)
+  expect(executionCache?.prefixStepCount(payload)).toBe(1)
 })

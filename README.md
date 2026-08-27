@@ -189,9 +189,9 @@ a machine-readable contract.
 
 ## Run Adaptive and Replay modes
 
-A Scenario without an applicable Execution cache entry runs in Adaptive mode. The adapter resolves and executes deterministic actions and assertions, then stores the exact successful representation automatically. A successful Scenario that cannot be represented deterministically remains `passed` with an `uncacheable` Cache outcome and is not stored.
+A Scenario without an applicable Execution cache entry runs in Adaptive mode. The adapter compiles deterministic actions and assertions as a dense Gherkin-step prefix. A later step that fails or is uncacheable still stores the compiled head when that head is nonempty. A successful Scenario that cannot compile any step remains `passed` with an `uncacheable` Cache outcome and is not stored.
 
-An applicable entry runs in Replay mode without model inference. Web Replay executes stored browser operations directly. Mobile Replay materializes and runs the stored Agent Device `.ad` script for the Scenario.
+An applicable complete prefix runs in Replay mode without model inference. A shorter prefix Replays the stored head and Adaptive-evaluates from the gap in the same session. That mixed attempt records `partial-hit`. Web Replay executes stored browser operations directly. Mobile Replay materializes and runs the stored Agent Device `.ad` script for a complete Scenario only. Partial mobile prefixes are not replayed.
 
 Entries apply to one project, Scenario revision, execution target profile and configuration fingerprint, application revision, adapter, and adapter cache schema version. Set `applicationRevision` in `pickle.config.jsonc` or pass `--application-revision`; a run without it remains Adaptive and does not read or write the cache.
 
@@ -199,7 +199,7 @@ Use `"applicationRevision": "git:HEAD"` when the application under test is versi
 
 Entries store placeholders and variable names instead of bound runtime values. An execution remains `uncacheable` when its adapter cannot separate reusable structure from runtime values.
 
-If Replay diverges, normal execution performs an observable Adaptive fallback. A successful fallback returns `passed` and atomically replaces the entry. Execution mode, Cache outcome, and inference count remain separate from the Scenario result.
+If Replay diverges before any instruction ran, prefer-cache reseats Adaptive on that step in the same session. If Replay of a step already executed instructions and then failed, the attempt fails and the stored prefix shrinks to the sealed head. A successful mixed run returns `passed`. Execution mode, Cache outcome, and inference count remain separate from the Scenario result.
 
 Use the cache controls explicitly:
 
@@ -210,7 +210,7 @@ pickle cache inspect
 pickle cache clear
 ```
 
-`--refresh-cache` bypasses the current entry and replaces it only after success. `--cache-only` never calls a model and fails on a miss or divergence. CI that requires zero inference must use `--cache-only`.
+`--refresh-cache` bypasses the current entry and replaces it after Adaptive evaluation. `--cache-only` never calls a model and fails on a miss, a short prefix, or divergence. CI that requires zero inference must use `--cache-only`.
 
 Pickle Spec stores one shared cache database at `~/.pickle/execution-cache.sqlite` and scopes every entry to its project. Git worktrees from the same repository share a project identity instead of creating another database. SQLite is the only cache tier. Each project's entries retain multiple Scenario and application revisions without a fixed TTL. The default configurable limit is 100 MiB per project, with least-recently-used eviction by `lastUsedAt`. Studio shows cache behavior with results, offers Cache refresh beside Run, and keeps cache inspection and clearing under Settings.
 

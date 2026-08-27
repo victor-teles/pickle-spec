@@ -141,6 +141,7 @@ function projectAttempt(
     executionMode: attempt.executionMode,
     cacheOutcome: attempt.cacheOutcome,
     inferenceCount: attempt.inferenceCount,
+    prefixStepCount: attempt.prefixStepCount,
     cacheUncacheableReason: attempt.cacheUncacheableReason,
     failureKind: attempt.failureKind,
     message: attempt.message,

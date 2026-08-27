@@ -444,11 +444,10 @@ Feature: Submit
     const strict = await runScenario({ ...input, cachePolicy: 'cache-only' })
 
     expect(finalScenarioAttempt(fallback.result)).toMatchObject({
-      state: 'passed',
-      cacheOutcome: 'fallback',
-      executionMode: 'adaptive',
+      state: 'failed',
+      executionMode: 'replay',
     })
-    expect(fallback.events.map((event) => event.type)).toContain(
+    expect(fallback.events.map((event) => event.type)).not.toContain(
       'adaptive-fallback-started',
     )
     expect(finalScenarioAttempt(strict.result)).toMatchObject({
@@ -457,6 +456,6 @@ Feature: Submit
       cacheOutcome: 'hit',
       inferenceCount: 0,
     })
-    expect(observe).toHaveBeenCalledTimes(2)
+    expect(observe).toHaveBeenCalledTimes(1)
   })
 })

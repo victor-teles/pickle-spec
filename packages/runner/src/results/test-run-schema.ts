@@ -268,9 +268,17 @@ const scenarioAttemptSchema: z.ZodType<ScenarioAttempt> = z
     steps: z.array(testStepResultSchema),
     executionMode: z.enum(['adaptive', 'replay']).optional(),
     cacheOutcome: z
-      .enum(['hit', 'miss', 'refresh', 'fallback', 'uncacheable'])
+      .enum([
+        'hit',
+        'partial-hit',
+        'miss',
+        'refresh',
+        'fallback',
+        'uncacheable',
+      ])
       .optional(),
     inferenceCount: nonNegativeIntegerSchema.optional(),
+    prefixStepCount: positiveIntegerSchema.optional(),
     cacheUncacheableReason: z
       .enum([
         'application-revision-missing',
