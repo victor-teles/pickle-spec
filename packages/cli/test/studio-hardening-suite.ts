@@ -234,6 +234,8 @@ Feature: Checkout
       expect(await selectedEvidence.textContent()).toContain(
         'Then the basket is reviewed',
       )
+      await page.goBack()
+      await attention.waitFor()
       await attention
         .getByRole('button', { name: /Pay for the order.*failed/ })
         .click()

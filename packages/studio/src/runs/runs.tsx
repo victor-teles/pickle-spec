@@ -67,7 +67,7 @@ type RunsAreaProps = {
   api: StudioApi
   index?: StudioRunsIndex
   project: StudioProject
-  route: Extract<StudioRoute, { kind: 'runs' | 'run' | 'result' }>
+  route: Extract<StudioRoute, { kind: 'runs' | 'run' | 'result' | 'artifact' }>
   runsBlocked: boolean
   onCancel: (runId: string) => void
   onError: (message: string) => void
@@ -88,16 +88,31 @@ export function RunsArea(props: RunsAreaProps) {
     onFinished: () => void props.reloadIndex(),
   })
 
-  if (props.route.kind === 'result') {
-    const location = props.route.location
+  if (props.route.kind === 'result' || props.route.kind === 'artifact') {
+    const location =
+      props.route.kind === 'result'
+        ? props.route.location
+        : props.route.location.result
     const live = inspections.get(location.runId)
     return (
       <ResultInspector
         api={props.api}
+        artifactIndex={
+          props.route.kind === 'artifact'
+            ? props.route.location.artifactIndex
+            : undefined
+        }
         location={location}
         snapshot={live?.snapshot}
         connection={live?.connection}
         onBack={() => props.onNavigate({ kind: 'run', runId: location.runId })}
+        onBackToResult={() => props.onNavigate({ kind: 'result', location })}
+        onOpenArtifact={(artifactIndex) =>
+          props.onNavigate({
+            kind: 'artifact',
+            location: { result: location, artifactIndex },
+          })
+        }
         onTabChange={(tab) =>
           props.onNavigate(
             {

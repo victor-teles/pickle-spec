@@ -14,7 +14,8 @@ const initialStudioRoute = parseStudioRoute(location.href)
 function areaForRoute(route: StudioRoute): StudioArea {
   return route.kind === 'runs' ||
     route.kind === 'run' ||
-    route.kind === 'result'
+    route.kind === 'result' ||
+    route.kind === 'artifact'
     ? 'Runs'
     : 'Specifications'
 }
@@ -49,6 +50,12 @@ export function useStudioNavigation() {
   )
 
   useEffect(() => {
+    if (
+      initialStudioRoute.kind !== 'not-found' &&
+      new URLSearchParams(location.search).has('token')
+    ) {
+      history.replaceState(null, '', studioRouteHref(initialStudioRoute))
+    }
     function restoreLocation() {
       const next = parseStudioRoute(location.href)
       setRoute(next)

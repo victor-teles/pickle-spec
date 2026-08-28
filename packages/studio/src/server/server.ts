@@ -1031,6 +1031,7 @@ export async function startStudio(
       }
 
       function staticAsset(): Response | null {
+        if (url.pathname === '/index.html') return null
         const asset =
           ui.files.get(url.pathname) ?? ui.files.get(basename(url.pathname))
         return asset && request.method === 'GET' ? new Response(asset) : null
@@ -1039,11 +1040,9 @@ export async function startStudio(
       function studioPage(): Response | null {
         if (request.method !== 'GET') return null
         const routeKind = parseStudioRoute(url.href).kind
-        const page =
-          url.pathname === '/' ||
-          url.pathname === '/index.html' ||
-          ['runs', 'run', 'result'].includes(routeKind)
-        if (!page) return null
+        if (url.pathname !== '/index.html' && routeKind === 'not-found') {
+          return null
+        }
         return new Response(ui.index, {
           headers: {
             'content-type': 'text/html; charset=utf-8',

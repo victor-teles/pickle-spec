@@ -25,7 +25,8 @@ export function StudioApp({ loadingFallback }: { loadingFallback: ReactNode }) {
         ? studio.selection.focus.scenarioId
         : undefined,
     headingRef: studio.selection.headingRef,
-    onRememberScenario: studio.selection.rememberScenario,
+    missing: studio.selection.missing,
+    onSelectScenario: studio.selection.selectScenario,
     onSelect: studio.selection.selectSpecification,
     onSelectCreated: studio.selection.selectCreatedSpecification,
     selected: studio.selection.selected,
@@ -86,7 +87,8 @@ export function StudioApp({ loadingFallback }: { loadingFallback: ReactNode }) {
       ) : studio.navigation.area === 'Runs' &&
         (studio.navigation.route.kind === 'runs' ||
           studio.navigation.route.kind === 'run' ||
-          studio.navigation.route.kind === 'result') ? (
+          studio.navigation.route.kind === 'result' ||
+          studio.navigation.route.kind === 'artifact') ? (
         <div className="studio-stage flex min-h-0 flex-1 overflow-hidden">
           <RunsArea
             api={studioApi}

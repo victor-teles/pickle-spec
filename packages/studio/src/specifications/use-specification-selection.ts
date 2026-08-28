@@ -1,42 +1,82 @@
 import { useEffect, useRef, useState } from 'react'
 import type { CurrentScenario } from '../app/command-palette'
+import type { StudioRoute } from '../app/studio-route'
 import type { StudioScenario, StudioSpecification } from '../server/server'
 
 type UseSpecificationSelectionOptions = {
-  onShowSpecifications: (replace?: boolean) => void
+  navigate: (route: StudioRoute, replace?: boolean) => void
+  route: StudioRoute
   specifications: readonly StudioSpecification[]
 }
 
-type RememberedScenario = {
-  id: string
-  specificationUri: string
+export type MissingSpecificationSelection =
+  | { kind: 'specification'; specificationId: string }
+  | {
+      kind: 'scenario'
+      specificationId: string
+      scenarioId: string
+    }
+
+type ResolvedSpecificationSelection = {
+  selected?: StudioSpecification
+  currentScenario?: StudioScenario
+  missing?: MissingSpecificationSelection
 }
 
 type SelectionFocus =
   | { kind: 'scenario'; request: number; scenarioId: string }
   | { kind: 'specification'; request: number }
 
+export function resolveSpecificationSelection(
+  route: StudioRoute,
+  specifications: readonly StudioSpecification[],
+): ResolvedSpecificationSelection {
+  if (route.kind === 'specifications') return { selected: specifications[0] }
+  if (route.kind !== 'specification' && route.kind !== 'scenario') return {}
+
+  const selected = specifications.find(
+    (specification) => specification.id === route.specificationId,
+  )
+  if (!selected) {
+    return {
+      missing: {
+        kind: 'specification',
+        specificationId: route.specificationId,
+      },
+    }
+  }
+  if (route.kind === 'specification') return { selected }
+
+  const currentScenario = selected.scenarios.find(
+    (scenario) => scenario.id === route.scenarioId,
+  )
+  return currentScenario
+    ? { selected, currentScenario }
+    : {
+        selected,
+        missing: {
+          kind: 'scenario',
+          specificationId: route.specificationId,
+          scenarioId: route.scenarioId,
+        },
+      }
+}
+
 export function useSpecificationSelection(
   options: UseSpecificationSelectionOptions,
 ) {
-  const [selectedId, setSelectedId] = useState<string>()
-  const [rememberedScenario, setRememberedScenario] =
-    useState<RememberedScenario>()
   const [focus, setFocus] = useState<SelectionFocus>()
   const headingRef = useRef<HTMLHeadingElement>(null)
-
-  const selected =
-    options.specifications.find((item) => item.id === selectedId) ??
-    options.specifications[0]
-  const currentScenario =
-    selected && selected.uri === rememberedScenario?.specificationUri
-      ? selected.scenarios.find(
-          (scenario) => scenario.id === rememberedScenario.id,
-        )
-      : undefined
+  const resolved = resolveSpecificationSelection(
+    options.route,
+    options.specifications,
+  )
   const currentScenarioContext: CurrentScenario | undefined =
-    selected && currentScenario
-      ? { specification: selected, scenario: currentScenario }
+    resolved.selected && resolved.currentScenario
+      ? {
+          specification: resolved.selected,
+          scenario: resolved.currentScenario,
+        }
       : undefined
 
   useEffect(() => {
@@ -44,9 +84,8 @@ export function useSpecificationSelection(
     headingRef.current?.focus()
   }, [focus])
 
-  function selectSpecification(id: string) {
-    setSelectedId(id)
-    setRememberedScenario(undefined)
+  function selectSpecification(specificationId: string) {
+    options.navigate({ kind: 'specification', specificationId })
     setFocus(undefined)
   }
 
@@ -54,12 +93,14 @@ export function useSpecificationSelection(
     specification: StudioSpecification,
     scenario?: StudioScenario,
   ) {
-    options.onShowSpecifications(true)
-    setSelectedId(specification.id)
-    setRememberedScenario(
+    options.navigate(
       scenario
-        ? { id: scenario.id, specificationUri: specification.uri }
-        : undefined,
+        ? {
+            kind: 'scenario',
+            specificationId: specification.id,
+            scenarioId: scenario.id,
+          }
+        : { kind: 'specification', specificationId: specification.id },
     )
     if (scenario) {
       setFocus((current) => ({
@@ -75,9 +116,13 @@ export function useSpecificationSelection(
     }))
   }
 
-  function rememberScenario(scenario: StudioScenario) {
-    if (!selected) return
-    setRememberedScenario({ id: scenario.id, specificationUri: selected.uri })
+  function selectScenario(scenario: StudioScenario) {
+    if (!resolved.selected) return
+    options.navigate({
+      kind: 'scenario',
+      specificationId: resolved.selected.id,
+      scenarioId: scenario.id,
+    })
   }
 
   function selectCreatedSpecification(
@@ -85,7 +130,12 @@ export function useSpecificationSelection(
     uri: string,
   ) {
     const created = specifications.find((item) => item.uri === uri)
-    if (created) setSelectedId(created.id)
+    if (created) {
+      options.navigate({
+        kind: 'specification',
+        specificationId: created.id,
+      })
+    }
   }
 
   return {
@@ -93,9 +143,10 @@ export function useSpecificationSelection(
     focus,
     headingRef,
     jumpToSpecification,
-    rememberScenario,
+    missing: resolved.missing,
     selectCreatedSpecification,
-    selected,
+    selected: resolved.selected,
+    selectScenario,
     selectSpecification,
   }
 }
