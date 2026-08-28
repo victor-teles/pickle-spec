@@ -13,6 +13,7 @@ import {
   hydrateLiveInspection,
   type LiveResultInspection,
   type LiveStreamEvent,
+  liveInspectionFromSnapshot,
   pauseLiveFollowing,
   pinLiveCell,
   receiveLiveStreamEvent,
@@ -26,6 +27,8 @@ import type {
 } from './result/result-inspection'
 import type { MatrixCell } from './result/run-view'
 import { type RunOrigin, runOriginFromRequest } from './run-origin'
+
+const noActiveRunIds: readonly string[] = []
 
 type UseLiveRunOptions = {
   activeProfileId?: string
@@ -44,6 +47,7 @@ export function useLiveRun(options: UseLiveRunOptions) {
   const [starting, setStarting] = useState(false)
   const [origin, setOrigin] = useState<RunOrigin>()
   const [live, setLive] = useState<LiveResultInspection>()
+  const activeRunIds = options.runsIndex?.activeRunIds ?? noActiveRunIds
 
   const running =
     live?.phase === 'running' ||
@@ -60,6 +64,52 @@ export function useLiveRun(options: UseLiveRunOptions) {
           cell.profileId === live.location?.profileId,
       )
     : undefined
+  useEffect(() => {
+    if (
+      runId ||
+      live ||
+      starting ||
+      !options.selectedSpecificationUri ||
+      activeRunIds.length === 0
+    ) {
+      return
+    }
+    let cancelled = false
+    const specificationUri = options.selectedSpecificationUri
+    void Promise.all(
+      activeRunIds.map((activeRunId) =>
+        options.api<StudioRunSnapshot>(
+          `/api/runs/${encodeURIComponent(activeRunId)}`,
+        ),
+      ),
+    ).then(
+      (snapshots) => {
+        if (cancelled) return
+        const snapshot = snapshots.find((candidate) =>
+          candidate.schedule?.some(
+            (scheduled) => scheduled.specification.uri === specificationUri,
+          ),
+        )
+        if (!snapshot) return
+        setLive(liveInspectionFromSnapshot(snapshot, specificationUri))
+        setRunId(snapshot.id)
+      },
+      (reason: unknown) => {
+        if (!cancelled) options.onError(reason)
+      },
+    )
+    return () => {
+      cancelled = true
+    }
+  }, [
+    activeRunIds,
+    live,
+    options.api,
+    options.onError,
+    options.selectedSpecificationUri,
+    runId,
+    starting,
+  ])
   useEffect(() => {
     if (!runId) return
     let closedByClient = false

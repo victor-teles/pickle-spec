@@ -130,4 +130,60 @@ Feature: Search
       await child.exited
     }
   }, 60_000)
+
+  test('reconnects to an active Test run after refresh', async () => {
+    const project = await fixture.createProject('active-run-restoration')
+    const gate = join(project, 'continue.txt')
+    const { child, url } = await fixture.start(project, {
+      PICKLE_STUDIO_CONTINUE: gate,
+    })
+    const page = await browser.newPage()
+    try {
+      await page.goto(url)
+      await page.getByRole('button', { name: 'Run Specification' }).click()
+      await page
+        .getByRole('button', {
+          name: 'Pay for the order chrome running',
+          exact: true,
+        })
+        .waitFor({ timeout: 20_000 })
+
+      await page.reload()
+
+      await page
+        .getByRole('button', {
+          name: 'Pay for the order chrome running',
+          exact: true,
+        })
+        .waitFor({ timeout: 20_000 })
+      expect(new URL(page.url()).pathname).toBe('/')
+      await page.getByRole('button', { name: 'Cancel test run' }).waitFor()
+
+      await page
+        .getByRole('button', {
+          name: 'Pay for the order chrome running',
+          exact: true,
+        })
+        .click()
+      expect(new URL(page.url()).pathname).toMatch(
+        /^\/runs\/[^/]+\/results\/features%2Fcheckout\.feature\/scenarios\/scnpaybbbbbbbbbb\/profiles\/chrome\/attempts\/1$/,
+      )
+      await page.reload()
+      const resultHeading = page.getByRole('heading', {
+        name: 'Pay for the order · chrome',
+      })
+      await resultHeading.waitFor()
+      const resultHeader = resultHeading.locator('..')
+      await resultHeader.getByText('running', { exact: true }).waitFor()
+
+      await Bun.write(gate, 'continue')
+      await resultHeader.getByText('failed', { exact: true }).waitFor({
+        timeout: 20_000,
+      })
+    } finally {
+      await page.close()
+      child.kill()
+      await child.exited
+    }
+  }, 45_000)
 })
