@@ -107,6 +107,8 @@ test('serves the Runs index, active lifecycle, compatibility alias, and deep lin
 
   const active = await fetch(`${origin}/api/runs`, { headers })
   expect((await active.json()).activeRunIds).toEqual(['run-live'])
+  const activeSnapshot = await fetch(`${origin}/api/runs/run-live`, { headers })
+  expect((await activeSnapshot.json()).schedule).toEqual(schedule)
   const alias = await fetch(`${origin}/api/history`, { headers })
   expect((await alias.json()).activeRunIds).toEqual(['run-live'])
 

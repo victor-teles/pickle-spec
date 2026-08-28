@@ -85,6 +85,26 @@ export function startLiveInspection(
   }
 }
 
+export function liveInspectionFromSnapshot(
+  snapshot: StudioRunSnapshot,
+  specificationUri: string,
+): LiveResultInspection {
+  let inspection = startLiveInspection({
+    runId: snapshot.id,
+    specificationUri,
+  })
+  if (snapshot.schedule) {
+    inspection = receiveLiveStreamEvent(inspection, {
+      type: 'run-scheduled',
+      schedule: snapshot.schedule,
+    })
+  }
+  for (const event of snapshot.events) {
+    inspection = receiveLiveStreamEvent(inspection, event)
+  }
+  return inspection
+}
+
 export function pauseLiveFollowing(
   inspection: LiveResultInspection,
 ): LiveResultInspection {
