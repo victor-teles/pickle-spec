@@ -19,7 +19,7 @@ const adapter: ExecutionCachePayloadValidator<{ steps: string[] }> = {
       !('steps' in payload) ||
       !Array.isArray(payload.steps)
     ) {
-      return undefined
+      return
     }
     return { steps: payload.steps as string[] }
   },

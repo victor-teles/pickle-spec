@@ -2,8 +2,10 @@ import { relative, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import type {
   EvidencePersistencePolicy,
+  ExecutionCachePolicy,
   ExecutionTargetAdapter,
   ExecutionTargetProfile,
+  PersistedTestRun,
   RunEvent,
   RunExtensions,
   ScenarioCompletion,
@@ -11,6 +13,7 @@ import type {
   ScheduledTestResult,
   TestResult,
   TestRunManifest,
+  TestRunStore,
 } from '@pickle-spec/runner'
 import {
   latestHistoricalDurations,
@@ -43,6 +46,7 @@ import {
   runConfigurationFrom,
 } from '../configuration/config'
 import type { Extensions } from '../extensions/extensions'
+import { requiredValue } from '../required-value'
 import {
   type ApplicationOutputAvailability,
   type ApplicationOutputLine,
@@ -215,16 +219,20 @@ function configureProfileAdapter(
   args: ProjectRunOptions,
   profile: ExecutionTargetProfile,
 ): void {
-  if (adapters[profile.id]) return
+  const configuredAdapters = adapters
+  if (configuredAdapters[profile.id]) return
   if (profile.adapter === 'mobile') {
-    if (!adapters.mobile) {
-      adapters[profile.id] = configuredMobileAdapter(config, profile.id)
+    if (!configuredAdapters.mobile) {
+      configuredAdapters[profile.id] = configuredMobileAdapter(
+        config,
+        profile.id,
+      )
     }
     return
   }
   if (profile.adapter !== 'web') return
-  if (adapters.web) {
-    adapters[profile.id] = adapters.web
+  if (configuredAdapters.web) {
+    configuredAdapters[profile.id] = configuredAdapters.web
     return
   }
   const web = configuredWebOptions(config, args, profile.id)
@@ -233,7 +241,10 @@ function configureProfileAdapter(
       'Configure web.baseUrl or export an adapter from pickle.extensions.ts',
     )
   }
-  adapters[profile.id] = createWebAdapter(web, extensions.webAutomationFactory)
+  configuredAdapters[profile.id] = createWebAdapter(
+    web,
+    extensions.webAutomationFactory,
+  )
 }
 
 function configuredRunExtensions(
@@ -376,15 +387,17 @@ async function prepareRerunSelection(
   shardSelection: SelectionOptions['shard'],
   historicalDurations: Record<string, number> | undefined,
 ): Promise<PreparedRunSelection> {
-  const rerunId = args.rerunId!
+  const rerunId = requiredValue(args.rerunId)
   const { manifest: sourceManifest } = await loadPersistedRun(root, rerunId)
+  const scenarioIds = args.scenarioIds?.length ? args.scenarioIds : undefined
+  const scenarioNames =
+    !scenarioIds && args.selection?.scenarioName
+      ? [args.selection.scenarioName]
+      : undefined
   const selectedResults = selectRerunResults(sourceManifest, {
     failures: args.failures,
-    ...(args.scenarioIds?.length
-      ? { scenarioIds: args.scenarioIds }
-      : args.selection?.scenarioName
-        ? { scenarioNames: [args.selection.scenarioName] }
-        : {}),
+    scenarioIds,
+    scenarioNames,
     ...(args.profiles?.length ? { profileIds: args.profiles } : {}),
   })
   if (selectedResults.length === 0) {
@@ -499,7 +512,7 @@ async function resolveProjectRunConfiguration(
 function selectedTargetFilter(
   selectedResults: readonly TestResult[] | undefined,
 ) {
-  if (!selectedResults) return undefined
+  if (!selectedResults) return
   return (
     selection: ScenarioSelection,
     executionTargetProfile: ExecutionTargetProfile,
@@ -601,7 +614,7 @@ async function configuredExecutionCache(
   targets: ResolvedProjectRunConfiguration['targets'],
 ) {
   if (!targets.some((target) => target.adapter.executionCache !== undefined)) {
-    return undefined
+    return
   }
   return openLocalExecutionCache({
     projectRoot: root,
@@ -624,6 +637,9 @@ async function executePreparedRun(
     root,
     configuration.targets,
   )
+  let cachePolicy: ExecutionCachePolicy = 'prefer-cache'
+  if (args.cacheOnly) cachePolicy = 'cache-only'
+  else if (args.refreshCache) cachePolicy = 'refresh'
   const shared = {
     executionCache: executionCache
       ? {
@@ -632,11 +648,7 @@ async function executePreparedRun(
           sourceRunId: testRun.id,
         }
       : undefined,
-    cachePolicy: args.cacheOnly
-      ? ('cache-only' as const)
-      : args.refreshCache
-        ? ('refresh' as const)
-        : ('prefer-cache' as const),
+    cachePolicy,
     signal: input.signal,
     onEvent,
     onResult: input.onResult
@@ -685,6 +697,57 @@ export async function loadPersistedRun(root: string, runId: string) {
   return { manifest, events }
 }
 
+interface ProjectRunWorkInput {
+  applicationRevision: string | undefined
+  args: ProjectRunOptions
+  input: StartProjectRunInput
+  root: string
+  store: TestRunStore
+  testRun: PersistedTestRun
+}
+
+async function runProjectWork(context: ProjectRunWorkInput) {
+  const { applicationRevision, args, input, root, store, testRun } = context
+  let configuration: ResolvedProjectRunConfiguration | undefined
+  let server: ManagedProjectServer
+  try {
+    const selection = await prepareRunSelection(store, root, input.config, args)
+    configuration = await resolveProjectRunConfiguration(
+      input.config,
+      args,
+      applicationRevision,
+      selection.profileIds,
+      root,
+    )
+    validateTargetSelection(selection.selections, configuration.targets)
+    await publishRunSchedule(input, selection, configuration)
+    const application = await startApplicationDiagnostics(
+      input,
+      args,
+      configuration.targets,
+    )
+    server = application.server
+    const onEvent = createPersistedEventHandler(
+      input,
+      testRun,
+      application.diagnostics,
+    )
+    await replayPersistedEvents(input, testRun)
+    const runs = await executePreparedRun(
+      input,
+      args,
+      selection,
+      configuration,
+      testRun,
+      root,
+      onEvent,
+    )
+    return { runs, manifest: await testRun.materialize() }
+  } finally {
+    await stopProjectResources(server, configuration)
+  }
+}
+
 export async function startProjectRun(
   input: StartProjectRunInput,
 ): Promise<StartedProjectRun> {
@@ -724,58 +787,14 @@ export async function startProjectRun(
   const done = new Promise<{
     runs: ScenarioRun[]
     manifest: TestRunManifest
-  }>((resolve, reject) => {
+  }>((finish, reject) => {
     setTimeout(() => {
-      void runWork().then(resolve, reject)
+      void runWork().then(finish, reject)
     }, 0)
   })
 
-  async function runWork() {
-    let configuration: ResolvedProjectRunConfiguration | undefined
-    let server: ManagedProjectServer
-    try {
-      const selection = await prepareRunSelection(
-        store,
-        root,
-        input.config,
-        args,
-      )
-      configuration = await resolveProjectRunConfiguration(
-        input.config,
-        args,
-        applicationRevision,
-        selection.profileIds,
-        root,
-      )
-      validateTargetSelection(selection.selections, configuration.targets)
-      await publishRunSchedule(input, selection, configuration)
-      const application = await startApplicationDiagnostics(
-        input,
-        args,
-        configuration.targets,
-      )
-      server = application.server
-      const onEvent = createPersistedEventHandler(
-        input,
-        testRun,
-        application.diagnostics,
-      )
-      await replayPersistedEvents(input, testRun)
-      const runs = await executePreparedRun(
-        input,
-        args,
-        selection,
-        configuration,
-        testRun,
-        root,
-        onEvent,
-      )
-      const manifest = await testRun.materialize()
-      return { runs, manifest }
-    } finally {
-      await stopProjectResources(server, configuration)
-    }
-  }
+  const runWork = () =>
+    runProjectWork({ applicationRevision, args, input, root, store, testRun })
 
   return { id: testRun.id, done }
 }

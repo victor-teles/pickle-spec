@@ -1,3 +1,5 @@
+import { requiredValue } from '../required-value'
+
 function sourceLines(source: string): string[] {
   const newline = source.includes('\r\n') ? '\r\n' : '\n'
   return source.split(newline)
@@ -12,12 +14,12 @@ function longestCommonSubsequence(
   )
   for (let fromIndex = fromLines.length - 1; fromIndex >= 0; fromIndex--) {
     for (let toIndex = toLines.length - 1; toIndex >= 0; toIndex--) {
-      matrix[fromIndex]![toIndex] =
+      requiredValue(matrix[fromIndex])[toIndex] =
         fromLines[fromIndex] === toLines[toIndex]
-          ? (matrix[fromIndex + 1]![toIndex + 1] ?? 0) + 1
+          ? (requiredValue(matrix[fromIndex + 1])[toIndex + 1] ?? 0) + 1
           : Math.max(
-              matrix[fromIndex + 1]![toIndex] ?? 0,
-              matrix[fromIndex]![toIndex + 1] ?? 0,
+              requiredValue(matrix[fromIndex + 1])[toIndex] ?? 0,
+              requiredValue(matrix[fromIndex])[toIndex + 1] ?? 0,
             )
     }
   }
@@ -35,10 +37,10 @@ function appendChangedLine(
   const removalKeeps = matrix[fromIndex + 1]?.[toIndex] ?? 0
   const additionKeeps = matrix[fromIndex]?.[toIndex + 1] ?? 0
   if (removalKeeps >= additionKeeps) {
-    lines.push(`-${fromLines[fromIndex]!}`)
+    lines.push(`-${requiredValue(fromLines[fromIndex])}`)
     return 'from'
   }
-  lines.push(`+${toLines[toIndex]!}`)
+  lines.push(`+${requiredValue(toLines[toIndex])}`)
   return 'to'
 }
 
@@ -68,7 +70,9 @@ export function specificationSourceDiff(from: string, to: string): string {
     if (changed === 'from') fromIndex++
     else toIndex++
   }
-  while (fromIndex < fromLines.length) lines.push(`-${fromLines[fromIndex++]!}`)
-  while (toIndex < toLines.length) lines.push(`+${toLines[toIndex++]!}`)
+  while (fromIndex < fromLines.length)
+    lines.push(`-${requiredValue(fromLines[fromIndex++])}`)
+  while (toIndex < toLines.length)
+    lines.push(`+${requiredValue(toLines[toIndex++])}`)
   return `${lines.join('\n')}\n`
 }

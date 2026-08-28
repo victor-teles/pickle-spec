@@ -148,9 +148,8 @@ export function createMobileAdapter(
   options: MobileAdapterOptions,
   workerFactory?: MobileWorkerFactory,
 ): MobileExecutionTargetAdapter {
-  const policy =
-    executionTargetPolicies[options.executionTarget ?? 'android-emulator']
   const executionTarget = options.executionTarget ?? 'android-emulator'
+  const policy = executionTargetPolicies[executionTarget]
   const executionCache = createMobileExecutionCache({
     platform: policy.platform,
     executionTarget,

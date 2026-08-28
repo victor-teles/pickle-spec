@@ -14,6 +14,7 @@ import {
 } from '@pickle-spec/runner/benchmarking'
 import { createMobileAdapter } from '../adapter/mobile-adapter'
 import { compileMobileScenario } from '../agent-device/mobile-ad-script'
+import { requiredValue } from '../required-value'
 import type { MobileWorkerClient } from '../worker/worker-client'
 import type { MobileWorkerRequest } from '../worker/worker-protocol'
 import type { MobileBenchmarkMode } from './mobile-benchmark'
@@ -107,7 +108,8 @@ function controlledScenarioExecution(
   state: ControlledWorkerState,
   request: ExecuteScenarioRequest,
 ) {
-  const session = requireControlledSession(state, request.sessionId)
+  const workerState = state
+  const session = requireControlledSession(workerState, request.sessionId)
   const adaptive =
     session.mode === 'adaptive'
       ? compileMobileScenario({
@@ -116,13 +118,15 @@ function controlledScenarioExecution(
           scenario: session.scenario,
         })
       : undefined
-  if (adaptive) state.executedAdaptive.set(request.sessionId, adaptive)
+  if (adaptive) workerState.executedAdaptive.set(request.sessionId, adaptive)
   const script =
     adaptive?.payload.script ?? session.executionCache?.adapterPayload.script
   const digest = digestScript(script)
-  if (session.mode === 'adaptive') state.adaptiveScriptDigest = digest
-  else state.scriptsMatched &&= digest === state.adaptiveScriptDigest
-  if (!state.scriptsMatched) {
+  if (session.mode === 'adaptive') workerState.adaptiveScriptDigest = digest
+  else {
+    workerState.scriptsMatched &&= digest === workerState.adaptiveScriptDigest
+  }
+  if (!workerState.scriptsMatched) {
     throw new Error('Controlled modes did not execute the same .ad')
   }
   return {
@@ -157,8 +161,8 @@ function controlledSessionCompletion(
             inferenceCount: 0,
             replayRepresentation: {
               cacheable: true as const,
-              adapterPayload: adaptive!.payload,
-              requiredVariables: adaptive!.requiredVariables,
+              adapterPayload: requiredValue(adaptive).payload,
+              requiredVariables: requiredValue(adaptive).requiredVariables,
             },
           }
         : { inferenceCount: 0 },

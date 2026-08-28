@@ -7,6 +7,7 @@ import {
   projectAllureResults,
   type TestRunManifest,
 } from '../../index'
+import { requiredValue } from '../required-value'
 
 function readStoredZip(bytes: Uint8Array): Map<string, Uint8Array> {
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength)
@@ -115,13 +116,13 @@ test('creates an in-memory Allure ZIP equivalent to the directory projection', a
       ].sort(),
     )
     for (const { fileName, result } of projection.results) {
-      expect(await new Blob([files.get(fileName)!]).text()).toBe(
+      expect(await new Blob([requiredValue(files.get(fileName))]).text()).toBe(
         `${JSON.stringify(result, null, 2)}\n`,
       )
     }
-    expect(files.get(projection.attachments[0]!.fileName)).toEqual(
-      artifactBytes,
-    )
+    expect(
+      files.get(requiredValue(projection.attachments[0]).fileName),
+    ).toEqual(artifactBytes)
   } finally {
     await rm(root, { recursive: true, force: true })
   }

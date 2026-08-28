@@ -5,7 +5,7 @@ import {
   editor as monacoEditor,
 } from 'monaco-editor/editor/editor.api.js'
 import 'monaco-editor/editor/editor.main.js'
-import { useEffect, useRef } from 'react'
+import { type RefObject, useEffect, useRef } from 'react'
 import {
   catalogFromSource,
   type GherkinCatalog,
@@ -41,6 +41,77 @@ function tokenColor(color: EditorPaletteColor) {
   return oklchToMonacoHex(editorPalette[color], { omitHash: true })
 }
 
+const gherkinThemeColors = {
+  'editor.background': editorColor('canvas'),
+  'editor.foreground': editorColor('ink'),
+  'editorLineNumber.foreground': editorColor('mutedSoft'),
+  'editorLineNumber.activeForeground': editorColor('body'),
+  'editorCursor.foreground': editorColor('inkStrong'),
+  'editor.selectionBackground': editorColor('hairline'),
+  'editor.inactiveSelectionBackground': editorColor('surfaceStrong'),
+  'editor.lineHighlightBackground': editorColor('canvasSoft'),
+  'editorWidget.background': editorColor('canvas'),
+  'editorWidget.border': editorColor('hairlineStrong'),
+  'editorSuggestWidget.background': editorColor('canvas'),
+  'editorSuggestWidget.border': editorColor('hairlineStrong'),
+  'editorSuggestWidget.foreground': editorColor('ink'),
+  'editorSuggestWidget.selectedBackground': editorColor('surfaceStrong'),
+  'editorSuggestWidget.highlightForeground': editorColor('inkStrong'),
+  focusBorder: editorColor('ink'),
+  'scrollbarSlider.background': editorColor('scrollbar'),
+  'scrollbarSlider.hoverBackground': editorColor('scrollbarHover'),
+}
+
+const gherkinThemeRules: monacoEditor.ITokenThemeRule[] = [
+  { token: 'keyword', foreground: tokenColor('inkStrong'), fontStyle: 'bold' },
+  { token: 'comment', foreground: tokenColor('muted') },
+  { token: 'tag', foreground: tokenColor('body') },
+  { token: 'table', foreground: tokenColor('muted') },
+  { token: 'string', foreground: tokenColor('ink') },
+  { token: 'placeholder', foreground: tokenColor('body') },
+]
+
+function completionSuggestions(
+  catalogRef: { current: GherkinCatalog },
+  model: Parameters<
+    languages.CompletionItemProvider['provideCompletionItems']
+  >[0],
+  position: Parameters<
+    languages.CompletionItemProvider['provideCompletionItems']
+  >[1],
+) {
+  const line = model
+    .getLineContent(position.lineNumber)
+    .slice(0, position.column - 1)
+  const local = catalogFromSource(model.getValue())
+  const items = gherkinCompletions({
+    line,
+    catalog: {
+      tags: [...local.tags, ...catalogRef.current.tags],
+      steps: [...local.steps, ...catalogRef.current.steps],
+    },
+  })
+  const word = model.getWordUntilPosition(position)
+  return {
+    suggestions: items.map((item) => ({
+      label: item.label,
+      kind: {
+        keyword: languages.CompletionItemKind.Keyword,
+        tag: languages.CompletionItemKind.Constant,
+        step: languages.CompletionItemKind.Snippet,
+      }[item.kind],
+      insertText: item.insertText,
+      detail: item.detail,
+      range: {
+        startLineNumber: position.lineNumber,
+        endLineNumber: position.lineNumber,
+        startColumn: word.startColumn,
+        endColumn: word.endColumn,
+      },
+    })),
+  }
+}
+
 function registerGherkinLanguage(catalogRef: { current: GherkinCatalog }) {
   if (languageReady) return
   languageReady = true
@@ -56,108 +127,33 @@ function registerGherkinLanguage(catalogRef: { current: GherkinCatalog }) {
   languages.registerCompletionItemProvider('gherkin', {
     triggerCharacters: ['@', ' ', '\t'],
     provideCompletionItems(model, position) {
-      const line = model
-        .getLineContent(position.lineNumber)
-        .slice(0, position.column - 1)
-      const local = catalogFromSource(model.getValue())
-      const items = gherkinCompletions({
-        line,
-        catalog: {
-          tags: [...local.tags, ...catalogRef.current.tags],
-          steps: [...local.steps, ...catalogRef.current.steps],
-        },
-      })
-      const word = model.getWordUntilPosition(position)
-      return {
-        suggestions: items.map((item) => ({
-          label: item.label,
-          kind:
-            item.kind === 'keyword'
-              ? languages.CompletionItemKind.Keyword
-              : item.kind === 'tag'
-                ? languages.CompletionItemKind.Constant
-                : languages.CompletionItemKind.Snippet,
-          insertText: item.insertText,
-          detail: item.detail,
-          range: {
-            startLineNumber: position.lineNumber,
-            endLineNumber: position.lineNumber,
-            startColumn: word.startColumn,
-            endColumn: word.endColumn,
-          },
-        })),
-      }
+      return completionSuggestions(catalogRef, model, position)
     },
   })
   monacoEditor.defineTheme('pickle-studio-dark', {
     base: 'vs-dark',
     inherit: false,
-    colors: {
-      'editor.background': editorColor('canvas'),
-      'editor.foreground': editorColor('ink'),
-      'editorLineNumber.foreground': editorColor('mutedSoft'),
-      'editorLineNumber.activeForeground': editorColor('body'),
-      'editorCursor.foreground': editorColor('inkStrong'),
-      'editor.selectionBackground': editorColor('hairline'),
-      'editor.inactiveSelectionBackground': editorColor('surfaceStrong'),
-      'editor.lineHighlightBackground': editorColor('canvasSoft'),
-      'editorWidget.background': editorColor('canvas'),
-      'editorWidget.border': editorColor('hairlineStrong'),
-      'editorSuggestWidget.background': editorColor('canvas'),
-      'editorSuggestWidget.border': editorColor('hairlineStrong'),
-      'editorSuggestWidget.foreground': editorColor('ink'),
-      'editorSuggestWidget.selectedBackground': editorColor('surfaceStrong'),
-      'editorSuggestWidget.highlightForeground': editorColor('inkStrong'),
-      focusBorder: editorColor('ink'),
-      'scrollbarSlider.background': editorColor('scrollbar'),
-      'scrollbarSlider.hoverBackground': editorColor('scrollbarHover'),
-    },
-    rules: [
-      {
-        token: 'keyword',
-        foreground: tokenColor('inkStrong'),
-        fontStyle: 'bold',
-      },
-      {
-        token: 'comment',
-        foreground: tokenColor('muted'),
-      },
-      {
-        token: 'tag',
-        foreground: tokenColor('body'),
-      },
-      {
-        token: 'table',
-        foreground: tokenColor('muted'),
-      },
-      {
-        token: 'string',
-        foreground: tokenColor('ink'),
-      },
-      {
-        token: 'placeholder',
-        foreground: tokenColor('body'),
-      },
-    ],
+    colors: gherkinThemeColors,
+    rules: gherkinThemeRules,
   })
 }
 
-export function GherkinEditor(props: {
-  source: string
-  catalog: GherkinCatalog
-  onChange: (source: string) => void
-}) {
-  const hostRef = useRef<HTMLDivElement>(null)
-  const editorRef = useRef<monacoEditor.IStandaloneCodeEditor | undefined>(
-    undefined,
-  )
-  const catalogRef = useRef(props.catalog)
-  const onChangeRef = useRef(props.onChange)
-  const emittedSource = useRef(props.source)
-  const initialSource = useRef(props.source)
-  catalogRef.current = props.catalog
-  onChangeRef.current = props.onChange
-
+function useCreateGherkinEditor(input: {
+  hostRef: RefObject<HTMLDivElement | null>
+  editorRef: RefObject<monacoEditor.IStandaloneCodeEditor | undefined>
+  catalogRef: RefObject<GherkinCatalog>
+  onChangeRef: RefObject<(source: string) => void>
+  emittedSource: RefObject<string>
+  initialSource: RefObject<string>
+}): void {
+  const {
+    hostRef,
+    editorRef,
+    catalogRef,
+    onChangeRef,
+    emittedSource,
+    initialSource,
+  } = input
   useEffect(() => {
     const host = hostRef.current
     if (!host) return
@@ -197,7 +193,40 @@ export function GherkinEditor(props: {
       instance.dispose()
       editorRef.current = undefined
     }
-  }, [])
+  }, [
+    catalogRef,
+    editorRef,
+    emittedSource,
+    hostRef,
+    initialSource,
+    onChangeRef,
+  ])
+}
+
+export function GherkinEditor(props: {
+  source: string
+  catalog: GherkinCatalog
+  onChange: (source: string) => void
+}) {
+  const hostRef = useRef<HTMLDivElement>(null)
+  const editorRef = useRef<monacoEditor.IStandaloneCodeEditor | undefined>(
+    undefined,
+  )
+  const catalogRef = useRef(props.catalog)
+  const onChangeRef = useRef(props.onChange)
+  const emittedSource = useRef(props.source)
+  const initialSource = useRef(props.source)
+  catalogRef.current = props.catalog
+  onChangeRef.current = props.onChange
+
+  useCreateGherkinEditor({
+    hostRef,
+    editorRef,
+    catalogRef,
+    onChangeRef,
+    emittedSource,
+    initialSource,
+  })
 
   useEffect(() => {
     const instance = editorRef.current

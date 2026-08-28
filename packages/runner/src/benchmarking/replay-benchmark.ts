@@ -1,3 +1,4 @@
+import { requiredValue } from '../required-value'
 export type ReplayBenchmarkMode = 'adaptive' | 'replay'
 
 export interface ReplayBenchmarkSample {
@@ -51,7 +52,7 @@ export const minimumReplayBenchmarkSamplePairs = 20
 
 function percentile(values: readonly number[], ratio: number): number {
   const sorted = [...values].sort((left, right) => left - right)
-  return sorted[Math.ceil(sorted.length * ratio) - 1]!
+  return requiredValue(sorted[Math.ceil(sorted.length * ratio) - 1])
 }
 
 function statistics(values: readonly number[]): ReplayBenchmarkStatistics {

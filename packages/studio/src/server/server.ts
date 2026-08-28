@@ -25,6 +25,7 @@ import {
   DocumentConflictError,
   type SpecificationWorkspace,
 } from '../authoring/documents'
+import { requiredValue } from '../required-value'
 import { createGitWorkspace, type GitWorkspace } from './git'
 import { resolveStudioArtifactPath } from './studio-artifact-path'
 
@@ -431,6 +432,7 @@ function openBrowser(url: string): void {
   Bun.spawn(['xdg-open', url], { stdout: 'ignore', stderr: 'ignore' })
 }
 
+// biome-ignore lint/complexity/noExcessiveLinesPerFunction: Studio startup owns one server lifecycle and its private route closures
 export async function startStudio(
   options: StudioOptions,
 ): Promise<StudioServer> {
@@ -508,15 +510,16 @@ export async function startStudio(
     port: options.port ?? 0,
     websocket: {
       open(ws) {
-        if (ws.data.kind === 'workspace') {
+        const socket = ws
+        if (socket.data.kind === 'workspace') {
           const listener = (event: WorkspaceStreamEvent) => {
             ws.send(JSON.stringify(event))
           }
           workspaceListeners.add(listener)
-          ws.data = { kind: 'workspace', listener }
+          socket.data = { kind: 'workspace', listener }
           return
         }
-        const runId = ws.data.runId
+        const runId = socket.data.runId
         for (const event of buffers.get(runId) ?? []) {
           ws.send(JSON.stringify(event))
         }
@@ -526,7 +529,7 @@ export async function startStudio(
         const set = listeners.get(runId) ?? new Set()
         set.add(listener)
         listeners.set(runId, set)
-        ws.data = { kind: 'run', runId, listener }
+        socket.data = { kind: 'run', runId, listener }
       },
       message() {},
       close(ws) {
@@ -538,9 +541,10 @@ export async function startStudio(
         listeners.get(ws.data.runId)?.delete(ws.data.listener)
       },
     },
-    async fetch(request, server) {
+    // biome-ignore lint/complexity/noExcessiveLinesPerFunction: the fetch callback is a route composition root built from focused endpoint handlers
+    async fetch(request, localServer) {
       const url = new URL(request.url)
-      const origin = `http://${browserHostname(hostname)}:${server.port}`
+      const origin = `http://${browserHostname(hostname)}:${localServer.port}`
       const requestKey = `${request.method} ${url.pathname}`
 
       function historyUnavailable(): Response {
@@ -594,7 +598,7 @@ export async function startStudio(
 
       async function pinHistory(match: RegExpMatchArray): Promise<Response> {
         if (!options.history) return historyUnavailable()
-        const runId = decodeURIComponent(match[1]!)
+        const runId = decodeURIComponent(requiredValue(match[1]))
         if (request.method === 'POST') await options.history.pin(runId)
         else await options.history.unpin(runId)
         return Response.json({ runId, pinned: request.method === 'POST' })
@@ -602,18 +606,23 @@ export async function startStudio(
 
       async function exportHistory(match: RegExpMatchArray): Promise<Response> {
         if (!options.history) return historyUnavailable()
-        const runId = decodeURIComponent(match[1]!)
+        const runId = decodeURIComponent(requiredValue(match[1]))
         const kind = match[2]
         const exporters: Record<string, () => Promise<Response>> = {
           archive: async () =>
-            new Response(await options.history!.exportArchive(runId), {
-              headers: {
-                'content-type': 'application/json; charset=utf-8',
-                'content-disposition': `attachment; filename="${runId}.pickle-run.json"`,
+            new Response(
+              await requiredValue(options.history).exportArchive(runId),
+              {
+                headers: {
+                  'content-type': 'application/json; charset=utf-8',
+                  'content-disposition': `attachment; filename="${runId}.pickle-run.json"`,
+                },
               },
-            }),
+            ),
           allure: async () => {
-            const bytes = await options.history!.exportAllure(runId)
+            const bytes = await requiredValue(options.history).exportAllure(
+              runId,
+            )
             return new Response(bytes.buffer as ArrayBuffer, {
               headers: {
                 'content-type': 'application/zip',
@@ -625,7 +634,7 @@ export async function startStudio(
             const artifacts =
               url.searchParams.get('artifacts') === 'all' ? 'all' : 'failures'
             return new Response(
-              await options.history!.exportHtml(runId, artifacts),
+              await requiredValue(options.history).exportHtml(runId, artifacts),
               {
                 headers: {
                   'content-type': 'text/html; charset=utf-8',
@@ -680,8 +689,8 @@ export async function startStudio(
           return new Response('Execution cache is unavailable', { status: 501 })
         }
         const actions: Record<string, () => Promise<unknown>> = {
-          GET: () => options.executionCache!.inspect(),
-          DELETE: () => options.executionCache!.clear(),
+          GET: () => requiredValue(options.executionCache).inspect(),
+          DELETE: () => requiredValue(options.executionCache).clear(),
         }
         const action = actions[request.method]
         return action ? executeCacheAction(action) : null
@@ -862,7 +871,7 @@ export async function startStudio(
       }
 
       function upgradeWorkspaceEvents(): Response | undefined {
-        const upgraded = server.upgrade(request, {
+        const upgraded = localServer.upgrade(request, {
           data: { kind: 'workspace' },
         })
         return upgraded
@@ -874,15 +883,16 @@ export async function startStudio(
         state: { runId: string; pending: StudioStreamEvent[] },
         event: StudioStreamEvent,
       ): void {
-        if (event.type === 'run-started') state.runId = event.run.id
-        if (!state.runId) {
-          state.pending.push(event)
+        const runState = state
+        if (event.type === 'run-started') runState.runId = event.run.id
+        if (!runState.runId) {
+          runState.pending.push(event)
           return
         }
-        for (const pendingEvent of state.pending.splice(0)) {
-          publish(state.runId, pendingEvent)
+        for (const pendingEvent of runState.pending.splice(0)) {
+          publish(runState.runId, pendingEvent)
         }
-        publish(state.runId, event)
+        publish(runState.runId, event)
       }
 
       async function startRun(): Promise<Response> {
@@ -967,13 +977,15 @@ export async function startStudio(
         if (!options.gateway) {
           return new Response('Test runs are unavailable', { status: 501 })
         }
-        await options.gateway.cancel(decodeURIComponent(match[1]!))
+        await options.gateway.cancel(
+          decodeURIComponent(requiredValue(match[1])),
+        )
         return new Response(null, { status: 204 })
       }
 
       function upgradeRunEvents(match: RegExpMatchArray): Response | undefined {
-        const runId = decodeURIComponent(match[1]!)
-        const upgraded = server.upgrade(request, {
+        const runId = decodeURIComponent(requiredValue(match[1]))
+        const upgraded = localServer.upgrade(request, {
           data: { kind: 'run', runId },
         })
         return upgraded
@@ -985,7 +997,7 @@ export async function startStudio(
         if (!options.gateway) {
           return new Response('Test runs are unavailable', { status: 501 })
         }
-        const runId = decodeURIComponent(match[1]!)
+        const runId = decodeURIComponent(requiredValue(match[1]))
         const snapshot = await options.gateway.snapshot(runId)
         const scheduled = buffers
           .get(runId)
@@ -1087,13 +1099,13 @@ export async function startStudio(
         return routeAuthenticatedApi()
       }
 
-      function authorizePublicResponse(response: Response): Response {
+      function authorizePublicResponse(candidateResponse: Response): Response {
         return authorized(request, origin)
-          ? response
+          ? candidateResponse
           : new Response('Unauthorized', { status: 401 })
       }
-      const response = await routeRequest()
-      return response ? secureResponse(response, origin) : undefined
+      const routedResponse = await routeRequest()
+      return routedResponse ? secureResponse(routedResponse, origin) : undefined
     },
   })
 

@@ -13,6 +13,7 @@ import {
   type WebAutomation,
   type WebAutomationFactory,
 } from '../../index'
+import { requiredValue } from '../required-value'
 
 type ModelMethod = 'act' | 'compileAssertion' | 'observe' | 'verify'
 type ExecutionMode = 'adaptive' | 'replay'
@@ -115,7 +116,7 @@ Feature: Account
     Then the account page is ready
 `,
   })
-  return { specification, scenario: specification.scenarios[0]! }
+  return { specification, scenario: requiredValue(specification.scenarios[0]) }
 }
 
 function parameterizedNavigationFixture() {
@@ -131,7 +132,7 @@ Feature: Private account
       | private-account-42 |
 `,
   })
-  return { specification, scenario: specification.scenarios[0]! }
+  return { specification, scenario: requiredValue(specification.scenarios[0]) }
 }
 
 async function temporaryCacheWorkspace(prefix: string) {
@@ -177,7 +178,7 @@ describe('public web Replay proof', () => {
         ...input,
         cachePolicy: 'cache-only',
         executionCache: {
-          ...input.executionCache!,
+          ...requiredValue(input.executionCache),
           sourceRunId: 'replay-run',
         },
       })
@@ -257,7 +258,7 @@ describe('public web Replay proof', () => {
       const adaptive = await runScenario(input)
       const replay = await runScenario({ ...input, cachePolicy: 'cache-only' })
       const entries = await cache.inspect()
-      const serialized = await cache.read(entries[0]!.key)
+      const serialized = await cache.read(requiredValue(entries[0]).key)
 
       expect(finalScenarioAttempt(adaptive.result)).toMatchObject({
         state: 'passed',

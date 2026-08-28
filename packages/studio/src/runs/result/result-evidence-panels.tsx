@@ -5,7 +5,7 @@ import type {
   EvidenceAvailability,
   TestResultState,
 } from '@pickle-spec/runner'
-import type { MouseEvent } from 'react'
+import type { MouseEvent, ReactNode } from 'react'
 import { useMemo, useState } from 'react'
 import { studioRouteHref } from '../../app/studio-route'
 import { Button, ButtonLink } from '../../components/ui/button'
@@ -363,54 +363,87 @@ export function ResultArtifact(props: ResultArtifactProps) {
   )
 }
 
-export function ResultDiagnostics(props: ResultDiagnosticsProps) {
+function diagnosticEntriesFor(
+  props: ResultDiagnosticsProps,
+  diagnostics: readonly DiagnosticEvidence[],
+  filterKey: string,
+): ReactNode {
+  if (props.diagnostics.length === 0) {
+    return (
+      <EmptyEvidence message="No Diagnostic entries were retained for this Scenario attempt." />
+    )
+  }
+  if (diagnostics.length === 0) {
+    return (
+      <div>
+        <p role="status" aria-live="polite" className="sr-only">
+          0 of {props.diagnostics.length} Diagnostic entries match.
+        </p>
+        <EmptyEvidence message="No Diagnostic entries match these filters. Clear or change the filters to continue investigating." />
+      </div>
+    )
+  }
+  return (
+    <DiagnosticEntries
+      key={filterKey}
+      diagnostics={diagnostics}
+      total={props.diagnostics.length}
+    />
+  )
+}
+
+interface DiagnosticFilterValues {
+  query: string
+  level?: DiagnosticLevel
+  origin?: DiagnosticOrigin
+  scenarioId: string
+  stepIndex: string
+  executionTargetProfileId: string
+}
+
+function useFilteredDiagnostics(
+  props: ResultDiagnosticsProps,
+  filter: DiagnosticFilterValues,
+) {
+  const parsedStepIndex =
+    filter.stepIndex === '' ? undefined : Number(filter.stepIndex)
+  const diagnostics = useMemo(
+    () =>
+      filterDiagnostics(props.diagnostics, {
+        query: filter.query,
+        level: filter.level,
+        origin: filter.origin,
+        scenarioId: filter.scenarioId || undefined,
+        stepIndex: Number.isInteger(parsedStepIndex)
+          ? parsedStepIndex
+          : undefined,
+        executionTargetProfileId: filter.executionTargetProfileId || undefined,
+      }),
+    [props.diagnostics, filter, parsedStepIndex],
+  )
+  const values = Object.values(filter)
+  return {
+    diagnostics,
+    filterKey: values.join(':'),
+    hasFilters: hasDiagnosticFilters(values),
+  }
+}
+
+function useDiagnosticFilters(props: ResultDiagnosticsProps) {
   const [query, setQuery] = useState('')
   const [level, setLevel] = useState<DiagnosticLevel>()
   const [origin, setOrigin] = useState<DiagnosticOrigin>()
   const [scenarioId, setScenarioId] = useState('')
   const [stepIndex, setStepIndex] = useState('')
   const [executionTargetProfileId, setExecutionTargetProfileId] = useState('')
-  const availability = diagnosticAvailability(props.availability)
-  const parsedStepIndex = stepIndex === '' ? undefined : Number(stepIndex)
-  const diagnostics = useMemo(
-    () =>
-      filterDiagnostics(props.diagnostics, {
-        query,
-        level,
-        origin,
-        scenarioId: scenarioId || undefined,
-        stepIndex: Number.isInteger(parsedStepIndex)
-          ? parsedStepIndex
-          : undefined,
-        executionTargetProfileId: executionTargetProfileId || undefined,
-      }),
-    [
-      props.diagnostics,
-      query,
-      level,
-      origin,
-      scenarioId,
-      parsedStepIndex,
-      executionTargetProfileId,
-    ],
-  )
-  const filterKey = [
+  const filtered = useFilteredDiagnostics(props, {
     query,
     level,
     origin,
     scenarioId,
     stepIndex,
     executionTargetProfileId,
-  ].join(':')
-  const hasFilters = hasDiagnosticFilters([
-    query,
-    level,
-    origin,
-    scenarioId,
-    stepIndex,
-    executionTargetProfileId,
-  ])
-
+  })
   function clearFilters() {
     setQuery('')
     setLevel(undefined)
@@ -419,8 +452,35 @@ export function ResultDiagnostics(props: ResultDiagnosticsProps) {
     setStepIndex('')
     setExecutionTargetProfileId('')
   }
+  return {
+    query,
+    setQuery,
+    level,
+    setLevel,
+    origin,
+    setOrigin,
+    scenarioId,
+    setScenarioId,
+    stepIndex,
+    setStepIndex,
+    executionTargetProfileId,
+    setExecutionTargetProfileId,
+    hasFilters: filtered.hasFilters,
+    clearFilters,
+    entries: diagnosticEntriesFor(
+      props,
+      filtered.diagnostics,
+      filtered.filterKey,
+    ),
+  }
+}
+
+type DiagnosticFilterState = ReturnType<typeof useDiagnosticFilters>
+
+function DiagnosticAvailabilityCards(props: ResultDiagnosticsProps) {
+  const availability = diagnosticAvailability(props.availability)
   return (
-    <div className="space-y-3">
+    <>
       <Card>
         <CardHeader>
           <CardTitle>Diagnostics availability</CardTitle>
@@ -455,82 +515,83 @@ export function ResultDiagnostics(props: ResultDiagnosticsProps) {
           </CardContent>
         </Card>
       ) : null}
-      {props.diagnostics.length > 0 ? (
-        <Card>
-          <CardHeader>
-            <CardTitle>Filter Diagnostic entries</CardTitle>
-            <CardDescription>
-              Filters preserve the original chronological order.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end">
-              <DiagnosticInput
-                label="Search Diagnostic entries"
-                value={query}
-                onChange={setQuery}
-                type="search"
-                placeholder="Search messages and metadata"
-              />
-              <Button
-                type="button"
-                variant="outline"
-                className="w-full sm:w-auto"
-                disabled={!hasFilters}
-                onClick={clearFilters}
-              >
-                Clear filters
-              </Button>
-            </div>
-            <DiagnosticChoice
-              label="Level"
-              values={diagnosticLevels}
-              selected={level}
-              onSelect={setLevel}
-            />
-            <DiagnosticChoice
-              label="Origin"
-              values={diagnosticOrigins}
-              selected={origin}
-              onSelect={setOrigin}
-            />
-            <div className="grid gap-3 sm:grid-cols-3">
-              <DiagnosticInput
-                label="Scenario identifier"
-                value={scenarioId}
-                onChange={setScenarioId}
-              />
-              <DiagnosticInput
-                label="Step index"
-                value={stepIndex}
-                onChange={setStepIndex}
-                type="number"
-              />
-              <DiagnosticInput
-                label="Target profile"
-                value={executionTargetProfileId}
-                onChange={setExecutionTargetProfileId}
-              />
-            </div>
-          </CardContent>
-        </Card>
-      ) : null}
-      {props.diagnostics.length === 0 ? (
-        <EmptyEvidence message="No Diagnostic entries were retained for this Scenario attempt." />
-      ) : diagnostics.length === 0 ? (
-        <div>
-          <p role="status" aria-live="polite" className="sr-only">
-            0 of {props.diagnostics.length} Diagnostic entries match.
-          </p>
-          <EmptyEvidence message="No Diagnostic entries match these filters. Clear or change the filters to continue investigating." />
+    </>
+  )
+}
+
+function DiagnosticFiltersCard(props: { state: DiagnosticFilterState }) {
+  const { state } = props
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Filter Diagnostic entries</CardTitle>
+        <CardDescription>
+          Filters preserve the original chronological order.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end">
+          <DiagnosticInput
+            label="Search Diagnostic entries"
+            value={state.query}
+            onChange={state.setQuery}
+            type="search"
+            placeholder="Search messages and metadata"
+          />
+          <Button
+            type="button"
+            variant="outline"
+            className="w-full sm:w-auto"
+            disabled={!state.hasFilters}
+            onClick={state.clearFilters}
+          >
+            Clear filters
+          </Button>
         </div>
-      ) : (
-        <DiagnosticEntries
-          key={filterKey}
-          diagnostics={diagnostics}
-          total={props.diagnostics.length}
+        <DiagnosticChoice
+          label="Level"
+          values={diagnosticLevels}
+          selected={state.level}
+          onSelect={state.setLevel}
         />
-      )}
+        <DiagnosticChoice
+          label="Origin"
+          values={diagnosticOrigins}
+          selected={state.origin}
+          onSelect={state.setOrigin}
+        />
+        <div className="grid gap-3 sm:grid-cols-3">
+          <DiagnosticInput
+            label="Scenario identifier"
+            value={state.scenarioId}
+            onChange={state.setScenarioId}
+          />
+          <DiagnosticInput
+            label="Step index"
+            value={state.stepIndex}
+            onChange={state.setStepIndex}
+            type="number"
+          />
+          <DiagnosticInput
+            label="Target profile"
+            value={state.executionTargetProfileId}
+            onChange={state.setExecutionTargetProfileId}
+          />
+        </div>
+      </CardContent>
+    </Card>
+  )
+}
+
+export function ResultDiagnostics(props: ResultDiagnosticsProps) {
+  const state = useDiagnosticFilters(props)
+  return (
+    <div className="space-y-3">
+      <DiagnosticAvailabilityCards {...props} />
+      {props.diagnostics.length > 0 ? (
+        <DiagnosticFiltersCard state={state} />
+      ) : null}
+      {state.entries}
     </div>
   )
 }

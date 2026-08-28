@@ -23,6 +23,7 @@ import {
   webAdapterOptionsSchema,
 } from '@pickle-spec/web'
 import { z } from 'zod'
+import { requiredValue } from '../required-value'
 
 export const defaultConfigFile = 'pickle.config.jsonc'
 export const defaultExtensionsFile = 'pickle.extensions.ts'
@@ -430,7 +431,7 @@ function validateConfig(value: unknown): PickleConfig {
 function quotedJsonEnd(source: string, start: number): number {
   let escaped = false
   for (let index = start + 1; index < source.length; index++) {
-    const character = source[index]!
+    const character = requiredValue(source[index])
     if (escaped) escaped = false
     else if (character === '\\') escaped = true
     else if (character === '"') return index
@@ -451,7 +452,7 @@ function blockCommentEnd(source: string, start: number): number {
 function removeJsonComments(source: string): string {
   let result = ''
   for (let index = 0; index < source.length; index++) {
-    const character = source[index]!
+    const character = requiredValue(source[index])
     if (character === '"') {
       const end = quotedJsonEnd(source, index)
       result += source.slice(index, end + 1)

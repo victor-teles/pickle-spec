@@ -156,6 +156,30 @@ function countExpectation(
   return expected
 }
 
+async function executeWaitForAssertion(
+  page: Page,
+  instruction: Extract<WebInstruction, { kind: 'wait-for' }>,
+  bindings: readonly ScenarioVariableBinding[],
+  timeoutMs: number,
+  signal?: AbortSignal,
+): Promise<WebDirectExecutionResult> {
+  const success = await waitForNthLocator(
+    page,
+    instruction.locator,
+    instruction.state,
+    bindings,
+    timeoutMs,
+    signal,
+  )
+  return success
+    ? { success: true }
+    : {
+        success: false,
+        actualState: 'wait timed out',
+        message: `Timed out waiting for locator to be ${instruction.state}`,
+      }
+}
+
 async function executeLocatorAssertion(
   page: Page,
   instruction: WebInstruction,
@@ -166,21 +190,13 @@ async function executeLocatorAssertion(
 ): Promise<WebDirectExecutionResult> {
   switch (instruction.kind) {
     case 'wait-for': {
-      const success = await waitForNthLocator(
+      return executeWaitForAssertion(
         page,
-        instruction.locator,
-        instruction.state,
+        instruction,
         bindings,
         timeoutMs,
         signal,
       )
-      return success
-        ? { success: true }
-        : {
-            success: false,
-            actualState: 'wait timed out',
-            message: `Timed out waiting for locator to be ${instruction.state}`,
-          }
     }
     case 'exists': {
       const actual = await locatorCount(page, instruction.locator, bindings)

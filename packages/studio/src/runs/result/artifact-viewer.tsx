@@ -255,12 +255,9 @@ function UnloadedTextArtifact(props: {
     props.state.kind === 'error'
       ? artifactLoadFailureGuidance(props.state.failure)
       : 'The device log stays unloaded until you need to search it.'
-  const label =
-    props.state.kind === 'loading'
-      ? 'Loading device log…'
-      : props.state.kind === 'error'
-        ? 'Retry loading device log'
-        : 'Load device log'
+  let label = 'Load device log'
+  if (props.state.kind === 'loading') label = 'Loading device log…'
+  else if (props.state.kind === 'error') label = 'Retry loading device log'
   return (
     <div className="flex min-h-32 flex-col items-center justify-center gap-3 rounded-md border border-dashed border-border px-4 text-center text-muted-foreground">
       <p>{guidance}</p>

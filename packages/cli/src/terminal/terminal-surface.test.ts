@@ -1,4 +1,5 @@
 import { expect, test } from 'bun:test'
+import { requiredValue } from '../required-value'
 import {
   createInteractiveTerminalSurface,
   createProcessTerminalSurface,
@@ -39,7 +40,7 @@ test('bounds the dynamic region to the terminal height', () => {
 
   surface.update(Array.from({ length: 20 }, (_, index) => `line ${index}`))
 
-  const frame = output[0]!.split('\n')
+  const frame = requiredValue(output[0]).split('\n')
   expect(frame.length).toBeLessThanOrEqual(6)
   expect(frame[0]).toBe('line 0')
   expect(frame.join('\n')).toContain('…')
@@ -56,8 +57,10 @@ test('keeps its overflow marker within narrow terminal columns', () => {
 
   surface.update(Array.from({ length: 20 }, (_, index) => `line ${index}`))
 
-  expect(Bun.stringWidth(output[0]!.split('\n')[1]!)).toBeLessThanOrEqual(3)
-  expect(output[0]!.split('\n')[1]).toBe('…')
+  expect(
+    Bun.stringWidth(requiredValue(requiredValue(output[0]).split('\n')[1])),
+  ).toBeLessThanOrEqual(3)
+  expect(requiredValue(output[0]).split('\n')[1]).toBe('…')
 })
 
 test('counts physical rows when a logical line wraps in narrow columns', () => {

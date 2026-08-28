@@ -206,6 +206,53 @@ export function publicTestResult(result: TestResult): TestResult {
   return projectTestResult(result, withoutPrivateScenarioAttemptData)
 }
 
+function publicScenarioStartedEvent(
+  event: Extract<RunEventPayload, { type: 'scenario-started' }>,
+): RunEventPayload {
+  return {
+    type: 'scenario-started',
+    scenario: publicScenarioIdentity(event.scenario),
+    executionTargetProfile: publicExecutionTargetProfile(
+      event.executionTargetProfile,
+    ),
+    scope: publicEventScope(event.scope),
+  }
+}
+
+function publicStepStartedEvent(
+  event: Extract<RunEventPayload, { type: 'step-started' }>,
+): RunEventPayload {
+  return {
+    type: 'step-started',
+    step: publicScenarioStep(event.step),
+    scenario: publicScenarioIdentity(event.scenario),
+    executionTargetProfile: publicExecutionTargetProfile(
+      event.executionTargetProfile,
+    ),
+    scope: publicEventScope(event.scope),
+  }
+}
+
+function publicScenarioFinishedEvent(
+  event: Extract<RunEventPayload, { type: 'scenario-finished' }>,
+  mappers: EventResultMappers,
+): RunEventPayload {
+  return {
+    type: 'scenario-finished',
+    specification: {
+      name: event.specification.name,
+      uri: event.specification.uri,
+    },
+    scenario: publicScenarioIdentity(event.scenario),
+    executionTargetProfile: publicExecutionTargetProfile(
+      event.executionTargetProfile,
+    ),
+    scope: publicEventScope(event.scope),
+    attempt: mappers.attempt(event.attempt),
+    scheduleIndex: event.scheduleIndex,
+  }
+}
+
 function publicEventPayload(
   event: RunEvent | RunEventPayload,
   mappers: EventResultMappers,
@@ -224,24 +271,9 @@ function publicEventPayload(
         },
       }
     case 'scenario-started':
-      return {
-        type: 'scenario-started',
-        scenario: publicScenarioIdentity(event.scenario),
-        executionTargetProfile: publicExecutionTargetProfile(
-          event.executionTargetProfile,
-        ),
-        scope: publicEventScope(event.scope),
-      }
+      return publicScenarioStartedEvent(event)
     case 'step-started':
-      return {
-        type: 'step-started',
-        step: publicScenarioStep(event.step),
-        scenario: publicScenarioIdentity(event.scenario),
-        executionTargetProfile: publicExecutionTargetProfile(
-          event.executionTargetProfile,
-        ),
-        scope: publicEventScope(event.scope),
-      }
+      return publicStepStartedEvent(event)
     case 'step-finished':
       return {
         type: 'step-finished',
@@ -276,20 +308,7 @@ function publicEventPayload(
         scope: publicEventScope(event.scope),
       }
     case 'scenario-finished':
-      return {
-        type: 'scenario-finished',
-        specification: {
-          name: event.specification.name,
-          uri: event.specification.uri,
-        },
-        scenario: publicScenarioIdentity(event.scenario),
-        executionTargetProfile: publicExecutionTargetProfile(
-          event.executionTargetProfile,
-        ),
-        scope: publicEventScope(event.scope),
-        attempt: mappers.attempt(event.attempt),
-        scheduleIndex: event.scheduleIndex,
-      }
+      return publicScenarioFinishedEvent(event, mappers)
     default:
       throw new Error('Unsupported run event type')
   }

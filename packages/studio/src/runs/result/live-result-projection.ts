@@ -137,12 +137,9 @@ function liveEvidenceAvailability(
     (step) => Boolean(step.trace?.length) || step.resolvedActions.length > 0,
   )
   return liveEvidenceKinds.map((kind) => {
-    const available =
-      kind === 'diagnostics'
-        ? diagnosticsAvailable
-        : kind === 'trace'
-          ? traceAvailable || persistedKinds.has(kind)
-          : persistedKinds.has(kind)
+    let available = persistedKinds.has(kind)
+    if (kind === 'diagnostics') available = diagnosticsAvailable
+    else if (kind === 'trace') available ||= traceAvailable
     return available
       ? { kind, state: 'available' as const }
       : {

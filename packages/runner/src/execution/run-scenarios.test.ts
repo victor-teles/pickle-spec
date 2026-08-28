@@ -6,6 +6,7 @@ import {
   scheduleScenarios,
   type TestResult,
 } from '../../index'
+import { requiredValue } from '../required-value'
 
 type TimedRunScenariosInput = Parameters<typeof runScenarios>[0] & {
   now: () => Date
@@ -74,7 +75,7 @@ test('runs selected Scenarios concurrently while preserving stable test-result o
 
 test('schedules Scenario results in declaration and configured profile order', () => {
   const schedule = scheduleScenarios({
-    selections: [selections[0]!, selections[2]!],
+    selections: [requiredValue(selections[0]), requiredValue(selections[2])],
     executionTargetProfiles: [{ id: 'web' }, { id: 'android' }],
     includeTarget: (selection, executionTargetProfile) =>
       !(
@@ -97,16 +98,16 @@ test('schedules Scenario results in declaration and configured profile order', (
 
 test('keeps Scenario Outline rows unambiguous in the public schedule', () => {
   const outlineSelections = ['row-a', 'row-b'].map((examplesRowId) => ({
-    specification: selections[0]!.specification,
+    specification: requiredValue(selections[0]).specification,
     scenario: {
-      ...selections[0]!.scenario,
+      ...requiredValue(selections[0]).scenario,
       id: 'shared-scenario',
       name: `Bound ${examplesRowId}`,
       examplesId: 'examples-a',
       examplesRowId,
       template: {
         name: 'Bound <value>',
-        steps: selections[0]!.scenario.steps,
+        steps: requiredValue(selections[0]).scenario.steps,
         variableNames: ['value'],
       },
       runtimeBindings: [{ name: 'value', value: examplesRowId }],
@@ -152,7 +153,7 @@ test('reports one final completion after retry attempt events', async () => {
   }
 
   await runScenarios({
-    selections: [selections[0]!],
+    selections: [requiredValue(selections[0])],
     executionTargetProfile: { id: 'web' },
     adapter,
     retry: { infrastructureErrors: 1 },
@@ -189,9 +190,9 @@ test('aggregates separate Scenario attempts into one final flaky Test result', a
   const finishedAttemptEvents: unknown[] = []
   const completedResults: TestResult[] = []
   const selection: ScenarioSelection = {
-    specification: selections[0]!.specification,
+    specification: requiredValue(selections[0]).specification,
     scenario: {
-      ...selections[0]!.scenario,
+      ...requiredValue(selections[0]).scenario,
       id: 'scn-scheduled-first',
       examplesId: 'examples-scheduled',
       examplesRowId: 'row-scheduled-first',
@@ -219,7 +220,7 @@ test('aggregates separate Scenario attempts into one final flaky Test result', a
       },
     },
     retry: { infrastructureErrors: 1 },
-    now: () => new Date(timestamps[timestampIndex++]!),
+    now: () => new Date(requiredValue(timestamps[timestampIndex++])),
     onEvent(event) {
       if (event.type === 'scenario-finished') {
         finishedAttemptEvents.push(event)
@@ -322,7 +323,7 @@ test('rejects a target that lacks a Scenario capability requirement before openi
   const openSession = mock(async () => {
     throw new Error('must not open')
   })
-  const selection = selections[0]!
+  const selection = requiredValue(selections[0])
 
   await expect(
     runScenarios({
@@ -459,7 +460,7 @@ test('produces one test result per Scenario and execution target profile', async
   }))
 
   const runs = await runScenarios({
-    selections: [selections[0]!, selections[2]!],
+    selections: [requiredValue(selections[0]), requiredValue(selections[2])],
     targets: [
       {
         executionTargetProfile: {
@@ -508,9 +509,9 @@ test('fails validation for an incompatible target instead of skipping the Scenar
     runScenarios({
       selections: [
         {
-          ...selections[0]!,
+          ...requiredValue(selections[0]),
           scenario: {
-            ...selections[0]!.scenario,
+            ...requiredValue(selections[0]).scenario,
             capabilityRequirements: ['geolocation'],
           },
         },

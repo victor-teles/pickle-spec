@@ -157,58 +157,73 @@ type SerializeOperation = <Value>(
   operation: () => Promise<Value>,
 ) => Promise<Value>
 
-export function openTestRunStore(options: TestRunStoreOptions): TestRunStore {
-  const createId = options.createId ?? (() => crypto.randomUUID())
-  const now = options.now ?? (() => new Date())
-  const evidencePersistence =
-    options.evidencePersistence ?? options.artifactCapture ?? 'on-failure'
-  const evidencePersistenceByProfile =
-    options.evidencePersistenceByProfile ?? {}
-  const storage = resolveLocalProjectStorage(options.root, options.pickleHome)
-  const projectDirectory = storage.projectDirectory
-  const runsDirectory = storage.runsDirectory
-  const indexPath = storage.runIndexPath
-  const runPinsPath = storage.runPinsPath
-  const incompatibleSchema = (version: unknown): never => {
+class LocalTestRunStore implements TestRunStore {
+  private readonly createId: () => string
+  private readonly now: () => Date
+  private readonly evidencePersistence: EvidencePersistencePolicy
+  private readonly evidencePersistenceByProfile: Readonly<
+    Record<string, EvidencePersistencePolicy>
+  >
+  private readonly projectDirectory: string
+  private readonly runsDirectory: string
+  private readonly indexPath: string
+  private readonly runPinsPath: string
+  private readonly runOperationQueues = new Map<string, Promise<void>>()
+  private managementOperationQueue = Promise.resolve()
+
+  constructor(options: TestRunStoreOptions) {
+    this.createId = options.createId ?? (() => crypto.randomUUID())
+    this.now = options.now ?? (() => new Date())
+    this.evidencePersistence =
+      options.evidencePersistence ?? options.artifactCapture ?? 'on-failure'
+    this.evidencePersistenceByProfile =
+      options.evidencePersistenceByProfile ?? {}
+    const storage = resolveLocalProjectStorage(options.root, options.pickleHome)
+    this.projectDirectory = storage.projectDirectory
+    this.runsDirectory = storage.runsDirectory
+    this.indexPath = storage.runIndexPath
+    this.runPinsPath = storage.runPinsPath
+  }
+
+  private incompatibleSchema = (version: unknown): never => {
     throw new Error(
       `Test run storage schema version ${String(version)} is unsupported. ` +
-        `Pickle did not modify it. Remove the runs directory manually and retry: ${runsDirectory}`,
+        `Pickle did not modify it. Remove the runs directory manually and retry: ${this.runsDirectory}`,
     )
   }
-  const runOperationQueues = new Map<string, Promise<void>>()
-  let managementOperationQueue = Promise.resolve()
 
-  function serializeRunOperation<Value>(
+  private serializeRunOperation<Value>(
     id: string,
     operation: () => Promise<Value>,
   ): Promise<Value> {
-    const pending = runOperationQueues.get(id) ?? Promise.resolve()
+    const pending = this.runOperationQueues.get(id) ?? Promise.resolve()
     const result = pending.then(operation)
     const tail = result.then(
       () => undefined,
       () => undefined,
     )
-    runOperationQueues.set(id, tail)
+    this.runOperationQueues.set(id, tail)
     void tail.then(() => {
-      if (runOperationQueues.get(id) === tail) runOperationQueues.delete(id)
+      if (this.runOperationQueues.get(id) === tail)
+        this.runOperationQueues.delete(id)
     })
     return result
   }
 
-  function serializeManagementOperation<Value>(
+  private serializeManagementOperation<Value>(
     operation: () => Promise<Value>,
   ): Promise<Value> {
-    const result = managementOperationQueue.then(operation)
-    managementOperationQueue = result.then(
+    const result = this.managementOperationQueue.then(operation)
+    this.managementOperationQueue = result.then(
       () => undefined,
       () => undefined,
     )
     return result
   }
 
-  async function readPinnedRunIds(): Promise<Set<string>> {
-    if (!(await Bun.file(runPinsPath).exists())) return new Set()
-    const source: unknown = await Bun.file(runPinsPath).json()
+  private async readPinnedRunIds(): Promise<Set<string>> {
+    if (!(await Bun.file(this.runPinsPath).exists())) return new Set()
+    const source: unknown = await Bun.file(this.runPinsPath).json()
     if (!isRunPinsFile(source)) {
       throw new Error('Pinned Test run metadata is invalid')
     }
@@ -216,110 +231,108 @@ export function openTestRunStore(options: TestRunStoreOptions): TestRunStore {
     return new Set(source.runIds)
   }
 
-  async function writePinnedRunIds(runIds: ReadonlySet<string>): Promise<void> {
-    await mkdir(projectDirectory, { recursive: true })
-    const temporaryPath = `${runPinsPath}.${crypto.randomUUID()}.tmp`
+  private async writePinnedRunIds(runIds: ReadonlySet<string>): Promise<void> {
+    await mkdir(this.projectDirectory, { recursive: true })
+    const temporaryPath = `${this.runPinsPath}.${crypto.randomUUID()}.tmp`
     const contents: RunPinsFile = {
       schemaVersion: 1,
       runIds: [...runIds].sort(),
     }
     try {
       await Bun.write(temporaryPath, `${JSON.stringify(contents, null, 2)}\n`)
-      await rename(temporaryPath, runPinsPath)
+      await rename(temporaryPath, this.runPinsPath)
     } finally {
       await rm(temporaryPath, { force: true })
     }
   }
 
-  async function updatePin(id: string, pinned: boolean): Promise<void> {
+  private async updatePin(id: string, pinned: boolean): Promise<void> {
     validateRunId(id)
-    await serializeManagementOperation(async () => {
-      if (
-        !(await Bun.file(join(runsDirectory, id, 'events.ndjson')).exists())
-      ) {
+    await this.serializeManagementOperation(async () => {
+      const eventsPath = join(this.runsDirectory, id, 'events.ndjson')
+      if (!(await Bun.file(eventsPath).exists())) {
         throw new Error(`Test run "${id}" was not found`)
       }
-      const runIds = await readPinnedRunIds()
+      const runIds = await this.readPinnedRunIds()
       if (pinned) runIds.add(id)
       else runIds.delete(id)
-      await writePinnedRunIds(runIds)
+      await this.writePinnedRunIds(runIds)
     })
   }
 
-  async function upsertManifest(manifest: TestRunManifest): Promise<void> {
-    await mkdir(projectDirectory, { recursive: true })
-    withIndex(indexPath, (db) => upsertRun(db, manifest))
+  private async upsertManifest(manifest: TestRunManifest): Promise<void> {
+    await mkdir(this.projectDirectory, { recursive: true })
+    withIndex(this.indexPath, (db) => upsertRun(db, manifest))
   }
 
-  function persistedRunFor(
+  private persistedRunFor(
     id: string,
     startedAt: string,
     metadata: CreateTestRunOptions = {},
   ): PersistedTestRun {
     return persistedTestRun(
       id,
-      join(runsDirectory, id),
+      join(this.runsDirectory, id),
       startedAt,
-      now,
-      (executionTargetProfileId) =>
+      this.now,
+      (profileId) =>
         metadata.evidencePersistence ??
-        evidencePersistenceByProfile[executionTargetProfileId] ??
-        evidencePersistence,
-      upsertManifest,
+        this.evidencePersistenceByProfile[profileId] ??
+        this.evidencePersistence,
+      (manifest) => this.upsertManifest(manifest),
       metadata,
-      incompatibleSchema,
-      (operation) => serializeRunOperation(id, operation),
+      this.incompatibleSchema,
+      (operation) => this.serializeRunOperation(id, operation),
     )
   }
 
-  async function openRun(id: string): Promise<PersistedTestRun> {
+  async open(id: string): Promise<PersistedTestRun> {
     validateRunId(id)
-    const events = await serializeRunOperation(id, () =>
-      readEvents(join(runsDirectory, id, 'events.ndjson'), incompatibleSchema),
+    const events = await this.serializeRunOperation(id, () =>
+      readEvents(
+        join(this.runsDirectory, id, 'events.ndjson'),
+        this.incompatibleSchema,
+      ),
     )
     const started = events.find((event) => event.type === 'run-started')
-    const sourceRunId =
-      started?.type === 'run-started' ? started.run.sourceRunId : undefined
-    const suite =
-      started?.type === 'run-started' ? started.run.suite : undefined
-    const applicationRevision =
+    const metadata =
       started?.type === 'run-started'
-        ? started.run.applicationRevision
-        : undefined
-    const runEvidencePersistence =
-      started?.type === 'run-started'
-        ? started.run.evidencePersistence
-        : undefined
-    return persistedRunFor(id, startedAtFrom(events, now().toISOString()), {
-      sourceRunId,
-      suite,
-      applicationRevision,
-      evidencePersistence: runEvidencePersistence,
-    })
+        ? {
+            sourceRunId: started.run.sourceRunId,
+            suite: started.run.suite,
+            applicationRevision: started.run.applicationRevision,
+            evidencePersistence: started.run.evidencePersistence,
+          }
+        : {}
+    return this.persistedRunFor(
+      id,
+      startedAtFrom(events, this.now().toISOString()),
+      metadata,
+    )
   }
 
-  async function manifestFor(id: string): Promise<TestRunManifest> {
-    const manifestPath = join(runsDirectory, id, 'manifest.json')
+  private async manifestFor(id: string): Promise<TestRunManifest> {
+    const manifestPath = join(this.runsDirectory, id, 'manifest.json')
     if (await Bun.file(manifestPath).exists()) {
       return parseTestRunManifest(
         await Bun.file(manifestPath).json(),
-        incompatibleSchema,
+        this.incompatibleSchema,
       )
     }
-    return (await openRun(id)).materialize({ finished: false })
+    return (await this.open(id)).materialize({ finished: false })
   }
 
-  async function loadManifests(): Promise<TestRunManifest[]> {
+  private async loadManifests(): Promise<TestRunManifest[]> {
     const manifests: TestRunManifest[] = []
-    if (!(await pathExists(runsDirectory))) return manifests
+    if (!(await pathExists(this.runsDirectory))) return manifests
     const files = new Bun.Glob('*/events.ndjson').scan({
-      cwd: runsDirectory,
+      cwd: this.runsDirectory,
       onlyFiles: true,
     })
     for await (const relativePath of files) {
       const id = dirname(relativePath)
       validateRunId(id)
-      const manifest = await manifestFor(id)
+      const manifest = await this.manifestFor(id)
       if (manifest.id !== id) {
         throw new Error(
           `Test run manifest identifier "${manifest.id}" does not match "${id}"`,
@@ -330,17 +343,17 @@ export function openTestRunStore(options: TestRunStoreOptions): TestRunStore {
     return manifests
   }
 
-  async function rebuild(providedManifests?: TestRunManifest[]) {
-    const manifests = providedManifests ?? (await loadManifests())
-    await mkdir(projectDirectory, { recursive: true })
-    withIndex(indexPath, (db) => {
+  private async rebuild(providedManifests?: TestRunManifest[]): Promise<void> {
+    const manifests = providedManifests ?? (await this.loadManifests())
+    await mkdir(this.projectDirectory, { recursive: true })
+    withIndex(this.indexPath, (db) => {
       db.run('DELETE FROM runs')
       for (const manifest of manifests) upsertRun(db, manifest)
       db.run(`PRAGMA user_version = ${indexSchemaVersion}`)
     })
   }
 
-  async function removeExpiredRuns(
+  private async removeExpiredRuns(
     eligible: readonly TestRunManifest[],
     cutoff: number | undefined,
   ): Promise<string[]> {
@@ -349,20 +362,19 @@ export function openTestRunStore(options: TestRunStoreOptions): TestRunStore {
     for (const manifest of eligible) {
       if (!manifest.finishedAt || Date.parse(manifest.finishedAt) > cutoff)
         continue
-      await removeRun(runsDirectory, indexPath, manifest.id)
+      await removeRun(this.runsDirectory, this.indexPath, manifest.id)
       removed.push(manifest.id)
     }
     return removed
   }
 
-  async function removeRunsOverLimit(
+  private async removeRunsOverLimit(
     eligible: readonly TestRunManifest[],
     maxBytes: number | undefined,
     removed: string[],
   ): Promise<number> {
-    let total = await directorySize(runsDirectory)
+    let total = await directorySize(this.runsDirectory)
     if (maxBytes === undefined) return total
-
     const removedRunIds = new Set(removed)
     const remaining = eligible.filter(
       (manifest) => !removedRunIds.has(manifest.id),
@@ -370,33 +382,32 @@ export function openTestRunStore(options: TestRunStoreOptions): TestRunStore {
     while (total > maxBytes) {
       const oldest = remaining.shift()
       if (!oldest) break
-      await removeRun(runsDirectory, indexPath, oldest.id)
+      await removeRun(this.runsDirectory, this.indexPath, oldest.id)
       removed.push(oldest.id)
-      total = await directorySize(runsDirectory)
+      total = await directorySize(this.runsDirectory)
     }
     return total
   }
 
-  async function applyRetentionPolicy(
+  private async applyRetentionPolicy(
     policy: RetentionPolicy,
   ): Promise<RetentionResult> {
-    const beforeBytes = await directorySize(runsDirectory)
+    const beforeBytes = await directorySize(this.runsDirectory)
     if (policy.maxAgeMs === undefined && policy.maxBytes === undefined) {
       return { removed: [], beforeBytes, afterBytes: beforeBytes }
     }
-
     const cutoff =
       policy.maxAgeMs === undefined
         ? undefined
-        : now().getTime() - policy.maxAgeMs
-    const pinnedRunIds = await readPinnedRunIds()
-    const eligible = (await loadManifests())
+        : this.now().getTime() - policy.maxAgeMs
+    const pinnedRunIds = await this.readPinnedRunIds()
+    const eligible = (await this.loadManifests())
       .filter(
         (manifest) => manifest.finishedAt && !pinnedRunIds.has(manifest.id),
       )
       .sort(byOldest)
-    const removed = await removeExpiredRuns(eligible, cutoff)
-    const afterBytes = await removeRunsOverLimit(
+    const removed = await this.removeExpiredRuns(eligible, cutoff)
+    const afterBytes = await this.removeRunsOverLimit(
       eligible,
       policy.maxBytes,
       removed,
@@ -404,68 +415,172 @@ export function openTestRunStore(options: TestRunStoreOptions): TestRunStore {
     return { removed, beforeBytes, afterBytes }
   }
 
-  return {
-    async create(options: CreateTestRunOptions = {}) {
-      await loadManifests()
-      const id = createId()
-      validateRunId(id)
-      const startedAt = now().toISOString()
-      await mkdir(runsDirectory, { recursive: true })
-      const runDirectory = join(runsDirectory, id)
-      try {
-        await mkdir(runDirectory)
-      } catch (error) {
-        if (isAlreadyExists(error)) {
-          throw new Error(`Test run "${id}" already exists`)
-        }
-        throw error
+  async create(metadata: CreateTestRunOptions = {}): Promise<PersistedTestRun> {
+    await this.loadManifests()
+    const id = this.createId()
+    validateRunId(id)
+    const startedAt = this.now().toISOString()
+    await mkdir(this.runsDirectory, { recursive: true })
+    const runDirectory = join(this.runsDirectory, id)
+    try {
+      await mkdir(runDirectory)
+    } catch (error) {
+      if (isAlreadyExists(error)) {
+        throw new Error(`Test run "${id}" already exists`)
       }
-      const run = persistedRunFor(id, startedAt, options)
-      try {
-        await run.append(runStartedEvent(id, startedAt, options))
-        return run
-      } catch (error) {
-        await rm(runDirectory, { recursive: true, force: true })
-        throw error
-      }
-    },
-    open: openRun,
-    async list() {
-      const manifests = await loadManifests()
-      const storedIds = manifests.map((manifest) => manifest.id).sort()
-      const indexedIds = (await Bun.file(indexPath).exists())
-        ? withIndex(indexPath, listRunIds)
-        : []
-      if (
-        !(await Bun.file(indexPath).exists()) ||
-        indexVersion(indexPath) < indexSchemaVersion ||
-        !sameStrings(storedIds, indexedIds)
-      ) {
-        await rebuild(manifests)
-      }
-      return withIndex(indexPath, listRuns)
-    },
-    rebuildIndex: rebuild,
-    async inspectStorage() {
-      const totalBytes = await directorySize(runsDirectory)
-      const pinnedRunIds = [...(await readPinnedRunIds())].sort()
-      return {
-        totalBytes,
-        warningThresholdBytes: defaultRunStorageWarningBytes,
-        warning: totalBytes >= defaultRunStorageWarningBytes,
-        pinnedRunIds,
-      }
-    },
-    pin(id) {
-      return updatePin(id, true)
-    },
-    unpin(id) {
-      return updatePin(id, false)
-    },
-    applyRetention(policy: RetentionPolicy = {}) {
-      return serializeManagementOperation(() => applyRetentionPolicy(policy))
-    },
+      throw error
+    }
+    const run = this.persistedRunFor(id, startedAt, metadata)
+    try {
+      await run.append(runStartedEvent(id, startedAt, metadata))
+      return run
+    } catch (error) {
+      await rm(runDirectory, { recursive: true, force: true })
+      throw error
+    }
   }
+
+  async list(): Promise<TestRunSummary[]> {
+    const manifests = await this.loadManifests()
+    const storedIds = manifests.map((manifest) => manifest.id).sort()
+    const indexedIds = (await Bun.file(this.indexPath).exists())
+      ? withIndex(this.indexPath, listRunIds)
+      : []
+    if (
+      !(await Bun.file(this.indexPath).exists()) ||
+      indexVersion(this.indexPath) < indexSchemaVersion ||
+      !sameStrings(storedIds, indexedIds)
+    ) {
+      await this.rebuild(manifests)
+    }
+    return withIndex(this.indexPath, listRuns)
+  }
+
+  rebuildIndex(): Promise<void> {
+    return this.rebuild()
+  }
+
+  async inspectStorage(): Promise<TestRunStorageInspection> {
+    const totalBytes = await directorySize(this.runsDirectory)
+    const pinnedRunIds = [...(await this.readPinnedRunIds())].sort()
+    return {
+      totalBytes,
+      warningThresholdBytes: defaultRunStorageWarningBytes,
+      warning: totalBytes >= defaultRunStorageWarningBytes,
+      pinnedRunIds,
+    }
+  }
+
+  pin(id: string): Promise<void> {
+    return this.updatePin(id, true)
+  }
+
+  unpin(id: string): Promise<void> {
+    return this.updatePin(id, false)
+  }
+
+  applyRetention(policy: RetentionPolicy = {}): Promise<RetentionResult> {
+    return this.serializeManagementOperation(() =>
+      this.applyRetentionPolicy(policy),
+    )
+  }
+}
+
+export function openTestRunStore(options: TestRunStoreOptions): TestRunStore {
+  return new LocalTestRunStore(options)
+}
+
+interface PersistedRunState {
+  id: string
+  startedAt: string
+  now: () => Date
+  evidencePersistenceFor: (profileId: string) => EvidencePersistencePolicy
+  onMaterialize: (manifest: TestRunManifest) => Promise<void>
+  metadata: CreateTestRunOptions
+  incompatibleSchema: (version: unknown) => never
+  serializeOperation: SerializeOperation
+  eventsPath: string
+  manifestPath: string
+  artifactsDirectory: string
+}
+
+async function finalizedManifest(
+  state: PersistedRunState,
+): Promise<TestRunManifest | undefined> {
+  if (!(await Bun.file(state.manifestPath).exists())) return undefined
+  const manifest = parseTestRunManifest(
+    await Bun.file(state.manifestPath).json(),
+    state.incompatibleSchema,
+  )
+  return manifest.finishedAt ? manifest : undefined
+}
+
+async function appendPersistedEvent(
+  state: PersistedRunState,
+  event: RunEvent | RunEventPayload,
+): Promise<RunEvent> {
+  if (await finalizedManifest(state)) {
+    throw new Error(`Test run "${state.id}" is finalized and cannot be changed`)
+  }
+  const current = await readEvents(state.eventsPath, state.incompatibleSchema)
+  const recordable = recordableRunEventPayloadData(eventPayload(event))
+  const profileId =
+    'scope' in recordable ? recordable.scope.executionTargetProfileId : ''
+  const policy = state.evidencePersistenceFor(profileId)
+  const envelope = {
+    schemaVersion: testRunSchemaVersion,
+    sequence: current.length + 1,
+    occurredAt:
+      'occurredAt' in event ? event.occurredAt : state.now().toISOString(),
+  } as const
+  const persisted = await persistEventArtifacts(
+    recordable,
+    current,
+    policy,
+    state.artifactsDirectory,
+  )
+  const versioned = { ...persisted.event, ...envelope } as RunEvent
+  try {
+    await appendFile(state.eventsPath, `${JSON.stringify(versioned)}\n`)
+  } catch (error) {
+    await Promise.all(
+      persisted.publishedPaths.map((path) => rm(path, { force: true })),
+    )
+    throw error
+  }
+  return shouldPersistEventEvidence(recordable, policy)
+    ? versioned
+    : ({ ...recordable, ...envelope } as RunEvent)
+}
+
+async function materializePersistedRun(
+  state: PersistedRunState,
+  input?: { finished?: boolean },
+): Promise<TestRunManifest> {
+  const finalized = await finalizedManifest(state)
+  if (finalized) return finalized
+  const recorded = await readEvents(state.eventsPath, state.incompatibleSchema)
+  const results = materializeTestResults(recorded)
+  const manifest: TestRunManifest = {
+    schemaVersion: testRunSchemaVersion,
+    id: state.id,
+    startedAt: startedAtFrom(recorded, state.startedAt),
+    ...(input?.finished === false
+      ? {}
+      : { finishedAt: state.now().toISOString() }),
+    ...(state.metadata.sourceRunId
+      ? { sourceRunId: state.metadata.sourceRunId }
+      : {}),
+    ...(state.metadata.suite ? { suite: state.metadata.suite } : {}),
+    ...(state.metadata.applicationRevision
+      ? { applicationRevision: state.metadata.applicationRevision }
+      : {}),
+    state: aggregateTestResultState(results),
+    results,
+  }
+  await Bun.write(state.manifestPath, `${JSON.stringify(manifest, null, 2)}\n`)
+  await state.onMaterialize(manifest)
+  return manifest
 }
 
 function persistedTestRun(
@@ -481,93 +596,32 @@ function persistedTestRun(
   incompatibleSchema: (version: unknown) => never,
   serializeOperation: SerializeOperation,
 ): PersistedTestRun {
-  const eventsPath = join(directory, 'events.ndjson')
-  const manifestPath = join(directory, 'manifest.json')
-  const artifactsDirectory = join(directory, 'artifacts')
-  async function finalizedManifest(): Promise<TestRunManifest | undefined> {
-    if (!(await Bun.file(manifestPath).exists())) return undefined
-    const manifest = parseTestRunManifest(
-      await Bun.file(manifestPath).json(),
-      incompatibleSchema,
-    )
-    return manifest.finishedAt ? manifest : undefined
-  }
-
-  async function appendEvent(
-    event: RunEvent | RunEventPayload,
-  ): Promise<RunEvent> {
-    if (await finalizedManifest()) {
-      throw new Error(`Test run "${id}" is finalized and cannot be changed`)
-    }
-    const current = await readEvents(eventsPath, incompatibleSchema)
-    const recordable = recordableRunEventPayloadData(eventPayload(event))
-    const policy =
-      'scope' in recordable
-        ? evidencePersistenceFor(recordable.scope.executionTargetProfileId)
-        : evidencePersistenceFor('')
-    const envelope = {
-      schemaVersion: testRunSchemaVersion,
-      sequence: current.length + 1,
-      occurredAt:
-        'occurredAt' in event ? event.occurredAt : now().toISOString(),
-    } as const
-    const persisted = await persistEventArtifacts(
-      recordable,
-      current,
-      policy,
-      artifactsDirectory,
-    )
-    const versioned = { ...persisted.event, ...envelope } as RunEvent
-    try {
-      await appendFile(eventsPath, `${JSON.stringify(versioned)}\n`)
-    } catch (error) {
-      await Promise.all(
-        persisted.publishedPaths.map((path) => rm(path, { force: true })),
-      )
-      throw error
-    }
-    return !shouldPersistEventEvidence(recordable, policy)
-      ? ({ ...recordable, ...envelope } as RunEvent)
-      : versioned
-  }
-
-  async function materializeRun(input?: {
-    finished?: boolean
-  }): Promise<TestRunManifest> {
-    const finalized = await finalizedManifest()
-    if (finalized) return finalized
-    const recorded = await readEvents(eventsPath, incompatibleSchema)
-    const results = materializeTestResults(recorded)
-    const manifest: TestRunManifest = {
-      schemaVersion: testRunSchemaVersion,
-      id,
-      startedAt: startedAtFrom(recorded, startedAt),
-      ...(input?.finished === false ? {} : { finishedAt: now().toISOString() }),
-      ...(metadata.sourceRunId ? { sourceRunId: metadata.sourceRunId } : {}),
-      ...(metadata.suite ? { suite: metadata.suite } : {}),
-      ...(metadata.applicationRevision
-        ? { applicationRevision: metadata.applicationRevision }
-        : {}),
-      state: aggregateTestResultState(results),
-      results,
-    }
-    await Bun.write(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`)
-    await onMaterialize(manifest)
-    return manifest
+  const state: PersistedRunState = {
+    id,
+    startedAt,
+    now,
+    evidencePersistenceFor,
+    onMaterialize,
+    metadata,
+    incompatibleSchema,
+    serializeOperation,
+    eventsPath: join(directory, 'events.ndjson'),
+    manifestPath: join(directory, 'manifest.json'),
+    artifactsDirectory: join(directory, 'artifacts'),
   }
 
   return {
     id,
     async append(event) {
-      return serializeOperation(() => appendEvent(event))
+      return serializeOperation(() => appendPersistedEvent(state, event))
     },
     async events() {
       return serializeOperation(() =>
-        readEvents(eventsPath, incompatibleSchema),
+        readEvents(state.eventsPath, incompatibleSchema),
       )
     },
     async materialize(input) {
-      return serializeOperation(() => materializeRun(input))
+      return serializeOperation(() => materializePersistedRun(state, input))
     },
   }
 }
@@ -690,17 +744,18 @@ function byOldest(left: TestRunManifest, right: TestRunManifest): number {
   )
 }
 
-export function materializeTestResults(
+interface MaterializedResultGroup {
+  order: number
+  specification: TestResult['specification']
+  scenario: TestResult['scenario']
+  executionTargetProfile: TestResult['executionTargetProfile']
+  attempts: Map<number, ScenarioAttempt>
+}
+
+function collectResultGroups(
   events: readonly RunEvent[],
-): TestResult[] {
-  type Group = {
-    order: number
-    specification: TestResult['specification']
-    scenario: TestResult['scenario']
-    executionTargetProfile: TestResult['executionTargetProfile']
-    attempts: Map<number, ScenarioAttempt>
-  }
-  const groups = new Map<string, Group>()
+): Map<string, MaterializedResultGroup> {
+  const groups = new Map<string, MaterializedResultGroup>()
   for (const event of events) {
     if (event.type !== 'scenario-finished') continue
     const key = [
@@ -729,7 +784,39 @@ export function materializeTestResults(
     group.attempts.set(event.attempt.attempt, event.attempt)
     groups.set(key, group)
   }
-  return [...groups.values()]
+  return groups
+}
+
+function materializedResult(group: MaterializedResultGroup): TestResult {
+  const attempts = [...group.attempts.values()].sort(
+    (left, right) => left.attempt - right.attempt,
+  )
+  const first = attempts[0]
+  const final = attempts.at(-1)
+  if (!first || !final) {
+    throw new Error('A Test result requires at least one Scenario attempt')
+  }
+  return {
+    schemaVersion: testRunSchemaVersion,
+    specification: group.specification,
+    scenario: group.scenario,
+    executionTargetProfile: group.executionTargetProfile,
+    state: final.state,
+    startedAt: first.startedAt,
+    finishedAt: final.finishedAt,
+    durationMs: Math.max(
+      0,
+      Date.parse(final.finishedAt) - Date.parse(first.startedAt),
+    ),
+    attempts,
+    ...(attempts.length > 1 && final.state === 'passed' ? { flaky: true } : {}),
+  }
+}
+
+export function materializeTestResults(
+  events: readonly RunEvent[],
+): TestResult[] {
+  return [...collectResultGroups(events).values()]
     .sort(
       (left, right) =>
         left.order - right.order ||
@@ -737,33 +824,17 @@ export function materializeTestResults(
           right.scenario.id ?? right.scenario.name,
         ),
     )
-    .map((group) => {
-      const attempts = [...group.attempts.values()].sort(
-        (left, right) => left.attempt - right.attempt,
-      )
-      const first = attempts[0]
-      const final = attempts.at(-1)
-      if (!first || !final) {
-        throw new Error('A Test result requires at least one Scenario attempt')
-      }
-      return {
-        schemaVersion: testRunSchemaVersion,
-        specification: group.specification,
-        scenario: group.scenario,
-        executionTargetProfile: group.executionTargetProfile,
-        state: final.state,
-        startedAt: first.startedAt,
-        finishedAt: final.finishedAt,
-        durationMs: Math.max(
-          0,
-          Date.parse(final.finishedAt) - Date.parse(first.startedAt),
-        ),
-        attempts,
-        ...(attempts.length > 1 && final.state === 'passed'
-          ? { flaky: true }
-          : {}),
-      }
-    })
+    .map(materializedResult)
+}
+
+function manifestInferenceCount(manifest: TestRunManifest): number | undefined {
+  const counts = manifest.results.flatMap((result) => {
+    const count = finalScenarioAttempt(result).inferenceCount
+    return count === undefined ? [] : [count]
+  })
+  return counts.length > 0
+    ? counts.reduce((total, count) => total + count, 0)
+    : undefined
 }
 
 function upsertRun(db: Database, manifest: TestRunManifest): void {
@@ -796,14 +867,7 @@ function upsertRun(db: Database, manifest: TestRunManifest): void {
       ),
     ),
   ].sort()
-  const inferenceCounts = manifest.results.flatMap((result) => {
-    const inferenceCount = finalScenarioAttempt(result).inferenceCount
-    return inferenceCount === undefined ? [] : [inferenceCount]
-  })
-  const inferenceCount =
-    inferenceCounts.length > 0
-      ? inferenceCounts.reduce((total, count) => total + count, 0)
-      : undefined
+  const inferenceCount = manifestInferenceCount(manifest)
   db.run(
     `INSERT INTO runs (
        id, started_at, finished_at, source_run_id, suite,
@@ -970,6 +1034,44 @@ type PersistedStepEvidence = {
   captureFailures: EvidenceCaptureFailure[]
 }
 
+async function persistAttemptStep(
+  step: TestStepResult,
+  scope: Extract<RunEventPayload, { type: 'scenario-finished' }>['scope'],
+  current: readonly RunEvent[],
+  artifactsDirectory: string,
+): Promise<PersistedStepEvidence> {
+  const persisted = current.findLast(
+    (event) =>
+      event.type === 'step-finished' &&
+      sameScope(event.scope, { ...scope, stepIndex: step.index }),
+  )
+  const stepName = artifactStepName(scope, step.index)
+  if (persisted?.type !== 'step-finished' || !persisted.result.artifacts) {
+    return copyStepArtifacts(step, artifactsDirectory, stepName)
+  }
+  if (persisted.result.artifacts.length === step.artifacts?.length) {
+    return {
+      step: { ...step, artifacts: persisted.result.artifacts },
+      publishedPaths: [],
+      captureFailures: [],
+    }
+  }
+  const artifacts = step.artifacts?.map((artifact, index) => {
+    const path = artifactDestination(
+      artifact,
+      index,
+      artifactsDirectory,
+      stepName,
+    )
+    return (
+      persisted.result.artifacts?.find(
+        (committed) => committed.path === path,
+      ) ?? artifact
+    )
+  })
+  return copyStepArtifacts({ ...step, artifacts }, artifactsDirectory, stepName)
+}
+
 async function persistAttemptArtifacts(
   attempt: ScenarioAttempt,
   scope: Extract<RunEventPayload, { type: 'scenario-finished' }>['scope'],
@@ -981,45 +1083,9 @@ async function persistAttemptArtifacts(
     return { attempt: withoutAttemptEvidence(attempt), publishedPaths: [] }
   }
   const steps = await Promise.all(
-    attempt.steps.map(async (step) => {
-      const persisted = current.findLast(
-        (event) =>
-          event.type === 'step-finished' &&
-          sameScope(event.scope, { ...scope, stepIndex: step.index }),
-      )
-      if (persisted?.type === 'step-finished' && persisted.result.artifacts) {
-        if (persisted.result.artifacts.length === step.artifacts?.length) {
-          return {
-            step: { ...step, artifacts: persisted.result.artifacts },
-            publishedPaths: [],
-            captureFailures: [],
-          }
-        }
-        const artifacts = step.artifacts?.map((artifact, index) => {
-          const path = artifactDestination(
-            artifact,
-            index,
-            artifactsDirectory,
-            artifactStepName(scope, step.index),
-          )
-          return (
-            persisted.result.artifacts?.find(
-              (committed) => committed.path === path,
-            ) ?? artifact
-          )
-        })
-        return copyStepArtifacts(
-          { ...step, artifacts },
-          artifactsDirectory,
-          artifactStepName(scope, step.index),
-        )
-      }
-      return copyStepArtifacts(
-        step,
-        artifactsDirectory,
-        artifactStepName(scope, step.index),
-      )
-    }),
+    attempt.steps.map((step) =>
+      persistAttemptStep(step, scope, current, artifactsDirectory),
+    ),
   )
   const captureFailures = steps.flatMap((step) => step.captureFailures)
   return {

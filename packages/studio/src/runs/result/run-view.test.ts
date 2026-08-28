@@ -1,4 +1,5 @@
 import { expect, test } from 'bun:test'
+import { requiredValue } from '../../required-value'
 import {
   type ClientEvent,
   emptyRunView,
@@ -43,7 +44,7 @@ test('follows the first running cell until a failure needs attention', () => {
 
 test('keeps a pinned cell when a later failure arrives', () => {
   let view = reduceRun(emptyRunView(), started('Complete a purchase', 'pass'))
-  view = pinCell(view, view.selected!)
+  view = pinCell(view, requiredValue(view.selected))
   view = reduceRun(view, started('Pay for the order', 'pay'))
   view = reduceRun(view, finished('Pay for the order', 'pay', 'failed'))
   expect(view.selected?.scenarioName).toBe('Complete a purchase')

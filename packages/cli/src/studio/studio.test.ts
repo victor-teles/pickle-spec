@@ -11,6 +11,7 @@ import {
 import type { Browser, Page } from 'playwright'
 import { StudioBrowserFixture } from '../../test/studio-browser-fixture'
 import { registerStudioHardeningTests } from '../../test/studio-hardening-suite'
+import { requiredValue } from '../required-value'
 
 type TestRunManifestFile = {
   finishedAt?: string
@@ -98,9 +99,9 @@ async function saveExecutionTargetProfile(
   profileId: string,
 ): Promise<void> {
   const responsePromise = page.waitForResponse(
-    (response) =>
-      new URL(response.url()).pathname === '/api/config' &&
-      response.request().method() === 'PUT',
+    (candidateResponse) =>
+      new URL(candidateResponse.url()).pathname === '/api/config' &&
+      candidateResponse.request().method() === 'PUT',
   )
   await page
     .getByRole('button', { name: 'Save execution target profile' })
@@ -290,9 +291,9 @@ Feature: Search
       await page.keyboard.press('Meta+k')
       await search.fill('run scenario query')
       const runRequestPromise = page.waitForRequest(
-        (request) =>
-          new URL(request.url()).pathname === '/api/runs' &&
-          request.method() === 'POST',
+        (candidateRequest) =>
+          new URL(candidateRequest.url()).pathname === '/api/runs' &&
+          candidateRequest.method() === 'POST',
       )
       const runResponsePromise = page.waitForResponse(
         (response) =>
@@ -358,9 +359,9 @@ Feature: Search
         await page.getByRole('button', { name: 'Refresh cache' }).count(),
       ).toBe(0)
       const requestPromise = page.waitForRequest(
-        (request) =>
-          new URL(request.url()).pathname === '/api/runs' &&
-          request.method() === 'POST',
+        (candidateRequest) =>
+          new URL(candidateRequest.url()).pathname === '/api/runs' &&
+          candidateRequest.method() === 'POST',
       )
       await startCacheRefresh(page)
       const request = await requestPromise
@@ -785,17 +786,17 @@ export default {
       const detailBox = await selectedEvidence.boundingBox()
       expect(chartBox).not.toBeNull()
       expect(detailBox).not.toBeNull()
-      expect(detailBox!.y).toBeGreaterThanOrEqual(
-        chartBox!.y + chartBox!.height - 1,
+      expect(requiredValue(detailBox).y).toBeGreaterThanOrEqual(
+        requiredValue(chartBox).y + requiredValue(chartBox).height - 1,
       )
       const timelineContainment = await page.evaluate(() => {
-        const browser = globalThis as unknown as BrowserViewportHost
-        const viewport = browser.document.querySelector(
+        const viewportHost = globalThis as unknown as BrowserViewportHost
+        const viewport = viewportHost.document.querySelector(
           '[data-slot="scroll-area-viewport"]',
         )
         return {
-          pageClientWidth: browser.document.documentElement.clientWidth,
-          pageScrollWidth: browser.document.documentElement.scrollWidth,
+          pageClientWidth: viewportHost.document.documentElement.clientWidth,
+          pageScrollWidth: viewportHost.document.documentElement.scrollWidth,
           timelineClientWidth: viewport?.clientWidth ?? 0,
           timelineScrollWidth: viewport?.scrollWidth ?? 0,
         }
@@ -814,7 +815,7 @@ export default {
       )
       const scrollbarBox = await horizontalScrollbar.boundingBox()
       expect(scrollbarBox).not.toBeNull()
-      expect(scrollbarBox!.height).toBeGreaterThanOrEqual(8)
+      expect(requiredValue(scrollbarBox).height).toBeGreaterThanOrEqual(8)
       await timeRulerViewport.focus()
       await page.keyboard.press('End')
       await page.waitForTimeout(100)
@@ -1317,7 +1318,8 @@ Feature: Search
           .getAttribute('data-highlighted'),
       ).not.toBeNull()
       const allureResponse = await page.evaluate(async (href) => {
-        const response = await fetch(href!)
+        if (!href) throw new Error('Missing Allure export URL')
+        const response = await fetch(href)
         return {
           contentType: response.headers.get('content-type'),
           signature: [
@@ -1329,10 +1331,10 @@ Feature: Search
         contentType: 'application/zip',
         signature: [0x50, 0x4b, 0x03, 0x04],
       })
-      const defaultHtml = await page.evaluate(
-        async (href) => (await fetch(href!)).text(),
-        defaultHtmlHref,
-      )
+      const defaultHtml = await page.evaluate(async (href) => {
+        if (!href) throw new Error('Missing HTML export URL')
+        return (await fetch(href)).text()
+      }, defaultHtmlHref)
       expect(defaultHtml).toContain('<!DOCTYPE html>')
       expect(defaultHtml).toContain('data:image/png;base64,')
       await page.keyboard.press('Escape')
@@ -1349,10 +1351,10 @@ Feature: Search
 
       const archivePath = join(project, 'importable-run.json')
       const archive = JSON.parse(
-        await page.evaluate(
-          async (href) => (await fetch(href!)).text(),
-          archiveHref,
-        ),
+        await page.evaluate(async (href) => {
+          if (!href) throw new Error('Missing archive export URL')
+          return (await fetch(href)).text()
+        }, archiveHref),
       )
       archive.manifest.id = 'run-imported'
       for (const event of archive.events) {
@@ -1594,13 +1596,18 @@ Feature: Checkout
         .boundingBox()
       expect(mobileRunBox).not.toBeNull()
       expect(mobileEditBox).not.toBeNull()
-      expect(mobileEditBox!.y).toBeGreaterThanOrEqual(mobileRunBox!.y)
-      expect(mobileEditBox!.y - mobileRunBox!.y).toBeLessThanOrEqual(40)
+      expect(requiredValue(mobileEditBox).y).toBeGreaterThanOrEqual(
+        requiredValue(mobileRunBox).y,
+      )
+      expect(
+        requiredValue(mobileEditBox).y - requiredValue(mobileRunBox).y,
+      ).toBeLessThanOrEqual(40)
       expect(
         await page.evaluate(() => {
-          const browser = globalThis as unknown as BrowserViewportHost
+          const viewportHost = globalThis as unknown as BrowserViewportHost
           return (
-            browser.document.documentElement.scrollWidth <= browser.innerWidth
+            viewportHost.document.documentElement.scrollWidth <=
+            viewportHost.innerWidth
           )
         }),
       ).toBe(true)

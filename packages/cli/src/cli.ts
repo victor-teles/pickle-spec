@@ -10,7 +10,11 @@ import {
   type TestRunExportRequest,
 } from '@pickle-spec/runner'
 import type { SelectionOptions, SpecificationState } from '@pickle-spec/spec'
-import type { StudioAuthoringModel } from '@pickle-spec/studio'
+import type {
+  StudioAuthoringModel,
+  StudioManagementGateway,
+  StudioRunGateway,
+} from '@pickle-spec/studio'
 import { createCredentialStore, startStudio } from '@pickle-spec/studio'
 import {
   defaultModelName,
@@ -29,6 +33,7 @@ import {
   migrateProject,
 } from './configuration/project'
 import { runCacheCommand } from './execution-cache/cache'
+import { requiredValue } from './required-value'
 import type { ApplicationOutputOptions } from './run/application-output'
 import {
   loadExtensions,
@@ -131,35 +136,64 @@ function parseShard(value: string): { index: number; total: number } {
   return { index: Number(match[1]), total: Number(match[2]) }
 }
 
+interface ParsedRunOption {
+  args: RunArguments
+  nextIndex: number
+}
+
+function parsedRunOption(
+  args: RunArguments,
+  nextIndex: number,
+  patch: Partial<RunArguments>,
+): ParsedRunOption {
+  return { args: { ...args, ...patch }, nextIndex }
+}
+
+function parsedSelectionOption(
+  args: RunArguments,
+  nextIndex: number,
+  patch: Partial<RunArguments['selection']>,
+): ParsedRunOption {
+  return parsedRunOption(args, nextIndex, {
+    selection: { ...args.selection, ...patch },
+  })
+}
+
 function parseRunSelectionOption(
   args: RunArguments,
   argv: string[],
   index: number,
-): number | undefined {
-  const flag = argv[index]!
+): ParsedRunOption | undefined {
+  const flag = requiredValue(argv[index])
   switch (flag) {
     case '--suite':
-      args.suite = valueAfter(argv, index)
-      return index + 2
+      return parsedRunOption(args, index + 2, {
+        suite: valueAfter(argv, index),
+      })
     case '--profile':
-      args.profiles = [...(args.profiles ?? []), valueAfter(argv, index)]
-      return index + 2
+      return parsedRunOption(args, index + 2, {
+        profiles: [...(args.profiles ?? []), valueAfter(argv, index)],
+      })
     case '--scenario':
-      args.selection.scenarioName = valueAfter(argv, index)
-      return index + 2
+      return parsedSelectionOption(args, index + 2, {
+        scenarioName: valueAfter(argv, index),
+      })
     case '--tag':
     case '-t':
-      args.selection.tagExpression = valueAfter(argv, index)
-      return index + 2
+      return parsedSelectionOption(args, index + 2, {
+        tagExpression: valueAfter(argv, index),
+      })
     case '--state':
-      args.selection.states = [
-        ...(args.selection.states ?? []),
-        valueAfter(argv, index) as SpecificationState,
-      ]
-      return index + 2
+      return parsedSelectionOption(args, index + 2, {
+        states: [
+          ...(args.selection.states ?? []),
+          valueAfter(argv, index) as SpecificationState,
+        ],
+      })
     case '--shard':
-      args.selection.shard = parseShard(valueAfter(argv, index))
-      return index + 2
+      return parsedSelectionOption(args, index + 2, {
+        shard: parseShard(valueAfter(argv, index)),
+      })
     default:
       return undefined
   }
@@ -169,35 +203,43 @@ function parseRunConfigurationOption(
   args: RunArguments,
   argv: string[],
   index: number,
-): number | undefined {
-  const flag = argv[index]!
+): ParsedRunOption | undefined {
+  const flag = requiredValue(argv[index])
   switch (flag) {
     case '--config':
-      args.configPath = valueAfter(argv, index)
-      return index + 2
+      return parsedRunOption(args, index + 2, {
+        configPath: valueAfter(argv, index),
+      })
     case '--extensions':
-      args.extensionsPath = valueAfter(argv, index)
-      return index + 2
+      return parsedRunOption(args, index + 2, {
+        extensionsPath: valueAfter(argv, index),
+      })
     case '--retries':
-      args.retries = integer(valueAfter(argv, index), flag, 0)
-      return index + 2
+      return parsedRunOption(args, index + 2, {
+        retries: integer(valueAfter(argv, index), flag, 0),
+      })
     case '--concurrency':
     case '-j':
-      args.concurrency = integer(valueAfter(argv, index), flag, 1)
-      return index + 2
+      return parsedRunOption(args, index + 2, {
+        concurrency: integer(valueAfter(argv, index), flag, 1),
+      })
     case '--language':
     case '-l':
-      args.language = valueAfter(argv, index)
-      return index + 2
+      return parsedRunOption(args, index + 2, {
+        language: valueAfter(argv, index),
+      })
     case '--scenario-timeout':
-      args.scenarioTimeoutMs = integer(valueAfter(argv, index), flag, 1)
-      return index + 2
+      return parsedRunOption(args, index + 2, {
+        scenarioTimeoutMs: integer(valueAfter(argv, index), flag, 1),
+      })
     case '--step-timeout':
-      args.stepTimeoutMs = integer(valueAfter(argv, index), flag, 1)
-      return index + 2
+      return parsedRunOption(args, index + 2, {
+        stepTimeoutMs: integer(valueAfter(argv, index), flag, 1),
+      })
     case '--application-revision':
-      args.applicationRevision = valueAfter(argv, index)
-      return index + 2
+      return parsedRunOption(args, index + 2, {
+        applicationRevision: valueAfter(argv, index),
+      })
     default:
       return undefined
   }
@@ -207,23 +249,25 @@ function parseRunEvidenceOption(
   args: RunArguments,
   argv: string[],
   index: number,
-): number | undefined {
-  const flag = argv[index]!
+): ParsedRunOption | undefined {
+  const flag = requiredValue(argv[index])
   if (flag === '--screenshot') {
     const mode = valueAfter(argv, index)
     if (!screenshotModes.includes(mode as (typeof screenshotModes)[number])) {
       throw new Error('--screenshot requires off, on-failure, or on-step')
     }
-    args.screenshotMode = mode as RunArguments['screenshotMode']
-    return index + 2
+    return parsedRunOption(args, index + 2, {
+      screenshotMode: mode as RunArguments['screenshotMode'],
+    })
   }
   if (flag === '--application-output') {
     const stream = valueAfter(argv, index)
     if (stream !== 'stdout' && stream !== 'stderr') {
       throw new Error('--application-output requires stdout or stderr')
     }
-    args.applicationOutput = { ...args.applicationOutput, [stream]: true }
-    return index + 2
+    return parsedRunOption(args, index + 2, {
+      applicationOutput: { ...args.applicationOutput, [stream]: true },
+    })
   }
   if (flag !== '--evidence') return undefined
   const persistence = valueAfter(argv, index)
@@ -234,33 +278,35 @@ function parseRunEvidenceOption(
   ) {
     throw new Error('--evidence requires off, on-failure, or always')
   }
-  args.evidencePersistence = persistence
-  return index + 2
+  return parsedRunOption(args, index + 2, {
+    evidencePersistence: persistence,
+  })
 }
 
 function parseRunOutputOption(
   args: RunArguments,
   argv: string[],
   index: number,
-): number | undefined {
-  const flag = argv[index]!
+): ParsedRunOption | undefined {
+  const flag = requiredValue(argv[index])
   switch (flag) {
     case '--output':
-      args.outputs = [
-        ...(args.outputs ?? []),
-        parseTestRunOutput(valueAfter(argv, index)),
-      ]
-      return index + 2
+      return parsedRunOption(args, index + 2, {
+        outputs: [
+          ...(args.outputs ?? []),
+          parseTestRunOutput(valueAfter(argv, index)),
+        ],
+      })
     case '--rerun':
-      args.rerunId = valueAfter(argv, index)
-      return index + 2
+      return parsedRunOption(args, index + 2, {
+        rerunId: valueAfter(argv, index),
+      })
     case '--reporter': {
       const reporter = valueAfter(argv, index)
       if (reporter !== 'default' && reporter !== 'ndjson') {
         throw new Error('--reporter requires default or ndjson')
       }
-      args.reporter = reporter
-      return index + 2
+      return parsedRunOption(args, index + 2, { reporter })
     }
     default:
       return undefined
@@ -271,7 +317,7 @@ function parseRunBooleanOption(
   args: RunArguments,
   flag: string,
   index: number,
-): number | undefined {
+): ParsedRunOption | undefined {
   const fields: Partial<Record<string, keyof RunArguments>> = {
     '--reuse-server': 'reuseServer',
     '--headed': 'headed',
@@ -284,27 +330,30 @@ function parseRunBooleanOption(
   }
   const field = fields[flag]
   if (!field) return undefined
-  Object.assign(args, { [field]: true })
-  return index + 1
+  return parsedRunOption(args, index + 1, { [field]: true })
 }
 
 function parseRunArguments(argv: string[]): RunArguments {
   if (argv[0] !== 'run')
     throw new Error('Usage: pickle run [specifications] [options]')
-  const args: RunArguments = { selection: {} }
+  let args: RunArguments = { selection: {} }
   let index = 1
-  if (argv[index] && !argv[index]!.startsWith('-')) args.pattern = argv[index++]
+  if (argv[index] && !requiredValue(argv[index]).startsWith('-')) {
+    args = { ...args, pattern: argv[index] }
+    index++
+  }
 
   while (index < argv.length) {
-    const flag = argv[index]!
-    const nextIndex =
+    const flag = requiredValue(argv[index])
+    const parsed =
       parseRunSelectionOption(args, argv, index) ??
       parseRunConfigurationOption(args, argv, index) ??
       parseRunEvidenceOption(args, argv, index) ??
       parseRunOutputOption(args, argv, index) ??
       parseRunBooleanOption(args, flag, index)
-    if (nextIndex === undefined) throw new Error(`Unknown option: ${flag}`)
-    index = nextIndex
+    if (!parsed) throw new Error(`Unknown option: ${flag}`)
+    args = parsed.args
+    index = parsed.nextIndex
   }
   if (args.refreshCache && args.cacheOnly) {
     throw new Error('--refresh-cache cannot be combined with --cache-only')
@@ -328,6 +377,7 @@ interface RunCommandContext {
 }
 
 async function executeRunCommand(context: RunCommandContext): Promise<number> {
+  const runState = context.state
   const started = await startProjectRun({
     root: context.root,
     config: context.config,
@@ -337,7 +387,7 @@ async function executeRunCommand(context: RunCommandContext): Promise<number> {
     onSchedule: context.reporting.prepare,
     onResult: context.reporting.complete,
   })
-  context.state.startedRunId = started.id
+  runState.startedRunId = started.id
   context.reporting.start()
   const { runs } = await started.done
   const store = openTestRunStore({ root: context.root })
@@ -346,7 +396,7 @@ async function executeRunCommand(context: RunCommandContext): Promise<number> {
     context.root,
     started.id,
   )
-  context.state.outputsWritten = true
+  runState.outputsWritten = true
   reportTestRunExportOutcomes(outputOutcomes, console.error)
   const retention = await store.applyRetention({
     maxAgeMs: context.config.retention?.days
@@ -379,8 +429,9 @@ async function recoverMaterializedEvidence(
   message: string,
   includeEmptyRun = false,
 ): Promise<unknown> {
-  const runId = context.state.startedRunId
-  if (!runId || context.state.outputsWritten) return commandError
+  const runState = context.state
+  const runId = runState.startedRunId
+  if (!runId || runState.outputsWritten) return commandError
   try {
     const outcomes = await finalizeMaterializedEvidence(
       context.args,
@@ -389,7 +440,7 @@ async function recoverMaterializedEvidence(
       includeEmptyRun ? { includeEmptyRun: true } : undefined,
     )
     reportTestRunExportOutcomes(outcomes, console.error)
-    context.state.outputsWritten = true
+    runState.outputsWritten = true
     return commandError
   } catch (recoveryError) {
     return withRecoveryFailure(commandError, message, recoveryError)
@@ -409,7 +460,7 @@ async function recoverInterruptedRun(
   commandError: unknown,
 ): Promise<{ commandError: unknown; exitCode?: number }> {
   if (!isInterruptedRun(commandError, context)) return { commandError }
-  commandError = await recoverMaterializedEvidence(
+  let recoveredError = await recoverMaterializedEvidence(
     context,
     commandError,
     'Failed to finalize interrupted evidence',
@@ -423,15 +474,15 @@ async function recoverInterruptedRun(
   )
   const reporterFailure = context.reporting.failure()
   if (reporterFailure) {
-    commandError = withRecoveryFailure(
-      commandError,
+    recoveredError = withRecoveryFailure(
+      recoveredError,
       'Failed to render interrupted summary',
       reporterFailure.error,
     )
   } else if (context.state.outputsWritten) {
-    return { commandError, exitCode: 130 }
+    return { commandError: recoveredError, exitCode: 130 }
   }
-  return { commandError }
+  return { commandError: recoveredError }
 }
 
 async function recoverRunCommand(
@@ -505,7 +556,7 @@ function projectOptions(argv: string[]): {
 } {
   const options: { configPath?: string; extensionsPath?: string } = {}
   for (let index = 1; index < argv.length; index++) {
-    const flag = argv[index]!
+    const flag = requiredValue(argv[index])
     if (flag === '--config') options.configPath = valueAfter(argv, index++)
     else if (flag === '--extensions')
       options.extensionsPath = valueAfter(argv, index++)
@@ -520,7 +571,7 @@ function migrateOptions(argv: string[]): {
 } {
   const options: { configPath?: string; yes?: boolean } = {}
   for (let index = 1; index < argv.length; index++) {
-    const flag = argv[index]!
+    const flag = requiredValue(argv[index])
     if (flag === '--config') options.configPath = valueAfter(argv, index++)
     else if (flag === '--yes' || flag === '-y') options.yes = true
     else throw new Error(`Unknown option: ${flag}`)
@@ -532,8 +583,11 @@ async function compare(argv: string[]): Promise<number> {
   if (argv.length !== 3) {
     throw new Error('Usage: pickle compare <baseline-id> <candidate-id>')
   }
-  const baseline = await loadPersistedRun(process.cwd(), argv[1]!)
-  const candidate = await loadPersistedRun(process.cwd(), argv[2]!)
+  const baseline = await loadPersistedRun(process.cwd(), requiredValue(argv[1]))
+  const candidate = await loadPersistedRun(
+    process.cwd(),
+    requiredValue(argv[2]),
+  )
   console.log(
     JSON.stringify(
       compareTestRuns(baseline.manifest, candidate.manifest),
@@ -548,7 +602,7 @@ async function importArchive(argv: string[]): Promise<number> {
   if (argv.length !== 2) throw new Error('Usage: pickle import <archive>')
   const imported = await importRunArchive({
     root: process.cwd(),
-    archivePath: resolve(argv[1]!),
+    archivePath: resolve(requiredValue(argv[1])),
   })
   console.log(
     JSON.stringify({
@@ -582,7 +636,7 @@ function parseExportArguments(argv: string[]): ExportArguments {
   let allArtifacts = false
   let force = false
   for (let index = 2; index < argv.length; index++) {
-    const flag = argv[index]!
+    const flag = requiredValue(argv[index])
     if (flag === '--output') {
       const output = parseTestRunOutput(valueAfter(argv, index++))
       outputs.push({ ...output, path: resolve(output.path) })
@@ -629,7 +683,7 @@ function parseStudioArguments(argv: string[]): StudioArguments {
   if (argv[0] !== 'studio') throw new Error('Usage: pickle studio [options]')
   const options: StudioArguments = { open: true }
   for (let index = 1; index < argv.length; index++) {
-    const flag = argv[index]!
+    const flag = requiredValue(argv[index])
     switch (flag) {
       case '--no-open':
         options.open = false
@@ -663,11 +717,147 @@ function authoringModel(modelName: string | undefined): StudioAuthoringModel {
   }
 }
 
+interface StudioCommandContext {
+  args: StudioArguments
+  credentials: ReturnType<typeof createCredentialStore>
+  extensions: Awaited<ReturnType<typeof loadExtensions>>
+  project: Parameters<typeof loadStudioProject>[0]
+  root: string
+}
+
+function studioManagementGateway(
+  context: StudioCommandContext,
+): StudioManagementGateway {
+  const { args, extensions, project, root } = context
+  return {
+    saveConfig: (patch) => patchStudioConfig(project, patch),
+    saveCredential: (input) => saveStudioCredential(project, input),
+    async discoverMobileTargets() {
+      const config = await loadConfig(args.configPath, root)
+      return discoverStudioMobileTargets(config, undefined, extensions.adapters)
+    },
+    async readiness(request) {
+      const config = await loadConfig(args.configPath, root)
+      const specifications = await loadProjectSpecifications(
+        config.specifications ?? defaultSpecificationGlob,
+        config.language,
+        root,
+      )
+      const readiness = await studioRunReadiness(
+        project,
+        request,
+        config,
+        specifications,
+      )
+      if (!readiness.ready) return readiness
+      try {
+        validateStudioMobileTargetCapabilities(
+          config,
+          await discoverStudioMobileTargets(
+            config,
+            undefined,
+            extensions.adapters,
+            request?.profiles,
+          ),
+          request?.profiles,
+        )
+        return readiness
+      } catch (reason) {
+        const message =
+          reason instanceof Error ? reason.message : String(reason)
+        return { ready: false, reasons: [...readiness.reasons, message] }
+      }
+    },
+  }
+}
+
+async function waitForStudioStop(
+  server: Awaited<ReturnType<typeof startStudio>>,
+  controller: AbortController,
+): Promise<void> {
+  await new Promise<void>((finish) => {
+    const stop = () => {
+      process.off('SIGINT', stop)
+      process.off('SIGTERM', stop)
+      controller.abort()
+      server.stop()
+      finish()
+    }
+    process.on('SIGINT', stop)
+    process.on('SIGTERM', stop)
+  })
+}
+
+interface StudioRunGatewayInput {
+  activeRuns: Map<string, AbortController>
+  context: StudioCommandContext
+  controller: AbortController
+}
+
+function studioRunGateway(input: StudioRunGatewayInput): StudioRunGateway {
+  const { activeRuns, context, controller } = input
+  const { args, credentials, extensions, root } = context
+  return {
+    async start(request, onEvent) {
+      const runController = new AbortController()
+      const onProcessAbort = () => runController.abort()
+      controller.signal.addEventListener('abort', onProcessAbort, {
+        once: true,
+      })
+      const config = await loadConfig(args.configPath, root)
+      validateStudioMobileTargetCapabilities(
+        config,
+        await discoverStudioMobileTargets(
+          config,
+          undefined,
+          extensions.adapters,
+          request?.profiles,
+        ),
+        request?.profiles,
+      )
+      const started = await startProjectRun({
+        root,
+        config: await resolveConfigSecrets(config, credentials),
+        options: {
+          extensionsPath: args.extensionsPath,
+          suite: request?.suite,
+          profiles: request?.profiles ? [...request.profiles] : undefined,
+          selection: studioRunSelection(request),
+          rerunId: request?.rerunId,
+          scenarioIds: request?.scenarioId ? [request.scenarioId] : undefined,
+          failures: request?.failures,
+          refreshCache: request?.refreshCache,
+        },
+        signal: runController.signal,
+        onEvent,
+        onSchedule: (schedule) => onEvent({ type: 'run-scheduled', schedule }),
+        onApplicationDiagnostic: (event) =>
+          onEvent({ type: 'diagnostic-recorded', ...event }),
+      })
+      activeRuns.set(started.id, runController)
+      void started.done
+        .catch((error) => console.error(errorMessage(error)))
+        .finally(() => {
+          activeRuns.delete(started.id)
+          controller.signal.removeEventListener('abort', onProcessAbort)
+        })
+      return { id: started.id, done: started.done }
+    },
+    async snapshot(id) {
+      const { events, manifest } = await loadPersistedRun(root, id)
+      return { id, events, manifest }
+    },
+    async cancel(id) {
+      activeRuns.get(id)?.abort()
+    },
+  }
+}
+
 async function studio(argv: string[]): Promise<number> {
   const args = parseStudioArguments(argv)
   const root = process.cwd()
   const credentials = createCredentialStore()
-  const context = {
+  const project = {
     root,
     configPath: args.configPath,
     credentials,
@@ -676,11 +866,18 @@ async function studio(argv: string[]): Promise<number> {
   const specificationGlobs = config.specifications ?? defaultSpecificationGlob
   const model = authoringModel(config.web?.browser?.modelName)
   async function loadProject() {
-    return loadStudioProject(context)
+    return loadStudioProject(project)
   }
   const extensions = await loadExtensions(args.extensionsPath, root)
   const controller = new AbortController()
   const activeRuns = new Map<string, AbortController>()
+  const context: StudioCommandContext = {
+    args,
+    credentials,
+    extensions,
+    project,
+    root,
+  }
   const server = await startStudio({
     project: await loadProject(),
     loadProject,
@@ -690,53 +887,7 @@ async function studio(argv: string[]): Promise<number> {
       model,
       propose: extensions.authorSpecification,
     },
-    management: {
-      saveConfig: (patch) => patchStudioConfig(context, patch),
-      saveCredential: (input) => saveStudioCredential(context, input),
-      async discoverMobileTargets() {
-        return discoverStudioMobileTargets(
-          await loadConfig(args.configPath, root),
-          undefined,
-          extensions.adapters,
-        )
-      },
-      async readiness(request) {
-        const current = await loadConfig(args.configPath, root)
-        const specifications = await loadProjectSpecifications(
-          current.specifications ?? defaultSpecificationGlob,
-          current.language,
-          root,
-        )
-        const readiness = await studioRunReadiness(
-          context,
-          request,
-          current,
-          specifications,
-        )
-        if (!readiness.ready) return readiness
-        try {
-          validateStudioMobileTargetCapabilities(
-            current,
-            await discoverStudioMobileTargets(
-              current,
-              undefined,
-              extensions.adapters,
-              request?.profiles,
-            ),
-            request?.profiles,
-          )
-          return readiness
-        } catch (reason) {
-          return {
-            ready: false,
-            reasons: [
-              ...readiness.reasons,
-              reason instanceof Error ? reason.message : String(reason),
-            ],
-          }
-        }
-      },
-    },
+    management: studioManagementGateway(context),
     executionCache: createStudioExecutionCacheGateway(root, async () => {
       const current = await loadConfig(args.configPath, root)
       return current.cache ?? {}
@@ -750,84 +901,14 @@ async function studio(argv: string[]): Promise<number> {
         maxBytes: current.retention?.maxBytes,
       }
     }),
-    gateway: {
-      async start(request, onEvent) {
-        const runController = new AbortController()
-        const onProcessAbort = () => runController.abort()
-        controller.signal.addEventListener('abort', onProcessAbort, {
-          once: true,
-        })
-        const current = await loadConfig(args.configPath, root)
-        validateStudioMobileTargetCapabilities(
-          current,
-          await discoverStudioMobileTargets(
-            current,
-            undefined,
-            extensions.adapters,
-            request?.profiles,
-          ),
-          request?.profiles,
-        )
-        const started = await startProjectRun({
-          root,
-          config: await resolveConfigSecrets(current, credentials),
-          options: {
-            extensionsPath: args.extensionsPath,
-            suite: request?.suite,
-            profiles: request?.profiles ? [...request.profiles] : undefined,
-            selection: studioRunSelection(request),
-            rerunId: request?.rerunId,
-            scenarioIds: request?.scenarioId ? [request.scenarioId] : undefined,
-            failures: request?.failures,
-            refreshCache: request?.refreshCache,
-          },
-          signal: runController.signal,
-          onEvent,
-          onSchedule(schedule) {
-            onEvent({ type: 'run-scheduled', schedule })
-          },
-          onApplicationDiagnostic(event) {
-            onEvent({ type: 'diagnostic-recorded', ...event })
-          },
-        })
-        activeRuns.set(started.id, runController)
-        void started.done
-          .catch((error) => {
-            console.error(
-              error instanceof Error ? error.message : String(error),
-            )
-          })
-          .finally(() => {
-            activeRuns.delete(started.id)
-            controller.signal.removeEventListener('abort', onProcessAbort)
-          })
-        return { id: started.id, done: started.done }
-      },
-      async snapshot(id) {
-        const { events, manifest } = await loadPersistedRun(root, id)
-        return { id, events, manifest }
-      },
-      async cancel(id) {
-        activeRuns.get(id)?.abort()
-      },
-    },
+    gateway: studioRunGateway({ activeRuns, context, controller }),
     hostname: args.remoteHost,
     allowRemoteAccess: Boolean(args.remoteHost),
     open: args.open,
     port: args.port,
   })
   console.log(`Studio ${server.url}`)
-  await new Promise<void>((resolve) => {
-    const stop = () => {
-      process.off('SIGINT', stop)
-      process.off('SIGTERM', stop)
-      controller.abort()
-      server.stop()
-      resolve()
-    }
-    process.on('SIGINT', stop)
-    process.on('SIGTERM', stop)
-  })
+  await waitForStudioStop(server, controller)
   return 0
 }
 

@@ -41,9 +41,9 @@ const payloadValidator: ExecutionCachePayloadValidator<TestPayload> = {
   adapterCacheSchemaVersion: 'contract-test.1',
   parse(payload, requiredVariables) {
     const parsed = payloadSchema.safeParse(payload)
-    if (!parsed.success) return undefined
+    if (!parsed.success) return
     if (!requiredVariables.includes(parsed.data.argument.variable)) {
-      return undefined
+      return
     }
     return parsed.data
   },
@@ -227,18 +227,18 @@ describe('Execution cache contract', () => {
       },
     }
     const cacheEnvelope = envelope()
-    const serialized = serializeExecutionCacheEnvelope(
+    const serializedEnvelope = serializeExecutionCacheEnvelope(
       cacheEnvelope,
       payloadValidator,
     )
 
-    const writeResult = await store.write(serialized, {
+    const writeResult = await store.write(serializedEnvelope, {
       sourceRunId: 'run-1',
       evaluationModel: 'model-1',
       evaluationInferenceCount: 2,
     })
     expect(writeResult).toEqual({ stored: true, evictedEntries: 0 })
-    expect(await store.read(cacheEnvelope.key)).toBe(serialized.source)
+    expect(await store.read(cacheEnvelope.key)).toBe(serializedEnvelope.source)
     expect(await store.inspect()).toEqual([
       expect.objectContaining({
         key: cacheEnvelope.key,

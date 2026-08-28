@@ -85,11 +85,8 @@ function extensionProvidesAdapter(
   )
 }
 
-export function validateExtensions(
-  path: string,
-): Pick<RunExtensionManifest, 'adapterAvailable'> {
-  const validationPath = resolve(import.meta.dir, '__extension_validation__.ts')
-  const validationSource = `
+function extensionValidationSource(validationPath: string, path: string) {
+  return `
 import extensions from ${JSON.stringify(extensionModuleSpecifier(validationPath, path))}
 import type { Extensions } from './extensions'
 
@@ -101,6 +98,12 @@ declare function validate<Actual extends ExpectedExtensions>(
 ): void
 validate(extensions)
 `
+}
+
+function extensionValidationProgram(
+  validationPath: string,
+  validationSource: string,
+): ts.Program {
   const compilerOptions: ts.CompilerOptions = {
     allowImportingTsExtensions: true,
     allowJs: true,
@@ -114,45 +117,53 @@ validate(extensions)
   }
   const host = ts.createCompilerHost(compilerOptions)
   const getSourceFile = host.getSourceFile.bind(host)
-  host.fileExists = (fileName) =>
-    resolve(fileName) === validationPath || ts.sys.fileExists(fileName)
-  host.readFile = (fileName) =>
+  const isValidationFile = (fileName: string) =>
     resolve(fileName) === validationPath
-      ? validationSource
-      : ts.sys.readFile(fileName)
-  host.getSourceFile = (
-    fileName,
-    languageVersion,
-    onError,
-    shouldCreateNewSourceFile,
-  ) => {
-    if (resolve(fileName) === validationPath) {
-      return ts.createSourceFile(
-        fileName,
-        validationSource,
-        languageVersion,
-        true,
-        ts.ScriptKind.TS,
-      )
-    }
-    return getSourceFile(
-      fileName,
-      languageVersion,
-      onError,
-      shouldCreateNewSourceFile,
-    )
-  }
+  host.fileExists = (fileName) =>
+    isValidationFile(fileName) || ts.sys.fileExists(fileName)
+  host.readFile = (fileName) =>
+    isValidationFile(fileName) ? validationSource : ts.sys.readFile(fileName)
+  host.getSourceFile = (fileName, languageVersion, onError, shouldCreate) =>
+    isValidationFile(fileName)
+      ? ts.createSourceFile(
+          fileName,
+          validationSource,
+          languageVersion,
+          true,
+          ts.ScriptKind.TS,
+        )
+      : getSourceFile(fileName, languageVersion, onError, shouldCreate)
+  return ts.createProgram([validationPath], compilerOptions, host)
+}
 
-  const program = ts.createProgram([validationPath], compilerOptions, host)
+function throwExtensionDiagnostics(
+  path: string,
+  diagnostics: readonly ts.Diagnostic[],
+  correction: string,
+): void {
+  if (diagnostics.length === 0) return
+  throw new Error(
+    `Cannot validate ${relative(process.cwd(), path)}: ` +
+      `${diagnosticReason(diagnostics)}. ${correction}`,
+  )
+}
+
+export function validateExtensions(
+  path: string,
+): Pick<RunExtensionManifest, 'adapterAvailable'> {
+  const validationPath = resolve(import.meta.dir, '__extension_validation__.ts')
+  const program = extensionValidationProgram(
+    validationPath,
+    extensionValidationSource(validationPath, path),
+  )
   const syntaxDiagnostics = program
     .getSyntacticDiagnostics()
     .filter((diagnostic) => diagnostic.category === ts.DiagnosticCategory.Error)
-  if (syntaxDiagnostics.length > 0) {
-    throw new Error(
-      `Cannot validate ${relative(process.cwd(), path)}: ${diagnosticReason(syntaxDiagnostics)}. ` +
-        'Fix its imports or syntax and run pickle check again.',
-    )
-  }
+  throwExtensionDiagnostics(
+    path,
+    syntaxDiagnostics,
+    'Fix its imports or syntax and run pickle check again.',
+  )
 
   const typeChecker = program.getTypeChecker()
   const sourceFile = program.getSourceFile(path)
@@ -174,18 +185,16 @@ validate(extensions)
     .filter((diagnostic) =>
       isRelevantSemanticDiagnostic(program, diagnostic, validationPath),
     )
-  if (semanticDiagnostics.length > 0) {
-    const correction = semanticDiagnostics.some(
-      (diagnostic) =>
-        resolve(diagnostic.file?.fileName ?? '') !== validationPath,
-    )
+  const importedSourceFailed = semanticDiagnostics.some(
+    (diagnostic) => resolve(diagnostic.file?.fileName ?? '') !== validationPath,
+  )
+  throwExtensionDiagnostics(
+    path,
+    semanticDiagnostics,
+    importedSourceFailed
       ? 'Fix its imports or syntax and run pickle check again.'
-      : 'Correct the extension default export and run pickle check again.'
-    throw new Error(
-      `Cannot validate ${relative(process.cwd(), path)}: ` +
-        `${diagnosticReason(semanticDiagnostics)}. ${correction}`,
-    )
-  }
+      : 'Correct the extension default export and run pickle check again.',
+  )
 
   return {
     adapterAvailable: extensionProvidesAdapter(

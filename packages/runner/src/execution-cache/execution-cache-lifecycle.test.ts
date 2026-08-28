@@ -21,6 +21,7 @@ import {
   runScenario,
 } from '../../index'
 import { finalScenarioAttempt } from '../execution/run-scenario'
+import { requiredValue } from '../required-value'
 
 type RunScenarioInput = Parameters<typeof runScenario>[0]
 type CacheRunInput = RunScenarioInput & {
@@ -248,17 +249,17 @@ describe('Execution cache lifecycle', () => {
         }
       },
     }
-    const input = cacheRunInput({
+    const runInput = cacheRunInput({
       adapter,
       store,
       projectKey: cache.projectKey,
     })
 
-    const ownerRun = runScenario(input)
+    const ownerRun = runScenario(runInput)
     await started
     const waiterRun = runScenario({
-      ...input,
-      executionCache: { ...input.executionCache, sourceRunId: 'run-2' },
+      ...runInput,
+      executionCache: { ...runInput.executionCache, sourceRunId: 'run-2' },
     })
     await waiting
     releaseEvaluation?.()
@@ -314,17 +315,17 @@ describe('Execution cache lifecycle', () => {
         }
       },
     }
-    const input = cacheRunInput({
+    const runInput = cacheRunInput({
       adapter,
       store,
       projectKey: cache.projectKey,
     })
 
-    const ownerRun = runScenario(input)
+    const ownerRun = runScenario(runInput)
     await started
     const waiterRun = runScenario({
-      ...input,
-      executionCache: { ...input.executionCache, sourceRunId: 'run-2' },
+      ...runInput,
+      executionCache: { ...runInput.executionCache, sourceRunId: 'run-2' },
     })
     await waiting
     releaseEvaluation?.()
@@ -377,17 +378,17 @@ describe('Execution cache lifecycle', () => {
         }
       },
     }
-    const input = cacheRunInput({
+    const runInput = cacheRunInput({
       adapter,
       store,
       projectKey: cache.projectKey,
     })
 
-    const ownerRun = runScenario(input)
+    const ownerRun = runScenario(runInput)
     await started
     const waiterRun = runScenario({
-      ...input,
-      executionCache: { ...input.executionCache, sourceRunId: 'run-2' },
+      ...runInput,
+      executionCache: { ...runInput.executionCache, sourceRunId: 'run-2' },
     })
     await waiting
     releaseEvaluation?.()
@@ -445,17 +446,17 @@ describe('Execution cache lifecycle', () => {
         }
       },
     }
-    const input = cacheRunInput({
+    const runInput = cacheRunInput({
       adapter,
       store,
       projectKey: cache.projectKey,
     })
 
-    const ownerRun = runScenario(input)
+    const ownerRun = runScenario(runInput)
     await started
     const waiterRun = runScenario({
-      ...input,
-      executionCache: { ...input.executionCache, sourceRunId: 'run-2' },
+      ...runInput,
+      executionCache: { ...runInput.executionCache, sourceRunId: 'run-2' },
     })
     await waiting
     releaseEvaluation?.()
@@ -518,24 +519,24 @@ describe('Execution cache lifecycle', () => {
         }
       },
     }
-    const input = cacheRunInput({
+    const runInput = cacheRunInput({
       adapter,
       store,
       projectKey: cache.projectKey,
     })
-    await runScenario(input)
+    await runScenario(runInput)
     holdRefresh = true
 
     const ownerRun = runScenario({
-      ...input,
+      ...runInput,
       cachePolicy: 'refresh',
-      executionCache: { ...input.executionCache, sourceRunId: 'run-2' },
+      executionCache: { ...runInput.executionCache, sourceRunId: 'run-2' },
     })
     await started
     const waiterRun = runScenario({
-      ...input,
+      ...runInput,
       cachePolicy: 'refresh',
-      executionCache: { ...input.executionCache, sourceRunId: 'run-3' },
+      executionCache: { ...runInput.executionCache, sourceRunId: 'run-3' },
     })
     await waiting
     releaseRefresh?.()
@@ -561,7 +562,7 @@ describe('Execution cache lifecycle', () => {
     const cache = await localStore({ waitTimeoutMs: 8 })
     const cacheKey = {
       projectKey: cache.projectKey,
-      scenarioId: scenario.id!,
+      scenarioId: requiredValue(scenario.id),
       scenarioRevision: scenarioRevision(scenario),
       executionTargetProfileId: 'test',
       targetConfigurationFingerprint:
@@ -680,12 +681,12 @@ describe('Execution cache lifecycle', () => {
       openSession,
     }
     const { store } = memoryStore()
-    const input = cacheRunInput({ adapter, store })
+    const runInput = cacheRunInput({ adapter, store })
 
-    const adaptive = await runScenario(input)
+    const adaptive = await runScenario(runInput)
     const replay = await runScenario({
-      ...input,
-      executionCache: { ...input.executionCache, sourceRunId: 'run-2' },
+      ...runInput,
+      executionCache: { ...runInput.executionCache, sourceRunId: 'run-2' },
     })
 
     expect(modes).toEqual(['adaptive', 'replay'])
@@ -745,18 +746,18 @@ describe('Execution cache lifecycle', () => {
         }
       },
     }
-    const input = cacheRunInput({ adapter, store })
+    const runInput = cacheRunInput({ adapter, store })
 
-    await runScenario(input)
+    await runScenario(runInput)
     const refresh = await runScenario({
-      ...input,
+      ...runInput,
       cachePolicy: 'refresh',
-      executionCache: { ...input.executionCache, sourceRunId: 'run-2' },
+      executionCache: { ...runInput.executionCache, sourceRunId: 'run-2' },
     })
     const replay = await runScenario({
-      ...input,
+      ...runInput,
       cachePolicy: 'cache-only',
-      executionCache: { ...input.executionCache, sourceRunId: 'run-3' },
+      executionCache: { ...runInput.executionCache, sourceRunId: 'run-3' },
     })
 
     expect(refresh.result.state).toBe('failed')
@@ -778,7 +779,7 @@ describe('Execution cache lifecycle', () => {
     const adapter: ExecutionTargetAdapter = { executionCache, openSession }
     const run = await runScenario({
       ...cacheRunInput({ adapter, store, cachePolicy: 'cache-only' }),
-      now: () => new Date(timestamps[timestampIndex++]!),
+      now: () => new Date(requiredValue(timestamps[timestampIndex++])),
     })
 
     expect(openSession).not.toHaveBeenCalled()
@@ -864,15 +865,15 @@ describe('Execution cache lifecycle', () => {
         }
       },
     }
-    const input = cacheRunInput({ adapter, store })
-    await runScenario(input)
+    const runInput = cacheRunInput({ adapter, store })
+    await runScenario(runInput)
     expect(seed).toBe(false)
 
     const replay = await runScenario({
-      ...input,
+      ...runInput,
       cachePolicy: 'cache-only',
       retry: { infrastructureErrors: 0, functionalFailures: 3 },
-      executionCache: { ...input.executionCache, sourceRunId: 'run-2' },
+      executionCache: { ...runInput.executionCache, sourceRunId: 'run-2' },
     })
 
     expect(modes).toEqual(['adaptive', 'replay'])
@@ -922,13 +923,13 @@ describe('Execution cache lifecycle', () => {
         }
       },
     }
-    const input = cacheRunInput({ adapter, store })
-    await runScenario(input)
+    const runInput = cacheRunInput({ adapter, store })
+    await runScenario(runInput)
     replayShouldDiverge = true
 
     const fallback = await runScenario({
-      ...input,
-      executionCache: { ...input.executionCache, sourceRunId: 'run-2' },
+      ...runInput,
+      executionCache: { ...runInput.executionCache, sourceRunId: 'run-2' },
     })
 
     expect(executions.slice(2)).toEqual([
@@ -988,17 +989,17 @@ describe('Execution cache lifecycle', () => {
         }
       },
     }
-    const input = cacheRunInput({
+    const runInput = cacheRunInput({
       adapter,
       store,
       selectedScenario: outlineScenario,
     })
-    await runScenario(input)
+    await runScenario(runInput)
     replayShouldDiverge = true
 
     const mixed = await runScenario({
-      ...input,
-      executionCache: { ...input.executionCache, sourceRunId: 'run-2' },
+      ...runInput,
+      executionCache: { ...runInput.executionCache, sourceRunId: 'run-2' },
     })
 
     expect(mixed.result).toMatchObject({
@@ -1021,7 +1022,7 @@ describe('Execution cache lifecycle', () => {
     expect(started).toHaveLength(1)
     expect(finished).toHaveLength(1)
     expect(started[0]?.scope).toEqual({
-      scenarioId: scenario.id!,
+      scenarioId: requiredValue(scenario.id),
       examplesRowId: 'row-checkout-1',
       executionTargetProfileId: 'test',
       attempt: 1,
@@ -1306,14 +1307,14 @@ describe('Execution cache lifecycle', () => {
     const baseInput = cacheRunInput({
       adapter,
       store,
-      selectedScenario: outlineSpecification.scenarios[0]!,
+      selectedScenario: requiredValue(outlineSpecification.scenarios[0]),
       selectedSpecification: outlineSpecification,
     })
 
     const first = await runScenario(baseInput)
     const second = await runScenario({
       ...baseInput,
-      scenario: outlineSpecification.scenarios[1]!,
+      scenario: requiredValue(outlineSpecification.scenarios[1]),
       executionCache: { ...baseInput.executionCache, sourceRunId: 'run-2' },
     })
 
@@ -1337,7 +1338,7 @@ describe('Execution cache lifecycle', () => {
     const publicSources = JSON.stringify([first, second, writes])
     expect(publicSources).not.toContain('first-secret@example.com')
     expect(publicSources).not.toContain('second-secret@example.com')
-    expect(JSON.parse(writes[0]!)).toMatchObject({
+    expect(JSON.parse(requiredValue(writes[0]))).toMatchObject({
       key: { scenarioId: 'scnsignin0000000' },
       requiredVariables: ['role', 'email'],
     })
@@ -1558,17 +1559,17 @@ describe('Execution cache lifecycle', () => {
         }
       },
     }
-    const input = cacheRunInput({ adapter, store })
+    const runInput = cacheRunInput({ adapter, store })
 
-    await runScenario(input)
+    await runScenario(runInput)
     const fallback = await runScenario({
-      ...input,
-      executionCache: { ...input.executionCache, sourceRunId: 'run-2' },
+      ...runInput,
+      executionCache: { ...runInput.executionCache, sourceRunId: 'run-2' },
     })
     const cacheOnly = await runScenario({
-      ...input,
+      ...runInput,
       cachePolicy: 'cache-only',
-      executionCache: { ...input.executionCache, sourceRunId: 'run-3' },
+      executionCache: { ...runInput.executionCache, sourceRunId: 'run-3' },
     })
 
     expect(modes).toEqual(['adaptive', 'replay', 'replay'])
@@ -1629,18 +1630,18 @@ describe('Execution cache lifecycle', () => {
         }
       },
     }
-    const input = cacheRunInput({ adapter, store })
+    const runInput = cacheRunInput({ adapter, store })
 
-    await runScenario(input)
+    await runScenario(runInput)
     const refresh = await runScenario({
-      ...input,
+      ...runInput,
       cachePolicy: 'refresh',
-      executionCache: { ...input.executionCache, sourceRunId: 'run-2' },
+      executionCache: { ...runInput.executionCache, sourceRunId: 'run-2' },
     })
     await runScenario({
-      ...input,
+      ...runInput,
       cachePolicy: 'cache-only',
-      executionCache: { ...input.executionCache, sourceRunId: 'run-3' },
+      executionCache: { ...runInput.executionCache, sourceRunId: 'run-3' },
     })
 
     expect(finalScenarioAttempt(refresh.result).cacheOutcome).toBe(
@@ -1821,17 +1822,17 @@ describe('Execution cache lifecycle', () => {
         }
       },
     }
-    const input = cacheRunInput({ adapter, store })
+    const runInput = cacheRunInput({ adapter, store })
 
-    await runScenario(input)
+    await runScenario(runInput)
     const failedFallback = await runScenario({
-      ...input,
-      executionCache: { ...input.executionCache, sourceRunId: 'run-2' },
+      ...runInput,
+      executionCache: { ...runInput.executionCache, sourceRunId: 'run-2' },
     })
     const cacheOnly = await runScenario({
-      ...input,
+      ...runInput,
       cachePolicy: 'cache-only',
-      executionCache: { ...input.executionCache, sourceRunId: 'run-3' },
+      executionCache: { ...runInput.executionCache, sourceRunId: 'run-3' },
     })
 
     expect(failedFallback.result.state).toBe('failed')
@@ -1909,23 +1910,23 @@ describe('Execution cache lifecycle', () => {
         }
       },
     }
-    const input = cacheRunInput({ adapter, store })
-    const failed = await runScenario(input)
+    const runInput = cacheRunInput({ adapter, store })
+    const failed = await runScenario(runInput)
     expect(finalScenarioAttempt(failed.result)).toMatchObject({
       state: 'failed',
       executionMode: 'adaptive',
       cacheOutcome: 'miss',
     })
     expect(writes).toHaveLength(1)
-    expect(JSON.parse(writes[0]!)).toMatchObject({
+    expect(JSON.parse(requiredValue(writes[0]))).toMatchObject({
       adapterPayload: { operations: ['confirm'] },
     })
 
     failAt = -1
     compiled.length = 0
     const mixed = await runScenario({
-      ...input,
-      executionCache: { ...input.executionCache, sourceRunId: 'run-2' },
+      ...runInput,
+      executionCache: { ...runInput.executionCache, sourceRunId: 'run-2' },
     })
     expect(evaluations.slice(-2)).toEqual(['replay', 'adaptive'])
     expect(finalScenarioAttempt(mixed.result)).toMatchObject({
@@ -2012,11 +2013,11 @@ describe('Execution cache lifecycle', () => {
         }
       },
     }
-    const input = cacheRunInput({ adapter, store })
-    await runScenario(input)
+    const runInput = cacheRunInput({ adapter, store })
+    await runScenario(runInput)
     const replay = await runScenario({
-      ...input,
-      executionCache: { ...input.executionCache, sourceRunId: 'run-2' },
+      ...runInput,
+      executionCache: { ...runInput.executionCache, sourceRunId: 'run-2' },
     })
     expect(finalScenarioAttempt(replay.result)).toMatchObject({
       state: 'passed',
@@ -2063,13 +2064,13 @@ describe('Execution cache lifecycle', () => {
         }
       },
     }
-    const input = cacheRunInput({ adapter, store })
-    await runScenario(input)
+    const runInput = cacheRunInput({ adapter, store })
+    await runScenario(runInput)
     expect(opened).toBe(1)
     const cacheOnly = await runScenario({
-      ...input,
+      ...runInput,
       cachePolicy: 'cache-only',
-      executionCache: { ...input.executionCache, sourceRunId: 'run-2' },
+      executionCache: { ...runInput.executionCache, sourceRunId: 'run-2' },
     })
     expect(opened).toBe(1)
     expect(finalScenarioAttempt(cacheOnly.result)).toMatchObject({
@@ -2108,7 +2109,7 @@ describe('Execution cache lifecycle', () => {
       state: 'passed',
       cacheOutcome: 'miss',
     })
-    expect(JSON.parse(writes[0]!)).toMatchObject({
+    expect(JSON.parse(requiredValue(writes[0]))).toMatchObject({
       adapterPayload: { operations: ['confirm'] },
     })
   })
@@ -2143,17 +2144,17 @@ describe('Execution cache lifecycle', () => {
     function contextHasPrefix(input: { executionCache?: unknown }) {
       return input.executionCache !== undefined
     }
-    const input = cacheRunInput({ adapter, store })
-    await runScenario(input)
+    const runInput = cacheRunInput({ adapter, store })
+    await runScenario(runInput)
     const again = await runScenario({
-      ...input,
-      executionCache: { ...input.executionCache, sourceRunId: 'run-2' },
+      ...runInput,
+      executionCache: { ...runInput.executionCache, sourceRunId: 'run-2' },
     })
     expect(writes).toHaveLength(2)
-    expect(JSON.parse(writes[0]!)).toMatchObject({
+    expect(JSON.parse(requiredValue(writes[0]))).toMatchObject({
       adapterPayload: { operations: ['confirm'] },
     })
-    expect(JSON.parse(writes[1]!)).toMatchObject({
+    expect(JSON.parse(requiredValue(writes[1]))).toMatchObject({
       adapterPayload: { operations: ['confirm'] },
     })
     expect(finalScenarioAttempt(again.result).cacheOutcome).not.toBe(
@@ -2198,13 +2199,13 @@ describe('Execution cache lifecycle', () => {
         }
       },
     }
-    const input = cacheRunInput({ adapter, store })
-    await runScenario(input)
+    const runInput = cacheRunInput({ adapter, store })
+    await runScenario(runInput)
     divergeReplay = true
     evaluations.length = 0
     const reseated = await runScenario({
-      ...input,
-      executionCache: { ...input.executionCache, sourceRunId: 'run-2' },
+      ...runInput,
+      executionCache: { ...runInput.executionCache, sourceRunId: 'run-2' },
     })
     expect(evaluations).toEqual(['replay', 'adaptive', 'adaptive'])
     expect(finalScenarioAttempt(reseated.result)).toMatchObject({
@@ -2273,18 +2274,18 @@ describe('Execution cache lifecycle', () => {
         }
       },
     }
-    const input = cacheRunInput({ adapter, store })
-    const failed = await runScenario(input)
+    const runInput = cacheRunInput({ adapter, store })
+    const failed = await runScenario(runInput)
     expect(failed.result.state).toBe('failed')
     expect(writes).toEqual([])
     failSecond = false
     const passed = await runScenario({
-      ...input,
-      executionCache: { ...input.executionCache, sourceRunId: 'run-2' },
+      ...runInput,
+      executionCache: { ...runInput.executionCache, sourceRunId: 'run-2' },
     })
     expect(passed.result.state).toBe('passed')
     expect(writes).toHaveLength(1)
-    expect(JSON.parse(writes[0]!)).toMatchObject({
+    expect(JSON.parse(requiredValue(writes[0]))).toMatchObject({
       adapterPayload: { operations: ['confirm', 'assert-receipt'] },
     })
   })

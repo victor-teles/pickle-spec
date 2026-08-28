@@ -263,7 +263,7 @@ export async function instrumentWebEvidencePages(
 ): Promise<unknown[]> {
   const instrumented = await Promise.all(
     pages.map(async (page) => {
-      if (!isObservablePage(page)) return undefined
+      if (!isObservablePage(page)) return
       try {
         await page.evaluate(installWebEvidenceScript)
         return page
@@ -272,7 +272,7 @@ export async function instrumentWebEvidencePages(
           'Browser evidence instrumentation failed',
           error,
         )
-        return undefined
+        return
       }
     }),
   )

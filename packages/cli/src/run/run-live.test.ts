@@ -3,6 +3,7 @@ import { mkdir, mkdtemp, rm, symlink } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { resolveLocalProjectStorage } from '@pickle-spec/runner'
+import { requiredValue } from '../required-value'
 
 let workspace: string
 let pickleCommand: string
@@ -149,9 +150,9 @@ Feature: Streaming Specification
       waitForFile(join(gates, 'first.started')),
       waitForFile(join(gates, 'second.started')),
     ]),
-    child.exited.then((exitCode) => {
+    child.exited.then((earlyExitCode) => {
       throw new Error(
-        `pickle run exited before both Scenarios started (${exitCode}): ${output.join('')}`,
+        `pickle run exited before both Scenarios started (${earlyExitCode}): ${output.join('')}`,
       )
     }),
   ])
@@ -274,7 +275,10 @@ Feature: Interrupt safely
   ]
   expect(manifestPaths).toHaveLength(1)
   const persistedManifest = await Bun.file(
-    join(resolveLocalProjectStorage(project).runsDirectory, manifestPaths[0]!),
+    join(
+      resolveLocalProjectStorage(project).runsDirectory,
+      requiredValue(manifestPaths[0]),
+    ),
   ).json()
   const exportedManifest = await Bun.file(jsonPath).json()
   expect(exportedManifest).toEqual(persistedManifest)

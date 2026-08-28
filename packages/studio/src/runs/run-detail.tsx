@@ -1,4 +1,8 @@
-import type { TestRunManifest } from '@pickle-spec/runner'
+import type {
+  ScenarioAttempt,
+  TestResult,
+  TestRunManifest,
+} from '@pickle-spec/runner'
 import { useEffect, useMemo, useState } from 'react'
 import type { StudioApi } from '../app/studio-api'
 import { LedgerLoadingSkeleton } from '../components/loading-skeletons'
@@ -213,133 +217,170 @@ function LoadedRunDetail(
 
       <RunMetadata manifest={manifest} />
 
-      <section className="space-y-2" aria-labelledby="run-results-title">
-        <div className="flex items-center justify-between gap-3">
-          <h2 id="run-results-title" className="studio-display text-sm">
-            Test results
-          </h2>
-          <span className="text-xs text-muted-foreground">
-            {attempts.length} {attempts.length === 1 ? 'attempt' : 'attempts'}
-          </span>
-        </div>
-        {attempts.length === 0 ? (
-          <div className="rounded-lg border border-dashed border-border px-4 py-5 text-center text-sm text-muted-foreground">
-            {running
-              ? 'Waiting for the first Scenario to start.'
-              : 'This Test run has no results.'}
-          </div>
-        ) : (
-          <section
-            ref={resultWindow.containerRef}
-            aria-label="Scrollable Test run results"
-            // biome-ignore lint/a11y/noNoninteractiveTabindex: keyboard users must be able to scroll a virtualized region
-            tabIndex={0}
-            className="max-h-[36rem] overflow-auto rounded-lg border border-border bg-card"
-          >
-            <Table aria-label="Test run results">
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Specification</TableHead>
-                  <TableHead>Scenario</TableHead>
-                  <TableHead>Target</TableHead>
-                  <TableHead>State</TableHead>
-                  <TableHead>Attempt</TableHead>
-                  <TableHead>Execution mode</TableHead>
-                  <TableHead>Cache outcome</TableHead>
-                  <TableHead>Uncacheable reason</TableHead>
-                  <TableHead>Inferences</TableHead>
-                  <TableHead>Duration</TableHead>
-                  <TableHead>Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                <VirtualTableSpacer height={resultWindow.before} colSpan={11} />
-                {visibleAttempts.map(({ result, attempt }) => (
-                  <TableRow
-                    key={`${result.specification.uri}:${result.scenario.id ?? result.scenario.name}:${result.scenario.examplesRowId ?? ''}:${result.executionTargetProfile.id}:${attempt.attempt}`}
-                    style={{ height: resultRowHeight }}
-                  >
-                    <TableCell>{result.specification.name}</TableCell>
-                    <TableCell>{result.scenario.name}</TableCell>
-                    <TableCell>{result.executionTargetProfile.id}</TableCell>
-                    <TableCell>{attempt.state}</TableCell>
-                    <TableCell>{attempt.attempt}</TableCell>
-                    <TableCell>
-                      {attempt.executionMode ?? 'Not recorded'}
-                    </TableCell>
-                    <TableCell>
-                      {attempt.cacheOutcome ?? 'Not recorded'}
-                    </TableCell>
-                    <TableCell>
-                      {attempt.cacheUncacheableReason ?? 'Not recorded'}
-                    </TableCell>
-                    <TableCell>
-                      {inferenceCountLabel(attempt.inferenceCount)}
-                    </TableCell>
-                    <TableCell>{durationLabel(attempt.durationMs)}</TableCell>
-                    <TableCell>
-                      <div className="flex gap-2">
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="outline"
-                          onClick={() =>
-                            props.onInspectResult({
-                              specificationUri: result.specification.uri,
-                              runId: manifest.id,
-                              scenarioId:
-                                result.scenario.id ?? result.scenario.name,
-                              examplesRowId: result.scenario.examplesRowId,
-                              profileId: result.executionTargetProfile.id,
-                              attempt: attempt.attempt,
-                            })
-                          }
-                        >
-                          Inspect result
-                        </Button>
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="outline"
-                          disabled={props.runsBlocked}
-                          onClick={() =>
-                            void props.onRerun({
-                              rerunId: manifest.id,
-                              scenarioId: result.scenario.id,
-                              scenarioName: result.scenario.id
-                                ? undefined
-                                : result.scenario.name,
-                            })
-                          }
-                        >
-                          Rerun Scenario
-                        </Button>
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="outline"
-                          disabled={props.runsBlocked}
-                          onClick={() =>
-                            void props.onRerun({
-                              rerunId: manifest.id,
-                              profiles: [result.executionTargetProfile.id],
-                            })
-                          }
-                        >
-                          Rerun target
-                        </Button>
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                ))}
-                <VirtualTableSpacer height={resultWindow.after} colSpan={11} />
-              </TableBody>
-            </Table>
-          </section>
-        )}
-      </section>
+      <RunResults
+        {...props}
+        attempts={attempts}
+        running={running}
+        visibleAttempts={visibleAttempts}
+        window={resultWindow}
+      />
     </section>
   )
+}
+
+type RunAttempt = { result: TestResult; attempt: ScenarioAttempt }
+
+function RunResults(
+  props: RunDetailProps & {
+    attempts: readonly RunAttempt[]
+    running: boolean
+    visibleAttempts: readonly RunAttempt[]
+    window: ReturnType<typeof useVirtualWindow<HTMLDivElement>>
+  },
+) {
+  return (
+    <section className="space-y-2" aria-labelledby="run-results-title">
+      <div className="flex items-center justify-between gap-3">
+        <h2 id="run-results-title" className="studio-display text-sm">
+          Test results
+        </h2>
+        <span className="text-xs text-muted-foreground">
+          {props.attempts.length}{' '}
+          {props.attempts.length === 1 ? 'attempt' : 'attempts'}
+        </span>
+      </div>
+      {props.attempts.length === 0 ? (
+        <div className="rounded-lg border border-dashed border-border px-4 py-5 text-center text-sm text-muted-foreground">
+          {props.running
+            ? 'Waiting for the first Scenario to start.'
+            : 'This Test run has no results.'}
+        </div>
+      ) : (
+        <RunAttemptsTable {...props} />
+      )}
+    </section>
+  )
+}
+
+function RunAttemptsTable(
+  props: RunDetailProps & {
+    visibleAttempts: readonly RunAttempt[]
+    window: ReturnType<typeof useVirtualWindow<HTMLDivElement>>
+  },
+) {
+  const headings = [
+    'Specification',
+    'Scenario',
+    'Target',
+    'State',
+    'Attempt',
+    'Execution mode',
+    'Cache outcome',
+    'Uncacheable reason',
+    'Inferences',
+    'Duration',
+    'Actions',
+  ]
+  return (
+    <section
+      ref={props.window.containerRef}
+      aria-label="Scrollable Test run results"
+      // biome-ignore lint/a11y/noNoninteractiveTabindex: keyboard users must be able to scroll a virtualized region
+      tabIndex={0}
+      className="max-h-[36rem] overflow-auto rounded-lg border border-border bg-card"
+    >
+      <Table aria-label="Test run results">
+        <TableHeader>
+          <TableRow>
+            {headings.map((heading) => (
+              <TableHead key={heading}>{heading}</TableHead>
+            ))}
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          <VirtualTableSpacer height={props.window.before} colSpan={11} />
+          {props.visibleAttempts.map((item) => (
+            <RunAttemptRow {...props} {...item} key={attemptKey(item)} />
+          ))}
+          <VirtualTableSpacer height={props.window.after} colSpan={11} />
+        </TableBody>
+      </Table>
+    </section>
+  )
+}
+
+function RunAttemptRow(props: RunDetailProps & RunAttempt) {
+  const { attempt, result } = props
+  return (
+    <TableRow style={{ height: resultRowHeight }}>
+      <TableCell>{result.specification.name}</TableCell>
+      <TableCell>{result.scenario.name}</TableCell>
+      <TableCell>{result.executionTargetProfile.id}</TableCell>
+      <TableCell>{attempt.state}</TableCell>
+      <TableCell>{attempt.attempt}</TableCell>
+      <TableCell>{attempt.executionMode ?? 'Not recorded'}</TableCell>
+      <TableCell>{attempt.cacheOutcome ?? 'Not recorded'}</TableCell>
+      <TableCell>{attempt.cacheUncacheableReason ?? 'Not recorded'}</TableCell>
+      <TableCell>{inferenceCountLabel(attempt.inferenceCount)}</TableCell>
+      <TableCell>{durationLabel(attempt.durationMs)}</TableCell>
+      <TableCell>
+        <RunAttemptActions {...props} />
+      </TableCell>
+    </TableRow>
+  )
+}
+
+function RunAttemptActions(props: RunDetailProps & RunAttempt) {
+  const { attempt, result } = props
+  const inspect = () =>
+    props.onInspectResult({
+      specificationUri: result.specification.uri,
+      runId: props.runId,
+      scenarioId: result.scenario.id ?? result.scenario.name,
+      examplesRowId: result.scenario.examplesRowId,
+      profileId: result.executionTargetProfile.id,
+      attempt: attempt.attempt,
+    })
+  const rerunScenario = () =>
+    void props.onRerun({
+      rerunId: props.runId,
+      scenarioId: result.scenario.id,
+      scenarioName: result.scenario.id ? undefined : result.scenario.name,
+    })
+  const rerunTarget = () =>
+    void props.onRerun({
+      rerunId: props.runId,
+      profiles: [result.executionTargetProfile.id],
+    })
+  return (
+    <div className="flex gap-2">
+      <Button type="button" size="sm" variant="outline" onClick={inspect}>
+        Inspect result
+      </Button>
+      <Button
+        type="button"
+        size="sm"
+        variant="outline"
+        disabled={props.runsBlocked}
+        onClick={rerunScenario}
+      >
+        Rerun Scenario
+      </Button>
+      <Button
+        type="button"
+        size="sm"
+        variant="outline"
+        disabled={props.runsBlocked}
+        onClick={rerunTarget}
+      >
+        Rerun target
+      </Button>
+    </div>
+  )
+}
+
+function attemptKey({ result, attempt }: RunAttempt): string {
+  return `${result.specification.uri}:${result.scenario.id ?? result.scenario.name}:${result.scenario.examplesRowId ?? ''}:${result.executionTargetProfile.id}:${attempt.attempt}`
 }
 
 function RunDetailMessage(props: {
@@ -357,43 +398,14 @@ function RunDetailMessage(props: {
 }
 
 function RunMetadata(props: { manifest: TestRunManifest }) {
-  const durationMs = props.manifest.finishedAt
-    ? Date.parse(props.manifest.finishedAt) -
-      Date.parse(props.manifest.startedAt)
-    : undefined
-  const profileIds = [
-    ...new Set(
-      props.manifest.results.map((result) => result.executionTargetProfile.id),
-    ),
-  ]
-  const executionModes = [
-    ...new Set(
-      props.manifest.results.flatMap((result) =>
-        result.attempts.flatMap((attempt) =>
-          attempt.executionMode ? [attempt.executionMode] : [],
-        ),
-      ),
-    ),
-  ]
-  const cacheOutcomes = [
-    ...new Set(
-      props.manifest.results.flatMap((result) =>
-        result.attempts.flatMap((attempt) =>
-          attempt.cacheOutcome ? [attempt.cacheOutcome] : [],
-        ),
-      ),
-    ),
-  ]
-  const inferenceCount = props.manifest.results.reduce((total, result) => {
-    return total + (result.attempts.at(-1)?.inferenceCount ?? 0)
-  }, 0)
+  const values = runMetadataValues(props.manifest)
   return (
     <dl className="grid gap-x-6 gap-y-4 rounded-xl border border-border bg-card p-4 sm:grid-cols-2 lg:grid-cols-4">
       <Metadata
         label="Started"
         value={new Date(props.manifest.startedAt).toLocaleString()}
       />
-      <Metadata label="Duration" value={durationLabel(durationMs)} />
+      <Metadata label="Duration" value={durationLabel(values.durationMs)} />
       <Metadata
         label="Suite"
         value={props.manifest.suite ?? 'Ad hoc selection'}
@@ -403,22 +415,65 @@ function RunMetadata(props: { manifest: TestRunManifest }) {
         value={props.manifest.applicationRevision ?? 'Not set'}
         mono
       />
-      <Metadata label="Targets" value={profileIds.join(', ') || 'None'} />
+      <Metadata
+        label="Targets"
+        value={values.profileIds.join(', ') || 'None'}
+      />
       <Metadata
         label="Execution modes"
-        value={executionModes.join(', ') || 'Not recorded'}
+        value={values.executionModes.join(', ') || 'Not recorded'}
       />
       <Metadata
         label="Cache outcomes"
-        value={cacheOutcomes.join(', ') || 'Not recorded'}
+        value={values.cacheOutcomes.join(', ') || 'Not recorded'}
       />
       <Metadata
         label="Inferences"
-        value={inferenceCountLabel(inferenceCount)}
+        value={inferenceCountLabel(values.inferenceCount)}
       />
       <Metadata label="Results" value={String(props.manifest.results.length)} />
     </dl>
   )
+}
+
+function runMetadataValues(manifest: TestRunManifest) {
+  const durationMs = manifest.finishedAt
+    ? Date.parse(manifest.finishedAt) - Date.parse(manifest.startedAt)
+    : undefined
+  const profileIds = [
+    ...new Set(
+      manifest.results.map((result) => result.executionTargetProfile.id),
+    ),
+  ]
+  const executionModes = uniqueAttemptValues(manifest, 'executionMode')
+  const cacheOutcomes = uniqueAttemptValues(manifest, 'cacheOutcome')
+  const inferenceCount = manifest.results.reduce(
+    (total, result) => total + (result.attempts.at(-1)?.inferenceCount ?? 0),
+    0,
+  )
+  return {
+    cacheOutcomes,
+    durationMs,
+    executionModes,
+    inferenceCount,
+    profileIds,
+  }
+}
+
+function uniqueAttemptValues(
+  manifest: TestRunManifest,
+  key: 'cacheOutcome' | 'executionMode',
+): string[] {
+  return [
+    ...new Set(
+      manifest.results.flatMap((result) =>
+        result.attempts.flatMap((attempt) => {
+          const value = attempt[key]
+          return value ? [value] : []
+        }),
+      ),
+    ),
+  ]
 }
 
 function Metadata(props: { label: string; value: string; mono?: boolean }) {

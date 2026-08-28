@@ -16,6 +16,7 @@ import {
   type WebExecutionCachePayload,
   type WebInstruction,
 } from '../../index'
+import { requiredValue } from '../required-value'
 
 function memoryStore() {
   const entries = new Map<string, string>()
@@ -65,7 +66,7 @@ Feature: Status
     Then the ready indicator is visible
 `,
     })
-    const scenario = specification.scenarios[0]!
+    const scenario = requiredValue(specification.scenarios[0])
     const observe = mock(async () => [
       {
         description: 'Ready indicator',
@@ -111,7 +112,7 @@ Feature: Status
       runtimeBindings: scenario.runtimeBindings,
     })
 
-    const step = scenario.steps[0]!
+    const step = requiredValue(scenario.steps[0])
     const execution = await session.executeStep(step, undefined, {
       stepIndex: 0,
       templateStep: step,
@@ -147,7 +148,7 @@ Feature: Shopping cart
     Then the cart should contain "Sauce Labs Backpack" and "Sauce Labs Bike Light"
 `,
     })
-    const scenario = specification.scenarios[0]!
+    const scenario = requiredValue(specification.scenarios[0])
     const compileAssertion = mock(async () => {
       throw new Error('compound Then must not extract')
     })
@@ -196,7 +197,7 @@ Feature: Shopping cart
       runtimeBindings: scenario.runtimeBindings,
     })
 
-    const step = scenario.steps[0]!
+    const step = requiredValue(scenario.steps[0])
     const execution = await session.executeStep(step, undefined, {
       stepIndex: 0,
       templateStep: step,
@@ -236,7 +237,7 @@ Feature: Sign in
       | alice@example.com |
 `,
     })
-    const scenario = specification.scenarios[0]!
+    const scenario = requiredValue(specification.scenarios[0])
     const observe = mock(async () => [
       {
         description: 'Fill the email field',
@@ -323,7 +324,7 @@ Feature: Account
       | private-account-42 |
 `,
       })
-      const scenario = specification.scenarios[0]!
+      const scenario = requiredValue(specification.scenarios[0])
       const executeInstruction = mock(async () => ({ success: true }))
       const automation: WebAutomation = {
         async navigate() {},
@@ -410,7 +411,7 @@ Feature: Unsafe operation
     When I run a custom browser callback
 `,
     })
-    const scenario = specification.scenarios[0]!
+    const scenario = requiredValue(specification.scenarios[0])
     const observe = mock(async () => [
       {
         description: 'Run custom code',
@@ -478,7 +479,7 @@ Feature: Submit
     When I click the submit button
 `,
     })
-    const scenario = specification.scenarios[0]!
+    const scenario = requiredValue(specification.scenarios[0])
     const observe = mock(async () => [
       {
         description: 'Click submit',

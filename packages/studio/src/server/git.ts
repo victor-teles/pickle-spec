@@ -159,80 +159,87 @@ async function statusFiles(
   return files
 }
 
-export function createGitWorkspace(root: string): GitWorkspace {
-  async function status(): Promise<StudioGitStatus> {
-    const repo = git(root, ['rev-parse', '--is-inside-work-tree'])
-    if (repo.exitCode !== 0) {
-      return {
-        files: [],
-        pullRequestAvailable: false,
-        pullRequestReason: 'This project is not a Git repository',
-      }
-    }
-    const branch = git(root, ['branch', '--show-current']).stdout.trim()
-    const porcelain = git(root, ['status', '--porcelain', '-uall'])
-    assertGitSuccess(porcelain, 'read repository status')
-    const files = await statusFiles(root, porcelain.stdout)
-    const pullRequest = await pullRequestAvailability(root)
+async function workspaceStatus(root: string): Promise<StudioGitStatus> {
+  const repo = git(root, ['rev-parse', '--is-inside-work-tree'])
+  if (repo.exitCode !== 0) {
     return {
-      ...(branch ? { branch } : {}),
-      files,
-      pullRequestAvailable: pullRequest.available,
-      ...(pullRequest.reason ? { pullRequestReason: pullRequest.reason } : {}),
+      files: [],
+      pullRequestAvailable: false,
+      pullRequestReason: 'This project is not a Git repository',
     }
   }
-
+  const branch = git(root, ['branch', '--show-current']).stdout.trim()
+  const porcelain = git(root, ['status', '--porcelain', '-uall'])
+  assertGitSuccess(porcelain, 'read repository status')
+  const files = await statusFiles(root, porcelain.stdout)
+  const pullRequest = await pullRequestAvailability(root)
   return {
-    status,
+    ...(branch ? { branch } : {}),
+    files,
+    pullRequestAvailable: pullRequest.available,
+    ...(pullRequest.reason ? { pullRequestReason: pullRequest.reason } : {}),
+  }
+}
+
+async function stageWorkspaceFiles(
+  root: string,
+  paths: readonly string[],
+): Promise<StudioGitStatus> {
+  if (paths.length === 0) throw new Error('Select at least one path to stage')
+  assertGitSuccess(git(root, ['add', '--', ...paths]), 'stage selected changes')
+  return workspaceStatus(root)
+}
+
+async function commitWorkspaceFiles(
+  root: string,
+  input: Parameters<GitWorkspace['commit']>[0],
+): Promise<StudioGitStatus> {
+  if (!input.confirmed) {
+    throw new Error('Confirm the commit before Studio writes to the repository')
+  }
+  const message = input.message.trim()
+  if (!message) throw new Error('A commit message is required')
+  const paths = [...(input.paths ?? [])].filter((path) => path.length > 0)
+  if (paths.length === 0) throw new Error('Select at least one path to commit')
+  assertGitSuccess(git(root, ['add', '--', ...paths]), 'stage selected changes')
+  assertGitSuccess(
+    git(root, ['commit', '-m', message, '--', ...paths]),
+    'create the commit',
+  )
+  return workspaceStatus(root)
+}
+
+async function openPullRequest(root: string) {
+  const availability = await pullRequestAvailability(root)
+  if (!availability.available) {
+    throw new Error(
+      availability.reason ?? 'Pull request actions are unavailable',
+    )
+  }
+  const result = run(root, ['gh', 'pr', 'create', '--web'])
+  if (result.exitCode !== 0) {
+    throw new Error(
+      result.stderr.trim() || 'GitHub CLI could not open a pull request',
+    )
+  }
+  const url = result.stdout.match(/https?:\/\/\S+/)?.[0]
+  return {
+    ...(url ? { url } : {}),
+    message: 'Opened the GitHub pull request workflow',
+  }
+}
+
+export function createGitWorkspace(root: string): GitWorkspace {
+  return {
+    status: () => workspaceStatus(root),
     async stage(paths) {
-      if (paths.length === 0)
-        throw new Error('Select at least one path to stage')
-      assertGitSuccess(
-        git(root, ['add', '--', ...paths]),
-        'stage selected changes',
-      )
-      return status()
+      return stageWorkspaceFiles(root, paths)
     },
     async commit(input) {
-      if (!input.confirmed) {
-        throw new Error(
-          'Confirm the commit before Studio writes to the repository',
-        )
-      }
-      const message = input.message.trim()
-      if (!message) throw new Error('A commit message is required')
-      const paths = [...(input.paths ?? [])].filter((path) => path.length > 0)
-      if (paths.length === 0) {
-        throw new Error('Select at least one path to commit')
-      }
-      assertGitSuccess(
-        git(root, ['add', '--', ...paths]),
-        'stage selected changes',
-      )
-      assertGitSuccess(
-        git(root, ['commit', '-m', message, '--', ...paths]),
-        'create the commit',
-      )
-      return status()
+      return commitWorkspaceFiles(root, input)
     },
     async pullRequest() {
-      const availability = await pullRequestAvailability(root)
-      if (!availability.available) {
-        throw new Error(
-          availability.reason ?? 'Pull request actions are unavailable',
-        )
-      }
-      const result = run(root, ['gh', 'pr', 'create', '--web'])
-      if (result.exitCode !== 0) {
-        throw new Error(
-          result.stderr.trim() || 'GitHub CLI could not open a pull request',
-        )
-      }
-      const url = result.stdout.match(/https?:\/\/\S+/)?.[0]
-      return {
-        ...(url ? { url } : {}),
-        message: 'Opened the GitHub pull request workflow',
-      }
+      return openPullRequest(root)
     },
   }
 }

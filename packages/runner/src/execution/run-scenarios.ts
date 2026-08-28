@@ -1,4 +1,5 @@
 import type { ScenarioSelection } from '@pickle-spec/spec'
+import { requiredValue } from '../required-value'
 import type {
   ExecutionCachePolicy,
   ExecutionPolicy,
@@ -161,7 +162,7 @@ export async function runScenarios(
   async function work(): Promise<void> {
     while (nextIndex < scheduledTargets.length) {
       const index = nextIndex++
-      const { selection, target } = scheduledTargets[index]!
+      const { selection, target } = requiredValue(scheduledTargets[index])
       const run = await runScenario({
         specification: selection.specification,
         scenario: selection.scenario,

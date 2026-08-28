@@ -44,6 +44,45 @@ function selectedTimelineEntry(
   )
 }
 
+interface TimelineDisplayProps extends ResultEvidenceTimelineProps {
+  selectedEntry?: TimelineEntry
+  visibleEntries: readonly TimelineEntry[]
+  followedEntryId?: string
+  onSelect: (entryId: string) => void
+  onPause: () => void
+}
+
+function TimelineDisplay(props: TimelineDisplayProps) {
+  if (props.visibleEntries.length === 0) {
+    return (
+      <p className="px-4 py-8 text-center text-sm text-muted-foreground">
+        No Test evidence was recorded for this Scenario attempt.
+      </p>
+    )
+  }
+  if (!props.selectedEntry) return null
+  return (
+    <div className="grid min-w-0 items-start lg:grid-cols-[minmax(0,1fr)_minmax(16rem,22rem)]">
+      <TimelineWaterfall
+        entries={props.visibleEntries}
+        attemptStartedAt={props.startedAt}
+        durationMs={props.durationMs}
+        selectedEntryId={props.selectedEntry.id}
+        followedEntryId={props.followedEntryId}
+        following={props.follow === true}
+        onSelect={props.onSelect}
+        onPauseFollowing={props.onPause}
+      />
+      <TimelineEvidenceDetail
+        entry={props.selectedEntry}
+        attemptStartedAt={props.startedAt}
+        scenarioName={props.scenarioName}
+        resultState={props.resultState}
+      />
+    </div>
+  )
+}
+
 export function ResultEvidenceTimeline(props: ResultEvidenceTimelineProps) {
   const [selectedEntryId, setSelectedEntryId] = useState<string>()
   const [density, setDensity] = useState<TimelineDensity>('essential')
@@ -118,30 +157,14 @@ export function ResultEvidenceTimeline(props: ResultEvidenceTimelineProps) {
             precise failing instant.
           </p>
         ) : null}
-        {entryCount === 0 ? (
-          <p className="px-4 py-8 text-center text-sm text-muted-foreground">
-            No Test evidence was recorded for this Scenario attempt.
-          </p>
-        ) : selectedEntry ? (
-          <div className="grid min-w-0 items-start lg:grid-cols-[minmax(0,1fr)_minmax(16rem,22rem)]">
-            <TimelineWaterfall
-              entries={visibleEntries}
-              attemptStartedAt={props.startedAt}
-              durationMs={props.durationMs}
-              selectedEntryId={selectedEntry.id}
-              followedEntryId={followedEntryId}
-              following={props.follow === true}
-              onSelect={handleSelect}
-              onPauseFollowing={handlePauseFollowing}
-            />
-            <TimelineEvidenceDetail
-              entry={selectedEntry}
-              attemptStartedAt={props.startedAt}
-              scenarioName={props.scenarioName}
-              resultState={props.resultState}
-            />
-          </div>
-        ) : null}
+        <TimelineDisplay
+          {...props}
+          selectedEntry={selectedEntry}
+          visibleEntries={visibleEntries}
+          followedEntryId={followedEntryId}
+          onSelect={handleSelect}
+          onPause={handlePauseFollowing}
+        />
       </CardContent>
     </Card>
   )

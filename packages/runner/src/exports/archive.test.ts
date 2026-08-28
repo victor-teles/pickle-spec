@@ -13,6 +13,7 @@ import {
   writeRunArchive as writeRunArchiveBase,
 } from '../../index'
 import type { TestResult } from '../execution/run-scenario'
+import { requiredValue } from '../required-value'
 
 async function tempRoot(): Promise<string> {
   return mkdtemp(join(tmpdir(), 'pickle-archive-'))
@@ -90,14 +91,14 @@ function passedResult(): TestResult {
 }
 
 function scenarioFinished(result: TestResult, attemptIndex = -1) {
-  const attempt = result.attempts.at(attemptIndex)!
+  const attempt = requiredValue(result.attempts.at(attemptIndex))
   return {
     type: 'scenario-finished' as const,
     specification: result.specification,
     scenario: result.scenario,
     executionTargetProfile: result.executionTargetProfile,
     scope: {
-      scenarioId: result.scenario.id!,
+      scenarioId: requiredValue(result.scenario.id),
       examplesRowId: result.scenario.examplesRowId,
       executionTargetProfileId: result.executionTargetProfile.id,
       attempt: attempt.attempt,
@@ -108,7 +109,7 @@ function scenarioFinished(result: TestResult, attemptIndex = -1) {
 
 function failedResultWithArtifact(path: string): TestResult {
   const result = passedResult()
-  const attempt = result.attempts[0]!
+  const attempt = requiredValue(result.attempts[0])
   const step = {
     index: 0,
     startedAt: attempt.startedAt,
@@ -239,7 +240,10 @@ test('writeRunArchive preserves events, manifests, and selected test artifacts',
     expect(archive.artifacts).toHaveLength(1)
     expect(archive.artifacts[0]?.mediaType).toBe('image/png')
     expect(
-      Buffer.from(archive.artifacts[0]!.content, 'base64').toString(),
+      Buffer.from(
+        requiredValue(archive.artifacts[0]).content,
+        'base64',
+      ).toString(),
     ).toBe('png-bytes')
     expect(manifest.id).toBe('run-archive')
   } finally {
@@ -257,7 +261,7 @@ test('archive round-trip omits private replay payloads from resolved actions', a
     })
     const run = await store.create()
     const result = passedResult()
-    const attempt = result.attempts[0]!
+    const attempt = requiredValue(result.attempts[0])
     await run.append(
       scenarioFinished({
         ...result,
@@ -394,7 +398,7 @@ test('archive parsing removes private fields from schema-v2 input', async () => 
   try {
     const archivePath = join(root, 'private-fields.json')
     const result = passedResult()
-    const attempt = result.attempts[0]!
+    const attempt = requiredValue(result.attempts[0])
     const privateResult: TestResult = {
       ...result,
       attempts: [
@@ -678,17 +682,30 @@ test('issue 77: exports and imports a schema-v2 archive with contained artifact 
       true,
     )
     expect(archive.artifacts).toHaveLength(1)
-    expect(archive.artifacts[0]!.path.startsWith('artifacts/')).toBe(true)
+    expect(
+      requiredValue(archive.artifacts[0]).path.startsWith('artifacts/'),
+    ).toBe(true)
     expect(archiveSource).not.toContain(storageFor(sourceRoot).pickleHome)
 
     const imported = await importRunArchive({
       root: targetRoot,
       archivePath,
     })
-    const importedPath =
-      imported.manifest.results[0]!.attempts[0]!.steps[0]!.artifacts![0]!.path
+    const importedPath = requiredValue(
+      requiredValue(
+        requiredValue(
+          requiredValue(requiredValue(imported.manifest.results[0]).attempts[0])
+            .steps[0],
+        ).artifacts,
+      )[0],
+    ).path
     expect(
-      imported.manifest.results[0]!.attempts[0]!.steps[0]!.artifacts![0],
+      requiredValue(
+        requiredValue(
+          requiredValue(requiredValue(imported.manifest.results[0]).attempts[0])
+            .steps[0],
+        ).artifacts,
+      )[0],
     ).toMatchObject({
       name: 'failure.png',
       capturedAt: '2026-08-15T12:00:00.012Z',
@@ -789,7 +806,7 @@ test('issue 77: rejects escaping artifact references before writing', async () =
   try {
     const archivePath = join(root, 'reference-traversal.archive.json')
     const result = failedResultWithArtifact('../../victim.txt')
-    const attempt = result.attempts[0]!
+    const attempt = requiredValue(result.attempts[0])
     await Bun.write(
       archivePath,
       JSON.stringify({
@@ -919,8 +936,14 @@ test('issue 77: export rejects a missing artifact source without writing output'
     const run = await store.create()
     await run.append(scenarioFinished(failedResultWithArtifact(screenshot)))
     const manifest = await run.materialize()
-    const persistedPath =
-      manifest.results[0]!.attempts[0]!.steps[0]!.artifacts![0]!.path
+    const persistedPath = requiredValue(
+      requiredValue(
+        requiredValue(
+          requiredValue(requiredValue(manifest.results[0]).attempts[0])
+            .steps[0],
+        ).artifacts,
+      )[0],
+    ).path
     await rm(persistedPath)
     const outputPath = join(root, 'missing-source', 'archive.json')
 

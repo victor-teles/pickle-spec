@@ -1,4 +1,5 @@
 import type { ScenarioVariableBinding } from '@pickle-spec/spec'
+import { requiredValue } from '../required-value'
 import {
   compileWebAssertion,
   parseObservedActionPayload,
@@ -13,7 +14,7 @@ interface ObservedOutcome {
 
 function quotedExpectationTexts(prompt: string): string[] {
   return [...prompt.matchAll(/"([^"]+)"|'([^']+)'/g)].map(
-    (match) => match[1] ?? match[2]!,
+    (match) => match[1] ?? requiredValue(match[2]),
   )
 }
 
