@@ -112,6 +112,19 @@ Create `pickle.config.jsonc` in the project root:
 
 Adaptive execution and Cache refresh require the API key for the configured model provider. Bun loads environment variables from `.env`. For local Chrome, set `web.browser.modelApiKey` or the provider environment variable (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GOOGLE_API_KEY`, `GEMINI_API_KEY`, or `GOOGLE_GENERATIVE_AI_API_KEY`). `web.browser.modelName` must be a Stagehand-supported `provider/model` value; Pickle Spec rejects unknown names before Adaptive execution starts. Replay and `--cache-only` execute browser primitives without model credentials.
 
+To attach to an existing browser, set `web.browser.cdpUrl` to an absolute HTTP, HTTPS, WS, or WSS URL:
+
+```jsonc
+"browser": {
+  "cdpUrl": "http://127.0.0.1:9222",
+  "cdpExtensionId": "stagehand-extension-id"
+}
+```
+
+If you omit `cdpExtensionId`, the browser must allow Stagehand to load its extension. Set `cdpExtensionId` when the external browser already has the extension loaded. Pickle Spec closes its CDP connection after the run. The external browser owner controls the browser process and must stop it when appropriate.
+
+Treat cloud CDP URLs as secrets because they often contain credentials. Do not commit a credential-bearing `cdpUrl`. The external browser also controls launch settings such as headless mode. Pickle Spec ignores `web.browser.headless` when `cdpUrl` is set.
+
 ## Open Studio
 
 Studio binds to loopback and opens the configured project by default:

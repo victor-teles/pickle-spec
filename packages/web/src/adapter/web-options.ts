@@ -14,6 +14,33 @@ export const screenshotModes = ['off', 'on-failure', 'on-step'] as const
 export const screenshotFormats = ['png', 'jpeg'] as const
 export const browserEnvironments = ['local', 'browserbase'] as const
 export const webProfiles = ['default', 'fast'] as const
+const cdpProtocols = ['http:', 'https:', 'ws:', 'wss:'] as const
+
+export function cdpEndpointOrigin(value: string): string | undefined {
+  try {
+    const url = new URL(value)
+    if (cdpProtocols.some((protocol) => protocol === url.protocol)) {
+      return url.origin
+    }
+  } catch {}
+}
+
+const cdpUrlSchema = optionalString('web.browser.cdpUrl').superRefine(
+  (value, context) => {
+    if (value === undefined) return
+    if (cdpEndpointOrigin(value) !== undefined) return
+    context.addIssue({
+      code: 'custom',
+      message: 'web.browser.cdpUrl must be an absolute HTTP(S) or WS(S) URL',
+    })
+  },
+)
+
+const cdpExtensionIdSchema = z
+  .string({ error: 'web.browser.cdpExtensionId must be a string' })
+  .trim()
+  .min(1, { error: 'web.browser.cdpExtensionId must not be empty' })
+  .optional()
 
 const browserOptionsSchema = strictObject('web.browser', {
   environment: z
@@ -44,6 +71,8 @@ const browserOptionsSchema = strictObject('web.browser', {
   ),
   modelApiKey: optionalString('web.browser.modelApiKey'),
   headless: optionalBoolean('web.browser.headless'),
+  cdpUrl: cdpUrlSchema,
+  cdpExtensionId: cdpExtensionIdSchema,
   browserbaseApiKey: optionalString('web.browser.browserbaseApiKey'),
   browserbaseProjectId: optionalString('web.browser.browserbaseProjectId'),
   cache: optionalBoolean('web.browser.cache'),
@@ -55,6 +84,19 @@ const browserOptionsSchema = strictObject('web.browser', {
     'web.browser.navigationTimeoutMs',
   ),
   idleTimeoutMs: optionalPositiveInteger('web.browser.idleTimeoutMs'),
+}).superRefine((options, context) => {
+  if (options.environment === 'browserbase' && options.cdpUrl !== undefined) {
+    context.addIssue({
+      code: 'custom',
+      message: 'web.browser.cdpUrl cannot be used with browserbase',
+    })
+  }
+  if (options.cdpExtensionId !== undefined && options.cdpUrl === undefined) {
+    context.addIssue({
+      code: 'custom',
+      message: 'web.browser.cdpExtensionId requires web.browser.cdpUrl',
+    })
+  }
 })
 
 const screenshotOptionsSchema = strictObject('web.screenshots', {
@@ -120,6 +162,24 @@ export const webAdapterOptionsSchema = strictObject('web', {
 export type BrowserOptions = z.infer<typeof browserOptionsSchema>
 export type ScreenshotOptions = z.infer<typeof screenshotOptionsSchema>
 export type WebAdapterOptions = z.infer<typeof webAdapterOptionsSchema>
+
+export type BrowserConnection =
+  | { kind: 'local' }
+  | { kind: 'browserbase' }
+  | { kind: 'cdp'; cdpUrl: string; extensionId?: string }
+
+export function resolveBrowserConnection(
+  options?: BrowserOptions,
+): BrowserConnection {
+  if (options?.cdpUrl !== undefined) {
+    return {
+      kind: 'cdp',
+      cdpUrl: options.cdpUrl,
+      extensionId: options.cdpExtensionId,
+    }
+  }
+  return { kind: options?.environment ?? 'local' }
+}
 
 export function validateWebAdapterOptions(value: unknown): WebAdapterOptions {
   return parseConfiguration(

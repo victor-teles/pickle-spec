@@ -544,6 +544,27 @@ export default { adapter: missingAdapter }
     )
   })
 
+  test('check accepts CDP web browser configuration', async () => {
+    const project = await createCheckProject('cdp-web-policy', {
+      config: {
+        ...defaultCheckConfig,
+        web: {
+          baseUrl: 'https://example.com',
+          browser: {
+            environment: 'local',
+            cdpUrl: 'wss://browser.example.test/session',
+            cdpExtensionId: 'stagehand-extension',
+          },
+        },
+      },
+      specification: validSpecification,
+    })
+
+    const checked = runCheck(project)
+
+    expect(checked.exitCode).toBe(0)
+  })
+
   test('check rejects an unsupported Stagehand model before execution resources start', async () => {
     const project = await createCheckProject('invalid-model-name', {
       config: {

@@ -22,10 +22,16 @@ import {
 } from './fidelity'
 import { createStagehandAutomation } from './stagehand-automation'
 import type { WebAutomationFactory, WebClientContext } from './web-automation'
-import { type BrowserOptions, defaultModelName } from './web-options'
+import {
+  type BrowserOptions,
+  defaultModelName,
+  resolveBrowserConnection,
+} from './web-options'
 
 const defaultDomSettleTimeoutMs = 3_000
 const defaultObserveTimeoutMs = 10_000
+
+type StagehandBrowser = Awaited<ReturnType<typeof localBrowser.launch>>
 
 type FidelityRoute = {
   request: () => { resourceType: () => string }
@@ -128,16 +134,28 @@ function stagehandCreateOptions(
 export const stagehandFactory: WebAutomationFactory = {
   async launch({ browser: options, signal }) {
     if (signal?.aborted) throw abortError()
-    const browser =
-      options.environment === 'browserbase'
-        ? await browserbase.launch({
-            apiKey:
-              options.browserbaseApiKey ?? process.env.BROWSERBASE_API_KEY!,
-            projectId:
-              options.browserbaseProjectId ??
-              process.env.BROWSERBASE_PROJECT_ID!,
-          })
-        : await localBrowser.launch({ headless: options.headless ?? true })
+    const connection = resolveBrowserConnection(options)
+    let browser: StagehandBrowser
+    if (connection.kind === 'cdp') {
+      try {
+        browser = await localBrowser.connect({
+          cdpUrl: connection.cdpUrl,
+          extensionId: connection.extensionId,
+        })
+      } catch {
+        throw new Error('Could not connect to web.browser.cdpUrl')
+      }
+    } else if (connection.kind === 'browserbase') {
+      browser = await browserbase.launch({
+        apiKey: options.browserbaseApiKey ?? process.env.BROWSERBASE_API_KEY!,
+        projectId:
+          options.browserbaseProjectId ?? process.env.BROWSERBASE_PROJECT_ID!,
+      })
+    } else {
+      browser = await localBrowser.launch({
+        headless: options.headless ?? true,
+      })
+    }
 
     let stagehand: Stagehand | undefined
     let evidenceScriptInstalled = false
