@@ -132,12 +132,28 @@ test('serves the Runs index, active lifecycle, compatibility alias, and deep lin
   })
   expect(replayedSchedule).toEqual(schedule)
 
+  const pagePaths = [
+    '/',
+    '/specifications/checkout',
+    '/specifications/checkout/scenarios/scenario',
+    '/runs',
+    '/runs/run-live',
+    '/runs/run-live/results/features%2Fcheckout.feature/scenarios/scenario/profiles/chrome/attempts/1?tab=timeline',
+    '/runs/run-live/results/features%2Fcheckout.feature/scenarios/scenario/examples/row-1/profiles/chrome/attempts/1',
+    '/runs/run-live/results/features%2Fcheckout.feature/scenarios/scenario/profiles/chrome/attempts/1/artifacts/0',
+  ]
+  for (const path of pagePaths) {
+    const page = await fetch(
+      `${origin}${path}${path.includes('?') ? '&' : '?'}token=runs-token`,
+    )
+    expect(page.status).toBe(200)
+    expect(page.headers.get('content-type')).toContain('text/html')
+    expect(page.headers.get('set-cookie')).toContain('pickle_studio_token')
+  }
+
   const deepLink = await fetch(
-    `${origin}/runs/run-live/results/scenario/chrome/1?specification=features%2Fcheckout.feature&token=runs-token`,
+    `${origin}/runs/run-live/results/features%2Fcheckout.feature/scenarios/scenario/profiles/chrome/attempts/1?token=runs-token`,
   )
-  expect(deepLink.status).toBe(200)
-  expect(deepLink.headers.get('content-type')).toContain('text/html')
-  expect(deepLink.headers.get('set-cookie')).toContain('pickle_studio_token')
   const document = await deepLink.text()
   const scriptPath = document.match(/<script[^>]+src="([^"]+)"/)?.[1]
   expect(scriptPath).toBeDefined()
@@ -149,6 +165,18 @@ test('serves the Runs index, active lifecycle, compatibility alias, and deep lin
     `${origin}/runs/run-live/results/incomplete?token=runs-token`,
   )
   expect(unknownPath.status).toBe(404)
+  const legacyPath = await fetch(
+    `${origin}/runs/run-live/results/scenario/chrome/1?specification=features%2Fcheckout.feature&token=runs-token`,
+  )
+  expect(legacyPath.status).toBe(404)
+  const indexAsset = await fetch(`${origin}/index.html?token=runs-token`)
+  expect(indexAsset.status).toBe(200)
+  expect(indexAsset.headers.get('content-type')).toContain('text/html')
+  expect(indexAsset.headers.get('set-cookie')).toContain('pickle_studio_token')
+  const unauthorizedDeepLink = await fetch(
+    `${origin}/specifications/checkout/scenarios/scenario`,
+  )
+  expect(unauthorizedDeepLink.status).toBe(401)
 
   completion.resolve()
   await completion.promise

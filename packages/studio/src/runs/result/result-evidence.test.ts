@@ -767,3 +767,47 @@ test('uses canonical artifact capture time and selects viewers without adapter k
     artifactViewerKind({ kind: 'screenshot', mediaType: 'image/png' }),
   ).toBe('image')
 })
+
+test('assigns a stable flattened occurrence index even when artifact paths repeat', () => {
+  const repeatedPath = '/tmp/repeated.png'
+  const inspectedAttempt: ScenarioAttempt = {
+    ...attempt(1),
+    steps: [
+      {
+        index: 3,
+        startedAt: '2026-08-22T12:00:00.000Z',
+        finishedAt: '2026-08-22T12:00:01.000Z',
+        durationMs: 1_000,
+        step: { keyword: 'When', text: 'payment starts', type: 'action' },
+        state: 'passed',
+        resolvedActions: [],
+        artifacts: [
+          { kind: 'screenshot', path: repeatedPath },
+          { kind: 'screenshot', path: repeatedPath },
+        ],
+      },
+      {
+        index: 8,
+        startedAt: '2026-08-22T12:00:01.000Z',
+        finishedAt: '2026-08-22T12:00:02.000Z',
+        durationMs: 1_000,
+        step: { keyword: 'Then', text: 'receipt appears', type: 'outcome' },
+        state: 'passed',
+        resolvedActions: [],
+        artifacts: [{ kind: 'screenshot', path: repeatedPath }],
+      },
+    ],
+  }
+
+  expect(
+    artifactsFor(inspectedAttempt).map((evidence) => ({
+      index: evidence.index,
+      stepIndex: evidence.stepIndex,
+      path: evidence.artifact.path,
+    })),
+  ).toEqual([
+    { index: 0, stepIndex: 3, path: repeatedPath },
+    { index: 1, stepIndex: 3, path: repeatedPath },
+    { index: 2, stepIndex: 8, path: repeatedPath },
+  ])
+})

@@ -21,8 +21,8 @@ type SpecificationResultsProps = {
   live?: LiveResultInspection
   onPauseFollowing: () => void
   onPinSelection: (cell: MatrixCell) => void
-  onRememberScenario: (scenario: StudioScenario) => void
   onResumeFollowing: () => void
+  onSelectScenario: (scenario: StudioScenario) => void
   onRun: (request: StudioRunRequest) => void
   onSelectInspectorTab: (tab: ResultInspectorTab) => void
   origin?: RunOrigin
@@ -34,7 +34,7 @@ type SpecificationResultsProps = {
 
 export function SpecificationResults(props: SpecificationResultsProps) {
   function handleRunScenario(scenario: StudioScenario) {
-    props.onRememberScenario(scenario)
+    props.onSelectScenario(scenario)
     props.onRun({
       paths: [props.specification.uri],
       scenarioId: scenario.id,

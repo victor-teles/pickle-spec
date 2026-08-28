@@ -21,12 +21,9 @@ export function useStudioController() {
       ? selectedProfileId
       : undefined
 
-  function showSpecifications(replace = false) {
-    navigation.showArea('Specifications', replace)
-  }
-
   const selection = useSpecificationSelection({
-    onShowSpecifications: showSpecifications,
+    navigate: navigation.navigate,
+    route: navigation.route,
     specifications: data.project?.specifications ?? noSpecifications,
   })
   const run = useLiveRun({
@@ -34,6 +31,8 @@ export function useStudioController() {
     api: studioApi,
     onClearError: data.clearError,
     onError: data.reportError,
+    onInspectResult: (location) =>
+      navigation.navigate({ kind: 'result', location }),
     registerActiveRun: data.registerActiveRun,
     reloadRunsIndex: data.reloadRunsIndex,
     runsIndex: data.runsIndex,

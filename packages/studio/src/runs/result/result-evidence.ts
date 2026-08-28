@@ -21,6 +21,7 @@ export type InspectedResult = {
 
 export type ArtifactEvidence = {
   artifact: TestArtifact
+  index: number
   stepIndex: number
   stepText: string
   capturedAt: string
@@ -229,14 +230,16 @@ function scopedEvents(
 }
 
 export function artifactsFor(attempt: ScenarioAttempt): ArtifactEvidence[] {
-  return attempt.steps.flatMap((step) =>
-    (step.artifacts ?? []).map((artifact) => ({
-      artifact,
-      stepIndex: step.index,
-      stepText: `${step.step.keyword.trim()} ${step.step.text}`,
-      capturedAt: artifact.capturedAt ?? step.finishedAt,
-    })),
-  )
+  return attempt.steps
+    .flatMap((step) =>
+      (step.artifacts ?? []).map((artifact) => ({
+        artifact,
+        stepIndex: step.index,
+        stepText: `${step.step.keyword.trim()} ${step.step.text}`,
+        capturedAt: artifact.capturedAt ?? step.finishedAt,
+      })),
+    )
+    .map((evidence, index) => ({ ...evidence, index }))
 }
 
 export function artifactViewerKind(

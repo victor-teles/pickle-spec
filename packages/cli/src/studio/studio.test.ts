@@ -267,7 +267,9 @@ Feature: Search
         await scenarioRow.evaluate((element) => element.matches(':focus')),
       ).toBe(true)
       expect(await scenarioRow.getAttribute('data-state')).toBe('selected')
-      expect(new URL(page.url()).pathname).toBe('/')
+      expect(new URL(page.url()).pathname).toBe(
+        '/specifications/specsearchaaaaaaa/scenarios/scnquerybbbbbbbb',
+      )
 
       const trigger = page.getByRole('button', {
         name: 'Open Studio commands',
@@ -335,7 +337,9 @@ Feature: Search
       expect(
         await checkoutHeading.evaluate((element) => element.matches(':focus')),
       ).toBe(true)
-      expect(new URL(page.url()).pathname).toBe('/')
+      expect(new URL(page.url()).pathname).toBe(
+        '/specifications/speccheckaaaaaaaa',
+      )
     } finally {
       await page.close()
       child.kill()
@@ -842,6 +846,9 @@ export default {
       await page
         .getByRole('button', { name: 'Pay for the order chrome failed' })
         .click()
+      expect(new URL(page.url()).pathname).toMatch(
+        /^\/runs\/[^/]+\/results\/features%2Fcheckout\.feature\/scenarios\/scnpaybbbbbbbbbb\/profiles\/chrome\/attempts\/1$/,
+      )
       expect(await timeline.textContent()).toContain('Then payment is captured')
       expect(await timeline.textContent()).toContain('Payment was declined')
       await page.getByRole('tab', { name: 'Artifacts' }).click()
@@ -1187,7 +1194,7 @@ Feature: Search
         })
         .waitFor()
       expect(new URL(page.url()).pathname).toMatch(
-        /^\/runs\/[^/]+\/results\/scnpaybbbbbbbbbb\/chrome\/1$/,
+        /^\/runs\/[^/]+\/results\/features%2Fcheckout\.feature\/scenarios\/scnpaybbbbbbbbbb\/profiles\/chrome\/attempts\/1$/,
       )
       expect(
         await page

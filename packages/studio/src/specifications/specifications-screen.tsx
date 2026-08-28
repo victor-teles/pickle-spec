@@ -14,13 +14,15 @@ import type {
 import { SpecificationHeader } from './specification-header'
 import { SpecificationList } from './specification-list'
 import { SpecificationResults } from './specification-results'
+import type { MissingSpecificationSelection } from './use-specification-selection'
 
 type SpecificationSelection = {
   currentScenarioId?: string
   focusRequest: number
   focusTargetId?: string
   headingRef: RefObject<HTMLHeadingElement | null>
-  onRememberScenario: (scenario: StudioScenario) => void
+  missing?: MissingSpecificationSelection
+  onSelectScenario: (scenario: StudioScenario) => void
   onSelect: (id: string) => void
   onSelectCreated: (
     specifications: readonly StudioSpecification[],
@@ -94,6 +96,20 @@ type SpecificationDetailProps = SpecificationsScreenProps & {
 
 function SpecificationDetail(props: SpecificationDetailProps) {
   const { selected } = props.selection
+  if (props.selection.missing) {
+    const missing = props.selection.missing
+    const label =
+      missing.kind === 'scenario'
+        ? `Scenario ${missing.scenarioId}`
+        : `Specification ${missing.specificationId}`
+    return (
+      <main className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden p-5">
+        <p role="alert" className="text-sm text-destructive">
+          {label} was not found in this project.
+        </p>
+      </main>
+    )
+  }
   if (!selected) {
     return (
       <main className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
@@ -156,7 +172,7 @@ function SpecificationDetail(props: SpecificationDetailProps) {
           live={props.run.live}
           onPauseFollowing={props.run.onPauseFollowing}
           onPinSelection={props.run.onPinSelection}
-          onRememberScenario={props.selection.onRememberScenario}
+          onSelectScenario={props.selection.onSelectScenario}
           onResumeFollowing={props.run.onResumeFollowing}
           onRun={props.run.onRun}
           onSelectInspectorTab={props.run.onSelectInspectorTab}
