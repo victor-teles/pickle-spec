@@ -26,6 +26,7 @@ import {
 } from '../components/ui/dropdown-menu'
 import { Input } from '../components/ui/input'
 import { ResultMark } from '../components/ui/result-mark'
+import { Spinner } from '../components/ui/spinner'
 import {
   Table,
   TableBody,
@@ -44,8 +45,10 @@ import { useVirtualWindow } from '../hooks/use-virtual-window'
 import type {
   StudioProject,
   StudioRunRequest,
+  StudioRunSnapshot,
   StudioRunsIndex,
 } from '../server/server'
+import { defaultRunAttemptLocation } from './result/live-result-follow'
 import {
   type LiveResultInspection,
   liveViewportFor,
@@ -98,12 +101,7 @@ export function RunsArea(props: RunsAreaProps) {
     return <SingleRunRoute {...props} inspections={inspections} />
   }
   return (
-    <RunsDashboard
-      key={studioRouteHref(props.route)}
-      {...props}
-      route={props.route}
-      inspections={inspections}
-    />
+    <RunsDashboard {...props} route={props.route} inspections={inspections} />
   )
 }
 
@@ -285,6 +283,7 @@ function RunsLoading() {
 
 function useRunsDashboardState(props: RunsDashboardProps) {
   const [error, setError] = useState<string>()
+  const [openingRunId, setOpeningRunId] = useState<string>()
   const [selectedRunIds, setSelectedRunIds] = useState<string[]>([])
   const [comparison, setComparison] = useState<TestRunComparison>()
   return {
@@ -302,10 +301,36 @@ function useRunsDashboardState(props: RunsDashboardProps) {
     error,
     importArchive: (file?: File) =>
       void importRunArchive(props, file, setError),
+    openingRunId,
+    openRunAttempt: (runId: string) =>
+      void openRunAttempt(props, runId, setOpeningRunId, setError),
     selectedRunIds,
     setPinned: (runId: string, pinned: boolean) =>
       void setRunPinned(props, runId, pinned, setError),
     setSelectedRunIds,
+  }
+}
+
+async function openRunAttempt(
+  props: Pick<RunsDashboardProps, 'api' | 'onNavigate'>,
+  runId: string,
+  setOpeningRunId: React.Dispatch<React.SetStateAction<string | undefined>>,
+  setError: (error?: string) => void,
+) {
+  setError(undefined)
+  setOpeningRunId(runId)
+  try {
+    const snapshot = await props.api<StudioRunSnapshot>(
+      `/api/runs/${encodeURIComponent(runId)}`,
+    )
+    const location = defaultRunAttemptLocation(snapshot)
+    props.onNavigate(
+      location ? { kind: 'result', location } : { kind: 'run', runId },
+    )
+  } catch (reason) {
+    setError(reasonMessage(reason))
+  } finally {
+    setOpeningRunId((current) => (current === runId ? undefined : current))
   }
 }
 
@@ -376,7 +401,8 @@ function RunHistory(
           pinnedRunIds={props.pinnedRunIds}
           specificationNames={props.specificationNames}
           runsBlocked={props.runsBlocked}
-          onOpen={(runId) => props.onNavigate({ kind: 'run', runId })}
+          openingRunId={props.openingRunId}
+          onOpen={props.openRunAttempt}
           onPin={props.setPinned}
           onRerun={props.onRerun}
           onSelect={props.setSelectedRunIds}
@@ -612,6 +638,7 @@ type RunTableProps = {
   pinnedRunIds: ReadonlySet<string>
   specificationNames: ReadonlyMap<string, string>
   runsBlocked: boolean
+  openingRunId?: string
   onOpen: (runId: string) => void
   onPin: (runId: string, pinned: boolean) => void
   onRerun: (request: StudioRunRequest) => Promise<void>
@@ -624,9 +651,7 @@ function RunTableRow(
   const { summary, state } = props
   const selected = props.selectedRunIds.includes(summary.id)
   const pinned = props.pinnedRunIds.has(summary.id)
-  const rerunDisabled =
-    props.runsBlocked ||
-    (summary.state !== 'failed' && summary.state !== 'infrastructure-error')
+  const opening = props.openingRunId === summary.id
 
   function handleSelectionChange(checked: boolean) {
     props.onSelect((current) =>
@@ -638,14 +663,6 @@ function RunTableRow(
 
   function handlePin() {
     props.onPin(summary.id, !pinned)
-  }
-
-  function handleOpen() {
-    props.onOpen(summary.id)
-  }
-
-  function handleRerun() {
-    void props.onRerun({ rerunId: summary.id, failures: true })
   }
 
   return (
@@ -676,10 +693,11 @@ function RunTableRow(
         </Tooltip>
       </TableCell>
       <TableCell>
-        <span className="block">
-          {new Date(summary.startedAt).toLocaleString()}
-        </span>
-        <span className="font-mono text-muted-foreground">{summary.id}</span>
+        <RunIdentity
+          summary={summary}
+          opening={opening}
+          onOpen={props.onOpen}
+        />
       </TableCell>
       <TableCell>
         {summary.specificationUris
@@ -700,32 +718,77 @@ function RunTableRow(
       </TableCell>
       <TableCell>{resultCountLabel(summary.resultCount)}</TableCell>
       <TableCell>
-        <div className="flex items-center gap-2">
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={handleOpen}
-          >
-            Review run
-          </Button>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            disabled={rerunDisabled}
-            onClick={handleRerun}
-          >
-            Rerun failures
-          </Button>
-        </div>
-        {summary.sourceRunId ? (
-          <span className="mt-1 block text-muted-foreground">
-            Rerun of {summary.sourceRunId}
-          </span>
-        ) : null}
+        <RunTableActions
+          summary={summary}
+          runsBlocked={props.runsBlocked}
+          onRerun={props.onRerun}
+        />
       </TableCell>
     </TableRow>
+  )
+}
+
+function RunIdentity(props: {
+  summary: TestRunSummary
+  opening: boolean
+  onOpen: (runId: string) => void
+}) {
+  function handleOpen() {
+    props.onOpen(props.summary.id)
+  }
+  return (
+    <div className="flex flex-col items-start gap-0.5">
+      <Button
+        type="button"
+        variant="link"
+        aria-label={`Open attempt for ${props.summary.id}`}
+        aria-busy={props.opening}
+        disabled={props.opening}
+        className="h-auto gap-1.5 p-0 font-mono text-left active:opacity-65"
+        onClick={handleOpen}
+      >
+        {props.summary.id}
+        {props.opening ? <Spinner className="scale-75" /> : null}
+      </Button>
+      <time
+        dateTime={props.summary.startedAt}
+        className="text-muted-foreground"
+      >
+        {new Date(props.summary.startedAt).toLocaleString()}
+      </time>
+    </div>
+  )
+}
+
+function RunTableActions(props: {
+  summary: TestRunSummary
+  runsBlocked: boolean
+  onRerun: (request: StudioRunRequest) => Promise<void>
+}) {
+  const rerunDisabled =
+    props.runsBlocked ||
+    (props.summary.state !== 'failed' &&
+      props.summary.state !== 'infrastructure-error')
+  function handleRerun() {
+    void props.onRerun({ rerunId: props.summary.id, failures: true })
+  }
+  return (
+    <>
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        disabled={rerunDisabled}
+        onClick={handleRerun}
+      >
+        Rerun failures
+      </Button>
+      {props.summary.sourceRunId ? (
+        <span className="mt-1 block text-muted-foreground">
+          Rerun of {props.summary.sourceRunId}
+        </span>
+      ) : null}
+    </>
   )
 }
 
@@ -744,7 +807,7 @@ function RunTable(props: RunTableProps) {
           <TableRow>
             <TableHead>Compare</TableHead>
             <TableHead>Retention</TableHead>
-            <TableHead>Started</TableHead>
+            <TableHead>Run</TableHead>
             <TableHead>Specifications</TableHead>
             <TableHead>Suite</TableHead>
             <TableHead>Targets</TableHead>

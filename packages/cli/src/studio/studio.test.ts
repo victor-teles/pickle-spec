@@ -8,7 +8,7 @@ import {
   resolveLocalProjectStorage,
   serializeExecutionCacheEnvelope,
 } from '@pickle-spec/runner'
-import type { Browser, Page } from 'playwright'
+import type { Browser, Locator, Page } from 'playwright'
 import { StudioBrowserFixture } from '../../test/studio-browser-fixture'
 import { registerStudioHardeningTests } from '../../test/studio-hardening-suite'
 import { requiredValue } from '../required-value'
@@ -92,6 +92,15 @@ async function expectRunningStatusCleared(page: Page) {
   const running = page.getByRole('status').filter({ hasText: 'running' })
   await running.waitFor({ state: 'hidden', timeout: 20_000 })
   expect(await running.count()).toBe(0)
+}
+
+async function openAttemptFromRunRow(row: Locator) {
+  await row.getByRole('button', { name: /^Open attempt for / }).click()
+}
+
+async function openRunDetailsFromRow(page: Page, row: Locator) {
+  await openAttemptFromRunRow(row)
+  await page.getByRole('button', { name: 'Back to run' }).click()
 }
 
 async function saveExecutionTargetProfile(
@@ -553,12 +562,13 @@ export default {
       expect(await cache.read(before.key)).toContain('v2')
 
       await page.getByRole('button', { name: 'Runs', exact: true }).click()
-      await page
-        .getByRole('table', { name: 'Test run history' })
-        .getByRole('row')
-        .nth(1)
-        .getByRole('button', { name: 'Review run' })
-        .click()
+      await openRunDetailsFromRow(
+        page,
+        page
+          .getByRole('table', { name: 'Test run history' })
+          .getByRole('row')
+          .nth(1),
+      )
       await page.getByRole('table', { name: 'Test run results' }).waitFor()
       expect(await page.getByText('adaptive').count()).toBeGreaterThan(0)
       expect(await page.getByText('refresh').count()).toBeGreaterThan(0)
@@ -1382,11 +1392,21 @@ Feature: Search
       expect(await comparison.textContent()).toContain('Pay for the order')
       expect(await comparison.textContent()).toContain('chrome')
 
-      await history
-        .getByRole('row')
-        .nth(2)
-        .getByRole('button', { name: 'Review run' })
-        .click()
+      expect(
+        await history.getByRole('button', { name: 'Review run' }).count(),
+      ).toBe(0)
+      await openAttemptFromRunRow(history.getByRole('row').nth(2))
+      await page
+        .getByRole('heading', {
+          name: 'Pay for the order · chrome',
+        })
+        .waitFor()
+      expect(
+        await page
+          .getByRole('tab', { name: 'Timeline' })
+          .getAttribute('aria-selected'),
+      ).toBe('true')
+      await page.getByRole('button', { name: 'Back to run' }).click()
       const results = page.getByRole('table', { name: 'Test run results' })
       await page.getByText('app-42').waitFor()
       expect(await results.textContent()).toContain('Pay for the order')
@@ -1484,12 +1504,10 @@ Feature: Search
       expect(await history.getByRole('row').nth(1).textContent()).toContain(
         '2 results',
       )
-      await history
-        .getByRole('row')
-        .filter({ hasText: '6 results' })
-        .first()
-        .getByRole('button', { name: 'Review run' })
-        .click()
+      await openRunDetailsFromRow(
+        page,
+        history.getByRole('row').filter({ hasText: '6 results' }).first(),
+      )
       const targetResults = page.getByRole('table', {
         name: 'Test run results',
       })
@@ -1504,12 +1522,10 @@ Feature: Search
       )
 
       expect(await page.getByText('14 days · 1 B').count()).toBe(1)
-      await history
-        .getByRole('row')
-        .filter({ hasText: '6 results' })
-        .first()
-        .getByRole('button', { name: 'Review run' })
-        .click()
+      await openRunDetailsFromRow(
+        page,
+        history.getByRole('row').filter({ hasText: '6 results' }).first(),
+      )
       const exportButton = page.locator('[data-slot="dropdown-menu-trigger"]')
       await exportButton.click()
       await Bun.sleep(100)
@@ -1655,11 +1671,7 @@ Feature: Checkout
       await waitForScenarioResult(page, 'Complete a purchase chrome passed')
       await page.getByRole('button', { name: 'Runs', exact: true }).click()
       const history = page.getByRole('table', { name: 'Test run history' })
-      await history
-        .getByRole('row')
-        .nth(1)
-        .getByRole('button', { name: 'Review run' })
-        .click()
+      await openRunDetailsFromRow(page, history.getByRole('row').nth(1))
       const results = page.getByRole('table', { name: 'Test run results' })
       await results.waitFor()
       expect(await results.getByRole('row').count()).toBe(5)

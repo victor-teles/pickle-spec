@@ -8,6 +8,7 @@ import {
   type RunEventScope,
   type ScenarioAttempt,
   type ScenarioIdentity,
+  type SharedEvidenceObservation,
   type TestArtifact,
   type TestResult,
   type TestStepResult,
@@ -64,6 +65,65 @@ function publicArtifact(artifact: TestArtifact): TestArtifact {
     name: artifact.name,
     capturedAt: artifact.capturedAt,
     sizeBytes: artifact.sizeBytes,
+  }
+}
+
+function publicSharedEvidenceObservation(
+  observation: SharedEvidenceObservation,
+): SharedEvidenceObservation {
+  return {
+    version: observation.version,
+    kind: observation.kind,
+    summary: observation.summary,
+    timing: {
+      occurredAt: observation.timing.occurredAt,
+      precision: observation.timing.precision,
+      startedAt: observation.timing.startedAt,
+      finishedAt: observation.timing.finishedAt,
+      durationMs: observation.timing.durationMs,
+      causalAt: observation.timing.causalAt,
+    },
+    versions: observation.versions?.map((entry) => ({
+      subject: entry.subject,
+      label: entry.label,
+      value: entry.value,
+    })),
+    activity: observation.activity
+      ? {
+          kind: observation.activity.kind,
+          description: observation.activity.description,
+        }
+      : undefined,
+    outcome: observation.outcome
+      ? {
+          state: observation.outcome.state,
+          level: observation.outcome.level,
+          message: observation.outcome.message,
+        }
+      : undefined,
+    cost: observation.cost
+      ? {
+          inferenceCount: observation.cost.inferenceCount,
+        }
+      : undefined,
+    artifact: observation.artifact
+      ? publicArtifact(observation.artifact)
+      : undefined,
+    execution: observation.execution
+      ? {
+          mode: observation.execution.mode,
+          cacheOutcome: observation.execution.cacheOutcome,
+          cacheDecision: observation.execution.cacheDecision
+            ? {
+                type: observation.execution.cacheDecision.type,
+                reason: observation.execution.cacheDecision.reason,
+                cacheKey: observation.execution.cacheDecision.cacheKey
+                  ? publicCacheKey(observation.execution.cacheDecision.cacheKey)
+                  : undefined,
+              }
+            : undefined,
+        }
+      : undefined,
   }
 }
 
@@ -253,62 +313,113 @@ function publicScenarioFinishedEvent(
   }
 }
 
+function publicRunStartedEvent(
+  event: Extract<RunEventPayload, { type: 'run-started' }>,
+): RunEventPayload {
+  return {
+    type: 'run-started',
+    run: {
+      id: event.run.id,
+      startedAt: event.run.startedAt,
+      sourceRunId: event.run.sourceRunId,
+      suite: event.run.suite,
+      applicationRevision: event.run.applicationRevision,
+      evidencePersistence: event.run.evidencePersistence,
+    },
+  }
+}
+
+function publicStepFinishedEvent(
+  event: Extract<RunEventPayload, { type: 'step-finished' }>,
+  mappers: EventResultMappers,
+): RunEventPayload {
+  return {
+    type: 'step-finished',
+    result: mappers.step(event.result),
+    scenario: publicScenarioIdentity(event.scenario),
+    executionTargetProfile: publicExecutionTargetProfile(
+      event.executionTargetProfile,
+    ),
+    scope: publicEventScope(event.scope),
+  }
+}
+
+function publicCacheEvent(
+  event: Extract<
+    RunEventPayload,
+    {
+      type:
+        | 'cache-hit'
+        | 'cache-miss'
+        | 'cache-refresh'
+        | 'replay-diverged'
+        | 'adaptive-fallback-started'
+        | 'cache-written'
+    }
+  >,
+): RunEventPayload {
+  return {
+    type: event.type,
+    cacheKey: publicCacheKey(event.cacheKey),
+    scope: publicEventScope(event.scope),
+  }
+}
+
+function publicInferenceCountUpdatedEvent(
+  event: Extract<RunEventPayload, { type: 'inference-count-updated' }>,
+): RunEventPayload {
+  return {
+    type: 'inference-count-updated',
+    inferenceCount: event.inferenceCount,
+    scope: publicEventScope(event.scope),
+  }
+}
+
+function withObservations(
+  event: RunEvent | RunEventPayload,
+  payload: RunEventPayload,
+): RunEventPayload {
+  return event.observations?.length
+    ? {
+        ...payload,
+        observations: event.observations.map(publicSharedEvidenceObservation),
+      }
+    : payload
+}
+
 function publicEventPayload(
   event: RunEvent | RunEventPayload,
   mappers: EventResultMappers,
 ): RunEventPayload {
   switch (event.type) {
     case 'run-started':
-      return {
-        type: 'run-started',
-        run: {
-          id: event.run.id,
-          startedAt: event.run.startedAt,
-          sourceRunId: event.run.sourceRunId,
-          suite: event.run.suite,
-          applicationRevision: event.run.applicationRevision,
-          evidencePersistence: event.run.evidencePersistence,
-        },
-      }
+      return withObservations(event, publicRunStartedEvent(event))
     case 'scenario-started':
-      return publicScenarioStartedEvent(event)
+      return withObservations(event, publicScenarioStartedEvent(event))
     case 'step-started':
-      return publicStepStartedEvent(event)
+      return withObservations(event, publicStepStartedEvent(event))
     case 'step-finished':
-      return {
-        type: 'step-finished',
-        result: mappers.step(event.result),
-        scenario: publicScenarioIdentity(event.scenario),
-        executionTargetProfile: publicExecutionTargetProfile(
-          event.executionTargetProfile,
-        ),
-        scope: publicEventScope(event.scope),
-      }
+      return withObservations(event, publicStepFinishedEvent(event, mappers))
     case 'cache-hit':
     case 'cache-miss':
     case 'cache-refresh':
     case 'replay-diverged':
     case 'adaptive-fallback-started':
     case 'cache-written':
-      return {
-        type: event.type,
-        cacheKey: publicCacheKey(event.cacheKey),
-        scope: publicEventScope(event.scope),
-      }
+      return withObservations(event, publicCacheEvent(event))
     case 'cache-uncacheable':
-      return {
+      return withObservations(event, {
         type: 'cache-uncacheable',
         reason: event.reason,
         scope: publicEventScope(event.scope),
-      }
+      })
     case 'inference-count-updated':
-      return {
-        type: 'inference-count-updated',
-        inferenceCount: event.inferenceCount,
-        scope: publicEventScope(event.scope),
-      }
+      return withObservations(event, publicInferenceCountUpdatedEvent(event))
     case 'scenario-finished':
-      return publicScenarioFinishedEvent(event, mappers)
+      return withObservations(
+        event,
+        publicScenarioFinishedEvent(event, mappers),
+      )
     default:
       throw new Error('Unsupported run event type')
   }

@@ -10,6 +10,8 @@ import {
   diagnosticLevels,
   diagnosticOrigins,
   evidenceKinds,
+  sharedEvidenceCacheDecisionTypes,
+  sharedEvidenceObservationVersion,
   testRunSchemaVersion,
   traceActivityKinds,
 } from '../execution/run-scenario'
@@ -94,6 +96,90 @@ const traceEntrySchema = z.object({
   causalAt: timestampSchema.optional(),
   kind: z.enum(traceActivityKinds),
   description: z.string(),
+})
+
+const executionCacheKeySchema = z.object({
+  projectKey: z.string(),
+  scenarioId: z.string(),
+  scenarioRevision: z.string(),
+  executionTargetProfileId: z.string(),
+  targetConfigurationFingerprint: z.string(),
+  applicationRevision: z.string(),
+  adapterKind: z.string(),
+  adapterCacheSchemaVersion: z.string(),
+})
+
+const sharedEvidenceTimingSchema = z.object({
+  occurredAt: timestampSchema,
+  precision: z.enum(['exact', 'step-finish', 'attempt-finish']),
+  startedAt: timestampSchema.optional(),
+  finishedAt: timestampSchema.optional(),
+  durationMs: nonNegativeIntegerSchema.optional(),
+  causalAt: timestampSchema.optional(),
+})
+
+const sharedEvidenceVersionObservationSchema = z.object({
+  subject: z.enum(['contract', 'application', 'scenario', 'adapter']),
+  label: z.string(),
+  value: z.string(),
+})
+
+const sharedEvidenceActivitySchema = z.object({
+  kind: z.enum(traceActivityKinds),
+  description: z.string(),
+})
+
+const sharedEvidenceOutcomeSchema = z.object({
+  state: resultStateSchema.optional(),
+  level: z.enum(diagnosticLevels).optional(),
+  message: z.string().optional(),
+})
+
+const sharedEvidenceCostSchema = z.object({
+  inferenceCount: nonNegativeIntegerSchema,
+})
+
+const sharedEvidenceObservationSchema = z.object({
+  version: z.literal(sharedEvidenceObservationVersion),
+  kind: z.enum(['activity', 'diagnostic', 'artifact', 'outcome', 'cache']),
+  summary: z.string(),
+  timing: sharedEvidenceTimingSchema,
+  versions: z.array(sharedEvidenceVersionObservationSchema).optional(),
+  activity: sharedEvidenceActivitySchema.optional(),
+  outcome: sharedEvidenceOutcomeSchema.optional(),
+  cost: sharedEvidenceCostSchema.optional(),
+  artifact: artifactSchema.optional(),
+  execution: z
+    .object({
+      mode: z.enum(['adaptive', 'replay']).optional(),
+      cacheOutcome: z
+        .enum([
+          'hit',
+          'partial-hit',
+          'miss',
+          'refresh',
+          'fallback',
+          'uncacheable',
+        ])
+        .optional(),
+      cacheDecision: z
+        .object({
+          type: z.enum(sharedEvidenceCacheDecisionTypes),
+          reason: z
+            .enum([
+              'application-revision-missing',
+              'bound-parameter-value',
+              'non-deterministic-action',
+              'non-deterministic-assertion',
+              'payload-validation-failed',
+              'entry-too-large',
+            ])
+            .optional(),
+          cacheKey: executionCacheKeySchema.optional(),
+        })
+        .optional(),
+    })
+    .optional(),
 })
 
 const testStepResultSchema: z.ZodType<TestStepResult> = z
@@ -370,21 +456,11 @@ const runEventScopeSchema = z.object({
   stepIndex: nonNegativeIntegerSchema.optional(),
 })
 
-const executionCacheKeySchema = z.object({
-  projectKey: z.string(),
-  scenarioId: z.string(),
-  scenarioRevision: z.string(),
-  executionTargetProfileId: z.string(),
-  targetConfigurationFingerprint: z.string(),
-  applicationRevision: z.string(),
-  adapterKind: z.string(),
-  adapterCacheSchemaVersion: z.string(),
-})
-
 const eventEnvelope = {
   schemaVersion: z.literal(testRunSchemaVersion),
   sequence: positiveIntegerSchema,
   occurredAt: timestampSchema,
+  observations: z.array(sharedEvidenceObservationSchema).optional(),
 }
 
 const scopedEvent = {

@@ -423,7 +423,9 @@ Feature: Fixture ${suffix}
       )
 
       const searchRuns = page.getByRole('searchbox', { name: 'Search Runs' })
-      await searchRuns.fill('run-large-results')
+      await searchRuns.pressSequentially('run-large-results')
+      expect(await searchRuns.inputValue()).toBe('run-large-results')
+      expect(await page.locator(':focus').getAttribute('id')).toBe('run-search')
       expect(new URL(page.url()).searchParams.get('q')).toBe(
         'run-large-results',
       )
@@ -450,8 +452,14 @@ Feature: Fixture ${suffix}
       await page.keyboard.press('Home')
       await largeRun.waitFor()
 
-      const reviewRun = largeRun.getByRole('button', { name: 'Review run' })
-      await tabTo(page, reviewRun)
+      const openAttempt = largeRun.getByRole('button', {
+        name: /^Open attempt for /,
+      })
+      await tabTo(page, openAttempt)
+      await page.keyboard.press('Enter')
+      const backToRun = page.getByRole('button', { name: 'Back to run' })
+      await backToRun.waitFor()
+      await tabTo(page, backToRun)
       await page.keyboard.press('Enter')
       const results = page.getByRole('table', { name: 'Test run results' })
       await results.getByText('Scenario 000').waitFor()

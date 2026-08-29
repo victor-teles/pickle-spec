@@ -803,6 +803,49 @@ describe('Execution cache lifecycle', () => {
       attempt.startedAt,
       attempt.finishedAt,
     ])
+    const cacheMiss = run.events.find((event) => event.type === 'cache-miss')
+    expect(cacheMiss).toMatchObject({
+      type: 'cache-miss',
+      occurredAt: timestamps[1],
+      observations: [
+        {
+          version: 1,
+          kind: 'cache',
+          summary: 'Cache Miss',
+          timing: {
+            occurredAt: timestamps[1],
+            precision: 'exact',
+          },
+          versions: [
+            {
+              subject: 'contract',
+              label: 'run-event-schema',
+              value: '2',
+            },
+            {
+              subject: 'scenario',
+              label: 'revision',
+              value: scenarioRevision(scenario),
+            },
+            {
+              subject: 'application',
+              label: 'revision',
+              value: 'app-1',
+            },
+            {
+              subject: 'adapter',
+              label: 'cache-schema',
+              value: '1',
+            },
+          ],
+          execution: {
+            cacheDecision: {
+              type: 'cache-miss',
+            },
+          },
+        },
+      ],
+    })
   })
 
   test('explicit cache policies fail without a runtime cache store', async () => {

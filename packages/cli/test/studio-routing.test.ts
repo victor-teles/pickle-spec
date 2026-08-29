@@ -78,8 +78,12 @@ Feature: Search
       await history
         .getByRole('row')
         .nth(1)
-        .getByRole('button', { name: 'Review run' })
+        .getByRole('button', { name: /^Open attempt for / })
         .click()
+      await page
+        .getByRole('heading', { name: 'Pay for the order · chrome' })
+        .waitFor()
+      await page.getByRole('button', { name: 'Back to run' }).click()
       const runPath = new URL(page.url()).pathname
       expect(runPath).toMatch(/^\/runs\/[^/]+$/)
       await page.reload()

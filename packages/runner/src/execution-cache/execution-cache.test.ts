@@ -6,11 +6,13 @@ import {
   type ExecutionCacheEnvelope,
   type ExecutionCachePayloadValidator,
   type ExecutionCacheStore,
+  publicRunEvent,
   type RunEventPayload,
   resolveExecutionCacheKey,
   serializeExecutionCacheEnvelope,
 } from '../../index'
 import type { ScenarioAttempt } from '../execution/run-scenario'
+import { withSharedEvidenceObservations } from '../results/shared-evidence-observations'
 
 const keyInput = {
   projectKey: 'project-fingerprint',
@@ -303,5 +305,56 @@ describe('Execution cache contract', () => {
       cacheOutcome: 'fallback',
       inferenceCount: 2,
     })
+  })
+
+  test('projects normalized cache observations onto public run events', () => {
+    const event = withSharedEvidenceObservations({
+      schemaVersion: 2,
+      sequence: 4,
+      occurredAt: '2026-08-29T12:00:00.000Z',
+      type: 'cache-hit',
+      cacheKey: envelope().key,
+      scope: eventScope,
+    })
+
+    expect(publicRunEvent(event).observations).toEqual([
+      {
+        version: 1,
+        kind: 'cache',
+        summary: 'Cache Hit',
+        timing: {
+          occurredAt: '2026-08-29T12:00:00.000Z',
+          precision: 'exact',
+        },
+        versions: [
+          {
+            subject: 'contract',
+            label: 'run-event-schema',
+            value: '2',
+          },
+          {
+            subject: 'scenario',
+            label: 'revision',
+            value: 'scenario-revision',
+          },
+          {
+            subject: 'application',
+            label: 'revision',
+            value: 'application-revision',
+          },
+          {
+            subject: 'adapter',
+            label: 'cache-schema',
+            value: 'contract-test.1',
+          },
+        ],
+        execution: {
+          cacheDecision: {
+            type: 'cache-hit',
+            cacheKey: envelope().key,
+          },
+        },
+      },
+    ])
   })
 })
