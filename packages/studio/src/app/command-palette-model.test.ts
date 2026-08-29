@@ -1,5 +1,5 @@
-import { expect, test } from 'bun:test'
 import type { TestRunSummary } from '@pickle-spec/runner'
+import { expect, test } from 'vitest'
 import type { StudioProject, StudioRunsIndex } from '../server/server'
 import {
   buildCommandPaletteItems,

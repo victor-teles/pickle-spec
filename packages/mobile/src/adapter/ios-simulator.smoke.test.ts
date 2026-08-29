@@ -1,5 +1,5 @@
-import { expect, test } from 'bun:test'
 import { runScenario } from '@pickle-spec/runner'
+import { expect, test } from 'vitest'
 import { createMobileAdapter } from '../../index'
 
 const smokeEnabled = process.env.PICKLE_IOS_SMOKE === '1'

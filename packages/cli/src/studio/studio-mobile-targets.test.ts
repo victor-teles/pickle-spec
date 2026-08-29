@@ -1,8 +1,8 @@
-import { expect, test } from 'bun:test'
 import type {
   MobileAdapterOptions,
   MobileExecutionTargetAdapter,
 } from '@pickle-spec/mobile'
+import { expect, test } from 'vitest'
 import type { PickleConfig } from '../configuration/config'
 import { requiredValue } from '../required-value'
 import {

@@ -1,7 +1,7 @@
-import { afterEach, expect, test } from 'bun:test'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { afterEach, expect, test } from 'vitest'
 import { loadConfig } from './config'
 
 const directories: string[] = []
@@ -56,7 +56,7 @@ test.each([
   ['application.id', { id: '   ', binaryPath: '/apps/checkout.apk' }],
   ['application.binaryPath', { id: 'com.example.checkout', binaryPath: '  ' }],
 ] as const)('rejects a blank mobile %s', async (field, application) => {
-  expect(
+  await expect(
     loadMobileConfig({ executionTarget: 'android-emulator', application }),
   ).rejects.toThrow(`executionTargetProfiles.mobile.${field} must not be empty`)
 })
@@ -64,7 +64,7 @@ test.each([
 test.each(['targetId', 'artifactDirectory', 'nodePath'] as const)(
   'rejects a blank mobile %s',
   async (field) => {
-    expect(
+    await expect(
       loadMobileConfig({
         executionTarget: 'android-emulator',
         application: {

@@ -1,4 +1,4 @@
-import { expect, test } from 'bun:test'
+import { expect, test } from 'vitest'
 import { isBusyOrigin, runOriginFromRequest } from './run-origin'
 
 test('derives the origin from the run request', () => {

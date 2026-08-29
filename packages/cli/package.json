@@ -19,8 +19,8 @@
   "scripts": {
     "typecheck": "tsc --noEmit",
     "test": "bun run test:confidentiality && bun run test:remaining",
-    "test:confidentiality": "bun test --preload ./test/test-environment.ts --max-concurrency 1 --timeout 30000 src/execution-cache/execution-cache-confidentiality.test.ts",
-    "test:remaining": "bun test --preload ./test/test-environment.ts --max-concurrency 1 --timeout 30000 --path-ignore-patterns '**/execution-cache-confidentiality.test.ts'"
+    "test:confidentiality": "bunx --bun vitest run --configLoader runner --experimental.viteModuleRunner=false --experimental.nodeLoader=false --config vitest.config.ts src/execution-cache/execution-cache-confidentiality.test.ts",
+    "test:remaining": "bunx --bun vitest run --configLoader runner --experimental.viteModuleRunner=false --experimental.nodeLoader=false --config vitest.config.ts --exclude '**/execution-cache-confidentiality.test.ts'"
   },
   "dependencies": {
     "@pickle-spec/configuration": "workspace:*",
@@ -36,6 +36,7 @@
   "devDependencies": {
     "@axe-core/playwright": "^4.13.0",
     "playwright": "^1.55.0",
-    "typescript": "catalog:"
+    "typescript": "catalog:",
+    "vitest": "catalog:"
   }
 }

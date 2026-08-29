@@ -1,4 +1,3 @@
-import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
 import { mkdir, mkdtemp, realpath, rm, symlink } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve, sep } from 'node:path'
@@ -7,6 +6,7 @@ import {
   resolveLocalProjectStorage,
   type TestRunManifest,
 } from '@pickle-spec/runner'
+import { afterAll, beforeAll, describe, expect, test } from 'vitest'
 import { requiredValue } from '../required-value'
 
 describe('public CLI workspace seam', () => {
@@ -641,7 +641,7 @@ export default {}
     })
 
     expect(run.exitCode).toBe(2)
-    expect(run.stderr.toString()).toStartWith('ERROR ')
+    expect(run.stderr.toString().startsWith('ERROR ')).toBe(true)
     expect(run.stderr.toString()).toContain('Parser errors')
     expect(run.stderr.toString()).not.toContain('\n    at ')
     expect(run.stdout.toString()).not.toContain('Test results    ')
@@ -659,7 +659,7 @@ export default {}
     const stderr = run.stderr.toString()
 
     expect(run.exitCode).toBe(2)
-    expect(stderr).toStartWith('ERROR Invalid configuration')
+    expect(stderr.startsWith('ERROR Invalid configuration')).toBe(true)
     expect(stderr).toContain('Unsupported configuration schemaVersion: 99')
     expect(stderr).not.toContain('\n    at ')
     expect(run.stdout.toString()).toBe('')
@@ -681,7 +681,9 @@ export default {}
     const stdout = run.stdout.toString()
 
     expect(run.exitCode).toBe(2)
-    expect(stderr).toStartWith('ERROR No specifications found matching:')
+    expect(stderr.startsWith('ERROR No specifications found matching:')).toBe(
+      true,
+    )
     expect(stderr).not.toContain('\n    at ')
     expect(stdout).not.toContain('Specifications  ')
     expect(stdout).not.toContain('Test results    ')
@@ -732,7 +734,9 @@ export default {}
     const stdout = run.stdout.toString()
 
     expect(run.exitCode).toBe(2)
-    expect(stderr).toStartWith('ERROR Server failed to start within 20ms')
+    expect(stderr.startsWith('ERROR Server failed to start within 20ms')).toBe(
+      true,
+    )
     expect(stderr).not.toContain('\n    at ')
     expect(stdout).not.toContain('Specifications  ')
     expect(stdout).not.toContain('Test results    ')
@@ -1730,9 +1734,9 @@ export default {
     })
 
     expect(run.exitCode).toBe(2)
-    expect(run.stderr.toString()).toStartWith(
-      'ERROR Execution target profile "web"',
-    )
+    expect(
+      run.stderr.toString().startsWith('ERROR Execution target profile "web"'),
+    ).toBe(true)
     expect(run.stderr.toString()).toContain(
       'Execution target profile "web" lacks required capabilities for Scenario "Show stores near the customer": geolocation',
     )

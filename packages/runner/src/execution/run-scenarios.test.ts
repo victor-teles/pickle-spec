@@ -1,5 +1,5 @@
-import { expect, mock, test } from 'bun:test'
 import type { ScenarioSelection } from '@pickle-spec/spec'
+import { expect, test, vi } from 'vitest'
 import {
   type ExecutionTargetAdapter,
   runScenarios,
@@ -40,7 +40,7 @@ const selections: ScenarioSelection[] = ['First', 'Ignored', 'Third'].map(
 test('runs selected Scenarios concurrently while preserving stable test-result order', async () => {
   let active = 0
   let maximumActive = 0
-  const openSession = mock(async () => {
+  const openSession = vi.fn(async () => {
     active++
     maximumActive = Math.max(maximumActive, active)
     return {
@@ -320,7 +320,7 @@ test('aggregates separate Scenario attempts into one final flaky Test result', a
 })
 
 test('rejects a target that lacks a Scenario capability requirement before opening a session', async () => {
-  const openSession = mock(async () => {
+  const openSession = vi.fn(async () => {
     throw new Error('must not open')
   })
   const selection = requiredValue(selections[0])
@@ -348,7 +348,7 @@ test('rejects a target that lacks a Scenario capability requirement before openi
 test('applies one global concurrency limit across Scenarios from multiple feature files', async () => {
   let active = 0
   let maximumActive = 0
-  const openSession = mock(async () => {
+  const openSession = vi.fn(async () => {
     active++
     maximumActive = Math.max(maximumActive, active)
     return {
@@ -446,13 +446,13 @@ test('applies one global concurrency limit across Scenarios from multiple featur
 })
 
 test('produces one test result per Scenario and execution target profile', async () => {
-  const webOpen = mock(async () => ({
+  const webOpen = vi.fn(async () => ({
     async executeStep() {
       return { state: 'passed' as const, resolvedActions: [] }
     },
     async close() {},
   }))
-  const mobileOpen = mock(async () => ({
+  const mobileOpen = vi.fn(async () => ({
     async executeStep() {
       return { state: 'passed' as const, resolvedActions: [] }
     },
@@ -501,7 +501,7 @@ test('produces one test result per Scenario and execution target profile', async
 })
 
 test('fails validation for an incompatible target instead of skipping the Scenario', async () => {
-  const openSession = mock(async () => {
+  const openSession = vi.fn(async () => {
     throw new Error('must not open')
   })
 

@@ -32,6 +32,15 @@
 
         "noNonNullAssertion": "error",
 
+        "noRestrictedImports": {
+          "level": "error",
+          "options": {
+            "paths": {
+              "bun:test": "Use Vitest through bunx --bun so tests keep the Bun runtime."
+            }
+          }
+        },
+
         "noExcessiveLinesPerFile": {
           "level": "warn",
           "options": {

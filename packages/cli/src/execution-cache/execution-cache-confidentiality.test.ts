@@ -1,5 +1,4 @@
 import { Database } from 'bun:sqlite'
-import { afterEach, expect, test } from 'bun:test'
 import { mkdir, mkdtemp, readdir, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
@@ -9,6 +8,7 @@ import {
   type TestResult,
 } from '@pickle-spec/runner'
 import { providerCredentialEnvironmentNames } from '@pickle-spec/runner/benchmarking'
+import { afterEach, expect, test } from 'vitest'
 
 const roots: string[] = []
 

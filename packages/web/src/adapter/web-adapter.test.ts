@@ -1,4 +1,3 @@
-import { afterAll, describe, expect, mock, test } from 'bun:test'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -8,6 +7,7 @@ import {
   type Scenario,
   type Specification,
 } from '@pickle-spec/spec'
+import { afterAll, describe, expect, test, vi } from 'vitest'
 import {
   createWebAdapter,
   validateWebAdapterOptions,
@@ -43,9 +43,9 @@ function stubAutomation(overrides: Partial<WebAutomation> = {}): WebAutomation {
 
 function factoryFor(automation: WebAutomation): WebAutomationFactory {
   return {
-    launch: mock(async () => ({
-      openContext: mock(async () => automation),
-      close: mock(async () => {}),
+    launch: vi.fn(async () => ({
+      openContext: vi.fn(async () => automation),
+      close: vi.fn(async () => {}),
     })),
   }
 }
@@ -110,16 +110,16 @@ describe('createWebAdapter', () => {
       join(tmpdir(), 'pickle-web-artifacts-'),
     )
     artifactDirectories.push(artifactDirectory)
-    const navigate = mock(async () => {})
-    const observe = mock(async () => [
+    const navigate = vi.fn(async () => {})
+    const observe = vi.fn(async () => [
       { description: 'Fill the search field', handle: { selector: '#search' } },
     ])
-    const act = mock(async () => ({ success: true }))
-    const verify = mock(async () => ({
+    const act = vi.fn(async () => ({ success: true }))
+    const verify = vi.fn(async () => ({
       meetsExpectation: false,
       actualState: 'No results were shown',
     }))
-    const close = mock(async () => {})
+    const close = vi.fn(async () => {})
     const adapter = createWebAdapter(
       {
         baseUrl: 'https://example.test',
@@ -509,8 +509,8 @@ describe('createWebAdapter', () => {
   })
 
   test('gives explicit navigation precedence for an action step', async () => {
-    const navigate = mock(async () => {})
-    const observe = mock(async () => [])
+    const navigate = vi.fn(async () => {})
+    const observe = vi.fn(async () => [])
     const adapter = createWebAdapter(
       { baseUrl: 'https://example.test' },
       factoryFor(stubAutomation({ navigate, observe })),
@@ -543,7 +543,7 @@ describe('createWebAdapter', () => {
   })
 
   test('does not navigate when opening a logical session', async () => {
-    const navigate = mock(async () => {})
+    const navigate = vi.fn(async () => {})
     const adapter = createWebAdapter(
       { baseUrl: 'https://example.test' },
       factoryFor(stubAutomation({ navigate })),
@@ -559,11 +559,11 @@ describe('createWebAdapter', () => {
   })
 
   test('navigates to baseUrl only before the first action that requires a page', async () => {
-    const navigate = mock(async () => {})
-    const observe = mock(async () => [
+    const navigate = vi.fn(async () => {})
+    const observe = vi.fn(async () => [
       { description: 'Fill the search field', handle: { selector: '#search' } },
     ])
-    const act = mock(async () => ({ success: true }))
+    const act = vi.fn(async () => ({ success: true }))
     const adapter = createWebAdapter(
       { baseUrl: 'https://example.test' },
       factoryFor(stubAutomation({ navigate, observe, act })),
@@ -603,8 +603,8 @@ describe('createWebAdapter', () => {
   })
 
   test('navigates to baseUrl before the first outcome when no explicit navigation exists', async () => {
-    const navigate = mock(async () => {})
-    const verify = mock(async () => ({
+    const navigate = vi.fn(async () => {})
+    const verify = vi.fn(async () => ({
       meetsExpectation: true,
       actualState: 'Ready',
     }))
@@ -640,11 +640,11 @@ describe('createWebAdapter', () => {
   })
 
   test('does not navigate to baseUrl again after explicit navigation', async () => {
-    const navigate = mock(async () => {})
-    const observe = mock(async () => [
+    const navigate = vi.fn(async () => {})
+    const observe = vi.fn(async () => [
       { description: 'Fill the search field', handle: { selector: '#search' } },
     ])
-    const act = mock(async () => ({ success: true }))
+    const act = vi.fn(async () => ({ success: true }))
     const adapter = createWebAdapter(
       { baseUrl: 'https://example.test' },
       factoryFor(stubAutomation({ navigate, observe, act })),
@@ -790,10 +790,10 @@ describe('createWebAdapter', () => {
   })
 
   test('forwards GOOGLE_API_KEY to the automation factory for a Google model', async () => {
-    const openContext = mock(async () => stubAutomation())
-    const launch = mock(async () => ({
+    const openContext = vi.fn(async () => stubAutomation())
+    const launch = vi.fn(async () => ({
       openContext,
-      close: mock(async () => {}),
+      close: vi.fn(async () => {}),
     }))
     await withEnv(
       { ...clearedGoogleApiKeys, GOOGLE_API_KEY: 'test-google-key' },
@@ -867,9 +867,9 @@ describe('createWebAdapter', () => {
         return { success: true }
       },
     })
-    const launch = mock(async () => ({
-      openContext: mock(async () => automation),
-      close: mock(async () => {}),
+    const launch = vi.fn(async () => ({
+      openContext: vi.fn(async () => automation),
+      close: vi.fn(async () => {}),
     }))
     const replayScenario: Scenario = {
       name: 'Open account',
@@ -936,9 +936,9 @@ describe('createWebAdapter', () => {
   })
 
   test('pools browser processes across consecutive logical sessions', async () => {
-    const launch = mock(async () => ({
-      openContext: mock(async () => stubAutomation()),
-      close: mock(async () => {}),
+    const launch = vi.fn(async () => ({
+      openContext: vi.fn(async () => stubAutomation()),
+      close: vi.fn(async () => {}),
     }))
     const adapter = createWebAdapter(
       { baseUrl: 'https://example.test' },
@@ -964,7 +964,7 @@ describe('createWebAdapter', () => {
 
   test('forwards live viewport updates with canonical Scenario target identity', async () => {
     const updates: WebLiveViewportUpdate[] = []
-    const launch: WebAutomationFactory['launch'] = mock(async () => ({
+    const launch: WebAutomationFactory['launch'] = vi.fn(async () => ({
       async openContext(context: WebClientContext) {
         context.onLiveViewport?.({
           kind: 'frame',
@@ -1039,8 +1039,8 @@ describe('createWebAdapter', () => {
     let closeStarted = false
     let closeFinished = false
     const browserClosed = Promise.withResolvers<void>()
-    const launch = mock(async () => ({
-      openContext: mock(async () =>
+    const launch = vi.fn(async () => ({
+      openContext: vi.fn(async () =>
         stubAutomation({
           async navigate(_url, signal) {
             await new Promise((_resolve, reject) => {
@@ -1059,7 +1059,7 @@ describe('createWebAdapter', () => {
           },
         }),
       ),
-      close: mock(async () => browserClosed.resolve()),
+      close: vi.fn(async () => browserClosed.resolve()),
     }))
     const adapter = createWebAdapter(
       { baseUrl: 'https://example.test' },
@@ -1101,12 +1101,12 @@ describe('createWebAdapter', () => {
   test('finishes a cancelled runner scenario when browser shutdown unblocks automation cleanup', async () => {
     const stepStarted = Promise.withResolvers<void>()
     const browserClosed = Promise.withResolvers<void>()
-    const closeBrowser = mock(async () => browserClosed.resolve())
+    const closeBrowser = vi.fn(async () => browserClosed.resolve())
     const adapter = createWebAdapter(
       { baseUrl: 'https://example.test' },
       {
-        launch: mock(async () => ({
-          openContext: mock(async () =>
+        launch: vi.fn(async () => ({
+          openContext: vi.fn(async () =>
             stubAutomation({
               async navigate(_url, signal) {
                 stepStarted.resolve()

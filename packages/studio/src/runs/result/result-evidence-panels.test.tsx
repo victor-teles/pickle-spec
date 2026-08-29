@@ -1,6 +1,6 @@
-import { expect, test } from 'bun:test'
 import type { ScenarioAttempt } from '@pickle-spec/runner'
 import { renderToStaticMarkup } from 'react-dom/server'
+import { expect, test } from 'vitest'
 import { ArtifactViewer } from './artifact-viewer'
 import { ResultArtifacts, ResultDiagnostics } from './result-evidence-panels'
 

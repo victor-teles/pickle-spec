@@ -1,4 +1,3 @@
-import { afterEach, expect, test } from 'bun:test'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -6,6 +5,7 @@ import {
   openTestRunStore,
   resolveLocalProjectStorage,
 } from '@pickle-spec/runner'
+import { afterEach, expect, test } from 'vitest'
 import { createStudioHistoryGateway } from './studio-history'
 
 const directories: string[] = []

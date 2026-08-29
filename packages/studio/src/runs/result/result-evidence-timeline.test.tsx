@@ -1,5 +1,5 @@
-import { expect, test } from 'bun:test'
 import { renderToStaticMarkup } from 'react-dom/server'
+import { expect, test } from 'vitest'
 import type { TimelineEntry } from './result-evidence'
 import { ResultEvidenceTimeline } from './result-evidence-timeline'
 

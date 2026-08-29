@@ -1,4 +1,4 @@
-import { expect, test } from 'bun:test'
+import { expect, test } from 'vitest'
 import { selectRerunResults } from '../../index'
 import type { TestResult } from '../execution/run-scenario'
 import type { TestRunManifest } from './test-run-store'

@@ -1,7 +1,7 @@
-import { expect, test } from 'bun:test'
 import { mkdir, mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
+import { expect, test } from 'vitest'
 import { formatHtml } from '../../index'
 import type { ScenarioAttempt, TestResult } from '../execution/run-scenario'
 import type { TestRunManifest } from '../results/test-run-store'

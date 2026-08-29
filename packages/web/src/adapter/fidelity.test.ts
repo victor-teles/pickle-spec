@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'bun:test'
+import { describe, expect, test } from 'vitest'
 import { resolveFidelityPolicy } from './fidelity'
 import { validateWebAdapterOptions } from './web-options'
 

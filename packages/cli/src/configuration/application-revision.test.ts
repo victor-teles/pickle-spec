@@ -1,5 +1,5 @@
-import { expect, test } from 'bun:test'
 import { resolve } from 'node:path'
+import { expect, test } from 'vitest'
 import { resolveApplicationRevision } from './application-revision'
 
 test('resolves git:HEAD to the current project commit', () => {

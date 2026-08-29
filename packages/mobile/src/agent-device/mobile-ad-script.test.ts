@@ -1,4 +1,4 @@
-import { expect, test } from 'bun:test'
+import { expect, test } from 'vitest'
 import { mobileReplayVariableName } from '../execution-cache/mobile-execution-cache'
 import { compileMobileScenario } from './mobile-ad-script'
 

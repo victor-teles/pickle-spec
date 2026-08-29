@@ -1,4 +1,4 @@
-import { expect, test } from 'bun:test'
+import { expect, test } from 'vitest'
 import { parseTestRunOutput } from './output-arguments'
 
 test('parses a supported Test run output and preserves equals signs in its path', () => {

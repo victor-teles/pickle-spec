@@ -1,8 +1,8 @@
-import { expect, test } from 'bun:test'
 import { join } from 'node:path'
 import AxeBuilder from '@axe-core/playwright'
 import { openTestRunStore, type RunEventPayload } from '@pickle-spec/runner'
 import type { Browser, Page } from 'playwright'
+import { expect, test } from 'vitest'
 import {
   collectStream,
   type StudioBrowserFixture,

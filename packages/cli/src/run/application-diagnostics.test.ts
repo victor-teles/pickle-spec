@@ -1,5 +1,5 @@
-import { expect, test } from 'bun:test'
 import type { RunEvent } from '@pickle-spec/runner'
+import { expect, test } from 'vitest'
 import { createApplicationDiagnosticBuffer } from './application-diagnostics'
 
 const scenario = { id: 'checkout', name: 'Checkout succeeds' }

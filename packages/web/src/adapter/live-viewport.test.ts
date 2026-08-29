@@ -1,5 +1,5 @@
-import { expect, test } from 'bun:test'
 import type { Page, StagehandBrowser } from '@browserbasehq/stagehand'
+import { expect, test } from 'vitest'
 import { startCdpScreencast } from './live-viewport'
 
 test('streams CDP frames, acknowledges them, and stops the target session', async () => {

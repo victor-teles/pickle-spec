@@ -1,5 +1,5 @@
-import { describe, expect, mock, test } from 'bun:test'
 import type { Scenario, Specification } from '@pickle-spec/spec'
+import { describe, expect, test, vi } from 'vitest'
 import {
   type ExecutionTargetAdapter,
   type OpenSessionInput,
@@ -190,7 +190,7 @@ describe('runScenario', () => {
   })
 
   test('emits versioned events and materializes a passed test result', async () => {
-    const close = mock(async () => {})
+    const close = vi.fn(async () => {})
     const adapter: ExecutionTargetAdapter = {
       async openSession() {
         return {
@@ -265,7 +265,7 @@ describe('runScenario', () => {
         },
       ],
     })
-    expect(run.result.scenario.id).toBeString()
+    expect(typeof run.result.scenario.id).toBe('string')
     expect(run.result.durationMs).toBeGreaterThanOrEqual(0)
     expect(close).toHaveBeenCalledTimes(1)
   })
@@ -341,7 +341,7 @@ describe('runScenario', () => {
   })
 
   test('materializes a functional failure and stops the remaining steps', async () => {
-    const executeStep = mock(async () => ({
+    const executeStep = vi.fn(async () => ({
       state: 'failed' as const,
       resolvedActions: [{ description: 'Checked basket contents' }],
       message: 'The basket was empty',
@@ -376,7 +376,7 @@ describe('runScenario', () => {
       ...scenario,
       steps: [requiredValue(scenario.steps[1])],
     }
-    const executeStep = mock(async () => ({
+    const executeStep = vi.fn(async () => ({
       state: 'failed' as const,
       resolvedActions: [{ description: 'Click pay on chrome' }],
       message: 'Payment was declined',
@@ -727,7 +727,7 @@ describe('runScenario', () => {
   })
 
   test('materializes cancellation without opening a logical session when already aborted', async () => {
-    const openSession = mock(async () => {
+    const openSession = vi.fn(async () => {
       throw new Error('must not open')
     })
     const controller = new AbortController()
@@ -760,7 +760,7 @@ describe('runScenario', () => {
 
   test('materializes cancellation when the signal aborts while a step resolves normally', async () => {
     const controller = new AbortController()
-    const close = mock(async () => {})
+    const close = vi.fn(async () => {})
 
     const run = await runScenario({
       specification,
@@ -852,7 +852,7 @@ describe('runScenario', () => {
   })
 
   test('materializes an adapter exception during a step as an infrastructure error', async () => {
-    const close = mock(async () => {})
+    const close = vi.fn(async () => {})
     const run = await runScenario({
       specification,
       scenario,
@@ -893,10 +893,10 @@ describe('runScenario', () => {
   })
 
   test('keeps an executeScenario infrastructure error when complete cannot run', async () => {
-    const complete = mock(async () => {
+    const complete = vi.fn(async () => {
       throw new Error('Mobile logical session did not execute')
     })
-    const close = mock(async () => {})
+    const close = vi.fn(async () => {})
     const run = await runScenario({
       specification,
       scenario,
@@ -960,8 +960,8 @@ describe('runScenario', () => {
 
   test('retries infrastructure errors in a fresh logical session and marks later success flaky', async () => {
     let attempt = 0
-    const close = mock(async () => {})
-    const openSession = mock(async () => {
+    const close = vi.fn(async () => {})
+    const openSession = vi.fn(async () => {
       attempt++
       return {
         async executeStep() {
@@ -994,8 +994,8 @@ describe('runScenario', () => {
 
   test('retries functional failures only when explicit policy allows it', async () => {
     let attempt = 0
-    const close = mock(async () => {})
-    const openSession = mock(async () => {
+    const close = vi.fn(async () => {})
+    const openSession = vi.fn(async () => {
       attempt++
       return {
         async executeStep() {
@@ -1046,7 +1046,7 @@ describe('runScenario', () => {
   })
 
   test('aborts a timed-out step and closes its logical session', async () => {
-    const close = mock(async () => {})
+    const close = vi.fn(async () => {})
     const run = await runScenario({
       specification,
       scenario: { ...scenario, steps: scenario.steps.slice(0, 1) },
@@ -1081,7 +1081,7 @@ describe('runScenario', () => {
   })
 
   test('runs a custom adapter only in Adaptive and rejects cache-only before opening', async () => {
-    const openSession = mock(async (sessionInput: OpenSessionInput) => ({
+    const openSession = vi.fn(async (sessionInput: OpenSessionInput) => ({
       async executeStep() {
         return { state: 'passed' as const, resolvedActions: [] }
       },

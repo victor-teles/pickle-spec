@@ -16,7 +16,7 @@
   "scripts": {
     "benchmark:replay": "bun src/benchmarking/mobile-benchmark-cli.ts",
     "typecheck": "tsc --noEmit",
-    "test": "bun test"
+    "test": "bunx --bun vitest run --configLoader runner --experimental.viteModuleRunner=false --experimental.nodeLoader=false --config ../../vitest.package.config.ts"
   },
   "dependencies": {
     "@pickle-spec/runner": "workspace:*",
@@ -25,6 +25,7 @@
   },
   "devDependencies": {
     "@types/bun": "catalog:",
-    "typescript": "catalog:"
+    "typescript": "catalog:",
+    "vitest": "catalog:"
   }
 }

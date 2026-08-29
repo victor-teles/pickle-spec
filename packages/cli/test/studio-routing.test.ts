@@ -1,6 +1,6 @@
-import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
 import { join } from 'node:path'
 import type { Browser } from 'playwright'
+import { afterAll, beforeAll, describe, expect, test } from 'vitest'
 import { StudioBrowserFixture } from './studio-browser-fixture'
 
 describe('Studio route restoration', () => {

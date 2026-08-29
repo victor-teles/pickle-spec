@@ -1,4 +1,4 @@
-import { expect, test } from 'bun:test'
+import { expect, test } from 'vitest'
 import { requiredValue } from '../required-value'
 import { parseRunEvent, parseTestRunManifest } from './test-run-schema'
 import type { TestRunManifest } from './test-run-store'

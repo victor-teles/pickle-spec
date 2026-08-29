@@ -1,4 +1,3 @@
-import { afterEach, expect, test } from 'bun:test'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -8,6 +7,7 @@ import {
   openLocalExecutionCache,
   serializeExecutionCacheEnvelope,
 } from '@pickle-spec/runner'
+import { afterEach, expect, test } from 'vitest'
 import { createStudioExecutionCacheGateway } from './studio-cache'
 
 const roots: string[] = []

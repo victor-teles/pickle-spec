@@ -1,4 +1,3 @@
-import { describe, expect, test } from 'bun:test'
 import { mkdir, mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -8,6 +7,7 @@ import {
   runScenario,
 } from '@pickle-spec/runner'
 import { parseSpecification } from '@pickle-spec/spec'
+import { describe, expect, test } from 'vitest'
 import {
   createWebAdapter,
   type WebAutomation,

@@ -1,4 +1,3 @@
-import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
 import { mkdir } from 'node:fs/promises'
 import { join } from 'node:path'
 import {
@@ -9,6 +8,7 @@ import {
   serializeExecutionCacheEnvelope,
 } from '@pickle-spec/runner'
 import type { Browser, Locator, Page } from 'playwright'
+import { afterAll, beforeAll, describe, expect, test } from 'vitest'
 import { StudioBrowserFixture } from '../../test/studio-browser-fixture'
 import { registerStudioHardeningTests } from '../../test/studio-hardening-suite'
 import { requiredValue } from '../required-value'

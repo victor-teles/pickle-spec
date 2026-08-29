@@ -1,4 +1,4 @@
-import { expect, test } from 'bun:test'
+import { expect, test } from 'vitest'
 import { runReplayPerformanceGate } from './replay-performance-gate'
 
 test('runs both adapter gates before aggregating a failure', async () => {

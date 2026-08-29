@@ -1,4 +1,3 @@
-import { describe, expect, mock, test } from 'bun:test'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -9,6 +8,7 @@ import {
   type SerializedExecutionCacheEnvelope,
 } from '@pickle-spec/runner'
 import { parseSpecification } from '@pickle-spec/spec'
+import { describe, expect, test, vi } from 'vitest'
 import {
   createWebAdapter,
   type WebAutomation,
@@ -67,13 +67,13 @@ Feature: Status
 `,
     })
     const scenario = requiredValue(specification.scenarios[0])
-    const observe = mock(async () => [
+    const observe = vi.fn(async () => [
       {
         description: 'Ready indicator',
         handle: { selector: '#ready', method: 'click' },
       },
     ])
-    const executeInstruction = mock(async (_instruction: WebInstruction) => ({
+    const executeInstruction = vi.fn(async (_instruction: WebInstruction) => ({
       success: true,
     }))
     const automation: WebAutomation = {
@@ -149,13 +149,13 @@ Feature: Shopping cart
 `,
     })
     const scenario = requiredValue(specification.scenarios[0])
-    const compileAssertion = mock(async () => {
+    const compileAssertion = vi.fn(async () => {
       throw new Error('compound Then must not extract')
     })
-    const verify = mock(async () => {
+    const verify = vi.fn(async () => {
       throw new Error('compound Then must not verify')
     })
-    const executeInstruction = mock(async () => ({ success: true }))
+    const executeInstruction = vi.fn(async () => ({ success: true }))
     const automation: WebAutomation = {
       async navigate() {},
       async observe() {
@@ -238,7 +238,7 @@ Feature: Sign in
 `,
     })
     const scenario = requiredValue(specification.scenarios[0])
-    const observe = mock(async () => [
+    const observe = vi.fn(async () => [
       {
         description: 'Fill the email field',
         handle: {
@@ -248,12 +248,12 @@ Feature: Sign in
         },
       },
     ])
-    const compileAssertion = mock(async () => ({
+    const compileAssertion = vi.fn(async () => ({
       kind: 'value-equals' as const,
       selector: '#email',
       expected: 'alice@example.com',
     }))
-    const executeInstruction = mock(async () => ({ success: true }))
+    const executeInstruction = vi.fn(async () => ({ success: true }))
     const automation: WebAutomation = {
       async navigate() {},
       observe,
@@ -325,7 +325,7 @@ Feature: Account
 `,
       })
       const scenario = requiredValue(specification.scenarios[0])
-      const executeInstruction = mock(async () => ({ success: true }))
+      const executeInstruction = vi.fn(async () => ({ success: true }))
       const automation: WebAutomation = {
         async navigate() {},
         async observe() {
@@ -412,7 +412,7 @@ Feature: Unsafe operation
 `,
     })
     const scenario = requiredValue(specification.scenarios[0])
-    const observe = mock(async () => [
+    const observe = vi.fn(async () => [
       {
         description: 'Run custom code',
         handle: {
@@ -422,7 +422,7 @@ Feature: Unsafe operation
         },
       },
     ])
-    const act = mock(async () => ({ success: true }))
+    const act = vi.fn(async () => ({ success: true }))
     const automation: WebAutomation = {
       async navigate() {},
       observe,
@@ -480,7 +480,7 @@ Feature: Submit
 `,
     })
     const scenario = requiredValue(specification.scenarios[0])
-    const observe = mock(async () => [
+    const observe = vi.fn(async () => [
       {
         description: 'Click submit',
         handle: { selector: '#submit', method: 'click' },

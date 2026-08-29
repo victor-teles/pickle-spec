@@ -1,8 +1,8 @@
 import { Database } from 'bun:sqlite'
-import { afterEach, expect, test } from 'bun:test'
 import { chmod, mkdir, mkdtemp, rm, truncate } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { afterEach, expect, test } from 'vitest'
 import {
   openTestRunStore as openTestRunStoreBase,
   resolveLocalProjectStorage,

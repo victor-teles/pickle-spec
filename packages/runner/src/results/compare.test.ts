@@ -1,4 +1,4 @@
-import { expect, test } from 'bun:test'
+import { expect, test } from 'vitest'
 import { compareTestRuns } from '../../index'
 import {
   finalScenarioAttempt,

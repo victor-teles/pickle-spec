@@ -1,7 +1,7 @@
-import { afterEach, expect, test } from 'bun:test'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { afterEach, expect, test } from 'vitest'
 import { loadConfig } from './config'
 
 const directories: string[] = []
@@ -53,7 +53,7 @@ test('configures run-wide and profile-specific evidence persistence', async () =
 })
 
 test('rejects unsupported evidence persistence values', async () => {
-  expect(
+  await expect(
     loadEvidenceConfig({ evidence: { persistence: 'sometimes' } }),
   ).rejects.toThrow('evidence.persistence must be off, on-failure, or always')
 })

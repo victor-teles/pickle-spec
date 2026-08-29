@@ -1,5 +1,5 @@
-import { expect, test } from 'bun:test'
 import { runInNewContext } from 'node:vm'
+import { expect, test } from 'vitest'
 import {
   createWebEvidenceCollector,
   installWebEvidenceScript,
