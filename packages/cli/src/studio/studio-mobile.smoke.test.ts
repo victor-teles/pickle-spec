@@ -1,7 +1,7 @@
-import { expect, test } from 'bun:test'
 import { mkdir, mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
+import { expect, test } from 'vitest'
 
 type SmokePlatform = 'android' | 'ios'
 

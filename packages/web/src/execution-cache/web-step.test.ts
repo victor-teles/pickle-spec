@@ -1,5 +1,5 @@
-import { describe, expect, test } from 'bun:test'
 import type { ScenarioStep } from '@pickle-spec/spec'
+import { describe, expect, test } from 'vitest'
 import { observeInstruction, promptFor } from './web-step'
 
 const addBackpack: ScenarioStep = {

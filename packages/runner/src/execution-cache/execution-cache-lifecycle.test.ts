@@ -1,4 +1,3 @@
-import { afterEach, describe, expect, mock, test } from 'bun:test'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -8,6 +7,7 @@ import {
   type Specification,
   scenarioRevision,
 } from '@pickle-spec/spec'
+import { afterEach, describe, expect, test, vi } from 'vitest'
 import { z } from 'zod'
 import type {
   ExecutionCacheAdapter,
@@ -573,7 +573,7 @@ describe('Execution cache lifecycle', () => {
     }
     const lease = await cache.coordination.acquire(cacheKey)
     if (!lease.acquired) throw new Error('lease missing')
-    const openSession = mock(async () => {
+    const openSession = vi.fn(async () => {
       throw new Error('must not infer')
     })
     const adapter: ExecutionTargetAdapter = { executionCache, openSession }
@@ -656,7 +656,7 @@ describe('Execution cache lifecycle', () => {
 
   test('stores one successful Adaptive execution and replays it on the next run', async () => {
     const modes: string[] = []
-    const openSession = mock(async (input) => {
+    const openSession = vi.fn(async (input) => {
       modes.push(input.mode ?? 'adaptive')
       return {
         async executeStep() {
@@ -769,7 +769,7 @@ describe('Execution cache lifecycle', () => {
   })
 
   test('cache-only fails on a miss without opening an adapter session', async () => {
-    const openSession = mock(async () => {
+    const openSession = vi.fn(async () => {
       throw new Error('must not open')
     })
     const { store } = memoryStore()
@@ -849,7 +849,7 @@ describe('Execution cache lifecycle', () => {
   })
 
   test('explicit cache policies fail without a runtime cache store', async () => {
-    const openSession = mock(async () => {
+    const openSession = vi.fn(async () => {
       throw new Error('must not open')
     })
     const adapter: ExecutionTargetAdapter = { executionCache, openSession }
@@ -1144,7 +1144,7 @@ describe('Execution cache lifecycle', () => {
 
   test('does not read or write cache without an application revision', async () => {
     const { store, writes } = memoryStore()
-    const read = mock(store.read.bind(store))
+    const read = vi.fn(store.read.bind(store))
     store.read = read
     const adapter: ExecutionTargetAdapter = {
       executionCache,
@@ -1264,7 +1264,7 @@ describe('Execution cache lifecycle', () => {
       ...scenario,
       examplesRowId: 'rowunsafe000000',
     }
-    const openSession = mock(async () => ({
+    const openSession = vi.fn(async () => ({
       async executeStep() {
         return { state: 'passed' as const, resolvedActions: [] }
       },
@@ -1501,7 +1501,7 @@ describe('Execution cache lifecycle', () => {
   })
 
   test('completes a failed Adaptive session without writing an empty or over-long prefix', async () => {
-    const complete = mock(async () => ({
+    const complete = vi.fn(async () => ({
       inferenceCount: 1,
       replayRepresentation: {
         cacheable: true as const,
@@ -1531,7 +1531,7 @@ describe('Execution cache lifecycle', () => {
   })
 
   test('executes and projects a session-wide deterministic Scenario without a step seam', async () => {
-    const executeScenario = mock(async () => ({
+    const executeScenario = vi.fn(async () => ({
       stepExecutions: [
         {
           state: 'passed' as const,

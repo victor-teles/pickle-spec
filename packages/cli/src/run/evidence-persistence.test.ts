@@ -1,4 +1,4 @@
-import { expect, test } from 'bun:test'
+import { expect, test } from 'vitest'
 import { resolveEvidencePersistence } from './evidence-persistence'
 
 test('keeps captured artifacts after a passing stock run', () => {

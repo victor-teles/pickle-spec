@@ -1,7 +1,7 @@
-import { expect, test } from 'bun:test'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { expect, test } from 'vitest'
 import { startWebRecording } from './web-recording'
 
 const jpegFrame = Uint8Array.from(
@@ -115,6 +115,7 @@ async function recordFrames(
 
 test.skipIf(!Bun.which('ffmpeg') || !Bun.which('ffprobe'))(
   'encodes jpeg frames into a browser-safe mp4 recording',
+  { timeout: 15_000 },
   async () => {
     const directory = await mkdtemp(join(tmpdir(), 'pickle-web-recording-'))
     const path = join(directory, 'scenario.mp4')
@@ -129,11 +130,11 @@ test.skipIf(!Bun.which('ffmpeg') || !Bun.which('ffprobe'))(
       await rm(directory, { recursive: true, force: true })
     }
   },
-  { timeout: 15_000 },
 )
 
 test.skipIf(!Bun.which('ffmpeg') || !Bun.which('ffprobe'))(
   'scales odd jpeg frames to even yuv420p dimensions browsers can decode',
+  { timeout: 15_000 },
   async () => {
     const directory = await mkdtemp(join(tmpdir(), 'pickle-web-recording-'))
     const path = join(directory, 'scenario.mp4')
@@ -147,11 +148,11 @@ test.skipIf(!Bun.which('ffmpeg') || !Bun.which('ffprobe'))(
       await rm(directory, { recursive: true, force: true })
     }
   },
-  { timeout: 15_000 },
 )
 
 test.skipIf(!Bun.which('ffmpeg'))(
   'discards the encoder while a frame capture is still pending',
+  { timeout: 5_000 },
   async () => {
     const directory = await mkdtemp(join(tmpdir(), 'pickle-web-recording-'))
     const path = join(directory, 'scenario.mp4')
@@ -180,5 +181,4 @@ test.skipIf(!Bun.which('ffmpeg'))(
       await rm(directory, { recursive: true, force: true })
     }
   },
-  { timeout: 5_000 },
 )

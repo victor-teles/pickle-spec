@@ -1,6 +1,6 @@
-import { expect, mock, test } from 'bun:test'
 import { access, readFile, stat } from 'node:fs/promises'
 import { dirname } from 'node:path'
+import { expect, test, vi } from 'vitest'
 import { mobileReplayVariableName } from '../execution-cache/mobile-execution-cache'
 import {
   type AgentDeviceClientPort,
@@ -86,7 +86,7 @@ function client(
 test('Adaptive executes the exact private full-Scenario .ad before returning it', async () => {
   let materializedPath = ''
   let materializedScript = ''
-  const replayRun = mock(async (options) => {
+  const replayRun = vi.fn(async (options) => {
     materializedPath = options.path
     materializedScript = await readFile(options.path, 'utf8')
     expect((await stat(dirname(options.path))).mode & 0o777).toBe(0o700)
@@ -162,9 +162,9 @@ test('Adaptive executes the exact private full-Scenario .ad before returning it'
 })
 
 test('Replay executes only the cached .ad and reports zero inference', async () => {
-  const wait = mock(async () => {})
-  const find = mock(async () => {})
-  const replayRun = mock(async (options) => {
+  const wait = vi.fn(async () => {})
+  const find = vi.fn(async () => {})
+  const replayRun = vi.fn(async (options) => {
     expect(await readFile(options.path, 'utf8')).toBe(cachedScript)
     expect(options.env).toEqual([`${productVariable}=Pickles`])
     return {

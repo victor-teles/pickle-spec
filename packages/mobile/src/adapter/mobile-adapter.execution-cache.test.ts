@@ -1,4 +1,3 @@
-import { expect, test } from 'bun:test'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -7,6 +6,7 @@ import {
   openLocalExecutionCache,
   runScenario,
 } from '@pickle-spec/runner'
+import { expect, test } from 'vitest'
 import { createMobileAdapter } from '../../index'
 import {
   type AgentDeviceClientPort,

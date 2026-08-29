@@ -1,8 +1,8 @@
-import { expect, mock, test } from 'bun:test'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { AppError } from 'agent-device'
+import { expect, test, vi } from 'vitest'
 import { requiredValue } from '../required-value'
 import {
   type AgentDeviceClientPort,
@@ -155,9 +155,9 @@ test('discovers only booted targets compatible with each mobile platform', async
 })
 
 test('resets the selected application before the private Scenario Replay', async () => {
-  const reinstall = mock(async () => {})
-  const open = mock(async () => {})
-  const replay = mock(async () => ({
+  const reinstall = vi.fn(async () => {})
+  const open = vi.fn(async () => {})
+  const replay = vi.fn(async () => ({
     replayed: 3,
     healed: 0,
     session: 'session-1',
@@ -261,21 +261,21 @@ test('keeps Agent Device infrastructure failures out of divergence fallback', as
 
 test('captures Scenario-wide evidence around the exact Replay', async () => {
   const artifactDirectory = await mkdtemp(join(tmpdir(), 'pickle-evidence-'))
-  const record = mock(
+  const record = vi.fn(
     async (options: { action: 'start' | 'stop'; path?: string }) => {
       if (options.action === 'stop' && options.path) {
         await Bun.write(options.path, 'recording')
       }
     },
   )
-  const trace = mock(
+  const trace = vi.fn(
     async (options: { action: 'start' | 'stop'; path?: string }) => {
       if (options.action === 'stop' && options.path) {
         await Bun.write(options.path, 'trace')
       }
     },
   )
-  const screenshot = mock(async (options: { path?: string }) => {
+  const screenshot = vi.fn(async (options: { path?: string }) => {
     const path = options.path ?? ''
     await Bun.write(path, 'screenshot')
     return { path }
@@ -538,7 +538,7 @@ test('rejects a screenshot path outside the requested evidence directory', async
 })
 
 test('rejects binary evidence redaction before opening Agent Device', async () => {
-  const createClient = mock(() => client())
+  const createClient = vi.fn(() => client())
   const gateway = new AgentDeviceGateway(createClient)
 
   await expect(
@@ -555,7 +555,7 @@ test('rejects binary evidence redaction before opening Agent Device', async () =
 })
 
 test('rejects an invalid cached .ad before opening Agent Device', async () => {
-  const createClient = mock(() => client())
+  const createClient = vi.fn(() => client())
   const gateway = new AgentDeviceGateway(createClient)
 
   await expect(

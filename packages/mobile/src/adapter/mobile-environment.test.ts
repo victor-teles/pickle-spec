@@ -1,4 +1,4 @@
-import { expect, mock, test } from 'bun:test'
+import { expect, test, vi } from 'vitest'
 import {
   diagnoseMobileEnvironment,
   type MobileEnvironmentAdapterFactory,
@@ -13,7 +13,7 @@ const androidOptions = {
 }
 
 test('discovers a booted Android Emulator and disposes the adapter', async () => {
-  const dispose = mock(async () => {})
+  const dispose = vi.fn(async () => {})
   const createAdapter: MobileEnvironmentAdapterFactory = () => ({
     async discoverTargets() {
       return [

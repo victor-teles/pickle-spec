@@ -1,5 +1,5 @@
-import { expect, test } from 'bun:test'
 import type { ExecutionTargetProfile } from '@pickle-spec/runner'
+import { expect, test } from 'vitest'
 import type { PickleConfig } from '../configuration/config'
 import { resolveApplicationOutput } from './application-output'
 

@@ -1,4 +1,4 @@
-import { expect, mock, test } from 'bun:test'
+import { expect, test, vi } from 'vitest'
 import {
   diagnoseWebEnvironment,
   type WebEnvironmentRuntime,
@@ -12,8 +12,8 @@ function runtime(
 }
 
 test('launches and closes the configured local browser', async () => {
-  const close = mock(async () => {})
-  const launch = mock(async () => ({ close }))
+  const close = vi.fn(async () => {})
+  const launch = vi.fn(async () => ({ close }))
 
   await expect(
     diagnoseWebEnvironment(
@@ -49,7 +49,7 @@ test('returns actionable remediation when the local browser cannot launch', asyn
 })
 
 test('does not contact Browserbase or CDP endpoints', async () => {
-  const launch = mock(async () => ({ close: async () => {} }))
+  const launch = vi.fn(async () => ({ close: async () => {} }))
   const controlledRuntime = runtime(launch)
   const browserbase = await diagnoseWebEnvironment(
     {

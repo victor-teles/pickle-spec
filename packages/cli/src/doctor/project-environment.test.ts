@@ -1,4 +1,4 @@
-import { expect, mock, test } from 'bun:test'
+import { expect, test, vi } from 'vitest'
 import type { PickleConfig } from '../configuration/config'
 import {
   diagnoseProjectEnvironment,
@@ -63,12 +63,12 @@ test('leaves incomplete built-in environments unchecked', () => {
 })
 
 test('aggregates adapter diagnostics with profile ownership', async () => {
-  const web = mock(async () => ({
+  const web = vi.fn(async () => ({
     id: 'web.local-browser',
     kind: 'ready' as const,
     message: 'browser ready',
   }))
-  const mobile = mock(async () => ({
+  const mobile = vi.fn(async () => ({
     id: 'mobile.android-emulator',
     kind: 'blocked' as const,
     message: 'emulator missing',

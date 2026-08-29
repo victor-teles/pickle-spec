@@ -13,7 +13,7 @@ Use `bun run lint`, `bun run typecheck`, and `bun run test` from the repo root. 
 Default to using Bun instead of Node.js.
 
 - Use `bun <file>` instead of `node <file>` or `ts-node <file>`
-- Use `bun test` instead of `jest` or `vitest`
+- Use `bunx --bun vitest run` instead of `bun test`, `jest`, or plain `vitest`
 - Use `bun build <file.html|file.ts|file.css>` instead of `webpack` or `esbuild`
 - Use `bun install` instead of `npm install` or `yarn install` or `pnpm install`
 - Use `bun run <script>` instead of `npm run <script>` or `yarn run <script>` or `pnpm run <script>`
@@ -32,10 +32,10 @@ Default to using Bun instead of Node.js.
 
 ## Testing
 
-Use `bun test` to run tests.
+Use Vitest through Bun to run tests.
 
 ```ts#index.test.ts
-import { test, expect } from "bun:test";
+import { test, expect } from "vitest";
 
 test("hello world", () => {
  expect(1).toBe(1);

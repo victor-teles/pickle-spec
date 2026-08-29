@@ -1,5 +1,5 @@
-import { expect, test } from 'bun:test'
 import { Writable } from 'node:stream'
+import { expect, test } from 'vitest'
 import { createDoctorProgress } from './doctor-output'
 
 function outputStream() {

@@ -1,9 +1,9 @@
-import { expect, test } from 'bun:test'
 import {
   finalScenarioAttempt,
   type ScenarioRun,
   type TestResultState,
 } from '@pickle-spec/runner'
+import { expect, test } from 'vitest'
 import { requiredValue } from '../required-value'
 import { createRunReporter, terminalReporterCapabilities } from './run-reporter'
 import { finishReporter, passedRun } from './run-reporter.test-support.ts'

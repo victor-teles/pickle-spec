@@ -1,4 +1,4 @@
-import { expect, test } from 'bun:test'
+import { expect, test } from 'vitest'
 import { oklchToMonacoHex } from './monaco-theme-color'
 
 test('converts OKLCH into the color formats required by Monaco', () => {

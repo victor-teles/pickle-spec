@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'bun:test'
+import { describe, expect, test } from 'vitest'
 import { catalogFromSource, gherkinCompletions } from './gherkin-language'
 
 const checkout = `# keep this comment

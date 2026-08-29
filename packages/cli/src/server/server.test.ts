@@ -1,5 +1,5 @@
-import { describe, expect, test } from 'bun:test'
 import type { Subprocess } from 'bun'
+import { describe, expect, test } from 'vitest'
 import {
   type ApplicationOutputLine,
   type ServerRuntime,

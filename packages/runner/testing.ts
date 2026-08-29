@@ -1,5 +1,5 @@
-import { describe, expect, test } from 'bun:test'
 import type { Scenario, Specification } from '@pickle-spec/spec'
+import { describe, expect, test } from 'vitest'
 import type {
   ExecutionTargetAdapter,
   ExecutionTargetProfile,

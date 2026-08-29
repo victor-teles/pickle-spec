@@ -1,5 +1,5 @@
-import { expect, test } from 'bun:test'
 import { finalScenarioAttempt } from '@pickle-spec/runner'
+import { expect, test } from 'vitest'
 import { requiredValue } from '../required-value'
 import { createRunReporter } from './run-reporter'
 import {

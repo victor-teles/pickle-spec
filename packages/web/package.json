@@ -16,7 +16,7 @@
   "scripts": {
     "benchmark:replay": "bun src/benchmarking/web-benchmark-cli.ts",
     "typecheck": "tsc --noEmit",
-    "test": "bun test"
+    "test": "bunx --bun vitest run --configLoader runner --experimental.viteModuleRunner=false --experimental.nodeLoader=false --config ../../vitest.package.config.ts"
   },
   "dependencies": {
     "@browserbasehq/stagehand": "catalog:",
@@ -27,6 +27,8 @@
   },
   "devDependencies": {
     "@types/bun": "catalog:",
-    "typescript": "catalog:"
+    "typescript": "catalog:",
+    "vitest": "catalog:",
+    "vitest-mock-extended": "catalog:"
   }
 }

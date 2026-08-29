@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'bun:test'
+import { describe, expect, test } from 'vitest'
 import type { StudioSpecification } from '../server/server'
 import { resolveSpecificationSelection } from './use-specification-selection'
 

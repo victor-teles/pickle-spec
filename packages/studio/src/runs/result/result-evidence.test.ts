@@ -1,10 +1,10 @@
-import { expect, test } from 'bun:test'
 import type {
   RunEvent,
   ScenarioAttempt,
   TestResult,
   TestResultState,
 } from '@pickle-spec/runner'
+import { expect, test } from 'vitest'
 import { parseStudioRoute, studioRouteHref } from '../../app/studio-route'
 import type { StudioRunSnapshot } from '../../server/server'
 import {

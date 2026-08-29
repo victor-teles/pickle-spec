@@ -1,5 +1,5 @@
-import { expect, test } from 'bun:test'
 import { renderToStaticMarkup } from 'react-dom/server'
+import { expect, test } from 'vitest'
 import { TimelineEvidenceDetail } from './timeline-evidence-detail'
 
 test('renders captured screenshots and recordings in the selected timeline entry', () => {

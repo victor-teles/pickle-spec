@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, mock, test } from 'bun:test'
+import { afterEach, describe, expect, test, vi } from 'vitest'
 import type {
   WebAutomation,
   WebAutomationFactory,
@@ -35,15 +35,15 @@ function mockProcess(
   automation: WebAutomation | (() => WebAutomation),
 ): WebBrowserProcess {
   return {
-    openContext: mock(async () =>
+    openContext: vi.fn(async () =>
       typeof automation === 'function' ? automation() : automation,
     ),
-    close: mock(async () => {}),
+    close: vi.fn(async () => {}),
   }
 }
 
 function mockFactory(process: WebBrowserProcess | (() => WebBrowserProcess)) {
-  const launch = mock(async () =>
+  const launch = vi.fn(async () =>
     typeof process === 'function' ? process() : process,
   )
   const factory: WebAutomationFactory = { launch }
@@ -64,7 +64,7 @@ async function cancellationOutcome(
 
 describe('WebProcessPool', () => {
   afterEach(() => {
-    mock.restore()
+    vi.restoreAllMocks()
   })
 
   test('reuses a browser process for consecutive logical sessions', async () => {
@@ -107,7 +107,7 @@ describe('WebProcessPool', () => {
     const automation = isolatedAutomation()
     const process: WebBrowserProcess = {
       openContext: () => opened.promise,
-      close: mock(async () => {}),
+      close: vi.fn(async () => {}),
     }
     const pool = new WebProcessPool({
       factory: { launch: async () => process },
@@ -177,7 +177,7 @@ describe('WebProcessPool', () => {
   })
 
   test('retires a process when release finds a dirty logical session', async () => {
-    const launch = mock(async () => {
+    const launch = vi.fn(async () => {
       let readCount = 0
       return mockProcess(
         isolatedAutomation({
@@ -205,7 +205,7 @@ describe('WebProcessPool', () => {
 
   test('retires a process when isolation verification fails', async () => {
     let launchCount = 0
-    const launch = mock(async () => {
+    const launch = vi.fn(async () => {
       launchCount++
       const process =
         launchCount === 1

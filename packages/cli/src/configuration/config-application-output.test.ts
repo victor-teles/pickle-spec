@@ -1,7 +1,7 @@
-import { afterEach, expect, test } from 'bun:test'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { afterEach, expect, test } from 'vitest'
 import { loadConfig } from './config'
 
 const directories: string[] = []
@@ -53,7 +53,7 @@ test('configures managed application output for every run', async () => {
 })
 
 test('rejects non-boolean managed application output settings', async () => {
-  expect(
+  await expect(
     loadApplicationOutputConfig({
       executionTargetProfiles: {
         browser: {

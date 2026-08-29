@@ -1,4 +1,4 @@
-import { expect, mock, test } from 'bun:test'
+import { expect, test, vi } from 'vitest'
 import { createMobileAdapter } from '../../index'
 import { mobileReplayVariableName } from '../execution-cache/mobile-execution-cache'
 import type { MobileWorkerClient } from '../worker/worker-client'
@@ -246,7 +246,7 @@ test('cancels the worker session when the run is aborted', async () => {
 
 test('cancels installation when abort occurs while opening', async () => {
   const requests: MobileWorkerRequest[] = []
-  const request = mock(
+  const request = vi.fn(
     async (
       message: MobileWorkerRequest,
       signal?: AbortSignal,

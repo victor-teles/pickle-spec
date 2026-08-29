@@ -1,9 +1,9 @@
-import { expect, test } from 'bun:test'
 import type {
   RunEvent,
   ScenarioAttempt,
   TestStepResult,
 } from '@pickle-spec/runner'
+import { expect, test } from 'vitest'
 import { requiredValue } from '../../required-value'
 import { defaultRunAttemptLocation } from './live-result-follow'
 import {

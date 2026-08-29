@@ -1,5 +1,4 @@
 import { Database } from 'bun:sqlite'
-import { afterEach, describe, expect, test } from 'bun:test'
 import {
   mkdir,
   mkdtemp,
@@ -11,6 +10,7 @@ import {
 } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { afterEach, describe, expect, test } from 'vitest'
 import {
   type ExecutionCacheEnvelope,
   type ExecutionCacheKey,

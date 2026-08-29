@@ -1,4 +1,4 @@
-import { expect, test } from 'bun:test'
+import { expect, test } from 'vitest'
 import { mobileReplayVariableName } from '../execution-cache/mobile-execution-cache'
 import { type MobileDeviceGateway, MobileWorkerRuntime } from './worker-runtime'
 

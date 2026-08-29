@@ -1,6 +1,6 @@
-import { expect, test } from 'bun:test'
 import { parseSpecification } from '@pickle-spec/spec'
 import type { CredentialStore } from '@pickle-spec/studio'
+import { expect, test } from 'vitest'
 import type { PickleConfig } from '../configuration/config'
 import {
   studioRunReadiness,
