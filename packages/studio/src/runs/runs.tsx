@@ -49,7 +49,10 @@ import type {
   StudioRunsIndex,
 } from '../server/server'
 import { defaultRunAttemptLocation } from './result/live-result-follow'
-import type { LiveResultInspection } from './result/live-result-inspection'
+import {
+  type LiveResultInspection,
+  liveViewportFor,
+} from './result/live-result-inspection'
 import { ResultInspector } from './result/result-inspector'
 import { reasonMessage, resultBadgeVariant } from './result/result-presentation'
 import { RunComparison } from './run-comparison'
@@ -125,6 +128,7 @@ function RunInspectionRoute(
       location={location}
       snapshot={live?.snapshot}
       connection={live?.connection}
+      liveViewport={live ? liveViewportFor(live, location) : undefined}
       onBack={() => props.onNavigate({ kind: 'run', runId: location.runId })}
       onBackToResult={() => props.onNavigate({ kind: 'result', location })}
       onOpenArtifact={(artifactIndex) =>

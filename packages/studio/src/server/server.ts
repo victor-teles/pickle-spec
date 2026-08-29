@@ -25,6 +25,10 @@ import {
   DocumentConflictError,
   type SpecificationWorkspace,
 } from '../authoring/documents'
+import {
+  liveViewportTargetKey,
+  type StudioLiveViewportEvent,
+} from '../live-viewport'
 import { requiredValue } from '../required-value'
 import { createGitWorkspace, type GitWorkspace } from './git'
 import { resolveStudioArtifactPath } from './studio-artifact-path'
@@ -195,6 +199,7 @@ export type StudioLiveDiagnosticEvent = {
 
 export type StudioRunStreamEvent =
   | RunEvent
+  | StudioLiveViewportEvent
   | StudioLiveDiagnosticEvent
   | { type: 'run-scheduled'; schedule: readonly ScheduledTestResult[] }
   | { type: 'run-finished'; run: { id: string } }
@@ -303,6 +308,24 @@ type HtmlAsset = {
 
 type StudioStreamEvent = StudioRunStreamEvent
 
+type RetainedViewportEvent = Extract<
+  StudioLiveViewportEvent,
+  { type: 'viewport-updated' }
+>
+
+function isViewportEvent(
+  event: StudioStreamEvent,
+): event is StudioLiveViewportEvent {
+  return event.type === 'viewport-updated' || event.type === 'viewport-closed'
+}
+
+function appendBufferedEvent(
+  retained: readonly StudioStreamEvent[] | undefined,
+  event: StudioStreamEvent,
+): StudioStreamEvent[] {
+  return [...(retained ?? []), event]
+}
+
 type WorkspaceStreamEvent = DiskChangeEvent & { type: 'disk-changed' }
 
 type StudioSocketData =
@@ -377,6 +400,7 @@ function secureResponse(response: Response, origin: string): Response {
       `connect-src 'self' ${websocketOrigin}`,
       "font-src 'self' data:",
       "form-action 'self'",
+      "frame-src 'self' https://browserbase.com https://*.browserbase.com",
       "frame-ancestors 'none'",
       "img-src 'self' data: blob:",
       "media-src 'self'",
@@ -483,14 +507,28 @@ export async function startStudio(
   const git = options.git ?? createGitWorkspace(options.project.root)
   const listeners = new Map<string, Set<(event: StudioStreamEvent) => void>>()
   const buffers = new Map<string, StudioStreamEvent[]>()
+  const liveViewports = new Map<string, Map<string, RetainedViewportEvent>>()
   const workspaceListeners = new Set<(event: WorkspaceStreamEvent) => void>()
   const activeRuns = new Set<string>()
 
+  function updateLiveViewport(
+    id: string,
+    event: StudioLiveViewportEvent,
+  ): void {
+    const retained = new Map(liveViewports.get(id) ?? [])
+    const key = liveViewportTargetKey(event.target)
+    if (event.type === 'viewport-updated') retained.set(key, event)
+    else retained.delete(key)
+    liveViewports.set(id, retained)
+  }
+
   function publish(id: string, event: StudioStreamEvent): void {
     if (!id) return
-    const events = buffers.get(id) ?? []
-    events.push(event)
-    buffers.set(id, events)
+    if (isViewportEvent(event)) {
+      updateLiveViewport(id, event)
+    } else {
+      buffers.set(id, appendBufferedEvent(buffers.get(id), event))
+    }
     for (const listener of listeners.get(id) ?? []) listener(event)
   }
 
@@ -544,6 +582,9 @@ export async function startStudio(
         }
         const runId = socket.data.runId
         for (const event of buffers.get(runId) ?? []) {
+          ws.send(JSON.stringify(event))
+        }
+        for (const event of liveViewports.get(runId)?.values() ?? []) {
           ws.send(JSON.stringify(event))
         }
         const listener = (event: StudioStreamEvent) => {
@@ -939,6 +980,7 @@ export async function startStudio(
               type: 'run-finished',
               run: { id: state.runId },
             })
+            liveViewports.delete(state.runId)
           }
           void started.done
             .then(finishRun, finishRun)

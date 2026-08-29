@@ -16,6 +16,8 @@ export type {
   WebBrowserProcess,
   WebDirectExecutionResult,
   WebIsolationState,
+  WebLiveViewportTarget,
+  WebLiveViewportUpdate,
   WebObservedAction,
 } from './src/adapter/web-adapter'
 export {

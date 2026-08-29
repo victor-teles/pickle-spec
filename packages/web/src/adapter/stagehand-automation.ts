@@ -17,6 +17,11 @@ import {
 } from '../execution-cache/web-execution-cache'
 import { withAbort } from './abort'
 import { createDirectBrowser } from './direct-browser'
+import {
+  startStagehandLiveViewport,
+  type WebLiveViewport,
+  type WebLiveViewportController,
+} from './live-viewport'
 import { stabilizeSelector } from './stable-selector'
 import type {
   WebAutomation,
@@ -24,6 +29,7 @@ import type {
   WebObservedAction,
   WebScreenshotCapture,
 } from './web-automation'
+import type { BrowserOptions } from './web-options'
 
 const verificationSchema = z.object({
   meetsExpectation: z
@@ -61,6 +67,8 @@ async function readStagehandIsolation(
 
 class StagehandAutomation implements WebAutomation {
   private readonly direct
+  private viewportHandle: WebLiveViewportController | undefined
+  private viewportClosed = false
   private recording: WebRecording | undefined
 
   constructor(
@@ -68,6 +76,11 @@ class StagehandAutomation implements WebAutomation {
     private readonly stagehand: Stagehand,
     private readonly timeouts: StagehandTimeouts,
     private readonly evidence: ReturnType<typeof createWebEvidenceCollector>,
+    private readonly viewport?: {
+      options: BrowserOptions
+      onViewport: (viewport: WebLiveViewport) => void
+      signal?: AbortSignal
+    },
   ) {
     this.direct = createDirectBrowser(browser.context, {
       actionTimeoutMs: timeouts.actTimeoutMs,
@@ -77,12 +90,23 @@ class StagehandAutomation implements WebAutomation {
 
   async initialize(): Promise<this> {
     await this.instrumentPages()
+    await this.initializeViewport()
     return this
   }
 
   private async instrumentPages() {
     const pages = await this.browser.context.pages()
     return instrumentWebEvidencePages(pages, this.evidence)
+  }
+
+  private async initializeViewport() {
+    if (!this.viewport) return
+    try {
+      this.viewportHandle = await startStagehandLiveViewport({
+        browser: this.browser,
+        ...this.viewport,
+      })
+    } catch {}
   }
 
   async screenshot(options: WebScreenshotCapture): Promise<Uint8Array> {
@@ -218,6 +242,13 @@ class StagehandAutomation implements WebAutomation {
     const active = this.recording
     this.recording = undefined
     if (active) await active.discard()
+    const viewport = this.viewportHandle
+    this.viewportHandle = undefined
+    if (viewport) await viewport.close()
+    if (!this.viewportClosed) {
+      this.viewportClosed = true
+      this.viewport?.onViewport({ kind: 'closed' })
+    }
   }
 }
 
@@ -226,11 +257,17 @@ export async function createStagehandAutomation(
   stagehand: Stagehand,
   timeouts: StagehandTimeouts,
   evidence: ReturnType<typeof createWebEvidenceCollector>,
+  viewport?: {
+    options: BrowserOptions
+    onViewport: (viewport: WebLiveViewport) => void
+    signal?: AbortSignal
+  },
 ): Promise<WebAutomation> {
   return new StagehandAutomation(
     browser,
     stagehand,
     timeouts,
     evidence,
+    viewport,
   ).initialize()
 }

@@ -38,6 +38,25 @@ test('serves the Runs index, active lifecycle, compatibility alias, and deep lin
         type: 'run-started',
         run: { id: 'run-live', startedAt: '2026-08-24T12:00:00.000Z' },
       })
+      const target = { scenarioId: 'scenario', profileId: 'chrome', attempt: 1 }
+      onEvent({
+        type: 'viewport-updated',
+        target,
+        viewport: {
+          kind: 'frame',
+          data: 'first-frame',
+          mimeType: 'image/jpeg',
+        },
+      })
+      onEvent({
+        type: 'viewport-updated',
+        target,
+        viewport: {
+          kind: 'frame',
+          data: 'latest-frame',
+          mimeType: 'image/jpeg',
+        },
+      })
       return { id: 'run-live', done: completion.promise }
     },
     async snapshot(id) {
@@ -135,6 +154,28 @@ test('serves the Runs index, active lifecycle, compatibility alias, and deep lin
   })
   expect(replayedSchedule).toEqual(schedule)
 
+  const replayedViewports = await new Promise<string[]>((resolve, reject) => {
+    const frames: string[] = []
+    const socket = new WebSocket(
+      `${origin.replace(/^http/, 'ws')}/api/runs/run-live/events?token=runs-token`,
+    )
+    const timeout = setTimeout(() => {
+      socket.close()
+      reject(new Error('Timed out waiting for viewport replay'))
+    }, 2_000)
+    socket.addEventListener('message', (event) => {
+      const value = JSON.parse(String(event.data))
+      if (value.type !== 'viewport-updated') return
+      frames.push(value.viewport.data)
+      setTimeout(() => {
+        clearTimeout(timeout)
+        socket.close()
+        resolve(frames)
+      }, 50)
+    })
+  })
+  expect(replayedViewports).toEqual(['latest-frame'])
+
   const pagePaths = [
     '/',
     '/specifications/checkout',
@@ -142,6 +183,7 @@ test('serves the Runs index, active lifecycle, compatibility alias, and deep lin
     '/runs',
     '/runs/run-live',
     '/runs/run-live/results/features%2Fcheckout.feature/scenarios/scenario/profiles/chrome/attempts/1?tab=timeline',
+    '/runs/run-live/results/features%2Fcheckout.feature/scenarios/scenario/profiles/chrome/attempts/1?tab=viewport',
     '/runs/run-live/results/features%2Fcheckout.feature/scenarios/scenario/examples/row-1/profiles/chrome/attempts/1',
     '/runs/run-live/results/features%2Fcheckout.feature/scenarios/scenario/profiles/chrome/attempts/1/artifacts/0',
   ]
@@ -178,6 +220,9 @@ test('serves the Runs index, active lifecycle, compatibility alias, and deep lin
   expect(indexAsset.status).toBe(200)
   expect(indexAsset.headers.get('content-type')).toContain('text/html')
   expect(indexAsset.headers.get('set-cookie')).toContain('pickle_studio_token')
+  expect(indexAsset.headers.get('content-security-policy')).toContain(
+    "frame-src 'self' https://browserbase.com https://*.browserbase.com",
+  )
   const unauthorizedDeepLink = await fetch(
     `${origin}/specifications/checkout/scenarios/scenario`,
   )

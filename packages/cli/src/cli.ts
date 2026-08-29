@@ -12,6 +12,7 @@ import {
 import type { SelectionOptions, SpecificationState } from '@pickle-spec/spec'
 import type {
   StudioAuthoringModel,
+  StudioLiveViewportEvent,
   StudioManagementGateway,
   StudioRunGateway,
   StudioRunReadinessCheck,
@@ -21,6 +22,7 @@ import {
   defaultModelName,
   screenshotModes,
   type WebAdapterOptions,
+  type WebLiveViewportUpdate,
 } from '@pickle-spec/web'
 import cliPackage from '../package.json' with { type: 'json' }
 import {
@@ -816,6 +818,16 @@ interface StudioRunGatewayInput {
   controller: AbortController
 }
 
+function studioLiveViewportEvent(
+  update: WebLiveViewportUpdate,
+): StudioLiveViewportEvent {
+  if (update.kind === 'closed') {
+    return { type: 'viewport-closed', target: update.target }
+  }
+  const { target, ...viewport } = update
+  return { type: 'viewport-updated', target, viewport }
+}
+
 function studioRunGateway(input: StudioRunGatewayInput): StudioRunGateway {
   const { activeRuns, context, controller } = input
   const { args, credentials, extensions, root } = context
@@ -855,6 +867,7 @@ function studioRunGateway(input: StudioRunGatewayInput): StudioRunGateway {
         onSchedule: (schedule) => onEvent({ type: 'run-scheduled', schedule }),
         onApplicationDiagnostic: (event) =>
           onEvent({ type: 'diagnostic-recorded', ...event }),
+        onLiveViewport: (update) => onEvent(studioLiveViewportEvent(update)),
       })
       activeRuns.set(started.id, runController)
       void started.done
