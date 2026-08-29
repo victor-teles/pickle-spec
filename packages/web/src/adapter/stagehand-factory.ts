@@ -40,6 +40,7 @@ const defaultDomSettleTimeoutMs = 3_000
 const defaultObserveTimeoutMs = 10_000
 
 type StagehandBrowser = Awaited<ReturnType<typeof localBrowser.launch>>
+type WebEvidenceCollector = ReturnType<typeof createWebEvidenceCollector>
 
 type FidelityRoute = {
   request: () => { resourceType: () => string }
@@ -166,21 +167,55 @@ async function launchStagehandBrowser(
   return localBrowser.launch({ headless: options.headless ?? true })
 }
 
+async function installEvidenceScript(
+  browser: StagehandBrowser,
+  evidence: WebEvidenceCollector,
+): Promise<boolean> {
+  try {
+    await browser.context.addInitScript(installWebEvidenceScript)
+    return true
+  } catch (error) {
+    evidence.recordAdapterFailure(
+      'Browser evidence initialization failed',
+      error,
+    )
+    return false
+  }
+}
+
 function stagehandClient(
   browser: StagehandBrowser,
   options: BrowserOptions,
 ): WebBrowserProcess {
   let stagehand: Stagehand | undefined
+  let stagehandCreation: Promise<Stagehand> | undefined
+  let closed = false
   let evidenceScriptInstalled = false
+
+  async function acceptCreatedStagehand(
+    created: Stagehand,
+    signal?: AbortSignal,
+  ): Promise<Stagehand> {
+    if (!closed && !signal?.aborted) return created
+    await created.close().catch(() => {})
+    throw abortError()
+  }
 
   async function ensureStagehand(
     context: WebClientContext,
   ): Promise<Stagehand> {
     if (stagehand) return stagehand
-    stagehand = await Stagehand.create(
-      stagehandCreateOptions(browser, context, options),
-    )
-    return stagehand
+    if (closed || context.signal?.aborted) throw abortError()
+    const creation =
+      stagehandCreation ??
+      Stagehand.create(stagehandCreateOptions(browser, context, options))
+    stagehandCreation = creation
+    try {
+      stagehand = await acceptCreatedStagehand(await creation, context.signal)
+      return stagehand
+    } finally {
+      stagehandCreation = undefined
+    }
   }
 
   async function openContext(context: WebClientContext) {
@@ -189,15 +224,7 @@ function stagehandClient(
     await applyFidelity(browser.context, context.fidelity)
     const evidence = createWebEvidenceCollector()
     if (!evidenceScriptInstalled) {
-      try {
-        await browser.context.addInitScript(installWebEvidenceScript)
-        evidenceScriptInstalled = true
-      } catch (error) {
-        evidence.recordAdapterFailure(
-          'Browser evidence initialization failed',
-          error,
-        )
-      }
+      evidenceScriptInstalled = await installEvidenceScript(browser, evidence)
     }
     return createStagehandAutomation(
       browser,
@@ -208,6 +235,7 @@ function stagehandClient(
   }
 
   async function close(): Promise<void> {
+    closed = true
     try {
       if (stagehand) {
         await stagehand.close()

@@ -773,8 +773,8 @@ export default {
       expect(
         await page.getByRole('img', { name: 'Execution time ruler' }).count(),
       ).toBe(1)
-      const selectedEvidence = page.getByRole('region', {
-        name: 'Selected timeline evidence',
+      const selectedEntry = page.getByRole('region', {
+        name: 'Selected timeline entry',
       })
       const selectedStep = timeline.getByRole('button', {
         name: /Step Then payment is captured/,
@@ -791,10 +791,106 @@ export default {
       const diagnosticEntry = timeline.getByRole('button', {
         name: /Diagnostic entry Payment was declined/,
       })
+      const diagnosticEntryId = await diagnosticEntry.getAttribute(
+        'data-timeline-entry-id',
+      )
+      const selectedStepId = await selectedStep.getAttribute(
+        'data-timeline-entry-id',
+      )
+      if (!diagnosticEntryId || !selectedStepId) {
+        throw new Error('Expected Timeline entry ids')
+      }
+      const diagnosticPlot = page.locator(
+        `[data-timeline-entry-id=${JSON.stringify(diagnosticEntryId)}][data-timeline-plot="point"]`,
+      )
+      const diagnosticPlotBox = await diagnosticPlot.boundingBox()
+      const diagnosticMark = diagnosticPlot.locator(
+        'xpath=following-sibling::span[1]',
+      )
+      const diagnosticMarkStyle = await diagnosticMark.getAttribute('style')
+      expect(diagnosticPlotBox).not.toBeNull()
+      const resolvedDiagnosticPlotBox = requiredValue(diagnosticPlotBox)
+      expect(resolvedDiagnosticPlotBox.width).toBeGreaterThanOrEqual(44)
+      expect(resolvedDiagnosticPlotBox.height).toBe(44)
+      await diagnosticPlot.click()
+      expect(await diagnosticEntry.getAttribute('aria-pressed')).toBe('true')
+      expect(await selectedEntry.textContent()).toContain(
+        'Payment was declined',
+      )
+      expect(
+        await selectedStep.evaluate((element) => element.matches(':focus')),
+      ).toBe(true)
+      expect(await diagnosticMark.getAttribute('style')).toBe(
+        diagnosticMarkStyle,
+      )
+      expect(
+        await page.getByRole('button', { name: 'Resume following' }).count(),
+      ).toBe(1)
+      expect(await diagnosticPlot.evaluate((element) => element.tagName)).toBe(
+        'SPAN',
+      )
+      expect(await diagnosticPlot.getAttribute('role')).toBe('presentation')
+      expect(await diagnosticPlot.getAttribute('tabindex')).toBe('-1')
+      expect(
+        await diagnosticEntry.evaluate(
+          (element) =>
+            element.ownerDocument.defaultView?.getComputedStyle(element)
+              .transitionProperty,
+        ),
+      ).toBe('none')
+      expect(
+        await diagnosticMark.evaluate(
+          (element) =>
+            element.ownerDocument.defaultView?.getComputedStyle(element)
+              .transitionProperty,
+        ),
+      ).toBe('none')
+      const durationPlot = page.locator(
+        `[data-timeline-entry-id=${JSON.stringify(selectedStepId)}][data-timeline-plot="duration"]`,
+      )
+      const durationPlotBox = await durationPlot.boundingBox()
+      const durationMark = durationPlot.locator(
+        'xpath=following-sibling::span[1]',
+      )
+      const durationLabel = durationMark.locator(
+        '[data-timeline-duration-label]',
+      )
+      const durationMarkBox = await durationMark.boundingBox()
+      const durationLabelBox = await durationLabel.boundingBox()
+      const durationMarkStyle = await durationMark.getAttribute('style')
+      expect(durationPlotBox).not.toBeNull()
+      const resolvedDurationPlotBox = requiredValue(durationPlotBox)
+      expect(resolvedDurationPlotBox.width).toBeGreaterThanOrEqual(44)
+      expect(resolvedDurationPlotBox.height).toBe(44)
+      expect(durationMarkBox).not.toBeNull()
+      expect(durationLabelBox).not.toBeNull()
+      const resolvedDurationMarkBox = requiredValue(durationMarkBox)
+      const resolvedDurationLabelBox = requiredValue(durationLabelBox)
+      expect(resolvedDurationLabelBox.x).toBeGreaterThanOrEqual(
+        resolvedDurationMarkBox.x,
+      )
+      expect(
+        resolvedDurationLabelBox.x + resolvedDurationLabelBox.width,
+      ).toBeLessThanOrEqual(
+        resolvedDurationMarkBox.x + resolvedDurationMarkBox.width,
+      )
+      expect(
+        await durationMark.evaluate(
+          (element) =>
+            element.ownerDocument.defaultView?.getComputedStyle(element)
+              .overflowX,
+        ),
+      ).toBe('hidden')
+      await durationPlot.click()
+      expect(await selectedStep.getAttribute('aria-pressed')).toBe('true')
+      expect(await selectedEntry.textContent()).toContain(
+        'Then payment is captured',
+      )
+      expect(await durationMark.getAttribute('style')).toBe(durationMarkStyle)
       await diagnosticEntry.focus()
       await page.keyboard.press('Enter')
       expect(await diagnosticEntry.getAttribute('aria-pressed')).toBe('true')
-      expect(await selectedEvidence.textContent()).toContain(
+      expect(await selectedEntry.textContent()).toContain(
         'Payment was declined',
       )
       const artifactEntry = timeline.getByRole('button', {
@@ -802,7 +898,7 @@ export default {
       })
       await artifactEntry.click()
       expect(await artifactEntry.getAttribute('aria-pressed')).toBe('true')
-      expect(await selectedEvidence.textContent()).toContain(
+      expect(await selectedEntry.textContent()).toContain(
         'Recorded at step completion',
       )
       await page.getByRole('button', { name: 'Resume following' }).click()
@@ -820,14 +916,73 @@ export default {
       expect(
         await page.getByRole('button', { name: 'Resume following' }).count(),
       ).toBe(1)
-      await page.getByRole('switch', { name: 'Verbose timeline' }).click()
+      const verboseTimelineSwitch = page.getByRole('switch', {
+        name: 'Verbose timeline',
+      })
+      const switchState = verboseTimelineSwitch.locator(
+        '[data-slot="switch-state"]',
+      )
+      const switchThumb = verboseTimelineSwitch.locator(
+        '[data-slot="switch-thumb"]',
+      )
+      const stateMotion = await switchState.evaluate((element) => {
+        const style =
+          element.ownerDocument.defaultView?.getComputedStyle(element)
+        return {
+          duration: style?.transitionDuration,
+          property: style?.transitionProperty,
+          timing: style?.transitionTimingFunction,
+        }
+      })
+      const thumbMotion = await switchThumb.evaluate((element) => {
+        const style =
+          element.ownerDocument.defaultView?.getComputedStyle(element)
+        return {
+          duration: style?.transitionDuration,
+          property: style?.transitionProperty,
+          timing: style?.transitionTimingFunction,
+        }
+      })
+      expect(stateMotion).toEqual({
+        duration: '0.12s',
+        property: 'opacity',
+        timing: 'cubic-bezier(0.23, 1, 0.32, 1)',
+      })
+      expect(thumbMotion).toEqual({
+        duration: '0.12s',
+        property: 'transform, translate, scale, rotate',
+        timing: 'cubic-bezier(0.23, 1, 0.32, 1)',
+      })
+      expect(
+        await switchState.evaluate(
+          (element) =>
+            element.ownerDocument.defaultView?.getComputedStyle(element)
+              .opacity,
+        ),
+      ).toBe('0')
+      await verboseTimelineSwitch.click()
+      await page.waitForTimeout(150)
+      expect(
+        await switchState.evaluate(
+          (element) =>
+            element.ownerDocument.defaultView?.getComputedStyle(element)
+              .opacity,
+        ),
+      ).toBe('1')
+      expect(
+        await switchThumb.evaluate(
+          (element) =>
+            element.ownerDocument.defaultView?.getComputedStyle(element)
+              .translate,
+        ),
+      ).not.toBe('none')
       expect(await timeline.textContent()).toContain('Run event')
       await page.setViewportSize({ width: 390, height: 844 })
       const timelineChart = page.getByRole('region', {
         name: 'Execution timeline chart',
       })
       const chartBox = await timelineChart.boundingBox()
-      const detailBox = await selectedEvidence.boundingBox()
+      const detailBox = await selectedEntry.boundingBox()
       expect(chartBox).not.toBeNull()
       expect(detailBox).not.toBeNull()
       expect(requiredValue(detailBox).y).toBeGreaterThanOrEqual(
@@ -854,6 +1009,28 @@ export default {
       const timeRulerViewport = page.getByRole('region', {
         name: 'Scrollable execution time ruler',
       })
+      const timeRuler = page.getByRole('img', {
+        name: 'Execution time ruler',
+      })
+      const tickLabels = timeRuler.locator('[data-timeline-tick]')
+      const finalTickLabel = tickLabels.last()
+      const timeRulerBox = await timeRuler.boundingBox()
+      const finalTickLabelBox = await finalTickLabel.boundingBox()
+      expect(await tickLabels.count()).toBeGreaterThan(1)
+      expect(timeRulerBox).not.toBeNull()
+      expect(finalTickLabelBox).not.toBeNull()
+      const resolvedTimeRulerBox = requiredValue(timeRulerBox)
+      const resolvedFinalTickLabelBox = requiredValue(finalTickLabelBox)
+      expect(
+        resolvedFinalTickLabelBox.x + resolvedFinalTickLabelBox.width,
+      ).toBeLessThanOrEqual(resolvedTimeRulerBox.x + resolvedTimeRulerBox.width)
+      expect(
+        await finalTickLabel.evaluate(
+          (element) =>
+            element.ownerDocument.defaultView?.getComputedStyle(element)
+              .whiteSpace,
+        ),
+      ).toBe('nowrap')
       const horizontalScrollbar = timelineChart.locator(
         '[data-slot="scroll-area-scrollbar"][data-orientation="horizontal"]',
       )

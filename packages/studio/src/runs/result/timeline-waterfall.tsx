@@ -117,12 +117,13 @@ function TimelineLabelEntry(
         variant="ghost"
         aria-label={`${props.entry.kind} ${props.entry.title}, ${relativeTimeLabel(props.entry.startedAt, props.attemptStartedAt)}`}
         aria-pressed={selected}
+        data-timeline-entry-id={props.entry.id}
         data-timeline-index={props.entryIndex}
         tabIndex={selected ? 0 : -1}
         onClick={handleClick}
         onKeyDown={handleKeyDown}
         className={cn(
-          'h-full w-full min-w-0 justify-start rounded-none px-3 text-left',
+          'h-full w-full min-w-0 justify-start rounded-none px-3 text-left transition-none',
           selected && 'bg-secondary text-foreground',
           props.entry.causal && 'text-destructive',
         )}
@@ -172,7 +173,7 @@ function TimelineLabels(props: TimelineLabelsProps) {
   return (
     <div className="min-w-0 border-r border-border">
       <div className="flex h-8 items-center border-b border-border px-3 text-[0.6875rem] font-medium text-muted-foreground">
-        Evidence
+        Timeline entry
       </div>
       <ol aria-label="Execution timeline">
         {props.entries.map((entry, visibleIndex) => (
@@ -189,55 +190,140 @@ function TimelineLabels(props: TimelineLabelsProps) {
   )
 }
 
-function TimelineChartRow(props: {
+type TimelinePlotGeometry =
+  | { type: 'point'; left: number }
+  | { type: 'duration'; left: number; width: number; durationMs: number }
+
+type TimelinePlotEntryProps = {
   entry: TimelineEntry
-  scale: ReturnType<typeof createTimelineScale>
-  attemptStartedAt: string
-  selectedEntryId?: string
-}) {
-  const entryStartMs = elapsedMs(props.entry.startedAt, props.attemptStartedAt)
-  const left = percentage(entryStartMs, props.scale.durationMs)
-  const endMs = props.entry.finishedAt
-    ? elapsedMs(props.entry.finishedAt, props.attemptStartedAt)
-    : undefined
-  const spanWidth =
-    endMs === undefined
-      ? 0
-      : Math.max(0.8, percentage(endMs - entryStartMs, props.scale.durationMs))
+  geometry: TimelinePlotGeometry
+  selected: boolean
+  onSelect: (entryId: string) => void
+}
+
+type TimelinePlotMarkProps = {
+  entry: TimelineEntry
+  geometry: TimelinePlotGeometry
+  markClassName: string
+}
+
+function TimelinePlotMark(props: TimelinePlotMarkProps) {
+  if (props.geometry.type === 'point') {
+    return (
+      <span
+        data-timeline-mark
+        className={cn(
+          'absolute top-3 flex size-5 -translate-x-1/2 items-center justify-center rounded-md ring-2 ring-background',
+          props.markClassName,
+        )}
+        style={{ left: `${props.geometry.left}%` }}
+      >
+        <TimelineKindIcon kind={props.entry.kind} className="size-3" />
+      </span>
+    )
+  }
+  return (
+    <span
+      data-timeline-mark
+      className={cn(
+        'absolute top-3 flex h-5 min-w-1.5 items-center overflow-hidden rounded-md px-1.5 font-mono text-[0.625rem] font-medium whitespace-nowrap tabular-nums',
+        props.markClassName,
+      )}
+      style={{
+        left: `${props.geometry.left}%`,
+        width: `${props.geometry.width}%`,
+      }}
+    >
+      <span data-timeline-duration-label className="min-w-0 truncate">
+        {durationLabel(props.geometry.durationMs)}
+      </span>
+    </span>
+  )
+}
+
+function timelinePlotPointerStyle(geometry: TimelinePlotGeometry) {
+  const spanWidth = geometry.type === 'duration' ? geometry.width : undefined
+  const midpoint = geometry.left + (spanWidth ?? 0) / 2
+  const pointerWidth =
+    spanWidth === undefined ? '44px' : `max(44px, ${spanWidth}%)`
+  const pointerHalfWidth =
+    spanWidth === undefined ? '22px' : `max(22px, ${spanWidth / 2}%)`
+  return {
+    left: `clamp(0px, calc(${midpoint}% - ${pointerHalfWidth}), calc(100% - ${pointerWidth}))`,
+    width: pointerWidth,
+  }
+}
+
+function TimelinePlotEntry(props: TimelinePlotEntryProps) {
+  const markClassName = cn(
+    'border border-transparent transition-none peer-hover:border-foreground/30 peer-active:border-foreground/45',
+    timelineKindSolidClassName(props.entry.kind),
+    props.entry.causal && 'ring-2 ring-destructive/60',
+    props.selected && 'border-foreground/35',
+  )
   return (
     <div
       aria-hidden="true"
       className={cn(
         'relative h-11 border-b border-border last:border-b-0',
-        props.entry.id === props.selectedEntryId && 'bg-secondary/55',
+        props.selected && 'bg-secondary/55',
       )}
     >
-      {endMs === undefined ? (
-        <span
-          className={cn(
-            'absolute top-3 flex size-5 -translate-x-1/2 items-center justify-center rounded-md ring-2 ring-background',
-            timelineKindSolidClassName(props.entry.kind),
-            props.entry.causal && 'ring-destructive/60',
-          )}
-          style={{ left: `${left}%` }}
-        >
-          <TimelineKindIcon kind={props.entry.kind} className="size-3" />
-        </span>
-      ) : (
-        <span
-          className={cn(
-            'absolute top-3 flex h-5 min-w-1.5 items-center rounded-md px-1.5 font-mono text-[0.625rem] font-medium tabular-nums',
-            timelineKindSolidClassName(props.entry.kind),
-            props.entry.causal && 'ring-2 ring-destructive/60',
-          )}
-          style={{ left: `${left}%`, width: `${spanWidth}%` }}
-        >
-          <span className="min-w-max">
-            {durationLabel(endMs - entryStartMs)}
-          </span>
-        </span>
-      )}
+      <Button
+        nativeButton={false}
+        render={<span />}
+        role="presentation"
+        tabIndex={-1}
+        variant="ghost"
+        data-timeline-entry-id={props.entry.id}
+        data-timeline-plot={props.geometry.type}
+        onMouseDown={(event) => event.preventDefault()}
+        onClick={() => props.onSelect(props.entry.id)}
+        className="peer absolute top-0 z-20 h-11 min-w-0 cursor-pointer rounded-none border-0 bg-transparent p-0 transition-none hover:bg-transparent active:bg-transparent"
+        style={timelinePlotPointerStyle(props.geometry)}
+      />
+      <TimelinePlotMark
+        entry={props.entry}
+        geometry={props.geometry}
+        markClassName={markClassName}
+      />
     </div>
+  )
+}
+
+type TimelineChartRowProps = {
+  entry: TimelineEntry
+  scale: ReturnType<typeof createTimelineScale>
+  attemptStartedAt: string
+  selectedEntryId?: string
+  onSelect: (entryId: string) => void
+}
+
+function TimelineChartRow(props: TimelineChartRowProps) {
+  const entryStartMs = elapsedMs(props.entry.startedAt, props.attemptStartedAt)
+  const left = percentage(entryStartMs, props.scale.durationMs)
+  const endMs = props.entry.finishedAt
+    ? elapsedMs(props.entry.finishedAt, props.attemptStartedAt)
+    : undefined
+  const geometry: TimelinePlotGeometry =
+    endMs === undefined
+      ? { type: 'point', left }
+      : {
+          type: 'duration',
+          left,
+          width: Math.max(
+            0.8,
+            percentage(endMs - entryStartMs, props.scale.durationMs),
+          ),
+          durationMs: endMs - entryStartMs,
+        }
+  return (
+    <TimelinePlotEntry
+      entry={props.entry}
+      geometry={geometry}
+      selected={props.entry.id === props.selectedEntryId}
+      onSelect={props.onSelect}
+    />
   )
 }
 
@@ -290,7 +376,13 @@ function TimelineChart(
               className="absolute top-0 bottom-0 border-l border-border/70"
               style={{ left: `${percentage(tick, scale.durationMs)}%` }}
             >
-              <span className="absolute top-1.5 left-1.5 font-mono text-[0.625rem] text-muted-foreground tabular-nums">
+              <span
+                data-timeline-tick={tick}
+                className={cn(
+                  'absolute top-1.5 font-mono text-[0.625rem] whitespace-nowrap text-muted-foreground tabular-nums',
+                  tick === scale.durationMs ? 'right-1.5' : 'left-1.5',
+                )}
+              >
                 {durationLabel(tick)}
               </span>
             </span>
@@ -319,6 +411,7 @@ function TimelineChart(
               scale={scale}
               attemptStartedAt={props.attemptStartedAt}
               selectedEntryId={props.selectedEntryId}
+              onSelect={props.onSelect}
             />
           ))}
         </div>

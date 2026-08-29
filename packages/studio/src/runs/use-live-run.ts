@@ -331,6 +331,29 @@ function liveRunIsRunning(
   )
 }
 
+function selectedLiveForSpecification(
+  live: LiveResultInspection | undefined,
+  specificationUri: string | undefined,
+): LiveResultInspection | undefined {
+  return live?.specificationUri === specificationUri ? live : undefined
+}
+
+function useSelectedLiveRun(
+  live: LiveResultInspection | undefined,
+  specificationUri: string | undefined,
+) {
+  const selectedLive = selectedLiveForSpecification(live, specificationUri)
+  const cells = useMemo(
+    () => (selectedLive ? cellsFromLiveInspection(selectedLive) : []),
+    [selectedLive],
+  )
+  return {
+    cells,
+    selectedLive,
+    selectedResult: selectedResultFrom(selectedLive, cells),
+  }
+}
+
 export function useLiveRun(options: UseLiveRunOptions) {
   const {
     clearReadinessAttempt,
@@ -344,11 +367,10 @@ export function useLiveRun(options: UseLiveRunOptions) {
   const { setLive, setOrigin, setRunId } = setters
   const activeRunIds = options.runsIndex?.activeRunIds ?? noActiveRunIds
   const running = liveRunIsRunning(live, starting, options.runsIndex)
-  const cells = useMemo(
-    () => (live ? cellsFromLiveInspection(live) : []),
-    [live],
+  const { cells, selectedLive, selectedResult } = useSelectedLiveRun(
+    live,
+    options.selectedSpecificationUri,
   )
-  const selectedResult = selectedResultFrom(live, cells)
   useRestoreActiveRun({
     activeRunIds,
     live,
@@ -379,7 +401,7 @@ export function useLiveRun(options: UseLiveRunOptions) {
     cancelRun,
     cells,
     clearReadinessAttempt,
-    live,
+    live: selectedLive,
     origin,
     readinessAttempt,
     runId,

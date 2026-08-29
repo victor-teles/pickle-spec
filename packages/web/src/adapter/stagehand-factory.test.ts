@@ -233,4 +233,38 @@ describe('stagehandFactory', () => {
       projectId: 'browserbase-project',
     })
   })
+
+  test('closes Stagehand when attachment finishes after cancellation', async () => {
+    const browser = {
+      close: mock(async () => {}),
+    } as unknown as LaunchedBrowser
+    const stagehand = {
+      close: mock(async () => {}),
+    } as unknown as Stagehand
+    const creation = Promise.withResolvers<Stagehand>()
+    spyOn(localBrowser, 'launch').mockResolvedValue(browser)
+    spyOn(Stagehand, 'create').mockImplementation(() => creation.promise)
+    const controller = new AbortController()
+    const browserOptions = {
+      modelName: 'google/gemini-3.6-flash',
+      modelApiKey: 'test-google-key',
+    }
+    const browserProcess = await stagehandFactory.launch({
+      browser: browserOptions,
+      signal: controller.signal,
+    })
+    const opening = browserProcess.openContext({
+      browser: browserOptions,
+      signal: controller.signal,
+    })
+
+    await Bun.sleep(0)
+    controller.abort()
+    await browserProcess.close()
+    creation.resolve(stagehand)
+
+    await expect(opening).rejects.toMatchObject({ name: 'AbortError' })
+    expect(stagehand.close).toHaveBeenCalledTimes(1)
+    expect(browser.close).toHaveBeenCalledTimes(1)
+  })
 })

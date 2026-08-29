@@ -50,6 +50,18 @@ function mockFactory(process: WebBrowserProcess | (() => WebBrowserProcess)) {
   return { factory, launch }
 }
 
+async function cancellationOutcome(
+  operation: Promise<unknown>,
+): Promise<string> {
+  return Promise.race([
+    operation.then(
+      () => 'resolved',
+      (error: unknown) => (error instanceof Error ? error.name : 'rejected'),
+    ),
+    Bun.sleep(25).then(() => 'still-pending'),
+  ])
+}
+
 describe('WebProcessPool', () => {
   afterEach(() => {
     mock.restore()
@@ -69,6 +81,71 @@ describe('WebProcessPool', () => {
     await pool.dispose()
 
     expect(launch).toHaveBeenCalledTimes(1)
+  })
+
+  test('cancels browser launch and closes a process that resolves late', async () => {
+    const launched = Promise.withResolvers<WebBrowserProcess>()
+    const process = mockProcess(isolatedAutomation())
+    const pool = new WebProcessPool({
+      factory: { launch: () => launched.promise },
+    })
+    const controller = new AbortController()
+    const opening = pool.openLogicalSession({}, controller.signal)
+
+    controller.abort()
+    const outcome = await cancellationOutcome(opening)
+    launched.resolve(process)
+    await opening.catch(() => undefined)
+    await Bun.sleep(0)
+
+    expect(outcome).toBe('AbortError')
+    expect(process.close).toHaveBeenCalledTimes(1)
+  })
+
+  test('cancels context setup and closes resources that resolve late', async () => {
+    const opened = Promise.withResolvers<WebAutomation>()
+    const automation = isolatedAutomation()
+    const process: WebBrowserProcess = {
+      openContext: () => opened.promise,
+      close: mock(async () => {}),
+    }
+    const pool = new WebProcessPool({
+      factory: { launch: async () => process },
+    })
+    const controller = new AbortController()
+    const opening = pool.openLogicalSession({}, controller.signal)
+
+    await Bun.sleep(0)
+    controller.abort()
+    const outcome = await cancellationOutcome(opening)
+    opened.resolve(automation)
+    const session = await opening.catch(() => undefined)
+    if (session) {
+      await session.automation.close()
+      await session.release()
+    }
+    await Bun.sleep(0)
+
+    expect(outcome).toBe('AbortError')
+    expect(process.close).toHaveBeenCalledTimes(1)
+  })
+
+  test('discards an interrupted browser process instead of reusing it', async () => {
+    const { factory, launch } = mockFactory(() =>
+      mockProcess(isolatedAutomation()),
+    )
+    const pool = new WebProcessPool({ factory, idleTimeoutMs: 60_000 })
+
+    const interrupted = await pool.openLogicalSession({}, undefined)
+    await interrupted.automation.close()
+    await interrupted.discard()
+
+    const recovered = await pool.openLogicalSession({}, undefined)
+    await recovered.automation.close()
+    await recovered.release()
+    await pool.dispose()
+
+    expect(launch).toHaveBeenCalledTimes(2)
   })
 
   test('never carries an inference process into Replay', async () => {

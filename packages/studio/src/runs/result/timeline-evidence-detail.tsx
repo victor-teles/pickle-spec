@@ -60,7 +60,7 @@ export function TimelineEvidenceDetail(props: TimelineEvidenceDetailProps) {
   const stepText = entry.context ?? entry.title
   return (
     <section
-      aria-label="Selected timeline evidence"
+      aria-label="Selected timeline entry"
       className="min-w-0 border-t border-border p-4 lg:border-t-0 lg:border-l"
     >
       <div className="flex flex-wrap items-center gap-2">
