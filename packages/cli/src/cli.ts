@@ -14,6 +14,7 @@ import type {
   StudioAuthoringModel,
   StudioManagementGateway,
   StudioRunGateway,
+  StudioRunReadinessCheck,
 } from '@pickle-spec/studio'
 import { createCredentialStore, startStudio } from '@pickle-spec/studio'
 import {
@@ -70,6 +71,7 @@ import {
   resolveConfigSecrets,
   saveStudioCredential,
   studioRunReadiness,
+  studioRunReadinessFromChecks,
   studioRunSelection,
 } from './studio/studio-project'
 import { errorMessage, withRecoveryFailure } from './terminal/command-error'
@@ -751,24 +753,44 @@ function studioManagementGateway(
       )
       if (!readiness.ready) return readiness
       try {
-        validateStudioMobileTargetCapabilities(
+        const discoveries = await discoverStudioMobileTargets(
           config,
-          await discoverStudioMobileTargets(
-            config,
-            undefined,
-            extensions.adapters,
-            request?.profiles,
-          ),
+          undefined,
+          extensions.adapters,
           request?.profiles,
         )
-        return readiness
+        validateStudioMobileTargetCapabilities(
+          config,
+          discoveries,
+          request?.profiles,
+        )
+        return withMobileReadiness(
+          readiness,
+          discoveries.length === 0
+            ? { id: 'mobile-target', status: 'not-applicable' }
+            : { id: 'mobile-target', status: 'ready' },
+        )
       } catch (reason) {
         const message =
           reason instanceof Error ? reason.message : String(reason)
-        return { ready: false, reasons: [...readiness.reasons, message] }
+        return withMobileReadiness(readiness, {
+          id: 'mobile-target',
+          status: 'blocked',
+          reasons: [message],
+        })
       }
     },
   }
+}
+
+function withMobileReadiness(
+  readiness: Awaited<ReturnType<typeof studioRunReadiness>>,
+  mobileCheck: StudioRunReadinessCheck,
+) {
+  return studioRunReadinessFromChecks([
+    ...(readiness.checks ?? []).filter((check) => check.id !== 'mobile-target'),
+    mobileCheck,
+  ])
 }
 
 async function waitForStudioStop(

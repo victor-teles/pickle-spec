@@ -281,7 +281,7 @@ async function disposeAdapters(
   }
 }
 
-function scenarioSelectionId(selection: {
+export function scenarioSelectionId(selection: {
   specification: { source: { uri: string }; name: string }
   scenario: { name: string; id?: string; tags: string[] }
 }): string {

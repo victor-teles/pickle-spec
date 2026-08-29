@@ -33,6 +33,7 @@ export interface StudioScenario {
   id: string
   name: string
   canRun?: boolean
+  readiness?: StudioRunReadiness
 }
 
 export interface StudioExternalLink {
@@ -99,9 +100,31 @@ export interface StudioCredential {
   present: boolean
 }
 
+export type StudioRunReadinessCheckId =
+  | 'selection'
+  | 'execution-target'
+  | 'model-credential'
+  | 'mobile-target'
+
+export type StudioRunReadinessCheck =
+  | {
+      id: StudioRunReadinessCheckId
+      status: 'ready'
+    }
+  | {
+      id: StudioRunReadinessCheckId
+      status: 'not-applicable'
+    }
+  | {
+      id: StudioRunReadinessCheckId
+      status: 'blocked'
+      reasons: readonly [string, ...string[]]
+    }
+
 export interface StudioRunReadiness {
   ready: boolean
   reasons: readonly string[]
+  checks?: readonly StudioRunReadinessCheck[]
 }
 
 export interface StudioConfigPatch {

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { targetNewRun } from '../app/command-palette-model'
 import { type StudioApi, studioToken } from '../app/studio-api'
 import type {
@@ -44,9 +44,15 @@ type UseLiveRunOptions = {
 
 type SetValue<Value> = React.Dispatch<React.SetStateAction<Value>>
 
+export type StudioReadinessAttempt = {
+  readiness: StudioRunReadiness
+  request: StudioRunRequest
+}
+
 type LiveRunSetters = {
   setLive: SetValue<LiveResultInspection | undefined>
   setOrigin: SetValue<RunOrigin | undefined>
+  setReadinessAttempt: SetValue<StudioReadinessAttempt | undefined>
   setRunId: SetValue<string | undefined>
   setStarting: SetValue<boolean>
 }
@@ -190,11 +196,25 @@ function useLiveRunState() {
   const [starting, setStarting] = useState(false)
   const [origin, setOrigin] = useState<RunOrigin>()
   const [live, setLive] = useState<LiveResultInspection>()
+  const [readinessAttempt, setReadinessAttempt] =
+    useState<StudioReadinessAttempt>()
+  const clearReadinessAttempt = useCallback(
+    () => setReadinessAttempt(undefined),
+    [],
+  )
   return {
+    clearReadinessAttempt,
     live,
     origin,
+    readinessAttempt,
     runId,
-    setters: { setLive, setOrigin, setRunId, setStarting },
+    setters: {
+      setLive,
+      setOrigin,
+      setReadinessAttempt,
+      setRunId,
+      setStarting,
+    },
     starting,
   }
 }
@@ -232,6 +252,7 @@ async function startLiveRun(
         body: JSON.stringify(request),
       },
     )
+    setters.setReadinessAttempt({ readiness, request })
     if (!readiness.ready) throw new Error(readiness.reasons.join('\n'))
     const started = await options.api<{ id: string }>('/api/runs', {
       method: 'POST',
@@ -298,15 +319,31 @@ function liveInspectionControls(
   }
 }
 
-export function useLiveRun(options: UseLiveRunOptions) {
-  const { live, origin, runId, setters, starting } = useLiveRunState()
-  const { setLive, setOrigin, setRunId } = setters
-  const activeRunIds = options.runsIndex?.activeRunIds ?? noActiveRunIds
-
-  const running =
+function liveRunIsRunning(
+  live: LiveResultInspection | undefined,
+  starting: boolean,
+  runsIndex: StudioRunsIndex | undefined,
+): boolean {
+  return (
     live?.phase === 'running' ||
     starting ||
-    Boolean(options.runsIndex?.activeRunIds.length)
+    Boolean(runsIndex?.activeRunIds.length)
+  )
+}
+
+export function useLiveRun(options: UseLiveRunOptions) {
+  const {
+    clearReadinessAttempt,
+    live,
+    origin,
+    readinessAttempt,
+    runId,
+    setters,
+    starting,
+  } = useLiveRunState()
+  const { setLive, setOrigin, setRunId } = setters
+  const activeRunIds = options.runsIndex?.activeRunIds ?? noActiveRunIds
+  const running = liveRunIsRunning(live, starting, options.runsIndex)
   const cells = useMemo(
     () => (live ? cellsFromLiveInspection(live) : []),
     [live],
@@ -338,18 +375,17 @@ export function useLiveRun(options: UseLiveRunOptions) {
     cancelLiveRun(options, running, requestedRunId)
 
   return {
+    ...controls,
     cancelRun,
     cells,
+    clearReadinessAttempt,
     live,
     origin,
-    pauseFollowing: controls.pauseFollowing,
-    pinSelection: controls.pinSelection,
+    readinessAttempt,
     runId,
     running,
-    selectInspectorTab: controls.selectInspectorTab,
     selectedResult,
     startNewRun,
     startRun,
-    resumeFollowing: controls.resumeFollowing,
   }
 }

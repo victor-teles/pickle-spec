@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react'
 import { Button } from '../components/ui/button'
+import { FirstRunOnboarding } from '../onboarding/first-run-onboarding'
 import { RunsArea } from '../runs/runs'
 import { SettingsPanel } from '../settings/settings'
 import { SpecificationsScreen } from '../specifications/specifications-screen'
@@ -106,6 +107,11 @@ function StudioWorkspace(props: { studio: StudioController }) {
   const { studio } = props
   const { data } = studio
   if (!data.project) return null
+
+  function handleOpenSettings() {
+    studio.actions.selectArea('Settings')
+  }
+
   return (
     <div className="studio-shell flex h-screen flex-col overflow-hidden">
       <CommandPalette
@@ -134,6 +140,16 @@ function StudioWorkspace(props: { studio: StudioController }) {
         running={studio.run.running}
         onAreaChange={studio.actions.selectArea}
         onOpenCommands={studio.actions.openCommands}
+      />
+      <FirstRunOnboarding
+        activeProfileId={studio.activeProfileId}
+        currentSpecification={studio.selection.selected}
+        onOpenSettings={handleOpenSettings}
+        onRun={studio.run.startRun}
+        project={data.project}
+        readinessAttempt={studio.run.readinessAttempt}
+        running={studio.run.running}
+        runsIndex={data.runsIndex}
       />
       <StudioAreaContent studio={studio} />
     </div>
