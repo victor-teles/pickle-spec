@@ -8,6 +8,7 @@ import {
   cellsFromLiveInspection,
   disconnectLiveInspection,
   hydrateLiveInspection,
+  liveInspectionFromSnapshot,
   pauseLiveFollowing,
   pinLiveInvestigation,
   receiveLiveStreamEvent,
@@ -217,6 +218,34 @@ test('live Run events update the same Overview, Timeline, Artifacts, and Diagnos
   expect(
     diagnosticsFor(inspected!.attempt).map((item) => item.message),
   ).toEqual(['Payment was declined'])
+})
+
+test('restores a running inspection from an active snapshot and schedule', () => {
+  const inspection = liveInspectionFromSnapshot(
+    {
+      id: 'run-79',
+      events: [runStarted(), scenarioStarted(), stepStarted()],
+      schedule: [
+        {
+          specification: { name: 'Checkout', uri: specificationUri },
+          scenario,
+          executionTargetProfile: { id: 'chrome' },
+        },
+      ],
+    },
+    specificationUri,
+  )
+
+  expect(inspection.phase).toBe('running')
+  expect(inspection.schedule[0]?.specification.uri).toBe(specificationUri)
+  expect(cellsFromLiveInspection(inspection)).toEqual([
+    {
+      scenarioId: scenario.id,
+      scenarioName: scenario.name,
+      profileId: 'chrome',
+      state: 'running',
+    },
+  ])
 })
 
 test('shows managed application output while a step is still running', () => {

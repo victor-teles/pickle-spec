@@ -159,6 +159,7 @@ export interface StudioRunSnapshot {
   id: string
   events: RunEvent[]
   manifest?: TestRunManifest
+  schedule?: readonly ScheduledTestResult[]
 }
 
 export type StudioLiveDiagnosticEvent = {
@@ -984,9 +985,18 @@ export async function startStudio(
         if (!options.gateway) {
           return new Response('Test runs are unavailable', { status: 501 })
         }
-        return Response.json(
-          await options.gateway.snapshot(decodeURIComponent(match[1]!)),
-        )
+        const runId = decodeURIComponent(match[1]!)
+        const snapshot = await options.gateway.snapshot(runId)
+        const scheduled = buffers
+          .get(runId)
+          ?.find((event) => event.type === 'run-scheduled')
+        return Response.json({
+          ...snapshot,
+          schedule:
+            scheduled?.type === 'run-scheduled'
+              ? scheduled.schedule
+              : undefined,
+        } satisfies StudioRunSnapshot)
       }
 
       async function routeExecution(): Promise<Response | undefined> {

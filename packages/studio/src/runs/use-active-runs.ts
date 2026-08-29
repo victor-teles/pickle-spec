@@ -6,8 +6,8 @@ import {
   hydrateLiveInspection,
   type LiveResultInspection,
   type LiveStreamEvent,
+  liveInspectionFromSnapshot,
   receiveLiveStreamEvent,
-  startLiveInspection,
 } from './result/live-result-inspection'
 
 type ActiveRunsOptions = {
@@ -32,14 +32,6 @@ export function useActiveRuns(options: ActiveRunsOptions) {
 
     for (const runId of options.runIds) {
       void connect(runId)
-    }
-
-    function inspectionFrom(snapshot: StudioRunSnapshot, runId: string) {
-      let inspection = startLiveInspection({ runId, specificationUri: '' })
-      for (const event of snapshot.events) {
-        inspection = receiveLiveStreamEvent(inspection, event)
-      }
-      return inspection
     }
 
     async function finishRun(runId: string): Promise<void> {
@@ -90,7 +82,7 @@ export function useActiveRuns(options: ActiveRunsOptions) {
           `/api/runs/${encodeURIComponent(runId)}`,
         )
         if (cancelled) return
-        updateInspection(runId, inspectionFrom(snapshot, runId))
+        updateInspection(runId, liveInspectionFromSnapshot(snapshot, ''))
         openRunSocket(runId)
       } catch (reason) {
         if (!cancelled) onError.current(messageFrom(reason))
