@@ -44,7 +44,7 @@ const checkLabels: Record<StudioRunReadinessCheckId, string> = {
   selection: 'Scenario selected',
   'execution-target': 'Execution target ready',
   'model-credential': 'Model credential ready',
-  'mobile-target': 'Mobile target ready',
+  environment: 'Local environment ready',
 }
 
 function checkState(check: StudioRunReadinessCheck) {

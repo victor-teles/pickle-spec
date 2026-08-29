@@ -15,7 +15,6 @@ import type {
   StudioLiveViewportEvent,
   StudioManagementGateway,
   StudioRunGateway,
-  StudioRunReadinessCheck,
 } from '@pickle-spec/studio'
 import { createCredentialStore, startStudio } from '@pickle-spec/studio'
 import {
@@ -35,6 +34,8 @@ import {
   initializeProject,
   migrateProject,
 } from './configuration/project'
+import { runDoctorCommand } from './doctor/doctor'
+import { diagnoseProjectEnvironment } from './doctor/project-environment'
 import { runCacheCommand } from './execution-cache/cache'
 import { requiredValue } from './required-value'
 import type { ApplicationOutputOptions } from './run/application-output'
@@ -65,6 +66,7 @@ import { createStudioExecutionCacheGateway } from './studio/studio-cache'
 import { createStudioHistoryGateway } from './studio/studio-history'
 import {
   discoverStudioMobileTargets,
+  studioMobileEnvironmentAdapterFactory,
   validateStudioMobileTargetCapabilities,
 } from './studio/studio-mobile-targets'
 import {
@@ -73,7 +75,7 @@ import {
   resolveConfigSecrets,
   saveStudioCredential,
   studioRunReadiness,
-  studioRunReadinessFromChecks,
+  studioRunReadinessWithEnvironment,
   studioRunSelection,
 } from './studio/studio-project'
 import { errorMessage, withRecoveryFailure } from './terminal/command-error'
@@ -753,46 +755,14 @@ function studioManagementGateway(
         config,
         specifications,
       )
-      if (!readiness.ready) return readiness
-      try {
-        const discoveries = await discoverStudioMobileTargets(
-          config,
-          undefined,
-          extensions.adapters,
-          request?.profiles,
-        )
-        validateStudioMobileTargetCapabilities(
-          config,
-          discoveries,
-          request?.profiles,
-        )
-        return withMobileReadiness(
-          readiness,
-          discoveries.length === 0
-            ? { id: 'mobile-target', status: 'not-applicable' }
-            : { id: 'mobile-target', status: 'ready' },
-        )
-      } catch (reason) {
-        const message =
-          reason instanceof Error ? reason.message : String(reason)
-        return withMobileReadiness(readiness, {
-          id: 'mobile-target',
-          status: 'blocked',
-          reasons: [message],
-        })
-      }
+      const environment = await diagnoseProjectEnvironment(config, {
+        profileIds: request?.profiles,
+        mobileAdapterFactory: (profileId) =>
+          studioMobileEnvironmentAdapterFactory(extensions.adapters, profileId),
+      })
+      return studioRunReadinessWithEnvironment(readiness, environment)
     },
   }
-}
-
-function withMobileReadiness(
-  readiness: Awaited<ReturnType<typeof studioRunReadiness>>,
-  mobileCheck: StudioRunReadinessCheck,
-) {
-  return studioRunReadinessFromChecks([
-    ...(readiness.checks ?? []).filter((check) => check.id !== 'mobile-target'),
-    mobileCheck,
-  ])
 }
 
 async function waitForStudioStop(
@@ -948,6 +918,8 @@ async function studio(argv: string[]): Promise<number> {
 }
 
 async function main(argv: string[]): Promise<number> {
+  const directCommand = directCommands[String(argv[0])]
+  if (directCommand) return directCommand(argv)
   if (argv[0] === 'init') {
     if (argv.length > 1) throw new Error('Usage: pickle init')
     await initializeProject()
@@ -955,9 +927,6 @@ async function main(argv: string[]): Promise<number> {
   }
   if (argv[0] === 'studio') {
     return studio(argv)
-  }
-  if (argv[0] === 'cache') {
-    return runCacheCommand(argv)
   }
   if (argv[0] === 'check') {
     await checkProject({ ...projectOptions(argv), report: console.log })
@@ -977,6 +946,13 @@ async function main(argv: string[]): Promise<number> {
     return exportRun(argv)
   }
   return run(argv)
+}
+
+const directCommands: Readonly<
+  Record<string, (argv: string[]) => Promise<number>>
+> = {
+  cache: runCacheCommand,
+  doctor: runDoctorCommand,
 }
 
 try {
