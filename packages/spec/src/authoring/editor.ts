@@ -7,6 +7,7 @@ import type {
   Step,
 } from '@cucumber/messages'
 import type { ParseSpecificationInput } from '../parsing/specification'
+import { requiredValue } from '../required-value'
 import {
   parseGherkinDocument as parseDocument,
   readSpecificationDocument,
@@ -77,8 +78,8 @@ function sharedStepReplacements(
   const replacements: Replacement[] = []
   const shared = Math.min(steps.length, nextSteps.length)
   for (let index = 0; index < shared; index++) {
-    const step = steps[index]!
-    const next = nextSteps[index]!
+    const step = requiredValue(steps[index])
+    const next = requiredValue(nextSteps[index])
     if (step.keyword.trim() !== next.keyword) {
       const start = offsetAt(source, step.location)
       replacements.push({
@@ -128,7 +129,7 @@ function removedStepReplacements(
 ): Replacement[] {
   const replacements: Replacement[] = []
   for (let index = steps.length - 1; index >= nextStepCount; index--) {
-    const step = steps[index]!
+    const step = requiredValue(steps[index])
     const start = offsetAt(source, { line: step.location.line, column: 1 })
     const end = offsetAt(source, { line: stepEndLine(step) + 1, column: 1 })
     replacements.push({ start, end, text: '' })
@@ -162,8 +163,8 @@ function cellReplacements(
   const shared = Math.min(cells.length, nextValues.length)
   const replacements: Replacement[] = []
   for (let index = 0; index < shared; index++) {
-    const cell = cells[index]!
-    const nextValue = nextValues[index]!
+    const cell = requiredValue(cells[index])
+    const nextValue = requiredValue(nextValues[index])
     if (cell.value === nextValue) continue
     const start = offsetAt(source, cell.location)
     replacements.push({
@@ -199,7 +200,11 @@ function examplesReplacements(
   const shared = Math.min(body.length, next.rows.length)
   for (let index = 0; index < shared; index++) {
     replacements.push(
-      ...cellReplacements(source, body[index]!.cells, next.rows[index]!),
+      ...cellReplacements(
+        source,
+        requiredValue(body[index]).cells,
+        requiredValue(next.rows[index]),
+      ),
     )
   }
   if (next.rows.length > body.length) {
@@ -220,7 +225,7 @@ function examplesReplacements(
   }
   if (body.length > next.rows.length) {
     for (let index = body.length - 1; index >= next.rows.length; index--) {
-      const row = body[index]!
+      const row = requiredValue(body[index])
       const start = offsetAt(source, { line: row.location.line, column: 1 })
       const end = offsetAt(source, { line: row.location.line + 1, column: 1 })
       replacements.push({ start, end, text: '' })
@@ -323,7 +328,11 @@ function walkChildren(
   const replacements: Replacement[] = []
   for (let index = 0; index < count; index++) {
     replacements.push(
-      ...childReplacements(source, children[index]!, nextChildren[index]!),
+      ...childReplacements(
+        source,
+        requiredValue(children[index]),
+        requiredValue(nextChildren[index]),
+      ),
     )
   }
   return replacements

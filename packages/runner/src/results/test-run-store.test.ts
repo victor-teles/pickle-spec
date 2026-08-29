@@ -9,6 +9,7 @@ import {
   type TestRunStoreOptions,
 } from '../../index'
 import type { TestResult } from '../execution/run-scenario'
+import { requiredValue } from '../required-value'
 
 const directories: string[] = []
 
@@ -85,14 +86,14 @@ const diagnosticEventScope = {
 }
 
 function scenarioFinished(result: TestResult, attemptIndex = -1) {
-  const attempt = result.attempts.at(attemptIndex)!
+  const attempt = requiredValue(result.attempts.at(attemptIndex))
   return {
     type: 'scenario-finished' as const,
     specification: result.specification,
     scenario: result.scenario,
     executionTargetProfile: result.executionTargetProfile,
     scope: {
-      scenarioId: result.scenario.id!,
+      scenarioId: requiredValue(result.scenario.id),
       examplesRowId: result.scenario.examplesRowId,
       executionTargetProfileId: result.executionTargetProfile.id,
       attempt: attempt.attempt,
@@ -102,13 +103,13 @@ function scenarioFinished(result: TestResult, attemptIndex = -1) {
 }
 
 function scenarioStarted(result: TestResult) {
-  const attempt = result.attempts[0]!
+  const attempt = requiredValue(result.attempts[0])
   return {
     type: 'scenario-started' as const,
     scenario: result.scenario,
     executionTargetProfile: result.executionTargetProfile,
     scope: {
-      scenarioId: result.scenario.id!,
+      scenarioId: requiredValue(result.scenario.id),
       examplesRowId: result.scenario.examplesRowId,
       executionTargetProfileId: result.executionTargetProfile.id,
       attempt: attempt.attempt,
@@ -120,7 +121,7 @@ function withAttempt(
   result: TestResult,
   patch: Partial<TestResult['attempts'][number]>,
 ): TestResult {
-  const attempt = { ...result.attempts[0]!, ...patch }
+  const attempt = { ...requiredValue(result.attempts[0]), ...patch }
   return {
     ...result,
     state: attempt.state,
@@ -240,7 +241,7 @@ test('materializes explicit uncacheable metadata for legacy adapter results', as
     cacheOutcome: _cacheOutcome,
     inferenceCount: _inferenceCount,
     ...attempt
-  } = result.attempts[0]!
+  } = requiredValue(result.attempts[0])
   await run.append(scenarioFinished({ ...result, attempts: [attempt] }))
 
   expect((await run.materialize()).results[0]?.attempts[0]).toMatchObject({
@@ -259,7 +260,7 @@ test('persists public evidence without private replay data', async () => {
   })
   const run = await store.create()
   const result = passedResult()
-  const attempt = result.attempts[0]!
+  const attempt = requiredValue(result.attempts[0])
   await run.append(
     scenarioFinished({
       ...result,
@@ -495,7 +496,7 @@ test('indexes only the final cumulative inference count after Replay fallback', 
       { kind: 'diagnostics', state: 'not-supported' },
     ]
   const replayAttempt = {
-    ...base.attempts[0]!,
+    ...requiredValue(base.attempts[0]),
     attempt: 1,
     state: 'failed' as const,
     executionMode: 'replay' as const,
@@ -503,7 +504,7 @@ test('indexes only the final cumulative inference count after Replay fallback', 
     evidenceAvailability,
   }
   const adaptiveAttempt = {
-    ...base.attempts[0]!,
+    ...requiredValue(base.attempts[0]),
     attempt: 2,
     startedAt: '2026-08-15T12:00:01.000Z',
     finishedAt: '2026-08-15T12:00:03.000Z',
@@ -698,7 +699,7 @@ test('captures only failure artifacts under the default evidence policy', async 
     'failed',
     screenshot,
   )
-  const failedAttempt = failedResult.attempts[0]!
+  const failedAttempt = requiredValue(failedResult.attempts[0])
   await run.append(
     scenarioFinished({
       ...failedResult,
@@ -707,7 +708,7 @@ test('captures only failure artifacts under the default evidence policy', async 
           ...failedAttempt,
           steps: [
             {
-              ...failedAttempt.steps[0]!,
+              ...requiredValue(failedAttempt.steps[0]),
               index: 0,
               step: {
                 keyword: 'Given',
@@ -716,7 +717,7 @@ test('captures only failure artifacts under the default evidence policy', async 
               },
               state: 'passed',
             },
-            { ...failedAttempt.steps[0]!, index: 1 },
+            { ...requiredValue(failedAttempt.steps[0]), index: 1 },
           ],
         },
       ],
@@ -748,7 +749,15 @@ test('captures only failure artifacts under the default evidence policy', async 
     ),
   ).toBe(true)
   expect(
-    await Bun.file(failed!.attempts[0]!.steps[1]!.artifacts![0]!.path).bytes(),
+    await Bun.file(
+      requiredValue(
+        requiredValue(
+          requiredValue(
+            requiredValue(requiredValue(failed).attempts[0]).steps[1],
+          ).artifacts,
+        )[0],
+      ).path,
+    ).bytes(),
   ).toEqual(new Uint8Array([137, 80, 78, 71]))
   expect(await Bun.file(screenshot).exists()).toBe(true)
 })
@@ -785,10 +794,10 @@ test('persists Diagnostic entries for failed runs by default and drops them for 
     'failed',
     join(root, 'unused.png'),
   )
-  const passedAttempt = passed.attempts[0]!
-  const failedAttempt = failed.attempts[0]!
+  const passedAttempt = requiredValue(passed.attempts[0])
+  const failedAttempt = requiredValue(failed.attempts[0])
   const liveStep = {
-    ...passedAttempt.steps[0]!,
+    ...requiredValue(passedAttempt.steps[0]),
     artifacts: undefined,
     diagnostics: [diagnostic],
     trace: [trace],
@@ -799,7 +808,7 @@ test('persists Diagnostic entries for failed runs by default and drops them for 
     scenario: passed.scenario,
     executionTargetProfile: passed.executionTargetProfile,
     scope: {
-      scenarioId: passed.scenario.id!,
+      scenarioId: requiredValue(passed.scenario.id),
       executionTargetProfileId: passed.executionTargetProfile.id,
       attempt: passedAttempt.attempt,
       stepIndex: liveStep.index,
@@ -1151,7 +1160,7 @@ function resultWithArtifact(
   path: string,
 ): TestResult {
   const result = passedResult(name)
-  const attempt = result.attempts[0]!
+  const attempt = requiredValue(result.attempts[0])
   return {
     ...result,
     state,
@@ -1188,7 +1197,7 @@ function resultWithArtifact(
 }
 
 function withDiagnosticEvidence(result: TestResult): TestResult {
-  const attempt = result.attempts[0]!
+  const attempt = requiredValue(result.attempts[0])
   const diagnostic = {
     occurredAt: attempt.finishedAt,
     level: 'error' as const,
@@ -1549,7 +1558,7 @@ test('issue 77: coordinates appends and finalization across reopened handles', a
 
   await Promise.all(
     Array.from({ length: 30 }, (_, index) =>
-      handles[index % handles.length]!.append({
+      requiredValue(handles[index % handles.length]).append({
         type: 'inference-count-updated',
         inferenceCount: index,
         scope: diagnosticEventScope,
@@ -1631,7 +1640,7 @@ test('issue 77: artifact paths are contained and unique for repeated attempts', 
     secondScreenshot,
   )
   const secondAttempt = {
-    ...secondBase.attempts[0]!,
+    ...requiredValue(secondBase.attempts[0]),
     attempt: 2,
   }
   const secondResult = {
@@ -1641,8 +1650,10 @@ test('issue 77: artifact paths are contained and unique for repeated attempts', 
   await run.append(scenarioFinished(firstResult))
   await run.append(scenarioFinished(secondResult))
   const manifest = await run.materialize()
-  const artifactPaths = manifest.results[0]!.attempts.map(
-    (attempt) => attempt.steps[0]!.artifacts![0]!.path,
+  const artifactPaths = requiredValue(manifest.results[0]).attempts.map(
+    (attempt) =>
+      requiredValue(requiredValue(requiredValue(attempt.steps[0]).artifacts)[0])
+        .path,
   )
   const artifactsDirectory = join(
     storageFor(root).runsDirectory,
@@ -1654,8 +1665,12 @@ test('issue 77: artifact paths are contained and unique for repeated attempts', 
   expect(
     artifactPaths.every((path) => path.startsWith(`${artifactsDirectory}/`)),
   ).toBe(true)
-  expect(await Bun.file(artifactPaths[0]!).text()).toBe('first-attempt')
-  expect(await Bun.file(artifactPaths[1]!).text()).toBe('second-attempt')
+  expect(await Bun.file(requiredValue(artifactPaths[0])).text()).toBe(
+    'first-attempt',
+  )
+  expect(await Bun.file(requiredValue(artifactPaths[1])).text()).toBe(
+    'second-attempt',
+  )
 })
 
 test('issue 77: isolates artifact paths for concurrent Scenario Outline rows', async () => {
@@ -1690,7 +1705,11 @@ test('issue 77: isolates artifact paths for concurrent Scenario Outline rows', a
   const paths: Record<string, string> = Object.fromEntries(
     manifest.results.map((result) => [
       result.scenario.examplesRowId,
-      result.attempts[0]!.steps[0]!.artifacts![0]!.path,
+      requiredValue(
+        requiredValue(
+          requiredValue(requiredValue(result.attempts[0]).steps[0]).artifacts,
+        )[0],
+      ).path,
     ]),
   )
   const artifactsDirectory = join(
@@ -1705,8 +1724,12 @@ test('issue 77: isolates artifact paths for concurrent Scenario Outline rows', a
       path.startsWith(`${artifactsDirectory}/`),
     ),
   ).toBe(true)
-  expect(await Bun.file(paths['row-card']!).text()).toBe('first-row')
-  expect(await Bun.file(paths['row-pix']!).text()).toBe('second-row')
+  expect(await Bun.file(requiredValue(paths['row-card'])).text()).toBe(
+    'first-row',
+  )
+  expect(await Bun.file(requiredValue(paths['row-pix'])).text()).toBe(
+    'second-row',
+  )
 })
 
 test('issue 77: rejects duplicate attempt numbers for one Scenario identity', async () => {
@@ -1743,15 +1766,15 @@ test('issue 77: a Scenario finish reuses its persisted step artifact', async () 
   })
   const run = await store.create()
   const result = resultWithArtifact('Pay for the order', 'failed', screenshot)
-  const attempt = result.attempts[0]!
-  const step = attempt.steps[0]!
+  const attempt = requiredValue(result.attempts[0])
+  const step = requiredValue(attempt.steps[0])
   const finishedStep = await run.append({
     type: 'step-finished',
     result: step,
     scenario: result.scenario,
     executionTargetProfile: result.executionTargetProfile,
     scope: {
-      scenarioId: result.scenario.id!,
+      scenarioId: requiredValue(result.scenario.id),
       executionTargetProfileId: result.executionTargetProfile.id,
       attempt: attempt.attempt,
       stepIndex: step.index,
@@ -1760,8 +1783,13 @@ test('issue 77: a Scenario finish reuses its persisted step artifact', async () 
   await run.append(scenarioFinished(result))
 
   const manifest = await run.materialize()
-  const manifestPath =
-    manifest.results[0]!.attempts[0]!.steps[0]!.artifacts![0]!.path
+  const manifestPath = requiredValue(
+    requiredValue(
+      requiredValue(
+        requiredValue(requiredValue(manifest.results[0]).attempts[0]).steps[0],
+      ).artifacts,
+    )[0],
+  ).path
   expect(finishedStep).toMatchObject({
     type: 'step-finished',
     result: { artifacts: [{ path: manifestPath }] },

@@ -3,6 +3,7 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { AppError } from 'agent-device'
+import { requiredValue } from '../required-value'
 import {
   type AgentDeviceClientPort,
   observeAgentDeviceInferenceRoutes,
@@ -618,7 +619,7 @@ test('redacts runtime binding values from text evidence', async () => {
     const artifactPath = execution.stepExecutions.at(-1)?.artifacts?.[0]?.path
 
     expect(artifactPath).toBeDefined()
-    expect(await Bun.file(artifactPath!).text()).toBe(
+    expect(await Bun.file(requiredValue(artifactPath)).text()).toBe(
       'Checkout account: [REDACTED]',
     )
     expect(JSON.stringify(execution)).not.toContain(privateValue)

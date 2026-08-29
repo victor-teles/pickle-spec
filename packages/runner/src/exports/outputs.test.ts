@@ -12,6 +12,7 @@ import type {
   TestResult,
   TestStepResult,
 } from '../execution/run-scenario'
+import { requiredValue } from '../required-value'
 import type { TestRunManifest } from '../results/test-run-store'
 
 const startedAt = '2026-08-15T12:00:01.000Z'
@@ -78,8 +79,8 @@ function result(
     scenario: { name, id: 'scncheckout00000' },
     executionTargetProfile: { id: 'deterministic' },
     state,
-    startedAt: attempts[0]!.startedAt,
-    finishedAt: attempts.at(-1)!.finishedAt,
+    startedAt: requiredValue(attempts[0]).startedAt,
+    finishedAt: requiredValue(attempts.at(-1)).finishedAt,
     durationMs: 1_000,
     attempts,
     flaky: extras.flaky,
@@ -87,7 +88,7 @@ function result(
 }
 
 function scenarioFinishedEvent(testResult: TestResult): RunEvent {
-  const scenarioAttempt = testResult.attempts.at(-1)!
+  const scenarioAttempt = requiredValue(testResult.attempts.at(-1))
   return {
     schemaVersion: 2,
     sequence: 2,
@@ -97,7 +98,7 @@ function scenarioFinishedEvent(testResult: TestResult): RunEvent {
     scenario: testResult.scenario,
     executionTargetProfile: testResult.executionTargetProfile,
     scope: {
-      scenarioId: testResult.scenario.id!,
+      scenarioId: requiredValue(testResult.scenario.id),
       examplesRowId: testResult.scenario.examplesRowId,
       executionTargetProfileId: testResult.executionTargetProfile.id,
       attempt: scenarioAttempt.attempt,

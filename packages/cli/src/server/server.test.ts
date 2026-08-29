@@ -107,9 +107,12 @@ describe('managed application output', () => {
 
     await managed?.outputComplete
 
-    expect(lines.map(({ stream, line }) => ({ stream, line }))).toEqual([
-      { stream: 'stderr', line: 'warning' },
-    ])
+    expect(
+      lines.map(({ stream: outputStream, line }) => ({
+        stream: outputStream,
+        line,
+      })),
+    ).toEqual([{ stream: 'stderr', line: 'warning' }])
   })
 
   test('reports opted-in output as unsupported when the application is reused', async () => {

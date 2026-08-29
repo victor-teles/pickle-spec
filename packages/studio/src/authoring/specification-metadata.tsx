@@ -62,7 +62,7 @@ function LinkLabel(props: { link: ExternalLink; href?: string }) {
   )
 }
 
-export function SpecificationMetadataForm(props: {
+type SpecificationMetadataProps = {
   buffer: SpecificationBuffer
   source: string
   namespaces: readonly string[]
@@ -70,7 +70,18 @@ export function SpecificationMetadataForm(props: {
   api: StudioApi
   onChange: (source: string) => void
   onError: (message: string | undefined) => void
-}) {
+}
+
+export function SpecificationMetadataForm(props: SpecificationMetadataProps) {
+  const metadata = useSpecificationMetadata(props)
+  return metadata.editing ? (
+    <MetadataEditor {...props} {...metadata} />
+  ) : (
+    <MetadataSummary {...props} {...metadata} />
+  )
+}
+
+function useSpecificationMetadata(props: SpecificationMetadataProps) {
   const tags = props.buffer.specification.tags
   const [editing, setEditing] = useState(false)
   const [state, setState] = useState<SpecificationState>(() => parseState(tags))
@@ -90,28 +101,10 @@ export function SpecificationMetadataForm(props: {
     setLinks(parseLinks(nextTags, props.namespaces))
   }, [props.buffer, props.namespaces])
 
-  async function save() {
+  const save = async () => {
     props.onError(undefined)
     try {
-      const preview = await props.api<SpecificationPreview>(
-        '/api/documents/preview',
-        {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({
-            uri: props.buffer.uri,
-            source: props.source,
-            metadata: {
-              state,
-              tags: tagText
-                .split(/\s+/)
-                .map((tag) => tag.trim())
-                .filter(Boolean),
-              links,
-            },
-          }),
-        },
-      )
+      const preview = await previewMetadata(props, state, tagText, links)
       if (!preview.diff) {
         setEditing(false)
         return
@@ -128,48 +121,76 @@ export function SpecificationMetadataForm(props: {
     .map((tag) => tag.trim())
     .filter(Boolean)
 
-  if (!editing) {
-    return (
-      <section
-        aria-label="Specification metadata"
-        className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1"
-      >
-        <Badge>{state}</Badge>
-        {authorTags.length > 0 ? (
-          <p className="min-w-0 truncate font-mono text-[0.625rem] leading-4 text-muted-foreground">
-            {authorTags.join(' ')}
-          </p>
-        ) : null}
-        {links.length > 0 ? (
-          <ul
-            aria-label="External links"
-            className="flex flex-wrap items-center gap-x-2"
-          >
-            {links.map((link) => {
-              const template = props.templates?.[link.namespace]
-              const href = template
-                ? template.replaceAll('{id}', link.id)
-                : undefined
-              return (
-                <li key={`${link.namespace}:${link.id}`}>
-                  <LinkLabel link={link} href={href} />
-                </li>
-              )
-            })}
-          </ul>
-        ) : null}
-        <Button
-          type="button"
-          size="sm"
-          variant="outline"
-          onClick={() => setEditing(true)}
-        >
-          Edit metadata
-        </Button>
-      </section>
-    )
+  return {
+    authorTags,
+    editing,
+    linkId,
+    links,
+    namespace,
+    save,
+    setEditing,
+    setLinkId,
+    setLinks,
+    setNamespace,
+    setState,
+    setTagText,
+    state,
+    tagText,
   }
+}
 
+function previewMetadata(
+  props: SpecificationMetadataProps,
+  state: SpecificationState,
+  tagText: string,
+  links: readonly ExternalLink[],
+): Promise<SpecificationPreview> {
+  return props.api('/api/documents/preview', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      uri: props.buffer.uri,
+      source: props.source,
+      metadata: {
+        state,
+        tags: tagText
+          .split(/\s+/)
+          .map((tag) => tag.trim())
+          .filter(Boolean),
+        links,
+      },
+    }),
+  })
+}
+
+type MetadataState = ReturnType<typeof useSpecificationMetadata>
+
+function MetadataSummary(props: SpecificationMetadataProps & MetadataState) {
+  return (
+    <section
+      aria-label="Specification metadata"
+      className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1"
+    >
+      <Badge>{props.state}</Badge>
+      {props.authorTags.length > 0 ? (
+        <p className="min-w-0 truncate font-mono text-[0.625rem] leading-4 text-muted-foreground">
+          {props.authorTags.join(' ')}
+        </p>
+      ) : null}
+      <MetadataLinks links={props.links} templates={props.templates} />
+      <Button
+        type="button"
+        size="sm"
+        variant="outline"
+        onClick={() => props.setEditing(true)}
+      >
+        Edit metadata
+      </Button>
+    </section>
+  )
+}
+
+function MetadataEditor(props: SpecificationMetadataProps & MetadataState) {
   return (
     <section
       aria-label="Specification metadata"
@@ -181,9 +202,9 @@ export function SpecificationMetadataForm(props: {
             key={value}
             type="button"
             size="sm"
-            variant={state === value ? 'default' : 'outline'}
-            aria-pressed={state === value}
-            onClick={() => setState(value)}
+            variant={props.state === value ? 'default' : 'outline'}
+            aria-pressed={props.state === value}
+            onClick={() => props.setState(value)}
           >
             {value}
           </Button>
@@ -194,87 +215,116 @@ export function SpecificationMetadataForm(props: {
         <Input
           id="specification-tags"
           aria-label="Specification tags"
-          value={tagText}
-          onChange={(event) => setTagText(event.target.value)}
+          value={props.tagText}
+          onChange={(event) => props.setTagText(event.target.value)}
         />
       </div>
-      <div className="space-y-2">
-        {links.length === 0 ? null : (
-          <ul aria-label="External links" className="space-y-1">
-            {links.map((link) => {
-              const template = props.templates?.[link.namespace]
-              const href = template
-                ? template.replaceAll('{id}', link.id)
-                : undefined
-              return (
-                <li
-                  key={`${link.namespace}:${link.id}`}
-                  className="flex items-center justify-between gap-2 font-mono text-xs"
-                >
-                  <LinkLabel link={link} href={href} />
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    aria-label={`Remove ${link.namespace}:${link.id}`}
-                    onClick={() =>
-                      setLinks((current) =>
-                        current.filter(
-                          (item) =>
-                            item.namespace !== link.namespace ||
-                            item.id !== link.id,
-                        ),
-                      )
-                    }
-                  >
-                    Remove
-                  </Button>
-                </li>
-              )
-            })}
-          </ul>
-        )}
-        <div className="grid gap-2 sm:grid-cols-[1fr_1fr_auto]">
-          <Input
-            aria-label="Link namespace"
-            placeholder="jira"
-            value={namespace}
-            onChange={(event) => setNamespace(event.target.value)}
-          />
-          <Input
-            aria-label="Link id"
-            placeholder="PROJ-12"
-            value={linkId}
-            onChange={(event) => setLinkId(event.target.value)}
-          />
-          <Button
-            type="button"
-            variant="outline"
-            disabled={!namespace.trim() || !linkId.trim()}
-            onClick={() => {
-              setLinks((current) => [
-                ...current,
-                { namespace: namespace.trim(), id: linkId.trim() },
-              ])
-              setLinkId('')
-            }}
-          >
-            Add link
-          </Button>
-        </div>
-      </div>
+      <MetadataLinksEditor {...props} />
       <div className="flex flex-wrap gap-2">
         <Button
           type="button"
           variant="outline"
-          onClick={() => setEditing(false)}
+          onClick={() => props.setEditing(false)}
         >
           Cancel
         </Button>
-        <Button type="button" onClick={() => void save()}>
+        <Button type="button" onClick={() => void props.save()}>
           Apply metadata
         </Button>
       </div>
     </section>
   )
+}
+
+function MetadataLinks(props: {
+  links: readonly ExternalLink[]
+  templates?: Readonly<Record<string, string>>
+}) {
+  if (props.links.length === 0) return null
+  return (
+    <ul
+      aria-label="External links"
+      className="flex flex-wrap items-center gap-x-2"
+    >
+      {props.links.map((link) => (
+        <li key={`${link.namespace}:${link.id}`}>
+          <LinkLabel link={link} href={linkHref(link, props.templates)} />
+        </li>
+      ))}
+    </ul>
+  )
+}
+
+function MetadataLinksEditor(
+  props: MetadataState & Pick<SpecificationMetadataProps, 'templates'>,
+) {
+  const addLink = () => {
+    props.setLinks((current) => [
+      ...current,
+      { namespace: props.namespace.trim(), id: props.linkId.trim() },
+    ])
+    props.setLinkId('')
+  }
+  return (
+    <div className="space-y-2">
+      {props.links.length === 0 ? null : (
+        <ul aria-label="External links" className="space-y-1">
+          {props.links.map((link) => (
+            <li
+              key={`${link.namespace}:${link.id}`}
+              className="flex items-center justify-between gap-2 font-mono text-xs"
+            >
+              <LinkLabel link={link} href={linkHref(link, props.templates)} />
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                aria-label={`Remove ${link.namespace}:${link.id}`}
+                onClick={() =>
+                  props.setLinks((current) =>
+                    current.filter(
+                      (item) =>
+                        item.namespace !== link.namespace ||
+                        item.id !== link.id,
+                    ),
+                  )
+                }
+              >
+                Remove
+              </Button>
+            </li>
+          ))}
+        </ul>
+      )}
+      <div className="grid gap-2 sm:grid-cols-[1fr_1fr_auto]">
+        <Input
+          aria-label="Link namespace"
+          placeholder="jira"
+          value={props.namespace}
+          onChange={(event) => props.setNamespace(event.target.value)}
+        />
+        <Input
+          aria-label="Link id"
+          placeholder="PROJ-12"
+          value={props.linkId}
+          onChange={(event) => props.setLinkId(event.target.value)}
+        />
+        <Button
+          type="button"
+          variant="outline"
+          disabled={!props.namespace.trim() || !props.linkId.trim()}
+          onClick={addLink}
+        >
+          Add link
+        </Button>
+      </div>
+    </div>
+  )
+}
+
+function linkHref(
+  link: ExternalLink,
+  templates?: Readonly<Record<string, string>>,
+): string | undefined {
+  return templates?.[link.namespace]?.replaceAll('{id}', link.id)
 }

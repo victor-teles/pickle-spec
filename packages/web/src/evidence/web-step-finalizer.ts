@@ -33,6 +33,15 @@ interface CreateWebStepFinalizerInput {
   stepNumber: () => number
 }
 
+interface WebStepFinalizerState extends CreateWebStepFinalizerInput {
+  specificationArtifactId: string
+  scenarioArtifactId: string
+  examplesRowArtifactId?: string
+  previousResolvedActionTrace: StepExecution['trace']
+  recordingState: WebRecordingState
+  capture: ReturnType<typeof resolveWebArtifactCapture>
+}
+
 type WebRecordingState = {
   started: boolean
   stopped: boolean
@@ -80,15 +89,16 @@ function recordingCaptureFailure(error: unknown): EvidenceAvailability {
 async function startWebStepRecording(
   input: StartWebStepRecordingInput,
 ): Promise<EvidenceAvailability | undefined> {
+  const recordingState = input.state
   if (!input.enabled) return
   if (!input.automation.startRecording) return
-  if (input.state.started) return
-  input.state.started = true
+  if (recordingState.started) return
+  recordingState.started = true
   try {
     await mkdir(input.directory, { recursive: true })
     await input.automation.startRecording(join(input.directory, 'scenario.mp4'))
   } catch (error) {
-    input.state.stopped = true
+    recordingState.stopped = true
     return recordingCaptureFailure(error)
   }
 }
@@ -96,14 +106,15 @@ async function startWebStepRecording(
 async function finishWebStepRecording(
   input: FinishWebStepRecordingInput,
 ): Promise<CaptureResult | undefined> {
+  const recordingState = input.state
   if (input.startFailure) return { availability: input.startFailure }
-  if (!input.state.started || input.state.stopped) return
+  if (!recordingState.started || recordingState.stopped) return
   if (
     !shouldFinishRecording(input.stepState, input.stepNumber, input.stepCount)
   ) {
     return
   }
-  input.state.stopped = true
+  recordingState.stopped = true
   if (!input.automation.stopRecording) {
     return { availability: { kind: 'recording', state: 'not-requested' } }
   }
@@ -138,6 +149,96 @@ function withCapturedEvidence(
   }
 }
 
+function evidenceDirectory(state: WebStepFinalizerState): string {
+  const defaultOutputDirectory = join(
+    resolveLocalProjectStorage(process.cwd()).projectDirectory,
+    'artifacts',
+  )
+  return resolve(
+    state.options.screenshots?.outputDir ?? defaultOutputDirectory,
+    state.specificationArtifactId,
+    state.scenarioArtifactId,
+    ...(state.examplesRowArtifactId ? [state.examplesRowArtifactId] : []),
+  )
+}
+
+async function captureScreenshot(
+  state: WebStepFinalizerState,
+  stepState: StepExecution['state'],
+): Promise<CaptureResult> {
+  const screenshotOptions = state.options.screenshots
+  if (!shouldCaptureScreenshot(state.capture.screenshots, stepState)) {
+    return { availability: { kind: 'screenshot', state: 'not-requested' } }
+  }
+  try {
+    const format = screenshotOptions?.format ?? 'png'
+    const directory = evidenceDirectory(state)
+    await mkdir(directory, { recursive: true })
+    const path = join(
+      directory,
+      `step-${String(state.stepNumber()).padStart(2, '0')}-${stepState}.${format}`,
+    )
+    await Bun.write(
+      path,
+      await state.automation.screenshot({
+        format,
+        fullPage: screenshotOptions?.fullPage ?? false,
+      }),
+    )
+    return {
+      artifact: await capturedWebArtifact(
+        'screenshot',
+        path,
+        `image/${format}`,
+      ),
+      availability: { kind: 'screenshot', state: 'available' },
+    }
+  } catch {
+    return {
+      availability: {
+        kind: 'screenshot',
+        state: 'capture-failed',
+        message: 'Screenshot capture failed',
+      },
+    }
+  }
+}
+
+async function finalizeWebStep(
+  state: WebStepFinalizerState,
+  execution: StepExecution,
+  step: ScenarioStep,
+): Promise<StepExecution> {
+  const finalizerState = state
+  const collected = finalizerState.automation.consumeEvidence
+    ? await finalizerState.automation.consumeEvidence()
+    : { diagnostics: [], activity: [] }
+  const projected = projectWebStepEvidence({
+    execution,
+    step,
+    collected,
+    previousResolvedActionTrace:
+      finalizerState.previousResolvedActionTrace ?? [],
+  })
+  finalizerState.previousResolvedActionTrace = projected.nextResolvedActionTrace
+  const startFailure = await startWebStepRecording({
+    enabled: state.capture.recording,
+    automation: state.automation,
+    directory: evidenceDirectory(state),
+    state: state.recordingState,
+  })
+  const screenshot = await captureScreenshot(state, execution.state)
+  const recording = await finishWebStepRecording({
+    automation: state.automation,
+    state: state.recordingState,
+    stepState: execution.state,
+    stepNumber: state.stepNumber(),
+    stepCount: state.input.scenario.steps.length,
+    startFailure,
+  })
+  return withCapturedEvidence(projected.execution, screenshot, recording)
+}
+
 export function createWebStepFinalizer({
   input,
   options,
@@ -157,96 +258,20 @@ export function createWebStepFinalizer({
   const examplesRowArtifactId = input.scenario.examplesRowId
     ? screenshotIdentity('examples-row', input.scenario.examplesRowId)
     : undefined
-  let previousResolvedActionTrace: StepExecution['trace'] = []
-  const recordingState: WebRecordingState = { started: false, stopped: false }
-  const capture = resolveWebArtifactCapture({
-    screenshotMode: options.screenshots?.mode ?? 'off',
-  })
-
-  function evidenceDirectory(): string {
-    const defaultOutputDirectory = join(
-      resolveLocalProjectStorage(process.cwd()).projectDirectory,
-      'artifacts',
-    )
-    return resolve(
-      options.screenshots?.outputDir ?? defaultOutputDirectory,
-      specificationArtifactId,
-      scenarioArtifactId,
-      ...(examplesRowArtifactId ? [examplesRowArtifactId] : []),
-    )
+  const state: WebStepFinalizerState = {
+    input,
+    options,
+    automation,
+    stepNumber,
+    specificationArtifactId,
+    scenarioArtifactId,
+    examplesRowArtifactId,
+    previousResolvedActionTrace: [],
+    recordingState: { started: false, stopped: false },
+    capture: resolveWebArtifactCapture({
+      screenshotMode: options.screenshots?.mode ?? 'off',
+    }),
   }
-
-  async function captureScreenshot(
-    state: StepExecution['state'],
-  ): Promise<CaptureResult> {
-    const screenshotOptions = options.screenshots
-    if (!shouldCaptureScreenshot(capture.screenshots, state)) {
-      return { availability: { kind: 'screenshot', state: 'not-requested' } }
-    }
-
-    try {
-      const format = screenshotOptions?.format ?? 'png'
-      const directory = evidenceDirectory()
-      await mkdir(directory, { recursive: true })
-      const path = join(
-        directory,
-        `step-${String(stepNumber()).padStart(2, '0')}-${state}.${format}`,
-      )
-      await Bun.write(
-        path,
-        await automation.screenshot({
-          format,
-          fullPage: screenshotOptions?.fullPage ?? false,
-        }),
-      )
-      return {
-        artifact: await capturedWebArtifact(
-          'screenshot',
-          path,
-          `image/${format}`,
-        ),
-        availability: { kind: 'screenshot', state: 'available' },
-      }
-    } catch {
-      return {
-        availability: {
-          kind: 'screenshot',
-          state: 'capture-failed',
-          message: 'Screenshot capture failed',
-        },
-      }
-    }
-  }
-
-  return async (
-    execution: StepExecution,
-    step: ScenarioStep,
-  ): Promise<StepExecution> => {
-    const collected = automation.consumeEvidence
-      ? await automation.consumeEvidence()
-      : { diagnostics: [], activity: [] }
-    const projected = projectWebStepEvidence({
-      execution,
-      step,
-      collected,
-      previousResolvedActionTrace: previousResolvedActionTrace ?? [],
-    })
-    previousResolvedActionTrace = projected.nextResolvedActionTrace
-    const startFailure = await startWebStepRecording({
-      enabled: capture.recording,
-      automation,
-      directory: evidenceDirectory(),
-      state: recordingState,
-    })
-    const screenshot = await captureScreenshot(execution.state)
-    const recording = await finishWebStepRecording({
-      automation,
-      state: recordingState,
-      stepState: execution.state,
-      stepNumber: stepNumber(),
-      stepCount: input.scenario.steps.length,
-      startFailure,
-    })
-    return withCapturedEvidence(projected.execution, screenshot, recording)
-  }
+  return (execution: StepExecution, step: ScenarioStep) =>
+    finalizeWebStep(state, execution, step)
 }

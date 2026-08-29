@@ -23,6 +23,7 @@ import {
   scenarioDefinitionId,
   stringContainsBinding,
 } from '../execution/scenario-runtime'
+import { requiredValue } from '../required-value'
 import {
   type AttemptCacheUse,
   attemptCacheUse,
@@ -267,7 +268,7 @@ function scenarioStartedPayload(result: TestResult): RunEventPayload {
     scenario: result.scenario,
     executionTargetProfile: result.executionTargetProfile,
     scope: {
-      scenarioId: result.scenario.id!,
+      scenarioId: requiredValue(result.scenario.id),
       examplesRowId: result.scenario.examplesRowId,
       executionTargetProfileId: result.executionTargetProfile.id,
       attempt: attempt.attempt,
@@ -343,10 +344,9 @@ async function completeLeaseWithTerminalOutcome(
   result: TestResult,
 ): Promise<boolean> {
   if (!lease || result.state === 'cancelled') return true
-  return input.executionCache!.store.coordination!.complete(
-    lease,
-    terminalOutcomeFor(result),
-  )
+  return requiredValue(
+    requiredValue(input.executionCache).store.coordination,
+  ).complete(lease, terminalOutcomeFor(result))
 }
 
 function adaptiveUncacheableReason(
@@ -408,7 +408,7 @@ function serializedPrefixEntry(
         requiredVariables: [...prefix.requiredVariables],
         adapterPayload: prefix.adapterPayload,
       },
-      input.adapter.executionCache!,
+      requiredValue(input.adapter.executionCache),
     )
   } catch {
     return undefined
@@ -431,17 +431,18 @@ async function publishAdaptiveEntry(
   }
 
   const metadata = {
-    sourceRunId: input.executionCache!.sourceRunId,
+    sourceRunId: requiredValue(input.executionCache).sourceRunId,
     evaluationModel: run.completion?.evaluationModel,
     evaluationInferenceCount: run.inferenceCount,
   }
   const write = lease
-    ? await input.executionCache!.store.coordination!.publish(
-        lease,
+    ? await requiredValue(
+        requiredValue(input.executionCache).store.coordination,
+      ).publish(lease, serialized, metadata)
+    : await requiredValue(input.executionCache).store.write(
         serialized,
         metadata,
       )
-    : await input.executionCache!.store.write(serialized, metadata)
   if ('published' in write && !write.published) {
     return {
       status: 'failed',
@@ -509,7 +510,7 @@ function publishableCachedPrefix(
   prefix: CachedStepPrefix | undefined
   policyReason: ExecutionCacheUncacheableReason | undefined
 } {
-  const adapter = input.adapter.executionCache!
+  const adapter = requiredValue(input.adapter.executionCache)
   const scenarioStepCount = input.scenario.steps.length
   const prefix = sealCachedStepPrefix({
     compiledPayload: run.completion?.replayRepresentation,
@@ -671,6 +672,53 @@ async function finishLeaseWait(
   return finishRun(input, events, result)
 }
 
+async function finishPublishedDivergence(
+  input: RunScenarioInput,
+  events: RunEvent[],
+  cacheKey: ExecutionCacheKey,
+  adapter: NonNullable<RunScenarioInput['adapter']['executionCache']>,
+  replay: RetriedScenarioRun,
+  inferenceOffset: number,
+): Promise<ScenarioRun | undefined> {
+  await appendScenarioFinishedEvent(events, input, replay.result)
+  await appendEvent(events, input, {
+    type: 'replay-diverged',
+    cacheKey,
+    scope: finalAttemptScope(input, replay.result),
+  })
+  if (!prefixPolicyOf(adapter).mixedReplay) return undefined
+  return finishRun(
+    input,
+    events,
+    withFinalAttempt(replay.result, {
+      cacheOutcome: 'hit',
+      inferenceCount: inferenceOffset + replay.inferenceCount,
+      failureKind: 'cache-miss',
+    }),
+  )
+}
+
+async function finishPublishedHit(
+  input: RunScenarioInput,
+  events: RunEvent[],
+  replay: RetriedScenarioRun,
+  inferenceOffset: number,
+): Promise<ScenarioRun> {
+  await appendEvent(events, input, {
+    type: 'inference-count-updated',
+    inferenceCount: inferenceOffset + replay.inferenceCount,
+    scope: finalAttemptScope(input, replay.result),
+  })
+  return finishRun(
+    input,
+    events,
+    withFinalAttempt(replay.result, {
+      cacheOutcome: 'hit',
+      inferenceCount: inferenceOffset,
+    }),
+  )
+}
+
 async function replayPublishedEntry(
   input: RunScenarioInput,
   events: RunEvent[],
@@ -678,15 +726,15 @@ async function replayPublishedEntry(
   inferenceOffset = 0,
   attempts: ScenarioAttempt[] = [],
 ): Promise<ScenarioRun | undefined> {
-  const source = await input.executionCache!.store.read(cacheKey)
+  const source = await requiredValue(input.executionCache).store.read(cacheKey)
   if (!source) return undefined
   const entry = deserializeExecutionCacheEnvelope({
     source,
     expectedKey: cacheKey,
-    payloadValidator: input.adapter.executionCache!,
+    payloadValidator: requiredValue(input.adapter.executionCache),
   })
   if (!entry) {
-    await input.executionCache!.store.delete(cacheKey)
+    await requiredValue(input.executionCache).store.delete(cacheKey)
     return undefined
   }
   await appendEvent(events, input, {
@@ -694,7 +742,7 @@ async function replayPublishedEntry(
     cacheKey,
     scope: nextAttemptScope(input, attempts),
   })
-  const adapter = input.adapter.executionCache!
+  const adapter = requiredValue(input.adapter.executionCache)
   const prefix = cachedStepPrefixFrom(
     entry,
     input.scenario.steps.length,
@@ -706,21 +754,13 @@ async function replayPublishedEntry(
       : 'adaptive'
   const replay = await runCachedAttempts(input, mode, events, entry, attempts)
   if (replay.replayDiverged && !replay.adaptiveEvaluated) {
-    await appendScenarioFinishedEvent(events, input, replay.result)
-    await appendEvent(events, input, {
-      type: 'replay-diverged',
-      cacheKey,
-      scope: finalAttemptScope(input, replay.result),
-    })
-    if (!prefixPolicyOf(adapter).mixedReplay) return undefined
-    return finishRun(
+    return finishPublishedDivergence(
       input,
       events,
-      withFinalAttempt(replay.result, {
-        cacheOutcome: 'hit',
-        inferenceCount: inferenceOffset + replay.inferenceCount,
-        failureKind: 'cache-miss',
-      }),
+      cacheKey,
+      adapter,
+      replay,
+      inferenceOffset,
     )
   }
   if (
@@ -730,19 +770,7 @@ async function replayPublishedEntry(
     replay.result.state === 'passed' &&
     replay.inferenceCount === 0
   ) {
-    await appendEvent(events, input, {
-      type: 'inference-count-updated',
-      inferenceCount: inferenceOffset + replay.inferenceCount,
-      scope: finalAttemptScope(input, replay.result),
-    })
-    return finishRun(
-      input,
-      events,
-      withFinalAttempt(replay.result, {
-        cacheOutcome: 'hit',
-        inferenceCount: inferenceOffset,
-      }),
-    )
+    return finishPublishedHit(input, events, replay, inferenceOffset)
   }
   return finalizeAdaptiveRun(input, events, {
     run: {
@@ -763,16 +791,19 @@ async function reuseTerminalOutcome(
 ): Promise<ScenarioRun | undefined> {
   const outcome = deserializeExecutionCacheTerminalOutcome(serialized)
   if (!outcome) return undefined
+  let message: string | undefined
+  if (outcome.state === 'failed') {
+    message = 'Concurrent Adaptive evaluation failed'
+  } else if (outcome.state === 'infrastructure-error') {
+    message =
+      'Concurrent Adaptive evaluation ended with an infrastructure error'
+  }
   const result = withFinalAttempt(
     syntheticResultWithAttempts(
       input,
       'adaptive',
       outcome.state,
-      outcome.state === 'failed'
-        ? 'Concurrent Adaptive evaluation failed'
-        : outcome.state === 'infrastructure-error'
-          ? 'Concurrent Adaptive evaluation ended with an infrastructure error'
-          : undefined,
+      message,
       attempts,
     ),
     {
@@ -808,30 +839,83 @@ interface RunCoordinatedAdaptiveInput {
   priorAttempts?: readonly ScenarioAttempt[]
 }
 
+async function runAdaptiveWithoutCoordination(
+  options: RunCoordinatedAdaptiveInput,
+  attempts: ScenarioAttempt[],
+  inferenceOffset: number,
+): Promise<ScenarioRun> {
+  const { cacheKey, cacheOutcome, events, input } = options
+  const adaptive = await runCachedAttempts(
+    input,
+    'adaptive',
+    events,
+    undefined,
+    attempts,
+  )
+  return finalizeAdaptiveRun(input, events, {
+    run: {
+      ...adaptive,
+      inferenceCount: inferenceOffset + adaptive.inferenceCount,
+    },
+    cacheKey,
+    startedFrom: cacheOutcome === 'refresh' ? 'refresh' : 'miss',
+  })
+}
+
+async function finishLostCacheOwnership(
+  options: RunCoordinatedAdaptiveInput,
+  adaptive: RetriedScenarioRun,
+  inferenceOffset: number,
+): Promise<ScenarioRun> {
+  const { cacheOutcome, events, input } = options
+  const run = {
+    ...adaptive,
+    inferenceCount: inferenceOffset + adaptive.inferenceCount,
+  }
+  await appendEvent(events, input, {
+    type: 'inference-count-updated',
+    inferenceCount: run.inferenceCount,
+    scope: finalAttemptScope(input, run.result),
+  })
+  return finishRun(
+    input,
+    events,
+    withFinalAttempt(run.result, {
+      state: 'infrastructure-error',
+      cacheOutcome,
+      inferenceCount: run.inferenceCount,
+      message: 'Execution cache lease ownership was lost during evaluation',
+    }),
+  )
+}
+
+function finishCacheOwner(
+  options: RunCoordinatedAdaptiveInput,
+  adaptive: RetriedScenarioRun,
+  lease: ExecutionCacheLease,
+  inferenceOffset: number,
+): Promise<ScenarioRun> {
+  const { cacheKey, cacheOutcome, events, input } = options
+  return finalizeAdaptiveRun(input, events, {
+    run: {
+      ...adaptive,
+      inferenceCount: inferenceOffset + adaptive.inferenceCount,
+    },
+    cacheKey,
+    startedFrom: cacheOutcome === 'refresh' ? 'refresh' : 'miss',
+    lease,
+  })
+}
+
 async function runCoordinatedAdaptive(
   options: RunCoordinatedAdaptiveInput,
 ): Promise<ScenarioRun> {
   const { cacheKey, cacheOutcome, events, input } = options
   const inferenceOffset = options.inferenceOffset ?? 0
   const attempts = [...(options.priorAttempts ?? [])]
-  const coordination = input.executionCache!.store.coordination
+  const coordination = requiredValue(input.executionCache).store.coordination
   if (!coordination) {
-    const adaptive = await runCachedAttempts(
-      input,
-      'adaptive',
-      events,
-      undefined,
-      attempts,
-    )
-    const run = {
-      ...adaptive,
-      inferenceCount: inferenceOffset + adaptive.inferenceCount,
-    }
-    return finalizeAdaptiveRun(input, events, {
-      run,
-      cacheKey,
-      startedFrom: cacheOutcome === 'refresh' ? 'refresh' : 'miss',
-    })
+    return runAdaptiveWithoutCoordination(options, attempts, inferenceOffset)
   }
 
   return coordinateExecutionCacheRun({
@@ -854,39 +938,10 @@ async function runCoordinatedAdaptive(
       ),
     evaluate: () =>
       runCachedAttempts(input, 'adaptive', events, undefined, attempts),
-    async ownershipLost(adaptive) {
-      const run = {
-        ...adaptive,
-        inferenceCount: inferenceOffset + adaptive.inferenceCount,
-      }
-      await appendEvent(events, input, {
-        type: 'inference-count-updated',
-        inferenceCount: run.inferenceCount,
-        scope: finalAttemptScope(input, run.result),
-      })
-      return finishRun(
-        input,
-        events,
-        withFinalAttempt(run.result, {
-          state: 'infrastructure-error',
-          cacheOutcome,
-          inferenceCount: run.inferenceCount,
-          message: 'Execution cache lease ownership was lost during evaluation',
-        }),
-      )
-    },
-    completeOwner(adaptive, lease) {
-      const run = {
-        ...adaptive,
-        inferenceCount: inferenceOffset + adaptive.inferenceCount,
-      }
-      return finalizeAdaptiveRun(input, events, {
-        run,
-        cacheKey,
-        startedFrom: cacheOutcome === 'refresh' ? 'refresh' : 'miss',
-        lease,
-      })
-    },
+    ownershipLost: (adaptive) =>
+      finishLostCacheOwnership(options, adaptive, inferenceOffset),
+    completeOwner: (adaptive, lease) =>
+      finishCacheOwner(options, adaptive, lease, inferenceOffset),
   })
 }
 
@@ -952,9 +1007,9 @@ async function denyUnusablePrefix(
   prefix: CachedStepPrefix | undefined,
 ): Promise<ScenarioRun | undefined> {
   const { cacheKey, cachePolicy, events, input, observedRevision } = options
-  const policy = prefixPolicyOf(input.adapter.executionCache!)
+  const policy = prefixPolicyOf(requiredValue(input.adapter.executionCache))
   if (!prefix) {
-    await input.executionCache!.store.delete(cacheKey)
+    await requiredValue(input.executionCache).store.delete(cacheKey)
     if (cachePolicy === 'cache-only') {
       return runCacheOnlyMiss(
         input,
@@ -1024,13 +1079,78 @@ async function finishDivergedReplayHit(
   )
 }
 
+async function finishFullReplayHit(
+  input: RunScenarioInput,
+  events: RunEvent[],
+  replay: RetriedScenarioRun,
+): Promise<ScenarioRun> {
+  await appendEvent(events, input, {
+    type: 'inference-count-updated',
+    inferenceCount: replay.inferenceCount,
+    scope: finalAttemptScope(input, replay.result),
+  })
+  return finishRun(
+    input,
+    events,
+    withFinalAttempt(replay.result, {
+      cacheOutcome: 'hit',
+      inferenceCount: 0,
+    }),
+  )
+}
+
+async function startReplayFallback(
+  options: RunReplayCacheHitInput,
+  replay: RetriedScenarioRun,
+): Promise<ScenarioRun> {
+  const { cacheKey, events, input, observedRevision } = options
+  await appendScenarioFinishedEvent(events, input, replay.result)
+  await appendEvent(events, input, {
+    type: 'replay-diverged',
+    cacheKey,
+    scope: finalAttemptScope(input, replay.result),
+  })
+  await appendEvent(events, input, {
+    type: 'adaptive-fallback-started',
+    cacheKey,
+    scope: nextAttemptScope(input, replay.result.attempts),
+  })
+  return runCoordinatedAdaptive({
+    input,
+    events,
+    cacheKey,
+    cacheOutcome: 'miss',
+    observedRevision,
+    inferenceOffset: replay.inferenceCount,
+    priorAttempts: replay.result.attempts,
+  })
+}
+
+async function recordPartialReplayDivergence(
+  input: RunScenarioInput,
+  events: RunEvent[],
+  cacheKey: ExecutionCacheKey,
+  replay: RetriedScenarioRun,
+): Promise<void> {
+  await appendEvent(events, input, {
+    type: 'replay-diverged',
+    cacheKey,
+    scope: finalAttemptScope(input, replay.result),
+  })
+  await appendEvent(events, input, {
+    type: 'adaptive-fallback-started',
+    cacheKey,
+    scope: finalAttemptScope(input, replay.result),
+  })
+}
+
 async function resolveOpenedReplay(
   options: RunReplayCacheHitInput,
   prefix: CachedStepPrefix,
   replay: RetriedScenarioRun,
 ): Promise<ScenarioRun | undefined> {
-  const { cacheKey, cachePolicy, events, input, observedRevision } = options
-  const policy = prefixPolicyOf(input.adapter.executionCache!)
+  const { cacheKey, cachePolicy, events, input } = options
+  const policy = prefixPolicyOf(requiredValue(input.adapter.executionCache))
   const isComplete = prefix.stepCount === input.scenario.steps.length
   const fullReplayHit =
     isComplete &&
@@ -1039,19 +1159,7 @@ async function resolveOpenedReplay(
     replay.result.state === 'passed' &&
     replay.inferenceCount === 0
   if (fullReplayHit) {
-    await appendEvent(events, input, {
-      type: 'inference-count-updated',
-      inferenceCount: replay.inferenceCount,
-      scope: finalAttemptScope(input, replay.result),
-    })
-    return finishRun(
-      input,
-      events,
-      withFinalAttempt(replay.result, {
-        cacheOutcome: 'hit',
-        inferenceCount: 0,
-      }),
-    )
+    return finishFullReplayHit(input, events, replay)
   }
   if (cachePolicy === 'cache-only') {
     return finishDivergedReplayHit(input, events, cacheKey, replay)
@@ -1065,38 +1173,10 @@ async function resolveOpenedReplay(
     return finishDivergedReplayHit(input, events, cacheKey, replay)
   }
   if (!policy.mixedReplay && replay.replayDiverged) {
-    await appendScenarioFinishedEvent(events, input, replay.result)
-    await appendEvent(events, input, {
-      type: 'replay-diverged',
-      cacheKey,
-      scope: finalAttemptScope(input, replay.result),
-    })
-    await appendEvent(events, input, {
-      type: 'adaptive-fallback-started',
-      cacheKey,
-      scope: nextAttemptScope(input, replay.result.attempts),
-    })
-    return runCoordinatedAdaptive({
-      input,
-      events,
-      cacheKey,
-      cacheOutcome: 'miss',
-      observedRevision,
-      inferenceOffset: replay.inferenceCount,
-      priorAttempts: replay.result.attempts,
-    })
+    return startReplayFallback(options, replay)
   }
   if (replay.replayedStepCount < prefix.stepCount) {
-    await appendEvent(events, input, {
-      type: 'replay-diverged',
-      cacheKey,
-      scope: finalAttemptScope(input, replay.result),
-    })
-    await appendEvent(events, input, {
-      type: 'adaptive-fallback-started',
-      cacheKey,
-      scope: finalAttemptScope(input, replay.result),
-    })
+    await recordPartialReplayDivergence(input, events, cacheKey, replay)
   }
   return undefined
 }
@@ -1105,7 +1185,7 @@ async function runReplayCacheHit(
   options: RunReplayCacheHitInput,
 ): Promise<ScenarioRun> {
   const { cacheEntry, cacheKey, events, input } = options
-  const adapter = input.adapter.executionCache!
+  const adapter = requiredValue(input.adapter.executionCache)
   const prefix = cachedStepPrefixFrom(
     cacheEntry,
     input.scenario.steps.length,
@@ -1178,8 +1258,9 @@ async function runCacheRefresh(
     cacheKey,
     scope: nextAttemptScope(input),
   })
-  const observedSnapshot =
-    await input.executionCache!.store.coordination?.readCurrent(cacheKey)
+  const observedSnapshot = await requiredValue(
+    input.executionCache,
+  ).store.coordination?.readCurrent(cacheKey)
   return runCoordinatedAdaptive({
     input,
     events,
@@ -1195,18 +1276,19 @@ async function runCachedScenario(
   cachePolicy: ExecutionCachePolicy,
   cacheKey: ExecutionCacheKey,
 ): Promise<ScenarioRun> {
-  const observedSnapshot =
-    await input.executionCache!.store.coordination?.readCurrent(cacheKey)
-  const source = await input.executionCache!.store.read(cacheKey)
+  const observedSnapshot = await requiredValue(
+    input.executionCache,
+  ).store.coordination?.readCurrent(cacheKey)
+  const source = await requiredValue(input.executionCache).store.read(cacheKey)
   const cacheEntry = source
     ? deserializeExecutionCacheEnvelope({
         source,
         expectedKey: cacheKey,
-        payloadValidator: input.adapter.executionCache!,
+        payloadValidator: requiredValue(input.adapter.executionCache),
       })
     : undefined
   if (!cacheEntry) {
-    if (source) await input.executionCache!.store.delete(cacheKey)
+    if (source) await requiredValue(input.executionCache).store.delete(cacheKey)
     if (cachePolicy === 'cache-only') {
       return runCacheOnlyMiss(
         input,

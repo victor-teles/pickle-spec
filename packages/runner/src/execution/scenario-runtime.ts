@@ -5,6 +5,7 @@ import {
   type ScenarioVariableBinding,
   type Specification,
 } from '@pickle-spec/spec'
+import { requiredValue } from '../required-value'
 import type {
   DiagnosticEntry,
   ScenarioIdentity,
@@ -46,7 +47,10 @@ export function templateStepAt(
   scenario: Scenario,
   stepIndex: number,
 ): ScenarioStep {
-  return scenario.template?.steps[stepIndex] ?? scenario.steps[stepIndex]!
+  return (
+    scenario.template?.steps[stepIndex] ??
+    requiredValue(scenario.steps[stepIndex])
+  )
 }
 
 export function nonemptyBindings(

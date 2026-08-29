@@ -151,9 +151,9 @@ Feature: Third Specification
         waitForFile(join(gates, `${name}.started`)),
       ),
     ),
-    child.exited.then(async (exitCode) => {
+    child.exited.then(async (earlyExitCode) => {
       throw new Error(
-        `pickle run exited before all Scenarios started (${exitCode}): ${await stderrOutput}`,
+        `pickle run exited before all Scenarios started (${earlyExitCode}): ${await stderrOutput}`,
       )
     }),
   ])

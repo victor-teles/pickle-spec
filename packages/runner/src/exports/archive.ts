@@ -8,6 +8,7 @@ import type {
   TestStepResult,
 } from '../execution/run-scenario'
 import { testRunSchemaVersion } from '../execution/run-scenario'
+import { requiredValue } from '../required-value'
 import {
   publicRunEvent,
   recordableTestResult,
@@ -411,7 +412,7 @@ function assertConsistentRunArchive(archive: RunArchive): void {
   if (startedEvents.length !== 1) {
     throw new Error('Run archive requires exactly one run-started event')
   }
-  const started = startedEvents[0]!
+  const started = requiredValue(startedEvents[0])
   if (
     started.run.id !== archive.manifest.id ||
     started.run.startedAt !== archive.manifest.startedAt ||

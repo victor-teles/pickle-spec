@@ -14,13 +14,11 @@ export function resolveWebArtifactCapture(input: {
   screenshotMode?: ScreenshotOptions['mode']
   artifactsCapture?: ArtifactCapturePolicy
 }): WebArtifactCapture {
-  const screenshots =
-    input.screenshotMode ??
-    (input.artifactsCapture === 'off'
-      ? 'off'
-      : input.artifactsCapture === 'on-failure'
-        ? 'on-failure'
-        : 'on-step')
+  let screenshots = input.screenshotMode
+  if (!screenshots) {
+    screenshots = input.artifactsCapture === 'off' ? 'off' : 'on-step'
+    if (input.artifactsCapture === 'on-failure') screenshots = 'on-failure'
+  }
   return {
     screenshots,
     recording: screenshots !== 'off',

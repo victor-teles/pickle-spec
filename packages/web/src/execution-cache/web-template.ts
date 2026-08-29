@@ -1,4 +1,5 @@
 import type { ScenarioVariableBinding } from '@pickle-spec/spec'
+import { requiredValue } from '../required-value'
 import type { WebTemplate } from './web-cache-schema'
 
 export interface WebValueProvenance {
@@ -24,7 +25,7 @@ export function parameterizeWebValue(
   let offset = 0
 
   for (const match of source.matchAll(/<([A-Za-z_][A-Za-z0-9_.-]*)>/g)) {
-    const name = match[1]!
+    const name = requiredValue(match[1])
     if (!bindingNames.has(name)) return undefined
     addLiteral(segments, source.slice(offset, match.index))
     segments.push({ variable: name })

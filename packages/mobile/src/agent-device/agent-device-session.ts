@@ -264,25 +264,27 @@ async function configureCapabilities(
   policy: MobilePlatformPolicy,
   assertOwned: () => void,
 ): Promise<void> {
+  const sessionState = session
   const needsCapabilities =
-    session.requestedArtifacts.length > 0 || input.requiredCapabilities?.length
-  if (!needsCapabilities || !session.selection) return
+    sessionState.requestedArtifacts.length > 0 ||
+    input.requiredCapabilities?.length
+  if (!needsCapabilities || !sessionState.selection) return
 
   const result = agentDeviceCapabilitiesSchema.parse(
-    await session.client.devices.capabilities(session.selection),
+    await sessionState.client.devices.capabilities(sessionState.selection),
   )
   assertOwned()
-  const unsupportedArtifacts = session.requestedArtifacts.filter(
+  const unsupportedArtifacts = sessionState.requestedArtifacts.filter(
     (artifact) =>
       !result.availableCommands.includes(artifactCommands[artifact]),
   )
   const unsupportedArtifactKinds = new Set(unsupportedArtifacts)
-  session.artifacts = new Set(
-    session.requestedArtifacts.filter(
+  sessionState.artifacts = new Set(
+    sessionState.requestedArtifacts.filter(
       (artifact) => !unsupportedArtifactKinds.has(artifact),
     ),
   )
-  session.evidenceAvailability = unsupportedArtifacts.map((kind) => ({
+  sessionState.evidenceAvailability = unsupportedArtifacts.map((kind) => ({
     kind,
     state: 'not-supported',
     message: `${policy.targetName} does not support ${kind} evidence`,
@@ -340,14 +342,19 @@ async function startDeviceLogs(
   session: GatewaySession,
   assertOwned: () => void,
 ): Promise<void> {
-  if (!session.artifactDirectory || !session.artifacts.has('device-log')) return
-  await session.client.observability.logs({ action: 'start' })
-  session.logsStarted = true
+  const sessionState = session
+  if (
+    !sessionState.artifactDirectory ||
+    !sessionState.artifacts.has('device-log')
+  )
+    return
+  await sessionState.client.observability.logs({ action: 'start' })
+  sessionState.logsStarted = true
   assertOwned()
   const log = agentDeviceLogPathSchema.parse(
-    await session.client.observability.logs({ action: 'path' }),
+    await sessionState.client.observability.logs({ action: 'path' }),
   )
-  session.deviceLogPath = log.path
+  sessionState.deviceLogPath = log.path
   assertOwned()
 }
 
@@ -356,12 +363,25 @@ export async function initializeGatewaySession(
   session: GatewaySession,
   assertOwned: () => void,
 ): Promise<string> {
+  const sessionState = session
   const platform = input.platform ?? 'android'
   const policy = mobilePlatformPolicies[platform]
-  const target = await findTarget(input, session, platform, policy, assertOwned)
-  session.selection = deviceSelection(target)
-  await configureCapabilities(input, session, platform, policy, assertOwned)
-  await resetApplication(input, session, platform, policy, assertOwned)
-  await startDeviceLogs(session, assertOwned)
+  const target = await findTarget(
+    input,
+    sessionState,
+    platform,
+    policy,
+    assertOwned,
+  )
+  sessionState.selection = deviceSelection(target)
+  await configureCapabilities(
+    input,
+    sessionState,
+    platform,
+    policy,
+    assertOwned,
+  )
+  await resetApplication(input, sessionState, platform, policy, assertOwned)
+  await startDeviceLogs(sessionState, assertOwned)
   return target.id
 }

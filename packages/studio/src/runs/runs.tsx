@@ -89,60 +89,10 @@ export function RunsArea(props: RunsAreaProps) {
   })
 
   if (props.route.kind === 'result' || props.route.kind === 'artifact') {
-    const location =
-      props.route.kind === 'result'
-        ? props.route.location
-        : props.route.location.result
-    const live = inspections.get(location.runId)
-    return (
-      <ResultInspector
-        api={props.api}
-        artifactIndex={
-          props.route.kind === 'artifact'
-            ? props.route.location.artifactIndex
-            : undefined
-        }
-        location={location}
-        snapshot={live?.snapshot}
-        connection={live?.connection}
-        onBack={() => props.onNavigate({ kind: 'run', runId: location.runId })}
-        onBackToResult={() => props.onNavigate({ kind: 'result', location })}
-        onOpenArtifact={(artifactIndex) =>
-          props.onNavigate({
-            kind: 'artifact',
-            location: { result: location, artifactIndex },
-          })
-        }
-        onTabChange={(tab) =>
-          props.onNavigate(
-            {
-              kind: 'result',
-              location: { ...location, tab },
-            },
-            true,
-          )
-        }
-      />
-    )
+    return <RunInspectionRoute {...props} inspections={inspections} />
   }
   if (props.route.kind === 'run') {
-    return (
-      <RunDetail
-        api={props.api}
-        runId={props.route.runId}
-        live={inspections.get(props.route.runId)}
-        runsBlocked={props.runsBlocked}
-        onBack={() => props.onNavigate({ kind: 'runs', filters: {} })}
-        onCancel={props.onCancel}
-        onInspectResult={(location) =>
-          props.onNavigate({ kind: 'result', location })
-        }
-        onRerun={async (request) => {
-          await props.onRerun(request)
-          props.onNavigate({ kind: 'runs', filters: {} })
-        }}
-      />
-    )
+    return <SingleRunRoute {...props} inspections={inspections} />
   }
   return (
     <RunsDashboard
@@ -154,34 +104,109 @@ export function RunsArea(props: RunsAreaProps) {
   )
 }
 
+function RunInspectionRoute(
+  props: RunsAreaProps & {
+    inspections: ReadonlyMap<string, LiveResultInspection>
+  },
+) {
+  if (props.route.kind !== 'result' && props.route.kind !== 'artifact')
+    return null
+  const location =
+    props.route.kind === 'result'
+      ? props.route.location
+      : props.route.location.result
+  const live = props.inspections.get(location.runId)
+  return (
+    <ResultInspector
+      api={props.api}
+      artifactIndex={
+        props.route.kind === 'artifact'
+          ? props.route.location.artifactIndex
+          : undefined
+      }
+      location={location}
+      snapshot={live?.snapshot}
+      connection={live?.connection}
+      onBack={() => props.onNavigate({ kind: 'run', runId: location.runId })}
+      onBackToResult={() => props.onNavigate({ kind: 'result', location })}
+      onOpenArtifact={(artifactIndex) =>
+        props.onNavigate({
+          kind: 'artifact',
+          location: { result: location, artifactIndex },
+        })
+      }
+      onTabChange={(tab) =>
+        props.onNavigate(
+          {
+            kind: 'result',
+            location: { ...location, tab },
+          },
+          true,
+        )
+      }
+    />
+  )
+}
+
+function SingleRunRoute(
+  props: RunsAreaProps & {
+    inspections: ReadonlyMap<string, LiveResultInspection>
+  },
+) {
+  if (props.route.kind !== 'run') return null
+  const onRerun = async (request: StudioRunRequest) => {
+    await props.onRerun(request)
+    props.onNavigate({ kind: 'runs', filters: {} })
+  }
+  return (
+    <RunDetail
+      api={props.api}
+      runId={props.route.runId}
+      live={props.inspections.get(props.route.runId)}
+      runsBlocked={props.runsBlocked}
+      onBack={() => props.onNavigate({ kind: 'runs', filters: {} })}
+      onCancel={props.onCancel}
+      onInspectResult={(location) =>
+        props.onNavigate({ kind: 'result', location })
+      }
+      onRerun={onRerun}
+    />
+  )
+}
+
 type RunsDashboardProps = RunsAreaProps & {
   route: Extract<StudioRoute, { kind: 'runs' }>
   inspections: ReadonlyMap<string, LiveResultInspection>
 }
 
 function RunsDashboard(props: RunsDashboardProps) {
-  const [error, setError] = useState<string>()
-  const [selectedRunIds, setSelectedRunIds] = useState<string[]>([])
-  const [comparison, setComparison] = useState<TestRunComparison>()
+  const data = useRunsDashboardData(props)
+  const state = useRunsDashboardState(props)
+  if (!props.index) return <RunsLoading />
+  return (
+    <section
+      aria-labelledby="runs-title"
+      className="min-h-0 flex-1 space-y-5 overflow-auto px-3 py-4 sm:px-5"
+    >
+      <RunsHeader state={state} />
+      <ActiveRuns
+        runIds={data.visibleActiveRunIds}
+        inspections={props.inspections}
+        onCancel={props.onCancel}
+        onOpen={(runId) => props.onNavigate({ kind: 'run', runId })}
+      />
+      <RunHistory {...props} {...data} {...state} index={props.index} />
+      {state.comparison ? (
+        <RunComparison comparison={state.comparison} />
+      ) : null}
+      <RunStorage index={props.index} onDeleteEligible={state.deleteEligible} />
+    </section>
+  )
+}
+
+function useRunsDashboardData(props: RunsDashboardProps) {
   const filters = props.route.filters
-  const specificationNames = useMemo(
-    () =>
-      new Map(
-        props.project.specifications.map((specification) => [
-          specification.uri,
-          specification.name,
-        ]),
-      ),
-    [props.project.specifications],
-  )
-  const activeIds = useMemo(
-    () => new Set(props.index?.activeRunIds ?? []),
-    [props.index?.activeRunIds],
-  )
-  const allItems = useMemo(
-    () => runListItems(props.index?.runs ?? [], activeIds),
-    [activeIds, props.index?.runs],
-  )
+  const { activeIds, allItems, specificationNames } = useRunCollections(props)
   const activeItems = useMemo(
     () =>
       (props.index?.activeRunIds ?? []).map((runId) =>
@@ -213,245 +238,309 @@ function RunsDashboard(props: RunsDashboardProps) {
     count: items.length,
     itemSize: runRowHeight,
   })
-
-  if (!props.index) {
-    return (
-      <section className="min-h-0 flex-1 overflow-auto p-4">
-        <LedgerLoadingSkeleton label="Loading Runs" />
-      </section>
-    )
+  return {
+    filterOptions: optionsFrom(props.index?.runs ?? [], props.project),
+    filters,
+    items,
+    pinnedRunIds: new Set(props.index?.storage.pinnedRunIds ?? []),
+    runWindow,
+    specificationNames,
+    visibleActiveRunIds,
   }
+}
 
-  const pinnedRunIds = new Set(props.index.storage.pinnedRunIds)
-  const filterOptions = optionsFrom(props.index.runs, props.project)
+function useRunCollections(props: RunsDashboardProps) {
+  const specificationNames = useMemo(
+    () =>
+      new Map(
+        props.project.specifications.map((specification) => [
+          specification.uri,
+          specification.name,
+        ]),
+      ),
+    [props.project.specifications],
+  )
+  const activeIds = useMemo(
+    () => new Set(props.index?.activeRunIds ?? []),
+    [props.index?.activeRunIds],
+  )
+  const allItems = useMemo(
+    () => runListItems(props.index?.runs ?? [], activeIds),
+    [activeIds, props.index?.runs],
+  )
+  return { activeIds, allItems, specificationNames }
+}
 
-  async function compareSelected() {
-    if (selectedRunIds.length !== 2) return
-    setError(undefined)
-    try {
-      setComparison(
-        await props.api<TestRunComparison>('/api/history/compare', {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({
-            baselineRunId: selectedRunIds[1],
-            candidateRunId: selectedRunIds[0],
-          }),
-        }),
-      )
-    } catch (reason) {
-      setError(reasonMessage(reason))
-    }
-  }
-
-  async function importArchive(file: File | undefined) {
-    if (!file) return
-    setError(undefined)
-    try {
-      const manifest = await props.api<TestRunManifest>('/api/history/import', {
-        method: 'POST',
-        body: file,
-      })
-      await props.reloadIndex()
-      toast.add({
-        type: 'success',
-        title: 'Test run imported',
-        description: `Test run ${manifest.id} is now available in Runs.`,
-      })
-    } catch (reason) {
-      setError(reasonMessage(reason))
-    }
-  }
-
-  async function setPinned(runId: string, pinned: boolean) {
-    setError(undefined)
-    try {
-      await props.api(`/api/history/${encodeURIComponent(runId)}/pin`, {
-        method: pinned ? 'POST' : 'DELETE',
-      })
-      await props.reloadIndex()
-      toast.add({
-        type: 'success',
-        title: `Test run ${pinned ? 'pinned' : 'unpinned'}`,
-        description: pinned
-          ? `${runId} is protected from retention deletion.`
-          : `${runId} can be deleted by the retention policy.`,
-      })
-    } catch (reason) {
-      setError(reasonMessage(reason))
-    }
-  }
-
-  async function deleteEligible() {
-    setError(undefined)
-    try {
-      const result = await props.api<{ removed: string[] }>(
-        '/api/history/retention',
-        { method: 'POST' },
-      )
-      setSelectedRunIds((current) =>
-        current.filter((runId) => !result.removed.includes(runId)),
-      )
-      if (selectedRunIds.some((runId) => result.removed.includes(runId))) {
-        setComparison(undefined)
-      }
-      await props.reloadIndex()
-      toast.add({
-        type: result.removed.length === 0 ? 'info' : 'success',
-        title:
-          result.removed.length === 0
-            ? 'No Test runs deleted'
-            : 'Run retention applied',
-        description:
-          result.removed.length === 0
-            ? 'No local Test runs matched the configured retention policy.'
-            : `Deleted ${result.removed.length} local Test runs.`,
-      })
-    } catch (reason) {
-      setError(reasonMessage(reason))
-    }
-  }
-
-  function updateFilters(patch: Partial<RunsFilters>) {
-    props.onNavigate({ kind: 'runs', filters: { ...filters, ...patch } }, true)
-  }
-
+function RunsLoading() {
   return (
-    <section
-      aria-labelledby="runs-title"
-      className="min-h-0 flex-1 space-y-5 overflow-auto px-3 py-4 sm:px-5"
-    >
-      <header className="flex flex-wrap items-start justify-between gap-3 border-b border-border pb-4">
-        <div className="space-y-1">
-          <h1 id="runs-title" className="studio-display text-lg sm:text-xl">
-            Runs
-          </h1>
-          <p className="text-sm text-muted-foreground">
-            Live progress and persisted Test runs across every Specification.
-          </p>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <Input
-            type="file"
-            accept="application/json,.json"
-            aria-label="Import run archive"
-            className="max-w-64"
-            onChange={(event) =>
-              void importArchive(event.currentTarget.files?.[0])
-            }
-          />
-          <Button
-            type="button"
-            variant="outline"
-            disabled={selectedRunIds.length !== 2}
-            onClick={() => void compareSelected()}
-          >
-            Compare selected runs
-          </Button>
-        </div>
-      </header>
-
-      <ActiveRuns
-        runIds={visibleActiveRunIds}
-        inspections={props.inspections}
-        onCancel={props.onCancel}
-        onOpen={(runId) => props.onNavigate({ kind: 'run', runId })}
-      />
-
-      <section className="space-y-3" aria-labelledby="run-history-title">
-        <div className="flex flex-wrap items-end gap-2">
-          <div className="min-w-56 flex-1 space-y-1">
-            <label
-              htmlFor="run-search"
-              className="text-xs text-muted-foreground"
-            >
-              Search Runs
-            </label>
-            <Input
-              id="run-search"
-              type="search"
-              value={filters.q ?? ''}
-              placeholder="Run ID, suite, Specification, or target"
-              onChange={(event) =>
-                updateFilters({ q: event.currentTarget.value || undefined })
-              }
-            />
-          </div>
-          <FilterMenu
-            label="State"
-            value={filters.state}
-            options={runFilterStates.map((value) => ({ value, label: value }))}
-            onValue={(state) =>
-              updateFilters({ state: state as RunsFilters['state'] })
-            }
-          />
-          <FilterMenu
-            label="Specification"
-            value={filters.specification}
-            options={filterOptions.specifications}
-            onValue={(specification) => updateFilters({ specification })}
-          />
-          <FilterMenu
-            label="Target"
-            value={filters.profile}
-            options={filterOptions.profiles}
-            onValue={(profile) => updateFilters({ profile })}
-          />
-          <FilterMenu
-            label="Suite"
-            value={filters.suite}
-            options={filterOptions.suites}
-            onValue={(suite) => updateFilters({ suite })}
-          />
-          <Button
-            type="button"
-            variant="ghost"
-            disabled={Object.keys(filters).length === 0}
-            onClick={() =>
-              props.onNavigate({ kind: 'runs', filters: {} }, true)
-            }
-          >
-            Clear filters
-          </Button>
-        </div>
-
-        {error ? (
-          <p role="alert" className="text-sm text-destructive">
-            {error}
-          </p>
-        ) : null}
-        <h2 id="run-history-title" className="sr-only">
-          Test run history
-        </h2>
-        {items.length === 0 && visibleActiveRunIds.length === 0 ? (
-          <div className="rounded-lg border border-dashed border-border px-4 py-5 text-center text-sm text-muted-foreground">
-            {props.index.runs.length === 0
-              ? 'No Test runs have been recorded yet.'
-              : 'No Test runs match these filters.'}
-          </div>
-        ) : (
-          <RunTable
-            items={items}
-            window={runWindow}
-            selectedRunIds={selectedRunIds}
-            pinnedRunIds={pinnedRunIds}
-            specificationNames={specificationNames}
-            runsBlocked={props.runsBlocked}
-            onOpen={(runId) => props.onNavigate({ kind: 'run', runId })}
-            onPin={(runId, pinned) => void setPinned(runId, pinned)}
-            onRerun={props.onRerun}
-            onSelect={setSelectedRunIds}
-          />
-        )}
-      </section>
-
-      {comparison ? <RunComparison comparison={comparison} /> : null}
-      <RunStorage
-        index={props.index}
-        onDeleteEligible={() => void deleteEligible()}
-      />
+    <section className="min-h-0 flex-1 overflow-auto p-4">
+      <LedgerLoadingSkeleton label="Loading Runs" />
     </section>
   )
+}
+
+function useRunsDashboardState(props: RunsDashboardProps) {
+  const [error, setError] = useState<string>()
+  const [selectedRunIds, setSelectedRunIds] = useState<string[]>([])
+  const [comparison, setComparison] = useState<TestRunComparison>()
+  return {
+    comparison,
+    compareSelected: () =>
+      compareSelectedRuns(props.api, selectedRunIds, setComparison, setError),
+    deleteEligible: () =>
+      void deleteEligibleRuns(
+        props,
+        selectedRunIds,
+        setSelectedRunIds,
+        setComparison,
+        setError,
+      ),
+    error,
+    importArchive: (file?: File) =>
+      void importRunArchive(props, file, setError),
+    selectedRunIds,
+    setPinned: (runId: string, pinned: boolean) =>
+      void setRunPinned(props, runId, pinned, setError),
+    setSelectedRunIds,
+  }
+}
+
+type DashboardState = ReturnType<typeof useRunsDashboardState>
+type DashboardData = ReturnType<typeof useRunsDashboardData>
+
+function RunsHeader(props: { state: DashboardState }) {
+  return (
+    <header className="flex flex-wrap items-start justify-between gap-3 border-b border-border pb-4">
+      <div className="space-y-1">
+        <h1 id="runs-title" className="studio-display text-lg sm:text-xl">
+          Runs
+        </h1>
+        <p className="text-sm text-muted-foreground">
+          Live progress and persisted Test runs across every Specification.
+        </p>
+      </div>
+      <div className="flex flex-wrap items-center gap-2">
+        <Input
+          type="file"
+          accept="application/json,.json"
+          aria-label="Import run archive"
+          className="max-w-64"
+          onChange={(event) =>
+            props.state.importArchive(event.currentTarget.files?.[0])
+          }
+        />
+        <Button
+          type="button"
+          variant="outline"
+          disabled={props.state.selectedRunIds.length !== 2}
+          onClick={() => void props.state.compareSelected()}
+        >
+          Compare selected runs
+        </Button>
+      </div>
+    </header>
+  )
+}
+
+function RunHistory(
+  props: RunsDashboardProps &
+    DashboardData &
+    DashboardState & { index: StudioRunsIndex },
+) {
+  return (
+    <section className="space-y-3" aria-labelledby="run-history-title">
+      <RunFilters {...props} />
+      {props.error ? (
+        <p role="alert" className="text-sm text-destructive">
+          {props.error}
+        </p>
+      ) : null}
+      <h2 id="run-history-title" className="sr-only">
+        Test run history
+      </h2>
+      {props.items.length === 0 && props.visibleActiveRunIds.length === 0 ? (
+        <div className="rounded-lg border border-dashed border-border px-4 py-5 text-center text-sm text-muted-foreground">
+          {props.index.runs.length === 0
+            ? 'No Test runs have been recorded yet.'
+            : 'No Test runs match these filters.'}
+        </div>
+      ) : (
+        <RunTable
+          items={props.items}
+          window={props.runWindow}
+          selectedRunIds={props.selectedRunIds}
+          pinnedRunIds={props.pinnedRunIds}
+          specificationNames={props.specificationNames}
+          runsBlocked={props.runsBlocked}
+          onOpen={(runId) => props.onNavigate({ kind: 'run', runId })}
+          onPin={props.setPinned}
+          onRerun={props.onRerun}
+          onSelect={props.setSelectedRunIds}
+        />
+      )}
+    </section>
+  )
+}
+
+function RunFilters(props: RunsDashboardProps & DashboardData) {
+  const update = (patch: Partial<RunsFilters>) =>
+    props.onNavigate(
+      { kind: 'runs', filters: { ...props.filters, ...patch } },
+      true,
+    )
+  return (
+    <div className="flex flex-wrap items-end gap-2">
+      <div className="min-w-56 flex-1 space-y-1">
+        <label htmlFor="run-search" className="text-xs text-muted-foreground">
+          Search Runs
+        </label>
+        <Input
+          id="run-search"
+          type="search"
+          value={props.filters.q ?? ''}
+          placeholder="Run ID, suite, Specification, or target"
+          onChange={(event) =>
+            update({ q: event.currentTarget.value || undefined })
+          }
+        />
+      </div>
+      <FilterMenu
+        label="State"
+        value={props.filters.state}
+        options={runFilterStates.map((value) => ({ value, label: value }))}
+        onValue={(state) => update({ state: state as RunsFilters['state'] })}
+      />
+      <FilterMenu
+        label="Specification"
+        value={props.filters.specification}
+        options={props.filterOptions.specifications}
+        onValue={(specification) => update({ specification })}
+      />
+      <FilterMenu
+        label="Target"
+        value={props.filters.profile}
+        options={props.filterOptions.profiles}
+        onValue={(profile) => update({ profile })}
+      />
+      <FilterMenu
+        label="Suite"
+        value={props.filters.suite}
+        options={props.filterOptions.suites}
+        onValue={(suite) => update({ suite })}
+      />
+      <Button
+        type="button"
+        variant="ghost"
+        disabled={Object.keys(props.filters).length === 0}
+        onClick={() => props.onNavigate({ kind: 'runs', filters: {} }, true)}
+      >
+        Clear filters
+      </Button>
+    </div>
+  )
+}
+
+async function compareSelectedRuns(
+  api: StudioApi,
+  runIds: readonly string[],
+  setComparison: (value: TestRunComparison) => void,
+  setError: (value?: string) => void,
+) {
+  if (runIds.length !== 2) return
+  setError(undefined)
+  try {
+    setComparison(
+      await api('/api/history/compare', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          baselineRunId: runIds[1],
+          candidateRunId: runIds[0],
+        }),
+      }),
+    )
+  } catch (reason) {
+    setError(reasonMessage(reason))
+  }
+}
+
+async function importRunArchive(
+  props: RunsDashboardProps,
+  file: File | undefined,
+  setError: (value?: string) => void,
+) {
+  if (!file) return
+  setError(undefined)
+  try {
+    const manifest = await props.api<TestRunManifest>('/api/history/import', {
+      method: 'POST',
+      body: file,
+    })
+    await props.reloadIndex()
+    toast.add({
+      type: 'success',
+      title: 'Test run imported',
+      description: `Test run ${manifest.id} is now available in Runs.`,
+    })
+  } catch (reason) {
+    setError(reasonMessage(reason))
+  }
+}
+
+async function setRunPinned(
+  props: RunsDashboardProps,
+  runId: string,
+  pinned: boolean,
+  setError: (value?: string) => void,
+) {
+  setError(undefined)
+  try {
+    await props.api(`/api/history/${encodeURIComponent(runId)}/pin`, {
+      method: pinned ? 'POST' : 'DELETE',
+    })
+    await props.reloadIndex()
+    toast.add({
+      type: 'success',
+      title: `Test run ${pinned ? 'pinned' : 'unpinned'}`,
+      description: pinned
+        ? `${runId} is protected from retention deletion.`
+        : `${runId} can be deleted by the retention policy.`,
+    })
+  } catch (reason) {
+    setError(reasonMessage(reason))
+  }
+}
+
+async function deleteEligibleRuns(
+  props: RunsDashboardProps,
+  selectedRunIds: readonly string[],
+  setSelectedRunIds: React.Dispatch<React.SetStateAction<string[]>>,
+  setComparison: (value?: TestRunComparison) => void,
+  setError: (value?: string) => void,
+) {
+  setError(undefined)
+  try {
+    const result = await props.api<{ removed: string[] }>(
+      '/api/history/retention',
+      { method: 'POST' },
+    )
+    setSelectedRunIds((current) =>
+      current.filter((runId) => !result.removed.includes(runId)),
+    )
+    if (selectedRunIds.some((runId) => result.removed.includes(runId)))
+      setComparison(undefined)
+    await props.reloadIndex()
+    const empty = result.removed.length === 0
+    toast.add({
+      type: empty ? 'info' : 'success',
+      title: empty ? 'No Test runs deleted' : 'Run retention applied',
+      description: empty
+        ? 'No local Test runs matched the configured retention policy.'
+        : `Deleted ${result.removed.length} local Test runs.`,
+    })
+  } catch (reason) {
+    setError(reasonMessage(reason))
+  }
 }
 
 function ActiveRuns(props: {

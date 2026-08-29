@@ -1,4 +1,10 @@
-import { useCallback, useEffect, useState } from 'react'
+import {
+  type Dispatch,
+  type SetStateAction,
+  useCallback,
+  useEffect,
+  useState,
+} from 'react'
 import type { StudioApi } from '../app/studio-api'
 import { LedgerRowsSkeleton } from '../components/loading-skeletons'
 import { Badge } from '../components/ui/badge'
@@ -132,70 +138,130 @@ function ExecutionCacheContent(props: {
   ) : null
 }
 
-export function ExecutionCacheSettings(props: ExecutionCacheSettingsProps) {
+function ClearExecutionCacheDialog(props: {
+  clearing: boolean
+  error?: string
+  open: boolean
+  onCancel: () => void
+  onConfirm: () => void
+  onOpenChange: (open: boolean) => void
+}) {
+  return (
+    <Dialog open={props.open} onOpenChange={props.onOpenChange}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Clear Execution cache?</DialogTitle>
+          <DialogDescription>
+            This removes every cached replay revision for this checkout. The
+            next run evaluates scenarios adaptively again.
+          </DialogDescription>
+        </DialogHeader>
+        {props.error ? (
+          <p className="text-sm text-destructive" role="alert">
+            {props.error}
+          </p>
+        ) : null}
+        <DialogFooter>
+          <Button
+            type="button"
+            variant="outline"
+            disabled={props.clearing}
+            onClick={props.onCancel}
+          >
+            Cancel
+          </Button>
+          <Button
+            type="button"
+            variant="destructive"
+            disabled={props.clearing}
+            onClick={props.onConfirm}
+          >
+            {props.clearing ? 'Clearing…' : 'Clear cache'}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+interface ClearExecutionCacheInput {
+  api: StudioApi
+  load: () => Promise<void>
+  setClearing: Dispatch<SetStateAction<boolean>>
+  setClearError: Dispatch<SetStateAction<string | undefined>>
+  setConfirmOpen: Dispatch<SetStateAction<boolean>>
+}
+
+async function clearExecutionCache(input: ClearExecutionCacheInput) {
+  input.setClearing(true)
+  input.setClearError(undefined)
+  try {
+    const result = await input.api<{ clearedEntries: number }>(
+      '/api/execution-cache',
+      { method: 'DELETE' },
+    )
+    input.setConfirmOpen(false)
+    await input.load()
+    toast.add({
+      type: 'success',
+      title: 'Execution cache cleared',
+      description: `Cleared ${result.clearedEntries} cache ${result.clearedEntries === 1 ? 'revision' : 'revisions'}.`,
+    })
+  } catch (reason) {
+    input.setClearError(errorMessage(reason))
+  } finally {
+    input.setClearing(false)
+  }
+}
+
+function useExecutionCacheSettings(api: StudioApi) {
   const [inspection, setInspection] = useState<StudioExecutionCacheInspection>()
   const [error, setError] = useState<string>()
   const [clearError, setClearError] = useState<string>()
   const [loading, setLoading] = useState(true)
   const [clearing, setClearing] = useState(false)
   const [confirmOpen, setConfirmOpen] = useState(false)
-
   const load = useCallback(async () => {
     setLoading(true)
     setError(undefined)
     try {
       setInspection(
-        await props.api<StudioExecutionCacheInspection>('/api/execution-cache'),
+        await api<StudioExecutionCacheInspection>('/api/execution-cache'),
       )
     } catch (reason) {
       setError(errorMessage(reason))
     } finally {
       setLoading(false)
     }
-  }, [props.api])
-
-  useEffect(() => {
-    void load()
-  }, [load])
-
-  async function clear() {
-    setClearing(true)
-    setClearError(undefined)
-    try {
-      const result = await props.api<{ clearedEntries: number }>(
-        '/api/execution-cache',
-        { method: 'DELETE' },
-      )
-      setConfirmOpen(false)
-      await load()
-      toast.add({
-        type: 'success',
-        title: 'Execution cache cleared',
-        description: `Cleared ${result.clearedEntries} cache ${result.clearedEntries === 1 ? 'revision' : 'revisions'}.`,
-      })
-    } catch (reason) {
-      setClearError(errorMessage(reason))
-    } finally {
-      setClearing(false)
-    }
+  }, [api])
+  useEffect(() => void load(), [load])
+  const clear = () =>
+    clearExecutionCache({
+      api,
+      load,
+      setClearing,
+      setClearError,
+      setConfirmOpen,
+    })
+  return {
+    inspection,
+    error,
+    clearError,
+    loading,
+    clearing,
+    confirmOpen,
+    setConfirmOpen,
+    clear,
+    load,
+    openConfirmation() {
+      setClearError(undefined)
+      setConfirmOpen(true)
+    },
   }
+}
 
-  function openConfirmation() {
-    setClearError(undefined)
-    setConfirmOpen(true)
-  }
-
-  function retry() {
-    void load()
-  }
-
-  function closeConfirmation() {
-    setConfirmOpen(false)
-  }
-
-  function confirmClear() {
-    void clear()
-  }
+export function ExecutionCacheSettings(props: ExecutionCacheSettingsProps) {
+  const state = useExecutionCacheSettings(props.api)
 
   return (
     <section
@@ -215,54 +281,28 @@ export function ExecutionCacheSettings(props: ExecutionCacheSettingsProps) {
         <Button
           type="button"
           variant="destructive"
-          disabled={loading || !inspection?.entries.length}
-          onClick={openConfirmation}
+          disabled={state.loading || !state.inspection?.entries.length}
+          onClick={state.openConfirmation}
         >
           Clear Execution cache
         </Button>
       </div>
 
       <ExecutionCacheContent
-        loading={loading}
-        error={error}
-        inspection={inspection}
-        onRetry={retry}
+        loading={state.loading}
+        error={state.error}
+        inspection={state.inspection}
+        onRetry={() => void state.load()}
       />
 
-      <Dialog open={confirmOpen} onOpenChange={setConfirmOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Clear Execution cache?</DialogTitle>
-            <DialogDescription>
-              This removes every cached replay revision for this checkout. The
-              next run evaluates scenarios adaptively again.
-            </DialogDescription>
-          </DialogHeader>
-          {clearError ? (
-            <p className="text-sm text-destructive" role="alert">
-              {clearError}
-            </p>
-          ) : null}
-          <DialogFooter>
-            <Button
-              type="button"
-              variant="outline"
-              disabled={clearing}
-              onClick={closeConfirmation}
-            >
-              Cancel
-            </Button>
-            <Button
-              type="button"
-              variant="destructive"
-              disabled={clearing}
-              onClick={confirmClear}
-            >
-              {clearing ? 'Clearing…' : 'Clear cache'}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <ClearExecutionCacheDialog
+        clearing={state.clearing}
+        error={state.clearError}
+        open={state.confirmOpen}
+        onCancel={() => state.setConfirmOpen(false)}
+        onConfirm={() => void state.clear()}
+        onOpenChange={state.setConfirmOpen}
+      />
     </section>
   )
 }

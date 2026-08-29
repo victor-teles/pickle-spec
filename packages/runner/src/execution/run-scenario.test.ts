@@ -5,6 +5,7 @@ import {
   type OpenSessionInput,
   runScenario,
 } from '../../index'
+import { requiredValue } from '../required-value'
 
 type TimedRunScenarioInput = Parameters<typeof runScenario>[0] & {
   now: () => Date
@@ -13,7 +14,7 @@ type TimedRunScenarioInput = Parameters<typeof runScenario>[0] & {
 type ScenarioRunResult = Awaited<ReturnType<typeof runScenario>>['result']
 
 function finalAttempt(result: ScenarioRunResult) {
-  return result.attempts.at(-1)!
+  return requiredValue(result.attempts.at(-1))
 }
 
 const scenario: Scenario = {
@@ -70,7 +71,7 @@ describe('runScenario', () => {
           }
         },
       },
-      now: () => new Date(timestamps[timestampIndex++]!),
+      now: () => new Date(requiredValue(timestamps[timestampIndex++])),
     }
 
     const run = await runScenario(input)
@@ -373,7 +374,7 @@ describe('runScenario', () => {
     const occurredAt = '2026-08-23T12:00:00.004Z'
     const paymentScenario: Scenario = {
       ...scenario,
-      steps: [scenario.steps[1]!],
+      steps: [requiredValue(scenario.steps[1])],
     }
     const executeStep = mock(async () => ({
       state: 'failed' as const,
@@ -413,7 +414,7 @@ describe('runScenario', () => {
       adapter,
     })
 
-    const step = finalAttempt(run.result).steps[0]!
+    const step = requiredValue(finalAttempt(run.result).steps[0])
     expect(step.diagnostics).toEqual([
       {
         occurredAt,
@@ -834,23 +835,26 @@ describe('runScenario', () => {
   })
 
   test('runs a custom adapter only in Adaptive and rejects cache-only before opening', async () => {
-    const openSession = mock(async (input: OpenSessionInput) => ({
+    const openSession = mock(async (sessionInput: OpenSessionInput) => ({
       async executeStep() {
         return { state: 'passed' as const, resolvedActions: [] }
       },
       async close() {},
-      mode: input.mode,
+      mode: sessionInput.mode,
     }))
     const adapter: ExecutionTargetAdapter = { openSession }
-    const input = {
+    const runInput = {
       specification,
       scenario,
       executionTargetProfile: { id: 'custom' },
       adapter,
     }
 
-    const adaptive = await runScenario(input)
-    const cacheOnly = await runScenario({ ...input, cachePolicy: 'cache-only' })
+    const adaptive = await runScenario(runInput)
+    const cacheOnly = await runScenario({
+      ...runInput,
+      cachePolicy: 'cache-only',
+    })
 
     expect(adaptive.result).toMatchObject({
       state: 'passed',

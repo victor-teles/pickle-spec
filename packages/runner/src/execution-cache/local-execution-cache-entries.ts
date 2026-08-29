@@ -73,6 +73,49 @@ function metadataFromRow(
   }
 }
 
+function inspectLocalEntries(
+  database: LocalExecutionCacheDatabase,
+  projectKey: string,
+): Promise<ExecutionCacheEntryMetadata[]> {
+  return database.use((db) =>
+    db
+      .query(
+        `SELECT
+           project_key AS projectKey, scenario_id AS scenarioId,
+           scenario_revision AS scenarioRevision,
+           execution_target_profile_id AS executionTargetProfileId,
+           target_configuration_fingerprint AS targetConfigurationFingerprint,
+           application_revision AS applicationRevision,
+           adapter_kind AS adapterKind,
+           adapter_cache_schema_version AS adapterCacheSchemaVersion,
+           source_run_id AS sourceRunId, evaluation_model AS evaluationModel,
+           evaluation_inference_count AS evaluationInferenceCount,
+           created_at AS createdAt, last_used_at AS lastUsedAt,
+           hit_count AS hitCount, payload_digest AS payloadDigest,
+           size_bytes AS sizeBytes
+         FROM entries WHERE project_key = ?
+         ORDER BY last_used_at DESC, created_at DESC, key_digest`,
+      )
+      .all(projectKey)
+      .map((row) => metadataFromRow(row as IndexedExecutionCacheEntry)),
+  )
+}
+
+async function clearLocalEntries(
+  database: LocalExecutionCacheDatabase,
+  projectKey: string,
+): Promise<void> {
+  await database.use((db) =>
+    db
+      .transaction(() => {
+        db.run('DELETE FROM entries WHERE project_key = ?', [projectKey])
+        db.run('DELETE FROM leases WHERE project_key = ?', [projectKey])
+        db.run('DELETE FROM lease_outcomes WHERE project_key = ?', [projectKey])
+      })
+      .immediate(),
+  )
+}
+
 export function createLocalExecutionCacheEntries(
   options: LocalExecutionCacheEntriesOptions,
 ): ExecutionCacheStore {
@@ -129,46 +172,10 @@ export function createLocalExecutionCacheEntries(
       })
     },
     async inspect(): Promise<ExecutionCacheEntryMetadata[]> {
-      return database.use((db) =>
-        db
-          .query(
-            `SELECT
-               project_key AS projectKey,
-               scenario_id AS scenarioId,
-               scenario_revision AS scenarioRevision,
-               execution_target_profile_id AS executionTargetProfileId,
-               target_configuration_fingerprint AS targetConfigurationFingerprint,
-               application_revision AS applicationRevision,
-               adapter_kind AS adapterKind,
-               adapter_cache_schema_version AS adapterCacheSchemaVersion,
-               source_run_id AS sourceRunId,
-               evaluation_model AS evaluationModel,
-               evaluation_inference_count AS evaluationInferenceCount,
-               created_at AS createdAt,
-               last_used_at AS lastUsedAt,
-               hit_count AS hitCount,
-               payload_digest AS payloadDigest,
-               size_bytes AS sizeBytes
-             FROM entries
-             WHERE project_key = ?
-             ORDER BY last_used_at DESC, created_at DESC, key_digest`,
-          )
-          .all(projectKey)
-          .map((row) => metadataFromRow(row as IndexedExecutionCacheEntry)),
-      )
+      return inspectLocalEntries(database, projectKey)
     },
     async clear() {
-      await database.use((db) =>
-        db
-          .transaction(() => {
-            db.run('DELETE FROM entries WHERE project_key = ?', [projectKey])
-            db.run('DELETE FROM leases WHERE project_key = ?', [projectKey])
-            db.run('DELETE FROM lease_outcomes WHERE project_key = ?', [
-              projectKey,
-            ])
-          })
-          .immediate(),
-      )
+      await clearLocalEntries(database, projectKey)
     },
   }
 }

@@ -141,11 +141,11 @@ export function registerStudioHardeningTests(
           await page.keyboard.press('Tab')
         }
         const activeLink = await page.evaluate(() => {
-          const browser = globalThis as unknown as BrowserDocument
+          const browserDocument = globalThis as unknown as BrowserDocument
           return {
-            label: browser.document.activeElement?.textContent?.trim(),
+            label: browserDocument.document.activeElement?.textContent?.trim(),
             focusVisible:
-              browser.document.activeElement?.matches(':focus-visible'),
+              browserDocument.document.activeElement?.matches(':focus-visible'),
           }
         })
         expect(activeLink).toEqual({ label: area, focusVisible: true })

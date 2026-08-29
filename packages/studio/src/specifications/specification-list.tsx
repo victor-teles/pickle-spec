@@ -1,4 +1,12 @@
-import { type KeyboardEvent, useEffect, useState } from 'react'
+import {
+  type Dispatch,
+  type KeyboardEvent,
+  type RefCallback,
+  type RefObject,
+  type SetStateAction,
+  useEffect,
+  useState,
+} from 'react'
 import { Button } from '../components/ui/button'
 import { useVirtualWindow } from '../hooks/use-virtual-window'
 import { cn } from '../lib/utils'
@@ -18,6 +26,90 @@ type SpecificationListProps = {
   specifications: readonly StudioSpecification[]
 }
 
+function RunAllSpecifications(props: SpecificationListProps) {
+  return (
+    <div className="border-t border-border p-2">
+      {props.canRun ? (
+        <RunControlButton
+          variant="outline"
+          className="w-full"
+          blocked={props.running || props.specifications.length === 0}
+          busy={isBusyOrigin(props.origin, { kind: 'all' })}
+          onClick={props.onRunAll}
+        >
+          Run all Specifications
+        </RunControlButton>
+      ) : null}
+    </div>
+  )
+}
+
+interface VirtualSpecificationRowsProps {
+  after: number
+  before: number
+  containerRef: RefCallback<HTMLUListElement>
+  onMoveFocus: (event: KeyboardEvent, index: number) => void
+  onSelect: (id: string) => void
+  selectedId?: string
+  specifications: readonly StudioSpecification[]
+  start: number
+}
+
+function VirtualSpecificationRows(props: VirtualSpecificationRowsProps) {
+  return (
+    <ul
+      ref={props.containerRef}
+      className="flex min-h-0 flex-1 flex-col overflow-auto px-2 pb-2"
+    >
+      {props.before > 0 ? (
+        <li
+          aria-hidden="true"
+          className="shrink-0"
+          style={{ height: props.before }}
+        />
+      ) : null}
+      {props.specifications.map((specification, visibleIndex) => (
+        <SpecificationListItem
+          key={specification.id}
+          current={specification.id === props.selectedId}
+          index={props.start + visibleIndex}
+          onMoveFocus={props.onMoveFocus}
+          onSelect={props.onSelect}
+          specification={specification}
+        />
+      ))}
+      {props.after > 0 ? (
+        <li
+          aria-hidden="true"
+          className="shrink-0"
+          style={{ height: props.after }}
+        />
+      ) : null}
+    </ul>
+  )
+}
+
+function isVisibleIndex(index: number | undefined, start: number, end: number) {
+  return index !== undefined && index >= start && index < end
+}
+
+function useSpecificationFocus(
+  pendingFocus: number | undefined,
+  setPendingFocus: Dispatch<SetStateAction<number | undefined>>,
+  focusTargetVisible: boolean,
+  scrollRef: RefObject<HTMLUListElement | null>,
+): void {
+  useEffect(() => {
+    if (pendingFocus === undefined || !focusTargetVisible) return
+    const target = scrollRef.current?.querySelector<HTMLElement>(
+      `[data-specification-index="${pendingFocus}"]`,
+    )
+    if (!target) return
+    target.focus()
+    setPendingFocus(undefined)
+  }, [focusTargetVisible, pendingFocus, scrollRef, setPendingFocus])
+}
+
 export function SpecificationList(props: SpecificationListProps) {
   const virtual = useVirtualWindow<HTMLUListElement>({
     count: props.specifications.length,
@@ -28,20 +120,18 @@ export function SpecificationList(props: SpecificationListProps) {
     virtual.end,
   )
   const [pendingFocus, setPendingFocus] = useState<number>()
-  const focusTargetVisible =
-    pendingFocus !== undefined &&
-    pendingFocus >= virtual.start &&
-    pendingFocus < virtual.end
+  const focusTargetVisible = isVisibleIndex(
+    pendingFocus,
+    virtual.start,
+    virtual.end,
+  )
 
-  useEffect(() => {
-    if (pendingFocus === undefined || !focusTargetVisible) return
-    const target = virtual.scrollRef.current?.querySelector<HTMLElement>(
-      `[data-specification-index="${pendingFocus}"]`,
-    )
-    if (!target) return
-    target.focus()
-    setPendingFocus(undefined)
-  }, [focusTargetVisible, pendingFocus, virtual.scrollRef])
+  useSpecificationFocus(
+    pendingFocus,
+    setPendingFocus,
+    focusTargetVisible,
+    virtual.scrollRef,
+  )
 
   function moveFocus(event: KeyboardEvent, index: number) {
     const nextIndex = nextSpecificationIndex(
@@ -70,49 +160,18 @@ export function SpecificationList(props: SpecificationListProps) {
           None in this project.
         </p>
       ) : (
-        <ul
-          ref={virtual.containerRef}
-          className="flex min-h-0 flex-1 flex-col overflow-auto px-2 pb-2"
-        >
-          {virtual.before > 0 ? (
-            <li
-              aria-hidden="true"
-              className="shrink-0"
-              style={{ height: virtual.before }}
-            />
-          ) : null}
-          {visibleSpecifications.map((specification, visibleIndex) => (
-            <SpecificationListItem
-              key={specification.id}
-              current={specification.id === props.selectedId}
-              index={virtual.start + visibleIndex}
-              onMoveFocus={moveFocus}
-              onSelect={props.onSelect}
-              specification={specification}
-            />
-          ))}
-          {virtual.after > 0 ? (
-            <li
-              aria-hidden="true"
-              className="shrink-0"
-              style={{ height: virtual.after }}
-            />
-          ) : null}
-        </ul>
+        <VirtualSpecificationRows
+          after={virtual.after}
+          before={virtual.before}
+          containerRef={virtual.containerRef}
+          onMoveFocus={moveFocus}
+          onSelect={props.onSelect}
+          selectedId={props.selectedId}
+          specifications={visibleSpecifications}
+          start={virtual.start}
+        />
       )}
-      <div className="border-t border-border p-2">
-        {props.canRun ? (
-          <RunControlButton
-            variant="outline"
-            className="w-full"
-            blocked={props.running || props.specifications.length === 0}
-            busy={isBusyOrigin(props.origin, { kind: 'all' })}
-            onClick={props.onRunAll}
-          >
-            Run all Specifications
-          </RunControlButton>
-        ) : null}
-      </div>
+      <RunAllSpecifications {...props} />
     </nav>
   )
 }
@@ -170,6 +229,6 @@ function nextSpecificationIndex(key: string, index: number, count: number) {
     case 'End':
       return count - 1
     default:
-      return undefined
+      return
   }
 }

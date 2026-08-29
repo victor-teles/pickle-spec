@@ -7,11 +7,11 @@ import {
   validateSelectionOptions,
 } from '../../index'
 
-function scenario(name: string, tags: string[] = []): Scenario {
+function createScenario(name: string, tags: string[] = []): Scenario {
   return { name, tags, steps: [] }
 }
 
-function specification(
+function createSpecification(
   uri: string,
   scenarios: Scenario[],
   state?: SpecificationState,
@@ -28,13 +28,13 @@ function specification(
 describe('selectScenarios', () => {
   test('filters by tag expression and name before applying a stable shard', () => {
     const specifications = [
-      specification('features/b.feature', [
-        scenario('Checkout as a guest', ['@smoke']),
-        scenario('Checkout as a member', ['@smoke', '@slow']),
+      createSpecification('features/b.feature', [
+        createScenario('Checkout as a guest', ['@smoke']),
+        createScenario('Checkout as a member', ['@smoke', '@slow']),
       ]),
-      specification('features/a.feature', [
-        scenario('Checkout with a voucher', ['@smoke']),
-        scenario('View the catalogue', ['@smoke']),
+      createSpecification('features/a.feature', [
+        createScenario('Checkout with a voucher', ['@smoke']),
+        createScenario('View the catalogue', ['@smoke']),
       ]),
     ]
 
@@ -71,13 +71,13 @@ describe('selectScenarios', () => {
 
   test('balances shards by historical duration when timing data exists', () => {
     const specifications = [
-      specification('features/a.feature', [
-        scenario('Fast checkout', ['@pickle:id:scn-fast']),
-        scenario('Slow checkout', ['@pickle:id:scn-slow']),
+      createSpecification('features/a.feature', [
+        createScenario('Fast checkout', ['@pickle:id:scn-fast']),
+        createScenario('Slow checkout', ['@pickle:id:scn-slow']),
       ]),
-      specification('features/b.feature', [
-        scenario('Medium checkout', ['@pickle:id:scn-medium']),
-        scenario('Another slow checkout', ['@pickle:id:scn-slow-2']),
+      createSpecification('features/b.feature', [
+        createScenario('Medium checkout', ['@pickle:id:scn-medium']),
+        createScenario('Another slow checkout', ['@pickle:id:scn-slow-2']),
       ]),
     ]
 
@@ -118,9 +118,9 @@ describe('selectScenarios', () => {
 
   test('uses deterministic scenario counts when no historical durations match', () => {
     const specifications = [
-      specification('features/a.feature', [
-        scenario('First runnable'),
-        scenario('Second runnable'),
+      createSpecification('features/a.feature', [
+        createScenario('First runnable'),
+        createScenario('Second runnable'),
       ]),
     ]
 
@@ -138,10 +138,10 @@ describe('selectScenarios', () => {
   test('does not assign ignored Scenarios to a shard or count them as shard positions', () => {
     const selected = selectScenarios(
       [
-        specification('features/search.feature', [
-          scenario('Ignored', ['@ignore']),
-          scenario('First runnable'),
-          scenario('Second runnable'),
+        createSpecification('features/search.feature', [
+          createScenario('Ignored', ['@ignore']),
+          createScenario('First runnable'),
+          createScenario('Second runnable'),
         ]),
       ],
       { shard: { index: 1, total: 2 } },
@@ -154,24 +154,24 @@ describe('selectScenarios', () => {
 
   test('selects Scenarios by path, tag, state, and name query', () => {
     const specifications = [
-      specification(
+      createSpecification(
         'features/checkout/guest.feature',
-        [scenario('Checkout as a guest', ['@smoke'])],
+        [createScenario('Checkout as a guest', ['@smoke'])],
         'active',
       ),
-      specification(
+      createSpecification(
         'features/checkout/member.feature',
-        [scenario('Checkout as a member', ['@smoke'])],
+        [createScenario('Checkout as a member', ['@smoke'])],
         'draft',
       ),
-      specification(
+      createSpecification(
         'features/search.feature',
-        [scenario('Find a product', ['@smoke'])],
+        [createScenario('Find a product', ['@smoke'])],
         'active',
       ),
-      specification(
+      createSpecification(
         'features/legacy.feature',
-        [scenario('Deprecated checkout', ['@smoke'])],
+        [createScenario('Deprecated checkout', ['@smoke'])],
         'deprecated',
       ),
     ]
@@ -197,22 +197,22 @@ describe('selectScenarios', () => {
 
   test('runs active Specifications by default and keeps draft and deprecated outside normal selection', () => {
     const selected = selectScenarios([
-      specification(
+      createSpecification(
         'features/active.feature',
-        [scenario('Active checkout')],
+        [createScenario('Active checkout')],
         'active',
       ),
-      specification('features/untagged.feature', [
-        scenario('Untagged checkout'),
+      createSpecification('features/untagged.feature', [
+        createScenario('Untagged checkout'),
       ]),
-      specification(
+      createSpecification(
         'features/draft.feature',
-        [scenario('Draft checkout')],
+        [createScenario('Draft checkout')],
         'draft',
       ),
-      specification(
+      createSpecification(
         'features/deprecated.feature',
-        [scenario('Deprecated checkout')],
+        [createScenario('Deprecated checkout')],
         'deprecated',
       ),
     ])
@@ -225,10 +225,14 @@ describe('selectScenarios', () => {
 
   test('includes draft or deprecated Specifications only when a state query selects them', () => {
     const specifications = [
-      specification('features/draft.feature', [scenario('Draft')], 'draft'),
-      specification(
+      createSpecification(
+        'features/draft.feature',
+        [createScenario('Draft')],
+        'draft',
+      ),
+      createSpecification(
         'features/deprecated.feature',
-        [scenario('Deprecated')],
+        [createScenario('Deprecated')],
         'deprecated',
       ),
     ]

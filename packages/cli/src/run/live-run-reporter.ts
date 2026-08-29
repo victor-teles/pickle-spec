@@ -3,6 +3,7 @@ import type {
   ScheduledTestResult,
   TestResult,
 } from '@pickle-spec/runner'
+import { requiredValue } from '../required-value'
 import { withRecoveryFailure } from '../terminal/command-error'
 import {
   availableTerminalRows,
@@ -58,6 +59,7 @@ function schedulePagedRefresh(refresh: () => void): () => void {
   return () => clearInterval(timer)
 }
 
+// biome-ignore lint/complexity/noExcessiveLinesPerFunction: the reporter is a cohesive closure whose focused render and lifecycle functions share one private terminal state
 export function createLiveRunReporter(
   options: LiveRunReporterOptions,
 ): RunReporter {
@@ -121,7 +123,7 @@ export function createLiveRunReporter(
     block: PendingSpecificationBlock,
     mark: string,
   ): string[] {
-    const firstScheduled = schedule[block.scheduleIndexes[0]!]
+    const firstScheduled = schedule[requiredValue(block.scheduleIndexes[0])]
     if (!firstScheduled) return []
     const completedCount = completedBlockResults(block).length
     const resultLabel =
@@ -228,7 +230,7 @@ export function createLiveRunReporter(
     let usedRows = 0
     for (let offset = 0; offset < activeBlocks.length; offset++) {
       const index = (firstIndex + offset) % activeBlocks.length
-      const lines = allBlockLines[index]!
+      const lines = requiredValue(allBlockLines[index])
       const lineRows = renderedRowCount(lines)
       if (blockLines.length > 0 && usedRows + lineRows >= maxRows) break
       blockLines.push(lines)
@@ -249,13 +251,13 @@ export function createLiveRunReporter(
       blockLines.length > 1 &&
       usedRows + renderedRowCount(overflowLines) > maxRows
     ) {
-      usedRows -= renderedRowCount(blockLines.pop()!)
+      usedRows -= renderedRowCount(requiredValue(blockLines.pop()))
     }
   }
 
   function updateDynamicRegion(): void {
     const frameIndex = progressFrame++
-    const mark = progressMarks[frameIndex % progressMarks.length]!
+    const mark = requiredValue(progressMarks[frameIndex % progressMarks.length])
     const activeBlocks = pendingBlocks.filter((block) =>
       block.scheduleIndexes.some((scheduleIndex) =>
         activeScheduleIndexes.has(scheduleIndex),

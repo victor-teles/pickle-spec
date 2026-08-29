@@ -3,6 +3,7 @@ import {
   type MobileExecutionCachePayload,
   mobileReplayVariableName,
 } from '../execution-cache/mobile-execution-cache'
+import { requiredValue } from '../required-value'
 import type {
   MobilePlatform,
   MobileStep,
@@ -90,8 +91,8 @@ function assertionOperation(
     }
   }
   const predicate = match[1] as MobileAssertionPredicate
-  const templateBody = match[2]!
-  const runtimeBody = runtimeMatch[2]!
+  const templateBody = requiredValue(match[2])
+  const runtimeBody = requiredValue(runtimeMatch[2])
   if (predicate !== 'text') {
     return {
       kind: 'assert',
@@ -180,28 +181,49 @@ function operationDescription(
     : `Assert visible: ${step.text}`
 }
 
+function uncacheableReasonFor(
+  input: CompileMobileScenarioInput,
+  hasArguments: boolean,
+  hasInvalidTextAssertion: boolean,
+): ExecutionCacheUncacheableReason | undefined {
+  if (hasInvalidTextAssertion) return 'non-deterministic-assertion'
+  if (!hasArguments) return undefined
+  const hasOutcomeArgument = input.scenario.templateSteps.some(
+    (step) => step.type === 'outcome' && step.argument !== undefined,
+  )
+  return hasOutcomeArgument
+    ? 'non-deterministic-assertion'
+    : 'non-deterministic-action'
+}
+
 function usedVariableNames(script: string, names: readonly string[]): string[] {
   return names.filter((name) =>
     script.includes(`\${${mobileReplayVariableName(name)}}`),
   )
 }
 
-export function compileMobileScenario(
+function mobileOperations(
   input: CompileMobileScenarioInput,
-): CompiledMobileScenario {
+): MobileDeterministicOperation[] {
   const replayVariables = new Map(
     input.scenario.runtimeBindings.map((binding) => [
       binding.name,
       mobileReplayVariableName(binding.name),
     ]),
   )
-  const operations = input.scenario.templateSteps.map((templateStep, index) =>
+  return input.scenario.templateSteps.map((templateStep, index) =>
     operationFor(
       templateStep,
       input.scenario.steps[index] ?? templateStep,
       replayVariables,
     ),
   )
+}
+
+export function compileMobileScenario(
+  input: CompileMobileScenarioInput,
+): CompiledMobileScenario {
+  const operations = mobileOperations(input)
   const lines = [
     `context platform=${input.platform}`,
     `open ${quote(input.applicationId)} --relaunch`,
@@ -242,16 +264,15 @@ export function compileMobileScenario(
       (name) => `${mobileReplayVariableName(name)}=${bindings.get(name) ?? ''}`,
     ),
     descriptions: operations.map((operation, index) =>
-      operationDescription(input.scenario.templateSteps[index]!, operation),
+      operationDescription(
+        requiredValue(input.scenario.templateSteps[index]),
+        operation,
+      ),
     ),
-    uncacheableReason: hasInvalidTextAssertion
-      ? 'non-deterministic-assertion'
-      : hasArguments
-        ? input.scenario.templateSteps.some(
-            (step) => step.type === 'outcome' && step.argument !== undefined,
-          )
-          ? 'non-deterministic-assertion'
-          : 'non-deterministic-action'
-        : undefined,
+    uncacheableReason: uncacheableReasonFor(
+      input,
+      hasArguments,
+      hasInvalidTextAssertion,
+    ),
   }
 }

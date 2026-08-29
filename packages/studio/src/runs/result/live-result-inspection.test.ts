@@ -4,6 +4,7 @@ import type {
   ScenarioAttempt,
   TestStepResult,
 } from '@pickle-spec/runner'
+import { requiredValue } from '../../required-value'
 import {
   cellsFromLiveInspection,
   disconnectLiveInspection,
@@ -191,15 +192,17 @@ test('live Run events update the same Overview, Timeline, Artifacts, and Diagnos
   }
 
   const inspected = findInspectedResult(
-    inspection.snapshot!,
-    inspection.location!,
+    requiredValue(inspection.snapshot),
+    requiredValue(inspection.location),
   )
   expect(inspected?.attempt.state).toBe('failed')
-  expect(defaultResultInspectorTab(inspected!.attempt.state)).toBe('timeline')
+  expect(
+    defaultResultInspectorTab(requiredValue(inspected).attempt.state),
+  ).toBe('timeline')
   const entries = timelineFor(
-    inspection.snapshot!.events,
-    inspected!.attempt,
-    inspection.location!,
+    requiredValue(inspection.snapshot).events,
+    requiredValue(inspected).attempt,
+    requiredValue(inspection.location),
   )
   expect(entries.map((entry) => entry.kind)).toEqual([
     'Run event',
@@ -214,9 +217,11 @@ test('live Run events update the same Overview, Timeline, Artifacts, and Diagnos
   expect(
     visibleTimelineEntries(entries, 'essential').map((entry) => entry.kind),
   ).toEqual(['Step', 'Diagnostic entry', 'Test artifact'])
-  expect(artifactsFor(inspected!.attempt)).toHaveLength(1)
+  expect(artifactsFor(requiredValue(inspected).attempt)).toHaveLength(1)
   expect(
-    diagnosticsFor(inspected!.attempt).map((item) => item.message),
+    diagnosticsFor(requiredValue(inspected).attempt).map(
+      (item) => item.message,
+    ),
   ).toEqual(['Payment was declined'])
 })
 
@@ -275,11 +280,13 @@ test('shows managed application output while a step is still running', () => {
   })
 
   const inspected = findInspectedResult(
-    inspection.snapshot!,
-    inspection.location!,
+    requiredValue(inspection.snapshot),
+    requiredValue(inspection.location),
   )
   expect(
-    diagnosticsFor(inspected!.attempt).map((entry) => entry.message),
+    diagnosticsFor(requiredValue(inspected).attempt).map(
+      (entry) => entry.message,
+    ),
   ).toEqual(['server is still working'])
   expect(inspected?.attempt.steps[0]?.finishedAt).toBe(
     '2026-08-23T12:00:00.0035Z',
@@ -388,7 +395,10 @@ test('keeps a pinned investigation when a later failure arrives', () => {
   })
   inspection = receiveLiveStreamEvent(inspection, runStarted())
   inspection = receiveLiveStreamEvent(inspection, passingStarted(2))
-  inspection = pinLiveInvestigation(inspection, inspection.location!)
+  inspection = pinLiveInvestigation(
+    inspection,
+    requiredValue(inspection.location),
+  )
   inspection = receiveLiveStreamEvent(inspection, scenarioStarted(3))
   inspection = receiveLiveStreamEvent(inspection, stepFinished(4))
   inspection = receiveLiveStreamEvent(inspection, scenarioFinished(5))
@@ -425,8 +435,8 @@ test('represents event loss instead of silently dropping later Run events', () =
   })
   expect(inspection.events.map((event) => event.sequence)).toEqual([1, 5])
   const inspected = findInspectedResult(
-    inspection.snapshot!,
-    inspection.location!,
+    requiredValue(inspection.snapshot),
+    requiredValue(inspection.location),
   )
   expect(inspected?.attempt.state).toBe('failed')
 })
@@ -479,8 +489,10 @@ test('represents disconnection instead of clearing live evidence', () => {
     message: 'The live event stream closed.',
   })
   expect(
-    findInspectedResult(inspection.snapshot!, inspection.location!)?.result
-      .scenario.name,
+    findInspectedResult(
+      requiredValue(inspection.snapshot),
+      requiredValue(inspection.location),
+    )?.result.scenario.name,
   ).toBe('Pay for the order')
 })
 
@@ -493,8 +505,8 @@ test('represents incomplete evidence while a Scenario attempt is still running',
   inspection = receiveLiveStreamEvent(inspection, scenarioStarted())
   expect(inspection.location?.tab).toBe('timeline')
   const inspected = findInspectedResult(
-    inspection.snapshot!,
-    inspection.location!,
+    requiredValue(inspection.snapshot),
+    requiredValue(inspection.location),
   )
 
   expect(inspected?.attempt.evidenceAvailability).toEqual([
@@ -535,8 +547,10 @@ test('represents incomplete evidence while a Scenario attempt is still running',
 
   inspection = receiveLiveStreamEvent(inspection, stepFinished(3))
   expect(
-    findInspectedResult(inspection.snapshot!, inspection.location!)?.attempt
-      .evidenceAvailability,
+    findInspectedResult(
+      requiredValue(inspection.snapshot),
+      requiredValue(inspection.location),
+    )?.attempt.evidenceAvailability,
   ).toEqual([
     { kind: 'screenshot', state: 'available' },
     { kind: 'trace', state: 'available' },
@@ -568,11 +582,14 @@ test('reconstructs the same visible evidence from persisted Test evidence', () =
   ]) {
     inspection = receiveLiveStreamEvent(inspection, event)
   }
-  const live = findInspectedResult(inspection.snapshot!, inspection.location!)
+  const live = findInspectedResult(
+    requiredValue(inspection.snapshot),
+    requiredValue(inspection.location),
+  )
   const liveTimeline = timelineFor(
-    inspection.snapshot!.events,
-    live!.attempt,
-    inspection.location!,
+    requiredValue(inspection.snapshot).events,
+    requiredValue(live).attempt,
+    requiredValue(inspection.location),
   )
 
   inspection = hydrateLiveInspection(inspection, {
@@ -601,15 +618,15 @@ test('reconstructs the same visible evidence from persisted Test evidence', () =
   })
 
   const hydrated = findInspectedResult(
-    inspection.snapshot!,
-    inspection.location!,
+    requiredValue(inspection.snapshot),
+    requiredValue(inspection.location),
   )
   expect(hydrated?.attempt).toEqual(live?.attempt)
   expect(
     timelineFor(
-      inspection.snapshot!.events,
-      hydrated!.attempt,
-      inspection.location!,
+      requiredValue(inspection.snapshot).events,
+      requiredValue(hydrated).attempt,
+      requiredValue(inspection.location),
     ),
   ).toEqual(liveTimeline)
   expect(inspection.phase).toBe('finished')

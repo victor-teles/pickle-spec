@@ -1,5 +1,6 @@
 import { expect, test } from 'bun:test'
 import type { TestRunSummary } from '@pickle-spec/runner'
+import { requiredValue } from '../required-value'
 import type {
   StudioProject,
   StudioRunReadiness,
@@ -39,8 +40,7 @@ const project: StudioProject = {
     },
   ],
 }
-const checkout = project.specifications[0]
-if (!checkout) throw new Error('Expected the Checkout Specification fixture')
+const checkout = requiredValue(project.specifications[0])
 
 function summary(state: TestRunSummary['state']): TestRunSummary {
   return {

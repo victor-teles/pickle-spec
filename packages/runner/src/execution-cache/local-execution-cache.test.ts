@@ -52,7 +52,7 @@ const payloadValidator: ExecutionCachePayloadValidator<TestPayload> = {
       !('target' in payload) ||
       typeof payload.target !== 'string'
     ) {
-      return undefined
+      return
     }
     return { operation: payload.operation, target: payload.target }
   },

@@ -29,6 +29,10 @@ interface CreateWebLiveSessionInput {
   initiallyNavigated: boolean
 }
 
+interface WebLiveSessionState extends CreateWebLiveSessionInput {
+  navigated: boolean
+}
+
 function replayPayload(handle: unknown): Record<string, unknown> | undefined {
   if (!handle || typeof handle !== 'object') return undefined
   try {
@@ -38,6 +42,81 @@ function replayPayload(handle: unknown): Record<string, unknown> | undefined {
   }
 }
 
+async function ensureNavigation(
+  state: WebLiveSessionState,
+  signal?: AbortSignal,
+): Promise<void> {
+  const sessionState = state
+  if (sessionState.navigated) return
+  await sessionState.automation.navigate(sessionState.options.baseUrl, signal)
+  sessionState.navigated = true
+}
+
+async function resolveByObservation(
+  state: WebLiveSessionState,
+  prompt: string,
+  signal?: AbortSignal,
+): Promise<StepExecution> {
+  let actions = await state.automation.observe(prompt, signal)
+  if (actions.length === 0)
+    actions = await state.automation.observe(prompt, signal)
+  if (actions.length === 0) {
+    return {
+      state: 'failed',
+      resolvedActions: [],
+      message: 'Observe returned no actions',
+    }
+  }
+  const resolvedActions: ResolvedAction[] = []
+  for (const action of actions) {
+    const result = await state.automation.act(action, signal)
+    resolvedActions.push({
+      description: action.description,
+      replay: replayPayload(action.handle),
+    })
+    if (!result.success) {
+      return {
+        state: 'failed',
+        resolvedActions,
+        message: result.message ?? 'Web action failed',
+      }
+    }
+  }
+  return { state: 'passed', resolvedActions }
+}
+
+async function executePrompt(
+  state: WebLiveSessionState,
+  step: ScenarioStep,
+  prompt: string,
+  signal: AbortSignal | undefined,
+): Promise<StepExecution> {
+  const target = navigationTarget(prompt)
+  if (target) {
+    const sessionState = state
+    const url = navigationUrl(sessionState.options.baseUrl, target)
+    await sessionState.automation.navigate(url, signal)
+    sessionState.navigated = true
+    return {
+      state: 'passed',
+      resolvedActions: [{ description: `Navigate to ${url}` }],
+    }
+  }
+  await ensureNavigation(state, signal)
+  if (step.type !== 'outcome') {
+    return resolveByObservation(state, observeInstruction(step), signal)
+  }
+  const verification = await state.automation.verify(prompt, signal)
+  const resolvedActions = [{ description: `Verify: ${prompt}` }]
+  return verification.meetsExpectation
+    ? { state: 'passed', resolvedActions }
+    : {
+        state: 'failed',
+        resolvedActions,
+        message: `Expected: "${prompt}" | Actual: ${verification.actualState}`,
+      }
+}
+
 export function createWebLiveSession({
   input,
   options,
@@ -45,74 +124,13 @@ export function createWebLiveSession({
   finish,
   initiallyNavigated,
 }: CreateWebLiveSessionInput): Omit<StepTargetSession, 'close'> {
-  let navigated = initiallyNavigated
-
-  async function ensureNavigation(signal?: AbortSignal): Promise<void> {
-    if (navigated) return
-    await automation.navigate(options.baseUrl, signal)
-    navigated = true
-  }
-
-  async function resolveByObservation(
-    prompt: string,
-    signal?: AbortSignal,
-  ): Promise<StepExecution> {
-    let actions = await automation.observe(prompt, signal)
-    if (actions.length === 0) actions = await automation.observe(prompt, signal)
-    if (actions.length === 0) {
-      return {
-        state: 'failed',
-        resolvedActions: [],
-        message: 'Observe returned no actions',
-      }
-    }
-
-    const resolvedActions: ResolvedAction[] = []
-    for (const action of actions) {
-      const result = await automation.act(action, signal)
-      resolvedActions.push({
-        description: action.description,
-        replay: replayPayload(action.handle),
-      })
-      if (!result.success) {
-        return {
-          state: 'failed',
-          resolvedActions,
-          message: result.message ?? 'Web action failed',
-        }
-      }
-    }
-    return { state: 'passed', resolvedActions }
-  }
-
-  async function executePrompt(
-    step: ScenarioStep,
-    prompt: string,
-    signal: AbortSignal | undefined,
-  ): Promise<StepExecution> {
-    const target = navigationTarget(prompt)
-    if (target) {
-      const url = navigationUrl(options.baseUrl, target)
-      await automation.navigate(url, signal)
-      navigated = true
-      return {
-        state: 'passed',
-        resolvedActions: [{ description: `Navigate to ${url}` }],
-      }
-    }
-    await ensureNavigation(signal)
-    if (step.type !== 'outcome') {
-      return resolveByObservation(observeInstruction(step), signal)
-    }
-    const verification = await automation.verify(prompt, signal)
-    const resolvedActions = [{ description: `Verify: ${prompt}` }]
-    return verification.meetsExpectation
-      ? { state: 'passed', resolvedActions }
-      : {
-          state: 'failed',
-          resolvedActions,
-          message: `Expected: "${prompt}" | Actual: ${verification.actualState}`,
-        }
+  const state: WebLiveSessionState = {
+    input,
+    options,
+    automation,
+    finish,
+    initiallyNavigated,
+    navigated: initiallyNavigated,
   }
 
   return {
@@ -122,7 +140,10 @@ export function createWebLiveSession({
       const prompt = promptFor(step)
 
       try {
-        return finish(await executePrompt(step, prompt, operationSignal), step)
+        return finish(
+          await executePrompt(state, step, prompt, operationSignal),
+          step,
+        )
       } catch (error) {
         if (isAbortError(error, operationSignal)) throw abortError()
         return finish(

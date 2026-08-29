@@ -4,6 +4,7 @@ import type {
   RunEvent,
   ScenarioIdentity,
 } from '@pickle-spec/runner'
+import { requiredValue } from '../required-value'
 import type {
   ApplicationOutputAvailability,
   ApplicationOutputLine,
@@ -123,15 +124,25 @@ function replaceDiagnosticsAvailability(
   )
 }
 
-export function createApplicationDiagnosticBuffer(
-  options: ApplicationDiagnosticBufferOptions,
-): ApplicationDiagnosticBuffer {
-  const stdoutProfiles = requestedProfiles(options, 'stdout')
-  const stderrProfiles = requestedProfiles(options, 'stderr')
-  const active = new Map<string, ActiveScenario>()
-  const pending = new Map<string, ApplicationOutputLine[]>()
+class ApplicationDiagnosticBufferState {
+  private readonly stdoutProfiles: ReadonlySet<string>
+  private readonly stderrProfiles: ReadonlySet<string>
+  private readonly active = new Map<string, ActiveScenario>()
+  private readonly pending = new Map<string, ApplicationOutputLine[]>()
 
-  function diagnosticFor(
+  constructor(private readonly options: ApplicationDiagnosticBufferOptions) {
+    this.stdoutProfiles = requestedProfiles(options, 'stdout')
+    this.stderrProfiles = requestedProfiles(options, 'stderr')
+  }
+
+  buffer(): ApplicationDiagnosticBuffer {
+    return {
+      record: (line) => this.record(line),
+      project: (event) => this.project(event),
+    }
+  }
+
+  private diagnosticFor(
     scenario: ActiveScenario,
     line: ApplicationOutputLine,
     scoped: boolean,
@@ -154,17 +165,17 @@ export function createApplicationDiagnosticBuffer(
     }
   }
 
-  function appendDiagnostic(
+  private appendDiagnostic(
     scenario: ActiveScenario,
     line: ApplicationOutputLine,
     scoped = true,
   ): DiagnosticEntry {
-    const diagnostic = diagnosticFor(scenario, line, scoped)
+    const diagnostic = this.diagnosticFor(scenario, line, scoped)
     scenario.diagnostics.push(diagnostic)
     return diagnostic
   }
 
-  function unscopedDiagnostic(
+  private unscopedDiagnostic(
     profileId: string,
     line: ApplicationOutputLine,
   ): DiagnosticEntry {
@@ -178,35 +189,40 @@ export function createApplicationDiagnosticBuffer(
     }
   }
 
-  function recordForProfile(
+  private recordForProfile(
     profileId: string,
     line: ApplicationOutputLine,
   ): void {
-    const scenarios = [...active.values()].filter(
+    const scenarios = [...this.active.values()].filter(
       (scenario) => scenario.scope.executionTargetProfileId === profileId,
     )
     if (scenarios.length === 1) {
-      const scenario = scenarios[0]!
-      const diagnostic = appendDiagnostic(scenario, line)
-      options.onDiagnostic?.({ profileId, scope: scenario.scope, diagnostic })
+      const scenario = requiredValue(scenarios[0])
+      const diagnostic = this.appendDiagnostic(scenario, line)
+      this.options.onDiagnostic?.({
+        profileId,
+        scope: scenario.scope,
+        diagnostic,
+      })
       return
     }
-    pending.set(profileId, [...(pending.get(profileId) ?? []), line])
-    options.onDiagnostic?.({
+    this.pending.set(profileId, [...(this.pending.get(profileId) ?? []), line])
+    this.options.onDiagnostic?.({
       profileId,
-      diagnostic: unscopedDiagnostic(profileId, line),
+      diagnostic: this.unscopedDiagnostic(profileId, line),
     })
   }
 
-  function record(line: ApplicationOutputLine): void {
-    const profiles = line.stream === 'stdout' ? stdoutProfiles : stderrProfiles
-    for (const profileId of profiles) recordForProfile(profileId, line)
+  private record(line: ApplicationOutputLine): void {
+    const profiles =
+      line.stream === 'stdout' ? this.stdoutProfiles : this.stderrProfiles
+    for (const profileId of profiles) this.recordForProfile(profileId, line)
   }
 
-  function startScenario(
+  private startScenario(
     event: Extract<RunEvent, { type: 'scenario-started' }>,
   ): RunEvent {
-    active.set(scopeKey(event.scope), {
+    this.active.set(scopeKey(event.scope), {
       scenario: event.scenario,
       scope: event.scope,
       diagnostics: [],
@@ -215,21 +231,22 @@ export function createApplicationDiagnosticBuffer(
     return event
   }
 
-  function finishStep(
+  private finishStep(
     event: Extract<RunEvent, { type: 'step-finished' }>,
     scenario: ActiveScenario,
   ): RunEvent {
+    const activeScenario = scenario
     const stepIndex = event.scope.stepIndex ?? event.result.index
-    const diagnostics = scenario.diagnostics.filter(
+    const diagnostics = activeScenario.diagnostics.filter(
       (entry) => entry.stepIndex === stepIndex,
     )
-    scenario.diagnostics = scenario.diagnostics.filter(
+    activeScenario.diagnostics = activeScenario.diagnostics.filter(
       (entry) => entry.stepIndex !== stepIndex,
     )
     if (diagnostics.length > 0) {
-      scenario.stepDiagnostics.set(stepIndex, diagnostics)
+      activeScenario.stepDiagnostics.set(stepIndex, diagnostics)
     }
-    scenario.step = undefined
+    activeScenario.step = undefined
     if (diagnostics.length === 0) return event
     return {
       ...event,
@@ -240,12 +257,12 @@ export function createApplicationDiagnosticBuffer(
     }
   }
 
-  function claimPendingOutput(
+  private claimPendingOutput(
     event: Extract<RunEvent, { type: 'scenario-finished' }>,
     scenario: ActiveScenario,
   ): void {
     const profileId = event.scope.executionTargetProfileId
-    const hasOtherActiveScenario = [...active.values()].some(
+    const hasOtherActiveScenario = [...this.active.values()].some(
       (candidate) =>
         candidate !== scenario &&
         candidate.scope.executionTargetProfileId === profileId,
@@ -255,18 +272,18 @@ export function createApplicationDiagnosticBuffer(
       event.attempt.state === 'infrastructure-error' ||
       !hasOtherActiveScenario
     if (!ownsSharedOutput) return
-    for (const line of pending.get(profileId) ?? []) {
-      appendDiagnostic(scenario, line, false)
+    for (const line of this.pending.get(profileId) ?? []) {
+      this.appendDiagnostic(scenario, line, false)
     }
-    pending.delete(profileId)
+    this.pending.delete(profileId)
   }
 
-  function finishScenario(
+  private finishScenario(
     event: Extract<RunEvent, { type: 'scenario-finished' }>,
     scenario: ActiveScenario,
   ): RunEvent {
-    claimPendingOutput(event, scenario)
-    active.delete(scopeKey(event.scope))
+    this.claimPendingOutput(event, scenario)
+    this.active.delete(scopeKey(event.scope))
     const steps = event.attempt.steps.map((step) => {
       const diagnostics = scenario.stepDiagnostics.get(step.index) ?? []
       return diagnostics.length === 0
@@ -289,12 +306,12 @@ export function createApplicationDiagnosticBuffer(
         diagnostics: diagnostics.length > 0 ? diagnostics : undefined,
         evidenceAvailability: availabilityFor(
           event.attempt.evidenceAvailability,
-          options,
+          this.options,
           event.scope.executionTargetProfileId,
           diagnostics.length > 0 || stepDiagnostics.length > 0,
         ),
         applicationOutputAvailability: applicationOutputAvailabilityFor(
-          options,
+          this.options,
           event.scope.executionTargetProfileId,
           [...diagnostics, ...stepDiagnostics],
         ),
@@ -302,10 +319,10 @@ export function createApplicationDiagnosticBuffer(
     }
   }
 
-  function startStep(
+  private startStep(
     event: Extract<RunEvent, { type: 'step-started' }>,
   ): RunEvent {
-    const scenario = active.get(scopeKey(event.scope))
+    const scenario = this.active.get(scopeKey(event.scope))
     if (!scenario) return event
     scenario.step = {
       index: event.scope.stepIndex ?? 0,
@@ -314,32 +331,38 @@ export function createApplicationDiagnosticBuffer(
     return event
   }
 
-  function finishActiveStep(
+  private finishActiveStep(
     event: Extract<RunEvent, { type: 'step-finished' }>,
   ): RunEvent {
-    const scenario = active.get(scopeKey(event.scope))
-    return scenario ? finishStep(event, scenario) : event
+    const scenario = this.active.get(scopeKey(event.scope))
+    return scenario ? this.finishStep(event, scenario) : event
   }
 
-  function finishActiveScenario(
+  private finishActiveScenario(
     event: Extract<RunEvent, { type: 'scenario-finished' }>,
   ): RunEvent {
-    const scenario = active.get(scopeKey(event.scope))
-    return scenario ? finishScenario(event, scenario) : event
+    const scenario = this.active.get(scopeKey(event.scope))
+    return scenario ? this.finishScenario(event, scenario) : event
   }
 
-  function projectActiveEvent(event: RunEvent): RunEvent {
-    if (event.type === 'step-started') return startStep(event)
-    if (event.type === 'step-finished') return finishActiveStep(event)
-    if (event.type === 'scenario-finished') return finishActiveScenario(event)
+  private projectActiveEvent(event: RunEvent): RunEvent {
+    if (event.type === 'step-started') return this.startStep(event)
+    if (event.type === 'step-finished') return this.finishActiveStep(event)
+    if (event.type === 'scenario-finished') {
+      return this.finishActiveScenario(event)
+    }
     return event
   }
 
-  function project(event: RunEvent): RunEvent {
+  private project(event: RunEvent): RunEvent {
     return event.type === 'scenario-started'
-      ? startScenario(event)
-      : projectActiveEvent(event)
+      ? this.startScenario(event)
+      : this.projectActiveEvent(event)
   }
+}
 
-  return { record, project }
+export function createApplicationDiagnosticBuffer(
+  options: ApplicationDiagnosticBufferOptions,
+): ApplicationDiagnosticBuffer {
+  return new ApplicationDiagnosticBufferState(options).buffer()
 }

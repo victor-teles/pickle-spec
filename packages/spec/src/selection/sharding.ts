@@ -1,5 +1,6 @@
 import { resolveScenarioId } from '../identity/identity'
 import type { Scenario, Specification } from '../parsing/specification'
+import { requiredValue } from '../required-value'
 import type { ScenarioSelection, Shard } from './selection'
 
 type RankedSelection = {
@@ -31,8 +32,8 @@ function median(values: readonly number[]): number {
   const sorted = [...values].sort((left, right) => left - right)
   const middle = Math.floor(sorted.length / 2)
   return sorted.length % 2 === 0
-    ? (sorted[middle - 1]! + sorted[middle]!) / 2
-    : sorted[middle]!
+    ? (requiredValue(sorted[middle - 1]) + requiredValue(sorted[middle])) / 2
+    : requiredValue(sorted[middle])
 }
 
 function shardByCount(
@@ -69,7 +70,8 @@ function rankedSelections(
 function leastLoadedShard(shardTotals: readonly number[]): number {
   let target = 0
   for (let index = 1; index < shardTotals.length; index++) {
-    if (shardTotals[index]! < shardTotals[target]!) target = index
+    if (requiredValue(shardTotals[index]) < requiredValue(shardTotals[target]))
+      target = index
   }
   return target
 }
@@ -83,7 +85,7 @@ function durationAssignments(
   for (const entry of ranked) {
     const target = leastLoadedShard(totals)
     assignments.set(entry.key, target)
-    totals[target] = totals[target]! + entry.duration
+    totals[target] = requiredValue(totals[target]) + entry.duration
   }
   return assignments
 }

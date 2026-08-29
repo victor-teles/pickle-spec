@@ -2,6 +2,7 @@ import { afterEach, expect, test } from 'bun:test'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { requiredValue } from '../required-value'
 import { type StudioRunGateway, startStudio } from './server'
 
 const directories: string[] = []
@@ -159,7 +160,9 @@ test('serves the Runs index, active lifecycle, compatibility alias, and deep lin
   const document = await deepLink.text()
   const scriptPath = document.match(/<script[^>]+src="([^"]+)"/)?.[1]
   expect(scriptPath).toBeDefined()
-  const script = await fetch(new URL(scriptPath!, deepLink.url), { headers })
+  const script = await fetch(new URL(requiredValue(scriptPath), deepLink.url), {
+    headers,
+  })
   expect(script.status).toBe(200)
   expect(script.headers.get('content-type')).not.toContain('text/html')
   expect(await script.text()).not.toContain('<!doctype html>')
@@ -213,7 +216,9 @@ test('compiles the Studio UI once for concurrent servers', async () => {
     const document = await page.text()
     const scriptPath = document.match(/<script[^>]+src="([^"]+)"/)?.[1]
     expect(scriptPath).toBeDefined()
-    const script = await fetch(new URL(scriptPath!, origin), { headers })
+    const script = await fetch(new URL(requiredValue(scriptPath), origin), {
+      headers,
+    })
     expect(script.status).toBe(200)
     expect(script.headers.get('content-type')).not.toContain('text/html')
     expect(await script.text()).not.toContain('<!doctype html>')

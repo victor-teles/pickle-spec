@@ -3,6 +3,7 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { providerCredentialEnvironmentNames } from '@pickle-spec/runner/benchmarking'
+import { requiredValue } from '../required-value'
 import { createControlledMobileBenchmarkDriver } from './mobile-benchmark-controlled-driver'
 
 const temporaryDirectories: string[] = []
@@ -20,11 +21,14 @@ async function executeCli(
   args: readonly string[],
   environment: Record<string, string | undefined> = Bun.env,
 ) {
-  const process = Bun.spawn([Bun.which('bun')!, cliPath, ...args], {
-    env: environment,
-    stdout: 'pipe',
-    stderr: 'pipe',
-  })
+  const process = Bun.spawn(
+    [requiredValue(Bun.which('bun')), cliPath, ...args],
+    {
+      env: environment,
+      stdout: 'pipe',
+      stderr: 'pipe',
+    },
+  )
   const [exitCode, stdout, stderr] = await Promise.all([
     process.exited,
     new Response(process.stdout).text(),

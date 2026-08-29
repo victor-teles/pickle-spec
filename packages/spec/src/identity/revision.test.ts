@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import { parseSpecification, scenarioRevision } from '../../index'
+import { requiredValue } from '../required-value'
 
 const checkout = parseSpecification({
   uri: 'features/checkout.feature',
@@ -23,8 +24,8 @@ Feature: Checkout
     Then the purchase succeeds`,
     })
 
-    expect(scenarioRevision(checkout.scenarios[0]!)).toBe(
-      scenarioRevision(renamed.scenarios[0]!),
+    expect(scenarioRevision(requiredValue(checkout.scenarios[0]))).toBe(
+      scenarioRevision(requiredValue(renamed.scenarios[0])),
     )
   })
 
@@ -50,11 +51,15 @@ Feature: Checkout
     Then the purchase succeeds`,
     })
 
-    const original = scenarioRevision(checkout.scenarios[0]!)
-    expect(scenarioRevision(editedText.scenarios[0]!)).not.toBe(original)
-    expect(scenarioRevision(withArgument.scenarios[0]!)).not.toBe(original)
-    expect(scenarioRevision(editedText.scenarios[0]!)).not.toBe(
-      scenarioRevision(withArgument.scenarios[0]!),
+    const original = scenarioRevision(requiredValue(checkout.scenarios[0]))
+    expect(scenarioRevision(requiredValue(editedText.scenarios[0]))).not.toBe(
+      original,
+    )
+    expect(scenarioRevision(requiredValue(withArgument.scenarios[0]))).not.toBe(
+      original,
+    )
+    expect(scenarioRevision(requiredValue(editedText.scenarios[0]))).not.toBe(
+      scenarioRevision(requiredValue(withArgument.scenarios[0])),
     )
   })
 
@@ -72,8 +77,8 @@ Feature: Checkout
       | Olives  |`,
     })
 
-    expect(scenarioRevision(specification.scenarios[0]!)).toBe(
-      scenarioRevision(specification.scenarios[1]!),
+    expect(scenarioRevision(requiredValue(specification.scenarios[0]))).toBe(
+      scenarioRevision(requiredValue(specification.scenarios[1])),
     )
   })
 })
