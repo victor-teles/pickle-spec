@@ -232,6 +232,46 @@ Feature: Search
     }
   }, 60_000)
 
+  test('first-run onboarding starts one Scenario and closes after its first green run', async () => {
+    const project = await createStudioProject('first-green-run')
+    const configPath = join(project, 'pickle.config.jsonc')
+    const config = await Bun.file(configPath).json()
+    await Bun.write(
+      configPath,
+      JSON.stringify({
+        ...config,
+        executionTargetProfiles: {
+          firefox: { adapter: 'custom' },
+        },
+      }),
+    )
+    const { child, url } = await startStudio(project)
+    const page = await browser.newPage()
+    try {
+      await page.goto(url)
+      const guide = page.getByRole('region', {
+        name: 'Run your first green Scenario',
+      })
+      await guide.getByRole('list', { name: 'First-run readiness' }).waitFor()
+      await guide.getByRole('button', { name: 'Run first Scenario' }).click()
+      await waitForScenarioResult(page, 'Pay for the order firefox passed')
+      await guide.waitFor({ state: 'hidden', timeout: 20_000 })
+
+      const index = await page.evaluate(
+        async () =>
+          (await (await fetch('/api/runs')).json()) as HistoryIndexPayload,
+      )
+      expect(index.runs).toHaveLength(1)
+      expect(index.runs[0]?.specificationUris).toEqual([
+        'features/checkout.feature',
+      ])
+    } finally {
+      await page.close()
+      child.kill()
+      await child.exited
+    }
+  }, 60_000)
+
   test('Studio command palette navigates, selects a run target, and starts contextual work', async () => {
     const project = await createStudioProject('command-palette')
     await Bun.write(

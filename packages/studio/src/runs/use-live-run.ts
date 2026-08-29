@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { targetNewRun } from '../app/command-palette-model'
 import { type StudioApi, studioToken } from '../app/studio-api'
 import type {
@@ -42,11 +42,22 @@ type UseLiveRunOptions = {
   selectedSpecificationUri?: string
 }
 
+export type StudioReadinessAttempt = {
+  readiness: StudioRunReadiness
+  request: StudioRunRequest
+}
+
 export function useLiveRun(options: UseLiveRunOptions) {
   const [runId, setRunId] = useState<string>()
   const [starting, setStarting] = useState(false)
   const [origin, setOrigin] = useState<RunOrigin>()
   const [live, setLive] = useState<LiveResultInspection>()
+  const [readinessAttempt, setReadinessAttempt] =
+    useState<StudioReadinessAttempt>()
+  const clearReadinessAttempt = useCallback(
+    () => setReadinessAttempt(undefined),
+    [],
+  )
   const activeRunIds = options.runsIndex?.activeRunIds ?? noActiveRunIds
 
   const running =
@@ -176,6 +187,7 @@ export function useLiveRun(options: UseLiveRunOptions) {
           body: JSON.stringify(request),
         },
       )
+      setReadinessAttempt({ readiness, request })
       if (!readiness.ready) throw new Error(readiness.reasons.join('\n'))
 
       const started = await options.api<{ id: string }>('/api/runs', {
@@ -236,10 +248,12 @@ export function useLiveRun(options: UseLiveRunOptions) {
   return {
     cancelRun,
     cells,
+    clearReadinessAttempt,
     live,
     origin,
     pauseFollowing,
     pinSelection,
+    readinessAttempt,
     runId,
     running,
     selectInspectorTab,

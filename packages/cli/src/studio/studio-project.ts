@@ -15,6 +15,8 @@ import type {
   StudioProfile,
   StudioProject,
   StudioRunReadiness,
+  StudioRunReadinessCheck,
+  StudioRunReadinessCheckId,
   StudioRunRequest,
   StudioSpecification,
   StudioSuite,
@@ -27,7 +29,10 @@ import {
   runConfigurationFrom,
   saveConfig,
 } from '../configuration/config'
-import { loadProjectSpecifications } from '../run/execute-run'
+import {
+  loadProjectSpecifications,
+  scenarioSelectionId,
+} from '../run/execute-run'
 
 export interface StudioProjectContext {
   root: string
@@ -61,19 +66,21 @@ async function studioCatalog(
       )
       const scenarios = await Promise.all(
         specification.scenarios.map(async (scenario) => {
+          const scenarioId = scenarioSelectionId({ specification, scenario })
           const scenarioReady = await studioRunReadiness(
             context,
             {
               paths: [specification.source.uri],
-              scenarioName: scenario.name,
+              scenarioId,
             },
             config,
             specifications,
           )
           return {
-            id: scenario.id ?? scenario.name,
+            id: scenarioId,
             name: scenario.name,
             canRun: scenarioReady.ready,
+            readiness: scenarioReady,
           }
         }),
       )
@@ -166,10 +173,15 @@ function readinessSelections(
   if (request?.suite && !suiteSelection) {
     reasons.push(`Unknown test suite "${request.suite}"`)
   }
-  const selections = selectScenarios(specifications, {
+  const selected = selectScenarios(specifications, {
     ...suiteSelection,
     ...studioRunSelection(request),
   })
+  const selections = request?.scenarioId
+    ? selected.filter(
+        (selection) => scenarioSelectionId(selection) === request.scenarioId,
+      )
+    : selected
   if (selections.length === 0) {
     reasons.push('No Scenarios match the current selection')
   }
@@ -241,26 +253,74 @@ async function appendCredentialReadiness(
   )
 }
 
+function readinessCheck(
+  id: StudioRunReadinessCheckId,
+  reasons: readonly string[],
+  applicable = true,
+): StudioRunReadinessCheck {
+  const firstReason = reasons[0]
+  if (firstReason) {
+    return {
+      id,
+      status: 'blocked',
+      reasons: [firstReason, ...reasons.slice(1)],
+    }
+  }
+  return { id, status: applicable ? 'ready' : 'not-applicable' }
+}
+
+export function studioRunReadinessFromChecks(
+  checks: readonly StudioRunReadinessCheck[],
+): StudioRunReadiness {
+  const reasons = checks.flatMap((check) =>
+    check.status === 'blocked' ? check.reasons : [],
+  )
+  return { ready: reasons.length === 0, reasons, checks }
+}
+
 export async function studioRunReadiness(
   context: StudioProjectContext,
   request: StudioRunRequest | undefined,
   config: PickleConfig,
   specifications: readonly Specification[],
 ): Promise<StudioRunReadiness> {
-  const reasons: string[] = []
+  const selectionReasons: string[] = []
+  const targetReasons: string[] = []
+  const credentialReasons: string[] = []
+  let selections: ReturnType<typeof selectScenarios> = []
   try {
-    const selections = readinessSelections(
+    selections = readinessSelections(
       request,
       config,
       specifications,
-      reasons,
+      selectionReasons,
     )
-    validateReadinessTargets(request, config, selections, reasons)
-    await appendCredentialReadiness(context, config, reasons)
   } catch (error) {
-    reasons.push(error instanceof Error ? error.message : String(error))
+    selectionReasons.push(
+      error instanceof Error ? error.message : String(error),
+    )
   }
-  return { ready: reasons.length === 0, reasons }
+  try {
+    validateReadinessTargets(request, config, selections, targetReasons)
+  } catch (error) {
+    targetReasons.push(error instanceof Error ? error.message : String(error))
+  }
+  const usesWeb = profileDetails(config).some(
+    (profile) => profile.adapter === 'web',
+  )
+  try {
+    await appendCredentialReadiness(context, config, credentialReasons)
+  } catch (error) {
+    credentialReasons.push(
+      error instanceof Error ? error.message : String(error),
+    )
+  }
+  return studioRunReadinessFromChecks([
+    readinessCheck('selection', selectionReasons),
+    readinessCheck('execution-target', targetReasons),
+    readinessCheck('model-credential', credentialReasons, usesWeb),
+    readinessCheck('mobile-target', [], false),
+  ])
 }
 
 function patchedExecutionTargetProfile(

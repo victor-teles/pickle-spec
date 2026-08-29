@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useLiveRun } from '../runs/use-live-run'
 import type { StudioRunRequest, StudioSpecification } from '../server/server'
 import { useSpecificationSelection } from '../specifications/use-specification-selection'
@@ -38,6 +38,9 @@ export function useStudioController() {
     runsIndex: data.runsIndex,
     selectedSpecificationUri: selection.selected?.uri,
   })
+  useEffect(() => {
+    if (data.project) run.clearReadinessAttempt()
+  }, [data.project, run.clearReadinessAttempt])
 
   function selectArea(area: StudioArea) {
     navigation.showArea(area)
