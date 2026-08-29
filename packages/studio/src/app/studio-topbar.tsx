@@ -5,7 +5,6 @@ import { Button } from '../components/ui/button'
 import { type StudioArea, studioAreas } from './use-studio-navigation'
 
 type StudioTopbarProps = {
-  activeProfileId?: string
   area: StudioArea
   authoring: boolean
   projectName: string
@@ -44,18 +43,16 @@ export function StudioTopbar(props: StudioTopbarProps) {
           type="button"
           size="sm"
           variant="outline"
+          className="sm:w-44 sm:justify-start lg:w-52"
           aria-label="Open Studio commands"
           onClick={props.onOpenCommands}
         >
           <HugeiconsIcon icon={SearchIcon} strokeWidth={2} aria-hidden="true" />
-          <span className="hidden xl:inline">Commands</span>
-          <kbd className="font-mono text-[0.625rem] text-muted-foreground">
+          <span className="hidden sm:inline">Commands</span>
+          <kbd className="ml-auto font-mono text-[0.6875rem] text-muted-foreground">
             ⌘K
           </kbd>
         </Button>
-      )}
-      {props.authoring ? null : (
-        <Badge>Target: {props.activeProfileId ?? 'All profiles'}</Badge>
       )}
       {props.running ? (
         <Badge role="status" variant="running">

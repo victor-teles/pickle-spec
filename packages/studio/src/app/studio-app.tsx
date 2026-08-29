@@ -133,7 +133,6 @@ function StudioWorkspace(props: { studio: StudioController }) {
         onStartSpecification={studio.actions.startSpecification}
       />
       <StudioTopbar
-        activeProfileId={studio.activeProfileId}
         area={studio.navigation.area}
         authoring={studio.authoring}
         projectName={data.project.name}

@@ -326,7 +326,6 @@ Feature: Search
       await search.fill('profile firefox')
       await page.keyboard.press('ArrowDown')
       await page.keyboard.press('Enter')
-      await page.getByText('Target: firefox', { exact: true }).waitFor()
 
       await page.keyboard.press('Meta+k')
       await search.fill('run scenario query')
@@ -355,8 +354,13 @@ Feature: Search
 
       await page.keyboard.press('Meta+k')
       await search.fill('all profiles')
-      await palette.getByRole('option', { name: 'All profiles' }).click()
-      await page.getByText('Target: All profiles', { exact: true }).waitFor()
+      const allProfiles = palette.getByRole('option', { name: 'All profiles' })
+      await allProfiles.click()
+
+      await page.keyboard.press('Meta+k')
+      await search.fill('all profiles')
+      expect(await allProfiles.getAttribute('aria-current')).toBe('true')
+      await page.keyboard.press('Escape')
 
       await page.keyboard.press('Meta+k')
       await search.fill(started.id)
@@ -1987,7 +1991,7 @@ Feature: Checkout
           .getAttribute('aria-disabled'),
       ).toBe('true')
       await page.keyboard.press('Escape')
-      await page.getByRole('button', { name: 'Settings' }).click()
+      await page.getByRole('button', { name: 'Settings', exact: true }).click()
       await page.getByRole('button', { name: 'chrome' }).click()
       await page.getByLabel('Profile capabilities').fill('geolocation')
       await saveExecutionTargetProfile(page, 'chrome')
