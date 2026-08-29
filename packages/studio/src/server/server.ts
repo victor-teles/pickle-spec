@@ -108,7 +108,7 @@ export type StudioRunReadinessCheckId =
   | 'selection'
   | 'execution-target'
   | 'model-credential'
-  | 'mobile-target'
+  | 'environment'
 
 export type StudioRunReadinessCheck =
   | {

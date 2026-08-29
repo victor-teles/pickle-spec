@@ -29,6 +29,7 @@ import {
   runConfigurationFrom,
   saveConfig,
 } from '../configuration/config'
+import type { ProjectEnvironmentReport } from '../doctor/project-environment'
 import {
   loadProjectSpecifications,
   scenarioSelectionId,
@@ -278,6 +279,42 @@ export function studioRunReadinessFromChecks(
   return { ready: reasons.length === 0, reasons, checks }
 }
 
+function environmentReason(
+  diagnostic: Extract<
+    ProjectEnvironmentReport['diagnostics'][number]['diagnostic'],
+    { kind: 'blocked' }
+  >,
+): string {
+  const remediation = diagnostic.remediation
+    .map((item) => item.summary)
+    .join(' ')
+  return `${diagnostic.message}. ${remediation}`
+}
+
+export function studioRunReadinessWithEnvironment(
+  readiness: StudioRunReadiness,
+  report: ProjectEnvironmentReport,
+): StudioRunReadiness {
+  const reasons = report.diagnostics.flatMap(({ diagnostic }) =>
+    diagnostic.kind === 'blocked' ? [environmentReason(diagnostic)] : [],
+  )
+  const firstReason = reasons[0]
+  const environmentCheck: StudioRunReadinessCheck = firstReason
+    ? {
+        id: 'environment',
+        status: 'blocked',
+        reasons: [firstReason, ...reasons.slice(1)],
+      }
+    : {
+        id: 'environment',
+        status: report.diagnostics.length > 0 ? 'ready' : 'not-applicable',
+      }
+  return studioRunReadinessFromChecks([
+    ...(readiness.checks ?? []).filter((check) => check.id !== 'environment'),
+    environmentCheck,
+  ])
+}
+
 export async function studioRunReadiness(
   context: StudioProjectContext,
   request: StudioRunRequest | undefined,
@@ -319,7 +356,7 @@ export async function studioRunReadiness(
     readinessCheck('selection', selectionReasons),
     readinessCheck('execution-target', targetReasons),
     readinessCheck('model-credential', credentialReasons, usesWeb),
-    readinessCheck('mobile-target', [], false),
+    readinessCheck('environment', [], false),
   ])
 }
 

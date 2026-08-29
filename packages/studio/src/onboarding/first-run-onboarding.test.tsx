@@ -19,7 +19,10 @@ const project: StudioProject = {
           name: 'Pay',
           readiness: {
             ready: false,
-            reasons: ['Execution target profile "chrome" lacks geolocation'],
+            reasons: [
+              'Execution target profile "chrome" lacks geolocation',
+              'Local browser is missing. Install Chrome or configure Browserbase.',
+            ],
             checks: [
               { id: 'selection', status: 'ready' },
               {
@@ -30,7 +33,13 @@ const project: StudioProject = {
                 ],
               },
               { id: 'model-credential', status: 'not-applicable' },
-              { id: 'mobile-target', status: 'not-applicable' },
+              {
+                id: 'environment',
+                status: 'blocked',
+                reasons: [
+                  'Local browser is missing. Install Chrome or configure Browserbase.',
+                ],
+              },
             ],
           },
         },
@@ -53,6 +62,8 @@ test('renders an accessible checklist with structured setup blockers', () => {
   expect(markup).toContain('aria-label="First-run readiness"')
   expect(markup).toContain('Execution target ready')
   expect(markup).toContain('lacks geolocation')
+  expect(markup).toContain('Local environment ready')
+  expect(markup).toContain('Install Chrome or configure Browserbase')
   expect(markup).toContain('Open Settings')
   expect(markup).toContain('Persist one passed Test run')
 })

@@ -7,6 +7,7 @@ import type { PickleConfig } from '../configuration/config'
 import { requiredValue } from '../required-value'
 import {
   discoverStudioMobileTargets,
+  studioMobileEnvironmentAdapterFactory,
   validateStudioMobileTargetCapabilities,
 } from './studio-mobile-targets'
 
@@ -209,6 +210,21 @@ test('does not dispose a shared extension adapter after discovery', async () => 
       mobile: adapterNameFallback,
     },
   )
+
+  const environmentFactory = requiredValue(
+    studioMobileEnvironmentAdapterFactory(
+      { android: sharedAdapter, mobile: adapterNameFallback },
+      'android',
+    ),
+  )
+  const environmentAdapter = environmentFactory(
+    requiredValue(
+      requiredValue(requiredValue(androidOnly.executionTargetProfiles).android)
+        .mobile,
+    ),
+  )
+  await environmentAdapter.discoverTargets()
+  await environmentAdapter.dispose?.()
 
   expect(disposed).toBe(false)
 })
