@@ -167,4 +167,5 @@ Domain documentation uses the single-context layout. See `docs/agents/domain.md`
 
 ### Coding standards
 
-Use 10x-coder skills to before writing code to apply code best practices
+Use the local `10x-coder` skill before writing or reviewing code. Apply its
+final evidence gate before reporting the task complete.

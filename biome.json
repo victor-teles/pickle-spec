@@ -14,6 +14,7 @@
     "indentStyle": "space",
     "indentWidth": 2
   },
+  "plugins": ["./plugins/no-conditional-object-spread.grit"],
   "linter": {
     "enabled": true,
     "rules": {
@@ -30,14 +31,6 @@
         },
 
         "noNonNullAssertion": "error",
-
-        "noExcessiveLinesPerFile": {
-          "level": "warn",
-          "options": {
-            "maxLines": 350,
-            "skipBlankLines": true
-          }
-        },
 
         "noExcessiveClassesPerFile": {
           "level": "error",
@@ -87,18 +80,6 @@
       "semicolons": "asNeeded"
     }
   },
-  "overrides": [
-    {
-      "includes": ["**/*.test.ts", "**/*.test.tsx", "**/test/**"],
-      "linter": {
-        "rules": {
-          "complexity": {
-            "noExcessiveLinesPerFunction": "off"
-          }
-        }
-      }
-    }
-  ],
   "css": {
     "parser": {
       "tailwindDirectives": true

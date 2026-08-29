@@ -1,4 +1,4 @@
-# Clean examples
+# 10x coder examples
 
 Use these as judgment, not as a mandate to introduce the "after" shape.
 Apply a rewrite only when the touched code already has the "before" problem.
@@ -153,8 +153,8 @@ async function withdraw(userId, amount) {
 
 ## KISS
 
-Prefer the smallest readable solution. Do not add a class, helper, or options
-bag unless a second real use already exists.
+Prefer the smallest readable solution. Add a class, helper, or options bag only
+when it names a real concept, makes a contract explicit, or serves a real use.
 
 ```js
 // ❌
@@ -335,28 +335,28 @@ const timeout = input.timeout ?? options.timeout ?? 3_000
 return Client.create({ timeout })
 ```
 
-Keep orchestration thin. Do not pull unrelated side effects into a function
-just to have one entry point, and do not split a one-line body into classes.
+Keep orchestration visible. Separate independently changing policy and I/O,
+but let the workflow owner coordinate the steps and their failure semantics.
 
 ```js
-// ❌ too much in one place — and also too much ceremony to "fix" it
-function createUser(data) {
-  validateUser(data)
-  const user = saveUser(data)
-  sendWelcomeEmail(user)
-  trackAnalytics(user)
+// ❌ policy, persistence details, and notification mechanics are interleaved
+async function registerUser(data) {
+  if (!data.email || !data.email.includes('@')) throw new Error('Invalid email')
+  const user = await db.insert('users', data)
+  await fetch(emailUrl, {
+    method: 'POST',
+    body: JSON.stringify({ to: user.email, template: 'welcome' }),
+  })
   return user
 }
 
-// ✅ during cleanup, separate only what the diff already mixed
-function createUser(data) {
-  validateUser(data)
-  return saveUser(data)
+// ✅ the workflow stays visible while each collaborator owns one concern
+async function registerUser(data, { users, welcomeEmail }) {
+  const registration = validateRegistration(data)
+  const user = await users.create(registration)
+  await welcomeEmail.sendTo(user)
+  return user
 }
-
-const user = createUser(data)
-sendWelcomeEmail(user)
-trackAnalytics(user)
 ```
 
 ## Separation of concerns and file size

@@ -1,0 +1,38 @@
+{
+  "skill_name": "10x-coder",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "Review the current TypeScript diff for maintainability and correctness. Do not change files. The diff adds a schema parser, splits a 350-line module, and leaves one new module at 228 lines because it contains a cohesive initialization workflow. Report only evidence-backed findings.",
+      "expected_output": "A read-only, findings-first review that checks contracts and does not flag the cohesive 228-line module solely because of its size.",
+      "files": [],
+      "expectations": [
+        "The agent does not edit files or propose unrelated rewrites.",
+        "The agent treats line count as a review prompt rather than an automatic defect.",
+        "The agent reports findings with concrete evidence or explicitly says no material finding was found."
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "Add an optional timeout to an existing Bun TypeScript adapter. The repository requires bun run lint after TypeScript changes. There is one caller today, but the timeout is part of the adapter's public options contract. Preserve the existing defaults and tests.",
+      "expected_output": "A narrow implementation plan or change that makes the public contract explicit without speculative layers and does not skip repository-required lint.",
+      "files": [],
+      "expectations": [
+        "The agent permits a public option even with one current caller because it expresses a real contract.",
+        "The agent avoids speculative factories, wrappers, or interfaces.",
+        "The agent includes bun run lint and focused behavior verification."
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "Clean up a configuration loader that parses unknown JSON with an isRecord helper, repeats defaults inside conditional object spreads, and calls process.chdir so relative paths work. Preserve its public export and error behavior.",
+      "expected_output": "A boundary-focused cleanup that parses once, resolves defaults visibly, uses an explicit project root, and preserves the public seam and behavior.",
+      "files": [],
+      "expectations": [
+        "The agent validates unknown input once with the repository's schema convention.",
+        "The agent removes conditional object-spread noise without changing optional-property semantics.",
+        "The agent replaces hidden process working-directory state with an explicit root while preserving the public export and errors."
+      ]
+    }
+  ]
+}
