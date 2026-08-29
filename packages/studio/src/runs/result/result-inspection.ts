@@ -3,6 +3,7 @@ export const resultInspectorTabs = [
   'timeline',
   'artifacts',
   'diagnostics',
+  'viewport',
 ] as const
 
 export type ResultInspectorTab = (typeof resultInspectorTabs)[number]

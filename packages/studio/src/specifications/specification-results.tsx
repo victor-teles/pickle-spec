@@ -1,5 +1,8 @@
 import type { StudioApi } from '../app/studio-api'
-import type { LiveResultInspection } from '../runs/result/live-result-inspection'
+import {
+  type LiveResultInspection,
+  liveViewportFor,
+} from '../runs/result/live-result-inspection'
 import type { ResultInspectorTab } from '../runs/result/result-inspection'
 import { ResultInspector } from '../runs/result/result-inspector'
 import type { MatrixCell } from '../runs/result/run-view'
@@ -67,6 +70,7 @@ export function SpecificationResults(props: SpecificationResultsProps) {
           location={props.live.location}
           snapshot={props.live.snapshot}
           connection={props.live.connection}
+          liveViewport={liveViewportFor(props.live, props.live.location)}
           following={props.live.following}
           followedEntryId={props.live.followedEntryId}
           onResumeFollowing={props.onResumeFollowing}

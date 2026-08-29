@@ -4,6 +4,13 @@ import type { StudioApi } from '../../app/studio-api'
 import { LedgerLoadingSkeleton } from '../../components/loading-skeletons'
 import { Badge } from '../../components/ui/badge'
 import { Button } from '../../components/ui/button'
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from '../../components/ui/card'
 import { ResultMark } from '../../components/ui/result-mark'
 import {
   Tabs,
@@ -11,6 +18,7 @@ import {
   TabsList,
   TabsTrigger,
 } from '../../components/ui/tabs'
+import type { StudioLiveViewport } from '../../live-viewport'
 import type { StudioRunSnapshot } from '../../server/server'
 import {
   displayedAttemptState,
@@ -46,6 +54,7 @@ type ResultInspectorProps = {
   onOpenArtifact?: (artifactIndex: number) => void
   onTabChange: (tab: ResultInspectorTab) => void
   snapshot?: StudioRunSnapshot
+  liveViewport?: StudioLiveViewport
   connection?: LiveConnectionStatus
   following?: boolean
   followedEntryId?: string
@@ -203,6 +212,7 @@ function ResultInspectorTabs(
         <TabsTrigger value="timeline">Timeline</TabsTrigger>
         <TabsTrigger value="artifacts">Artifacts</TabsTrigger>
         <TabsTrigger value="diagnostics">Diagnostics</TabsTrigger>
+        <TabsTrigger value="viewport">Viewport</TabsTrigger>
       </TabsList>
       <TabsContent value="overview">
         <ResultOverview {...inspected} inProgress={props.inProgress} />
@@ -237,6 +247,12 @@ function ResultInspectorTabs(
           applicationOutputAvailability={
             inspected.attempt.applicationOutputAvailability
           }
+        />
+      </TabsContent>
+      <TabsContent value="viewport">
+        <ResultViewportPanel
+          liveViewport={props.liveViewport}
+          scenarioName={inspected.result.scenario.name}
         />
       </TabsContent>
     </Tabs>
@@ -367,4 +383,65 @@ function ConnectionStatus(props: { connection?: LiveConnectionStatus }) {
     )
   }
   return null
+}
+
+export function ResultViewportPanel(props: {
+  liveViewport?: StudioLiveViewport
+  scenarioName: string
+}) {
+  if (!props.liveViewport) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle>Live viewport</CardTitle>
+          <CardDescription>
+            No live browser viewport is currently available for this Scenario
+            attempt.
+          </CardDescription>
+        </CardHeader>
+      </Card>
+    )
+  }
+  if (props.liveViewport.kind === 'browserbase') {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle>Live viewport</CardTitle>
+          <CardDescription>
+            Streaming the remote Browserbase session for {props.scenarioName}.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <div className="overflow-hidden rounded-xl border border-border bg-muted">
+            <iframe
+              title={`Browserbase live session for ${props.scenarioName}`}
+              src={props.liveViewport.url}
+              sandbox="allow-same-origin allow-scripts"
+              allow="clipboard-read; clipboard-write"
+              className="h-[640px] w-full bg-background"
+            />
+          </div>
+        </CardContent>
+      </Card>
+    )
+  }
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Live viewport</CardTitle>
+        <CardDescription>
+          Latest browser frame streamed for {props.scenarioName}.
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        <div className="overflow-hidden rounded-xl border border-border bg-muted">
+          <img
+            alt={`Live browser viewport for ${props.scenarioName}`}
+            src={`data:${props.liveViewport.mimeType};base64,${props.liveViewport.data}`}
+            className="w-full"
+          />
+        </div>
+      </CardContent>
+    </Card>
+  )
 }

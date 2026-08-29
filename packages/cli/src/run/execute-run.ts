@@ -37,6 +37,7 @@ import {
   createWebAdapter,
   resolveWebArtifactCapture,
   type WebAdapterOptions,
+  type WebLiveViewportUpdate,
 } from '@pickle-spec/web'
 import { resolveApplicationRevision } from '../configuration/application-revision'
 import {
@@ -104,6 +105,7 @@ type StartProjectRunInput = {
   signal?: AbortSignal
   onEvent?: (event: RunEvent) => void | Promise<void>
   onApplicationDiagnostic?: (event: LiveApplicationDiagnostic) => void
+  onLiveViewport?: (update: WebLiveViewportUpdate) => void
   onSchedule?: (
     schedule: readonly ScheduledTestResult[],
   ) => void | Promise<void>
@@ -203,13 +205,16 @@ function configuredWebOptions(
 function configuredAdapter(
   extensions: Extensions,
   web: WebAdapterOptions | undefined,
+  onLiveViewport?: (update: WebLiveViewportUpdate) => void,
 ): ExecutionTargetAdapter {
   if (extensions.adapter) return extensions.adapter
   if (!web)
     throw new Error(
       'Configure web.baseUrl or export an adapter from pickle.extensions.ts',
     )
-  return createWebAdapter(web, extensions.webAutomationFactory)
+  return createWebAdapter(web, extensions.webAutomationFactory, {
+    onLiveViewport,
+  })
 }
 
 function configureProfileAdapter(
@@ -218,6 +223,7 @@ function configureProfileAdapter(
   config: PickleConfig,
   args: ProjectRunOptions,
   profile: ExecutionTargetProfile,
+  onLiveViewport?: (update: WebLiveViewportUpdate) => void,
 ): void {
   const configuredAdapters = adapters
   if (configuredAdapters[profile.id]) return
@@ -244,6 +250,7 @@ function configureProfileAdapter(
   configuredAdapters[profile.id] = createWebAdapter(
     web,
     extensions.webAutomationFactory,
+    { onLiveViewport },
   )
 }
 
@@ -252,6 +259,7 @@ function configuredRunExtensions(
   config: PickleConfig,
   args: ProjectRunOptions,
   profiles: readonly ExecutionTargetProfile[],
+  onLiveViewport?: (update: WebLiveViewportUpdate) => void,
 ): RunExtensions {
   const adapters: Record<string, ExecutionTargetAdapter> = {
     ...extensions.adapters,
@@ -259,13 +267,24 @@ function configuredRunExtensions(
   if (extensions.adapter) adapters.custom ??= extensions.adapter
 
   for (const profile of profiles) {
-    configureProfileAdapter(adapters, extensions, config, args, profile)
+    configureProfileAdapter(
+      adapters,
+      extensions,
+      config,
+      args,
+      profile,
+      onLiveViewport,
+    )
   }
 
   return {
     adapter: profiles.some((profile) => profile.adapter)
       ? extensions.adapter
-      : configuredAdapter(extensions, configuredWebOptions(config, args)),
+      : configuredAdapter(
+          extensions,
+          configuredWebOptions(config, args),
+          onLiveViewport,
+        ),
     adapters,
   }
 }
@@ -483,6 +502,7 @@ async function resolveProjectRunConfiguration(
   applicationRevision: string | undefined,
   profileIds: string[] | undefined,
   root: string,
+  onLiveViewport?: (update: WebLiveViewportUpdate) => void,
 ): Promise<ResolvedProjectRunConfiguration> {
   const extensions = await loadExtensions(args.extensionsPath, root)
   const runConfiguration = {
@@ -505,6 +525,7 @@ async function resolveProjectRunConfiguration(
       config,
       args,
       runConfiguration.executionTargetProfiles ?? [],
+      onLiveViewport,
     ),
   )
 }
@@ -718,6 +739,7 @@ async function runProjectWork(context: ProjectRunWorkInput) {
       applicationRevision,
       selection.profileIds,
       root,
+      input.onLiveViewport,
     )
     validateTargetSelection(selection.selections, configuration.targets)
     await publishRunSchedule(input, selection, configuration)

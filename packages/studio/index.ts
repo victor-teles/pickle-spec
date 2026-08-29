@@ -1,3 +1,8 @@
+export type {
+  StudioLiveViewport,
+  StudioLiveViewportEvent,
+  StudioLiveViewportTarget,
+} from './src/live-viewport'
 export type { CredentialStore } from './src/server/credentials'
 export {
   createCredentialStore,

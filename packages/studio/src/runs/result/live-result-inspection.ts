@@ -3,6 +3,11 @@ import type {
   RunEvent,
   ScheduledTestResult,
 } from '@pickle-spec/runner'
+import {
+  liveViewportTargetKey,
+  type StudioLiveViewport,
+  type StudioLiveViewportEvent,
+} from '../../live-viewport'
 import type {
   StudioLiveDiagnosticEvent,
   StudioRunSnapshot,
@@ -27,6 +32,7 @@ export {
 
 export type LiveStreamEvent =
   | RunEvent
+  | StudioLiveViewportEvent
   | StudioLiveDiagnosticEvent
   | { type: 'run-scheduled'; schedule: readonly ScheduledTestResult[] }
   | { type: 'run-finished'; run: { id: string } }
@@ -51,6 +57,7 @@ export type LiveResultInspection = {
     scope?: StudioLiveDiagnosticEvent['scope']
     diagnostic: DiagnosticEntry
   }>
+  liveViewports: ReadonlyMap<string, StudioLiveViewport>
   snapshot?: StudioRunSnapshot
   connection: LiveConnectionStatus
   following: boolean
@@ -79,6 +86,7 @@ export function startLiveInspection(
     events: [],
     schedule: [],
     liveDiagnostics: [],
+    liveViewports: new Map(),
     connection: { kind: 'connected' },
     following: true,
     pinned: false,
@@ -186,6 +194,7 @@ export function hydrateLiveInspection(
       ...inspection,
       events: snapshot.events,
       liveDiagnostics: [],
+      liveViewports: new Map(),
       phase: 'finished',
       connection: { kind: 'connected' },
     },
@@ -198,7 +207,11 @@ export function receiveLiveStreamEvent(
   event: LiveStreamEvent,
 ): LiveResultInspection {
   if (event.type === 'run-finished') {
-    return withProjectedSnapshot({ ...inspection, phase: 'finished' })
+    return withProjectedSnapshot({
+      ...inspection,
+      phase: 'finished',
+      liveViewports: new Map(),
+    })
   }
   if (event.type === 'run-scheduled') {
     return withProjectedSnapshot({ ...inspection, schedule: event.schedule })
@@ -216,12 +229,35 @@ export function receiveLiveStreamEvent(
       ],
     })
   }
+  if (event.type === 'viewport-updated') {
+    const liveViewports = new Map(inspection.liveViewports)
+    liveViewports.set(liveViewportTargetKey(event.target), event.viewport)
+    return { ...inspection, liveViewports }
+  }
+  if (event.type === 'viewport-closed') {
+    const liveViewports = new Map(inspection.liveViewports)
+    liveViewports.delete(liveViewportTargetKey(event.target))
+    return { ...inspection, liveViewports }
+  }
   const events = insertRunEvent(inspection.events, event)
   return withProjectedSnapshot({
     ...inspection,
     events,
     connection: connectionFrom(events),
   })
+}
+
+export function liveViewportFor(
+  inspection: LiveResultInspection,
+  location: ResultInspectionLocation,
+): StudioLiveViewport | undefined {
+  return inspection.liveViewports.get(
+    liveViewportTargetKey({
+      scenarioId: location.scenarioId,
+      examplesRowId: location.examplesRowId,
+      profileId: location.profileId,
+    }),
+  )
 }
 
 function insertRunEvent(
