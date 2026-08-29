@@ -10,6 +10,7 @@ import {
   disconnectLiveInspection,
   hydrateLiveInspection,
   liveInspectionFromSnapshot,
+  liveViewportFor,
   pauseLiveFollowing,
   pinLiveInvestigation,
   receiveLiveStreamEvent,
@@ -251,6 +252,40 @@ test('restores a running inspection from an active snapshot and schedule', () =>
       state: 'running',
     },
   ])
+})
+
+test('keeps the latest viewport by Scenario and profile, independent of attempt', () => {
+  let inspection = startLiveInspection({
+    specificationUri,
+    runId: 'run-viewport',
+  })
+  const target = { scenarioId: scenario.id, profileId: 'chrome' }
+  inspection = receiveLiveStreamEvent(inspection, {
+    type: 'viewport-updated',
+    target,
+    viewport: { kind: 'frame', data: 'first', mimeType: 'image/jpeg' },
+  })
+  inspection = receiveLiveStreamEvent(inspection, {
+    type: 'viewport-updated',
+    target,
+    viewport: { kind: 'frame', data: 'latest', mimeType: 'image/jpeg' },
+  })
+
+  expect(
+    liveViewportFor(inspection, {
+      specificationUri,
+      runId: 'run-viewport',
+      scenarioId: scenario.id,
+      profileId: 'chrome',
+      attempt: 3,
+    }),
+  ).toEqual({ kind: 'frame', data: 'latest', mimeType: 'image/jpeg' })
+
+  inspection = receiveLiveStreamEvent(inspection, {
+    type: 'viewport-closed',
+    target,
+  })
+  expect(inspection.liveViewports.size).toBe(0)
 })
 
 test('shows managed application output while a step is still running', () => {

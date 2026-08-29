@@ -3,14 +3,20 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { runScenario } from '@pickle-spec/runner'
-import type { Scenario, Specification } from '@pickle-spec/spec'
+import {
+  resolveScenarioId,
+  type Scenario,
+  type Specification,
+} from '@pickle-spec/spec'
 import {
   createWebAdapter,
   validateWebAdapterOptions,
   type WebAutomation,
   type WebAutomationFactory,
+  type WebLiveViewportUpdate,
 } from '../../index'
 import { requiredValue } from '../required-value'
+import type { WebClientContext } from './web-automation'
 
 function stubAutomation(overrides: Partial<WebAutomation> = {}): WebAutomation {
   return {
@@ -954,6 +960,58 @@ describe('createWebAdapter', () => {
     await adapter.dispose?.()
 
     expect(launch).toHaveBeenCalledTimes(1)
+  })
+
+  test('forwards live viewport updates with canonical Scenario target identity', async () => {
+    const updates: WebLiveViewportUpdate[] = []
+    const launch: WebAutomationFactory['launch'] = mock(async () => ({
+      async openContext(context: WebClientContext) {
+        context.onLiveViewport?.({
+          kind: 'frame',
+          data: 'latest-frame',
+          mimeType: 'image/jpeg',
+        })
+        return stubAutomation({
+          async close() {
+            context.onLiveViewport?.({ kind: 'closed' })
+          },
+        })
+      },
+      async close() {},
+    }))
+    const adapter = createWebAdapter(
+      { baseUrl: 'https://example.test' },
+      { launch },
+      { onLiveViewport: (update) => updates.push(update) },
+    )
+
+    const session = await adapter.openSession({
+      executionTargetProfile: { id: 'attached-chrome' },
+      specification,
+      scenario: { ...scenario, examplesRowId: 'row-card' },
+    })
+    await session.close()
+    await adapter.dispose?.()
+
+    const target = {
+      scenarioId: resolveScenarioId(
+        specification.source.uri,
+        specification.name,
+        scenario.name,
+        scenario.tags,
+      ),
+      examplesRowId: 'row-card',
+      profileId: 'attached-chrome',
+    }
+    expect(updates).toEqual([
+      {
+        kind: 'frame',
+        data: 'latest-frame',
+        mimeType: 'image/jpeg',
+        target,
+      },
+      { kind: 'closed', target },
+    ])
   })
 
   test('surfaces isolation verification failure when opening a logical session', async () => {

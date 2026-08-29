@@ -6,6 +6,7 @@ import type {
   WebInstruction,
 } from '../execution-cache/web-execution-cache'
 import type { ResolvedFidelity } from './fidelity'
+import type { WebLiveViewport } from './live-viewport'
 import type { BrowserOptions } from './web-options'
 
 export interface WebObservedAction {
@@ -38,6 +39,7 @@ export interface WebClientContext {
   mode?: 'adaptive' | 'replay'
   fidelity?: ResolvedFidelity
   signal?: AbortSignal
+  onLiveViewport?: (viewport: WebLiveViewport) => void
 }
 
 export interface WebDirectExecutionResult {
