@@ -1,77 +1,139 @@
-# Pickle Spec Roadmap
+# Pickle Spec roadmap
 
-This roadmap reflects the repository state in August 2026 and focuses on one goal: evolve Studio from a local diagnostic instrument into the flagship visual experience for AI-driven autonomous testing, powered by Stagehand on the web and agent-device on mobile.
+This roadmap reflects the repository state in August 2026. Its goal is to make Studio the flagship interface for local-first, AI-driven autonomous testing. Stagehand powers web execution, and agent-device powers mobile execution.
 
 ## Where the platform stands
 
-The engine is ahead of the face. Shipped and tested today:
+The execution engine is ahead of the product surface. Pickle Spec ships these capabilities today:
 
-- **Specs** — Gherkin with `@pickle` tags, durable identities, tag-expression selection, duration-aware sharding
-- **Runner** — event-sourced runs (`events.ndjson` + manifest under `~/.pickle`), worker-pool concurrency, retries, flake marking, Adaptive/Replay execution cache
-- **Web** — Stagehand adapter with observe/act/extract/verify routing, screenshots, local and Browserbase environments
-- **Mobile** — agent-device adapter for Android emulator and iOS simulator via a Node worker, with screenshot, device-log, recording, and trace evidence
-- **CLI** — `run`, `studio`, `cache`, `check`, `migrate`, `compare`, `export`, `import`; JUnit/JSON/NDJSON outputs; `--cache-only` for keyless CI
-- **Studio** — the Dark Spec Ledger: Specification catalog, Monaco Gherkin editing with optional AI propose, live scenario-by-profile matrix over WebSockets, result inspector with step timeline and artifacts, history with compare/export/rerun, settings with git integration and mobile target discovery
-What does not exist yet: a global Runs area, deep-linkable routes, live browser or device video, web traces and recordings, visual diffing, built-in AI authoring, trend analytics, and any hosted or multi-user surface.
+- **Specifications** — Gherkin with `@pickle` tags, durable identities, tag-expression selection, and duration-aware sharding
+- **Runner** — event-sourced runs under `~/.pickle`, worker-pool concurrency, retries, flake marking, and the Adaptive/Replay execution cache
+- **Web** — Stagehand observe, act, extract, and verify routing with screenshots and local, Browserbase, or external CDP environments
+- **Mobile** — agent-device automation for Android emulators and iOS simulators, with screenshots, logs, recordings, and traces
+- **CLI** — `run`, `studio`, `cache`, `check`, `migrate`, `compare`, `export`, and `import`. Exports support JUnit, JSON, NDJSON, HTML, archives, and Allure.
+- **Studio** — a Specification catalog, Monaco Gherkin editing, and live scenario-by-profile progress. Studio also provides deep-linked evidence, history, comparison, export, rerun, settings, git integration, and mobile target discovery.
+
+Studio does not yet provide live target video, web traces, visual diffing, built-in AI authoring, or guarded test repair. Trend analytics and hosted collaboration are also absent.
+
+## Competitive baseline
+
+The market already treats natural-language tests, AI-assisted authoring, selector recovery, visual editing, and rich failure artifacts as baseline capabilities. Pickle Spec must meet that baseline without copying a competitor's product model.
+
+| Competitor signal | Documented baseline | Pickle Spec response |
+| --- | --- | --- |
+| [Momentic](https://momentic.ai/docs) | Local editor; modules; cache; selection; maintenance; quarantine; MCP | Match the workflow baseline. Lead with Gherkin, local evidence, provider choice, and deterministic Replay. |
+| [OpenQA](https://github.com/openqa-labs/openqa) | One-command setup; selector-free Gherkin; provider sessions; Playwright evidence | Make setup fast and provider-neutral. Preserve one source-controlled Specification. |
+| [Playwright Test Agents](https://playwright.dev/docs/test-agents) | Planner, generator, and healer roles; seed tests; plans; live validation | Separate planning, generation, validation, and repair. Link each accepted mutation to evidence. |
+
+These features are necessary, but they are not sufficient differentiation. Pickle Spec's advantage is one local-first evidence model across web and mobile, with explicit Adaptive and Replay behavior, portable runs, and observable autonomy.
 
 ## The core bet
 
-No product today lets an operator watch an AI agent test their app live, see its reasoning at each step, and replay the evidence afterward. Phase 2 (Live Execution Theater) is the differentiator. Phase 1 makes Studio navigable enough to carry it; Phase 3 makes what it shows trustworthy.
-Every phase inherits the design law in `DESIGN.md`: flat plates, spelled result states, Bone for the primary action, teal/oxide/amber only as labeled state ink, and shadcn Mira primitives for every control.
+Pickle Spec should become the most trustworthy place to watch, understand, and govern an AI test run. Live viewing alone is not the differentiator. The product must combine concurrent web and mobile views with typed decision evidence, deterministic Replay, cache provenance, and reviewable repairs.
+
+Four product rules protect that position:
+
+1. **The repository owns intent.** Specifications, reusable flows, configuration, and accepted repairs remain version-controlled files.
+2. **Autonomy stays inspectable.** Studio records observations, tool activity, chosen actions, model identity, cache behavior, and artifacts. It does not expose or depend on private chain-of-thought.
+3. **Known work becomes deterministic.** Adaptive execution discovers a path. Replay executes the validated path without model inference when the cache remains applicable.
+4. **Mutation requires proof.** An agent can propose a Specification or repair. Acceptance requires a source diff and a validating run.
+
+Every phase also follows `DESIGN.md`: flat plates, spelled result states, Bone for the primary action, and teal, oxide, or amber only as labeled state ink. Every control uses a shadcn Mira primitive.
 
 ## Phase 1: Command Center (weeks 1–6)
 
-Goal: make Studio navigable, addressable, and shareable as a full application. Runs become a first-class global area instead of history nested under each Specification.
-- [x] Global Runs area: a cross-Specification dashboard with live progress and a filterable run list backed by the existing `index.sqlite` projection, plus a unified run detail page that joins the manifest and the event stream
-- [x] Real URL routing and deep links: replace the query-param history location so every Specification, scenario, run, result, and artifact has a shareable URL
-- [x] Command palette (Cmd+K): jump to any Specification, scenario, or run; start and cancel runs; switch profiles
-- [ ] First-run onboarding: a visual readiness checklist built on the existing run-readiness API, guiding a new user to a first green run
-- [x] Design-system fill-in: add the missing shadcn Mira primitives (toast, tooltip, dropdown menu, command, skeleton)
-Exit criteria: any state in Studio has a URL, and a new user goes from `pickle studio` to a first green run without reading docs.
+Phase 1 makes Studio navigable, addressable, and usable from first launch. Runs become a global area instead of history nested under each Specification.
 
-## Phase 2: Live Execution Theater (weeks 5–14)
+- [x] Global Runs area: provide a cross-Specification dashboard with live progress and a filterable run list backed by `index.sqlite`. Join the manifest and event stream on one run detail page.
+- [x] Real URL routing and deep links: give every Specification, scenario, run, result, and artifact a stable URL. Ensure it survives refresh.
+- [x] Command palette (`Cmd+K`): jump to a Specification, scenario, or run; start or cancel a run; and switch profiles.
+- [x] First-run onboarding: guide users through project checks, target readiness, model credentials, and a first green run. Offer a credential-free example that demonstrates Replay and evidence inspection.
+- [x] Design-system fill-in: add the missing shadcn Mira toast, tooltip, dropdown menu, command, and skeleton primitives.
 
-Goal: watching the AI test your app becomes the signature experience. Studio currently shows live state chips and after-the-fact screenshots; this phase adds the moving picture.
-- [ ] Live browser viewport: stream CDP screencast frames from the local Stagehand browser over the existing per-run WebSocket; embed the Browserbase session live view for remote runs
-- [ ] Live device mirror: frame streaming from agent-device for Android emulator and iOS simulator through the existing Node worker protocol, rendered beside the step timeline
-- [ ] AI decision feed: extend run events with model-decision payloads so Studio renders observe, act, and verify reasoning per step in real time — what the model saw, the candidate actions, and the chosen action
-- [ ] Follow mode and picture-in-picture: auto-follow the worst cell or a pinned scenario across the matrix, with a filmstrip of concurrent viewports for parallel workers
-- [ ] Live step timeline: steps appear as events arrive with inline screenshots, execution mode, and cache annotations
-Exit criteria: a full run is watchable end-to-end without opening a terminal.
+Exit criteria: every Studio entity has a stable URL. After target access and credentials are ready, a new user reaches a first green run within 2 minutes.
 
-## Phase 3: Evidence and Diagnosis (weeks 12–20)
+## Phase 2: Observable Execution Theater (weeks 5–14)
 
-Goal: every failure is diagnosable from Studio without a rerun. Evidence kinds already exist in the result schema; this phase makes them rich and universal.
-- [ ] Web traces and recordings as first-class evidence, captured through the browser under Stagehand, with an embedded viewer in the result inspector
-- [ ] Visual screenshot diff between two runs, extending `pickle compare` and the History compare UI with pixel and region diffing
-- [ ] Replay divergence explainer: visualize the exact step where cached Replay diverged and what Adaptive did instead (the `replay-diverged` and `adaptive-fallback-started` events already carry the data)
-- [ ] AI failure triage: a model-generated root-cause summary per failed scenario, classified as spec wording, app regression, or infrastructure, with a suggested fix
-- [ ] Network and console capture for web runs, surfaced in the diagnostics tab
-Exit criteria: at least 80% of failures on the example suite explain themselves from evidence in the inspector.
+Phase 2 makes concurrent execution understandable during and after a run. The live view and result inspector must use the same event and evidence contracts.
 
-## Phase 4: Authoring Intelligence (weeks 18–26)
+- [ ] Shared evidence contract: version observations, tool activity, outcomes, timing, cost, artifact references, execution mode, and cache decisions. Redact secrets before streaming or persistence. Never store private chain-of-thought.
+- [ ] Live browser viewport: stream CDP screencast frames from a local or attached browser over the per-run WebSocket. Embed the Browserbase live session for remote runs.
+- [ ] Live device mirror: stream Android emulator and iOS simulator frames through the existing Node worker protocol. Render the active device beside the step timeline.
+- [ ] Web diagnostics: capture redacted traces, recordings, network activity, and console output. Link each artifact to its step and event range.
+- [ ] Time-travel inspector: connect each action to target state, diagnostics, source evidence, retries, and before-and-after screenshots. Use the same view for live and completed runs.
+- [ ] Replay divergence explainer: show the divergence step, sealed prefix, and Adaptive fallback. Use the existing `replay-diverged` and `adaptive-fallback-started` events.
+- [ ] Operator controls: let an operator pin or cancel a scenario, open its live session, and capture evidence. Add pause-after-step only after the runner defines a safe suspension contract.
+- [ ] Follow mode and picture-in-picture: follow the worst result or a pinned scenario across the matrix. Show a filmstrip of concurrent targets for parallel workers.
+- [ ] Live step timeline: append screenshots, execution mode, cache provenance, retries, and elapsed time as step events arrive.
+- [ ] Read-and-run agent API: expose readiness, run control, events, result inspection, and artifact retrieval through local MCP tools.
 
-Goal: the fastest path from product intent to a running Specification. AI propose exists today only as an optional extension hook; this phase makes authoring intelligence built-in.
-- [ ] Explore mode: point the Stagehand agent at a URL; it explores the app and proposes draft Specifications (`@pickle:state:draft`) into the workspace for review
-- [ ] Built-in default `authorSpecification` so AI propose works out of the box with any configured model key, with no `pickle.extensions.ts` required
-- [ ] Step-level live preview: run a single step from the Monaco editor against a live session and see the result inline before saving
-- [ ] Grounded autocomplete: step suggestions from observed page state plus the project's existing step vocabulary, layered onto the current Gherkin completions
-- [ ] Spec health lints in the editor gutter (ambiguous steps, uncacheable patterns, unreachable states) and a tag and coverage map per Specification
-Exit criteria: a new scenario for an existing app in under 5 minutes, with propose working with zero extension code.
+Exit criteria: an operator can watch a run, inspect any completed action, and cancel unsafe execution. The same evidence remains available after the run ends.
 
-## Phase 5: Insight and Scale (weeks 24+)
+## Phase 3: Planned authoring (weeks 10–20)
 
-Goal: from a diagnostic instrument to a suite-health platform. The raw data already lands in the run index; this phase turns it into trends and team workflows.
-- [ ] Trends from the run index: pass and flake rate, duration, cache hit rate, and inference count and cost per scenario over time, shown as sparklines in the ledger
-- [ ] Suite health view: attention-ranked Specifications and a flake quarantine workflow that keeps flaky scenarios visible without blocking runs
-- [ ] CI surface: PR-annotation-friendly output, cache-only playbooks for keyless CI, and archive import deep links so a CI failure opens directly in local Studio
-- [ ] Physical mobile devices via agent-device when supported, and Browserbase parity for scale-out web execution
-- [ ] Decision gate: hosted sync and multi-user collaboration, explicitly out of scope until this point and then decided deliberately
-Exit criteria: teams choose Studio over raw CI logs to understand suite health.
+Phase 3 provides a deliberate path from product intent to a running Specification. AI propose currently exists only as an optional extension hook.
+
+- [ ] Coverage planner: explore a URL with an optional product requirement, seed scenario, or authenticated setup. Produce a human-readable coverage plan with journeys, edge cases, expected results, and uncovered risks.
+- [ ] Plan-to-draft generation: generate `@pickle:state:draft` Specifications only from an approved plan. Preserve links from each generated scenario to its plan and exploration evidence.
+- [ ] Built-in authoring: provide a default `authorSpecification` implementation for any configured model, without requiring `pickle.extensions.ts`.
+- [ ] Step-level live preview: run one step or a selected range from Monaco against a live session. Show the result inline before saving.
+- [ ] Semantic review: show added, changed, and removed behaviors before applying generated Gherkin. Require explicit acceptance into the working tree.
+- [ ] Reusable flows and state: add parameterized authentication, setup, test data, variables, and repeated journeys. Show dependency impact before changing a shared flow.
+- [ ] Project knowledge: store approved product terms, agent rules, and known flows in repository-owned files. Apply them consistently during authoring and Adaptive execution.
+- [ ] Authoring agent API: extend the Phase 2 MCP tools with planning, draft proposal, preview, and semantic-diff operations. Publish project skills over those public contracts.
+- [ ] Grounded autocomplete: suggest steps from the observed target state, project knowledge, and the existing Gherkin vocabulary.
+- [ ] Specification health: flag ambiguous steps, uncacheable patterns, unreachable states, and missing assertions. Ground journey and variant coverage in observed executions.
+
+Exit criteria: a user can approve a coverage plan and create a passing scenario for an existing application in under 5 minutes. The workflow requires no extension code and leaves a reviewable evidence trail.
+
+## Phase 4: Guarded maintenance (weeks 16–28)
+
+Phase 4 turns failure evidence into controlled maintenance. Autonomous recovery must preserve application regressions and unknown failures as failures.
+
+- [ ] Visual screenshot diff: compare full screenshots and selected regions between compatible runs. Extend `pickle compare` and the Studio comparison view.
+- [ ] Evidence-based classification: classify each failure by cause, with provenance and confidence. Show the supporting evidence and allow an explicit override.
+- [ ] Guarded repair loop: propose the smallest source diff, run the affected scenario, and attach before-and-after evidence. Stop after a bounded number of attempts. Never change expected behavior to pass an application regression.
+- [ ] Suite circuit breaker: stop automated repair during a broad outage, shared-dependency failure, or repeated suite-wide pattern.
+- [ ] Quarantine workflow: keep an unresolved flaky scenario visible and running without blocking configured CI gates. Record provenance, justification, owner, and expiry conditions.
+- [ ] Repair delivery policy: support local proposals first. Add automatic working-tree edits or pull requests only through explicit project policy.
+- [ ] Maintenance agent API: expose classification, override, repair proposal, validation, and quarantine through the shared local contracts.
+
+Exit criteria: at least 80% of example-suite failures are diagnosable without a rerun. Every accepted repair retains its source diff and validation evidence.
+
+## Phase 5: Insight and scale (weeks 26+)
+
+Phase 5 turns local run history into suite intelligence and team workflows. The run index remains the source for local analysis.
+
+- [ ] Trends: show pass rate, flake rate, duration, cache usage, inference count, and cost over time.
+- [ ] Suite health view: rank Specifications that need attention. Combine failure history, quarantine age, cache churn, duration changes, and coverage gaps without hiding flaky scenarios.
+- [ ] Change-impact map: connect application revisions and observed journeys to Scenarios. Select a smaller CI set from a code change, explain every selection, and provide an explicit full-suite fallback.
+- [ ] CI surface: add pull-request annotations, cache-only playbooks, and shard-aware result merging. Open archived CI failures in local Studio through deep links.
+- [ ] Execution scale: add physical mobile devices when agent-device supports them. Reach parity across local, attached CDP, and Browserbase web execution.
+- [ ] Hosted collaboration decision: decide whether to add hosted sync, access control, audit logs, and multi-user review. Keep these features out of scope until local workflows meet the earlier exit criteria.
+
+Exit criteria: teams use Studio instead of raw CI logs to understand suite health. Change-aware selection reduces pull-request time without increasing escaped regressions.
+
+## Cross-phase release gates
+
+Every phase must meet these gates before its exit criteria count as complete:
+
+- **Security** — redact credentials, tokens, user data, and credential-bearing URLs before they cross a trust boundary.
+- **Auditability** — version every new event and artifact schema. Attribute autonomous actions and mutations to their model, tool, input evidence, and run.
+- **Interoperability** — keep CLI, Studio, CI, exports, and coding-agent tools on the same public runner and result contracts.
+- **Safety** — default agents to proposals. Require explicit policy before automatic source changes, quarantine, cache invalidation, or hosted upload.
+- **Portability** — keep complete runs inspectable through local Studio and self-contained exports without a Pickle Spec cloud account.
 
 ## Success metrics
-- Time from install to first green run (Phase 1)
-- Live-view engagement during runs (Phase 2)
-- Share of failures diagnosed without a rerun, targeting 80% or more (Phase 3)
-- Time to author a new passing scenario, targeting under 5 minutes (Phase 4)
-- Cache hit rate and inference cost per CI run (Phase 5)
+
+- Median time from ready prerequisites to first green run, split by example, web, and mobile setup. Target at most 2 minutes.
+- Share of live runs watched, pinned, or cancelled from Studio
+- Share of failed scenarios diagnosed without a rerun, targeting at least 80%
+- Evidence completeness for failed steps, including target state, diagnostics, execution mode, cache provenance, and model identity
+- Repair proposal acceptance, validation, and escaped-regression rates. An application regression must never be auto-healed into a pass.
+- Median time from approved coverage plan to a new passing scenario, targeting under 5 minutes
+- Cache hit rate, inference count, and inference cost per CI run
+- Change-aware selection duration and escaped-regression rate compared with the full suite
+
+## Competitive research
+
+Read the [competitive roadmap review](docs/roadmap-competitive-review.md) before changing the differentiation claim or moving a baseline capability between phases.
