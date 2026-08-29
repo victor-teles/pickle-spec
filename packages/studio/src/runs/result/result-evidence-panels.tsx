@@ -5,7 +5,9 @@ import type {
   EvidenceAvailability,
   TestResultState,
 } from '@pickle-spec/runner'
+import type { MouseEvent } from 'react'
 import { useMemo, useState } from 'react'
+import { studioRouteHref } from '../../app/studio-route'
 import { Button, ButtonLink } from '../../components/ui/button'
 import {
   Card,
@@ -26,6 +28,7 @@ import {
   type InspectedResult,
   recoveryGuidance,
 } from './result-evidence'
+import type { ResultInspectionLocation } from './result-inspection'
 
 const diagnosticLevels = [
   'debug',
@@ -68,6 +71,16 @@ type MetadataProps = {
 type ResultArtifactsProps = {
   artifacts: readonly ArtifactEvidence[]
   availability: readonly EvidenceAvailability[]
+  onOpenArtifact?: (artifactIndex: number) => void
+  resultLocation: ResultInspectionLocation
+  scenarioName: string
+  resultState: TestResultState
+}
+
+type ResultArtifactProps = {
+  evidence: ArtifactEvidence
+  onOpen?: () => void
+  pageHref?: string
   scenarioName: string
   resultState: TestResultState
 }
@@ -236,6 +249,7 @@ function formatBytes(sizeBytes: number | undefined): string {
 }
 
 export function ResultArtifacts(props: ResultArtifactsProps) {
+  const onOpenArtifact = props.onOpenArtifact
   return (
     <div className="space-y-3">
       <ArtifactAvailability availability={props.availability} />
@@ -243,60 +257,109 @@ export function ResultArtifacts(props: ResultArtifactsProps) {
         <EmptyEvidence message="No Test artifacts were retained for this Scenario attempt." />
       ) : null}
       {props.artifacts.map((evidence) => {
-        const { artifact } = evidence
-        const downloadHref = artifactDownloadUrl(artifact.path, artifact.name)
+        const pageHref = studioRouteHref({
+          kind: 'artifact',
+          location: {
+            result: props.resultLocation,
+            artifactIndex: evidence.index,
+          },
+        })
         return (
-          <Card key={`${artifact.path}:${evidence.stepIndex}`}>
-            <CardHeader>
-              <CardTitle>{artifact.kind}</CardTitle>
-              <CardDescription>{evidence.stepText}</CardDescription>
-            </CardHeader>
-            <CardContent className="grid gap-4 lg:grid-cols-[minmax(0,2fr)_minmax(16rem,1fr)]">
-              <ArtifactViewer
-                artifact={artifact}
-                resultState={props.resultState}
-                scenarioName={props.scenarioName}
-                stepText={evidence.stepText}
-              />
-              <div className="space-y-4">
-                <dl className="space-y-3">
-                  <Metadata label="Kind" value={artifact.kind} />
-                  <Metadata
-                    label="File name"
-                    value={artifact.name ?? 'Not recorded'}
-                    mono
-                  />
-                  <Metadata
-                    label="Media type"
-                    value={artifact.mediaType ?? 'Not recorded'}
-                  />
-                  <Metadata
-                    label="File size"
-                    value={formatBytes(artifact.sizeBytes)}
-                  />
-                  <Metadata
-                    label="Captured"
-                    value={new Date(evidence.capturedAt).toLocaleString()}
-                  />
-                  <Metadata
-                    label="Step index"
-                    value={String(evidence.stepIndex)}
-                  />
-                  <Metadata label="Persisted path" value={artifact.path} mono />
-                </dl>
-                <ButtonLink
-                  variant="outline"
-                  href={downloadHref}
-                  download={artifact.name ?? true}
-                >
-                  Download {artifact.kind}
-                </ButtonLink>
-              </div>
-            </CardContent>
-          </Card>
+          <ResultArtifact
+            key={evidence.index}
+            evidence={evidence}
+            onOpen={
+              onOpenArtifact ? () => onOpenArtifact(evidence.index) : undefined
+            }
+            pageHref={pageHref}
+            resultState={props.resultState}
+            scenarioName={props.scenarioName}
+          />
         )
       })}
     </div>
+  )
+}
+
+export function ResultArtifact(props: ResultArtifactProps) {
+  const { artifact } = props.evidence
+  const downloadHref = artifactDownloadUrl(artifact.path, artifact.name)
+
+  function handleOpen(event: MouseEvent<HTMLAnchorElement>) {
+    if (
+      !props.onOpen ||
+      event.button !== 0 ||
+      event.metaKey ||
+      event.ctrlKey ||
+      event.shiftKey ||
+      event.altKey
+    ) {
+      return
+    }
+    event.preventDefault()
+    props.onOpen()
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>{artifact.kind}</CardTitle>
+        <CardDescription>{props.evidence.stepText}</CardDescription>
+      </CardHeader>
+      <CardContent className="grid gap-4 lg:grid-cols-[minmax(0,2fr)_minmax(16rem,1fr)]">
+        <ArtifactViewer
+          artifact={artifact}
+          resultState={props.resultState}
+          scenarioName={props.scenarioName}
+          stepText={props.evidence.stepText}
+        />
+        <div className="space-y-4">
+          <dl className="space-y-3">
+            <Metadata label="Kind" value={artifact.kind} />
+            <Metadata
+              label="File name"
+              value={artifact.name ?? 'Not recorded'}
+              mono
+            />
+            <Metadata
+              label="Media type"
+              value={artifact.mediaType ?? 'Not recorded'}
+            />
+            <Metadata
+              label="File size"
+              value={formatBytes(artifact.sizeBytes)}
+            />
+            <Metadata
+              label="Captured"
+              value={new Date(props.evidence.capturedAt).toLocaleString()}
+            />
+            <Metadata
+              label="Step index"
+              value={String(props.evidence.stepIndex)}
+            />
+            <Metadata label="Persisted path" value={artifact.path} mono />
+          </dl>
+          <div className="flex flex-wrap gap-2">
+            {props.pageHref ? (
+              <ButtonLink
+                variant="outline"
+                href={props.pageHref}
+                onClick={handleOpen}
+              >
+                Open artifact page
+              </ButtonLink>
+            ) : null}
+            <ButtonLink
+              variant="outline"
+              href={downloadHref}
+              download={artifact.name ?? true}
+            >
+              Download {artifact.kind}
+            </ButtonLink>
+          </div>
+        </div>
+      </CardContent>
+    </Card>
   )
 }
 

@@ -167,4 +167,4 @@ Domain documentation uses the single-context layout. See `docs/agents/domain.md`
 
 ### Coding standards
 
-Use 10x-coder skills to always apply code best practices
+Use 10x-coder skills to before writing code to apply code best practices

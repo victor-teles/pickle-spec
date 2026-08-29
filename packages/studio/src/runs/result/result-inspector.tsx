@@ -1,3 +1,4 @@
+import type { TestResultState } from '@pickle-spec/runner'
 import { useEffect, useState } from 'react'
 import type { StudioApi } from '../../app/studio-api'
 import { LedgerLoadingSkeleton } from '../../components/loading-skeletons'
@@ -24,6 +25,7 @@ import {
   timelineFor,
 } from './result-evidence'
 import {
+  ResultArtifact,
   ResultArtifacts,
   ResultDiagnostics,
   ResultOverview,
@@ -37,8 +39,11 @@ import { reasonMessage, resultBadgeVariant } from './result-presentation'
 
 type ResultInspectorProps = {
   api: StudioApi
+  artifactIndex?: number
   location: ResultInspectionLocation
   onBack?: () => void
+  onBackToResult?: () => void
+  onOpenArtifact?: (artifactIndex: number) => void
   onTabChange: (tab: ResultInspectorTab) => void
   snapshot?: StudioRunSnapshot
   connection?: LiveConnectionStatus
@@ -137,6 +142,19 @@ function InspectedResultView(
     inspected.attempt,
     props.location,
   )
+  if (props.artifactIndex !== undefined) {
+    const artifact = artifacts[props.artifactIndex]
+    return (
+      <ArtifactPage
+        artifact={artifact}
+        artifactIndex={props.artifactIndex}
+        onBack={props.onBackToResult}
+        resultState={resultState}
+        scenarioName={inspected.result.scenario.name}
+        snapshot={snapshot}
+      />
+    )
+  }
   return (
     <section
       aria-labelledby="result-inspector-title"
@@ -218,6 +236,8 @@ function InspectedResultView(
           <ResultArtifacts
             artifacts={artifacts}
             availability={inspected.attempt.evidenceAvailability}
+            onOpenArtifact={props.onOpenArtifact}
+            resultLocation={props.location}
             scenarioName={inspected.result.scenario.name}
             resultState={resultState}
           />
@@ -232,6 +252,63 @@ function InspectedResultView(
           />
         </TabsContent>
       </Tabs>
+    </section>
+  )
+}
+
+type ArtifactPageProps = {
+  artifact: ReturnType<typeof artifactsFor>[number] | undefined
+  artifactIndex: number
+  onBack?: () => void
+  resultState: TestResultState
+  scenarioName: string
+  snapshot: StudioRunSnapshot
+}
+
+function ArtifactPage(props: ArtifactPageProps) {
+  if (!props.artifact) {
+    return (
+      <section className="min-h-0 flex-1 space-y-3 overflow-auto p-4">
+        <p role="alert" className="text-sm text-destructive">
+          Test artifact {props.artifactIndex} is not available in test run{' '}
+          {props.snapshot.id}.
+        </p>
+        {props.onBack ? (
+          <Button type="button" variant="outline" onClick={props.onBack}>
+            Back to Test result
+          </Button>
+        ) : null}
+      </section>
+    )
+  }
+  return (
+    <section
+      aria-labelledby="artifact-page-title"
+      className="min-h-0 flex-1 space-y-4 overflow-auto px-3 py-4 sm:px-5"
+    >
+      <header className="space-y-2 border-b border-border pb-4">
+        {props.onBack ? (
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            onClick={props.onBack}
+          >
+            Back to Test result
+          </Button>
+        ) : null}
+        <h3 id="artifact-page-title" className="studio-display text-sm">
+          {props.artifact.artifact.kind} · {props.scenarioName}
+        </h3>
+        <p className="font-mono text-xs text-muted-foreground">
+          Test run {props.snapshot.id} · Artifact {props.artifactIndex}
+        </p>
+      </header>
+      <ResultArtifact
+        evidence={props.artifact}
+        resultState={props.resultState}
+        scenarioName={props.scenarioName}
+      />
     </section>
   )
 }

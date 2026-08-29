@@ -17,6 +17,7 @@ import { createWebLiveSession } from './web-live-session'
 import {
   type BrowserOptions,
   defaultModelName,
+  resolveBrowserConnection,
   type WebAdapterOptions,
 } from './web-options'
 import { WebProcessPool } from './web-pool'
@@ -89,7 +90,7 @@ function resolveBrowserLaunchOptions({
   if (
     requireProviderApiKey &&
     requiresInference &&
-    resolvedBrowser.environment !== 'browserbase' &&
+    resolveBrowserConnection(resolvedBrowser).kind !== 'browserbase' &&
     !resolvedBrowser.modelApiKey
   ) {
     const envNames = providerApiKeyEnvNames(resolvedBrowser.modelName)

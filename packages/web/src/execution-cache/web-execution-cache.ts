@@ -1,6 +1,10 @@
 import type { ResolvedFidelity } from '../adapter/fidelity'
 import type { WebAdapterBehavior } from '../adapter/web-adapter'
-import type { WebAdapterOptions } from '../adapter/web-options'
+import {
+  cdpEndpointOrigin,
+  resolveBrowserConnection,
+  type WebAdapterOptions,
+} from '../adapter/web-options'
 import { webInstructionVariables } from './web-cache-compilation'
 import {
   type WebExecutionCachePayload,
@@ -73,16 +77,36 @@ interface WebFingerprintInput {
   fidelity: ResolvedFidelity
 }
 
+function cdpEndpointFingerprint(cdpUrl: string): string {
+  const origin = cdpEndpointOrigin(cdpUrl)
+  if (origin === undefined) {
+    throw new Error(
+      'web.browser.cdpUrl must be an absolute HTTP(S) or WS(S) URL',
+    )
+  }
+  return new Bun.CryptoHasher('sha256').update(origin).digest('hex')
+}
+
 export function webTargetConfigurationFingerprint({
   options,
   behavior,
   fidelity,
 }: WebFingerprintInput): string {
+  const connection = resolveBrowserConnection(options.browser)
+  const browserIdentity =
+    connection.kind === 'cdp'
+      ? {
+          environment: connection.kind,
+          endpoint: cdpEndpointFingerprint(connection.cdpUrl),
+        }
+      : {
+          environment: connection.kind,
+          headless: options.browser?.headless ?? true,
+        }
   const source = JSON.stringify({
     schemaVersion: 1,
     baseUrl: new URL(options.baseUrl).toString(),
-    environment: options.browser?.environment ?? 'local',
-    headless: options.browser?.headless ?? true,
+    ...browserIdentity,
     fidelity: {
       profile: fidelity.profile,
       tradeOffs: fidelity.tradeOffs,

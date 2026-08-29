@@ -2,7 +2,7 @@ import { expect, test } from 'bun:test'
 import type { ScenarioAttempt } from '@pickle-spec/runner'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { ArtifactViewer } from './artifact-viewer'
-import { ResultDiagnostics } from './result-evidence-panels'
+import { ResultArtifacts, ResultDiagnostics } from './result-evidence-panels'
 
 const diagnosticsAvailability: ScenarioAttempt['evidenceAvailability'] = [
   { kind: 'diagnostics', state: 'available' },
@@ -67,4 +67,41 @@ test('keeps media and text payloads unloaded until investigation requests them',
   expect(recording).not.toContain('<video')
   expect(deviceLog).toContain('Load device log')
   expect(deviceLog).not.toContain('<pre')
+})
+
+test('links an artifact occurrence through the page route without exposing its path', () => {
+  const markup = renderToStaticMarkup(
+    <ResultArtifacts
+      artifacts={[
+        {
+          index: 0,
+          artifact: {
+            kind: 'screenshot',
+            path: '/private/test-runs/run-42/secret screenshot.png',
+            mediaType: 'image/png',
+          },
+          stepIndex: 3,
+          stepText: 'Then receipt appears',
+          capturedAt: '2026-08-24T12:00:00.000Z',
+        },
+      ]}
+      availability={[{ kind: 'screenshot', state: 'available' }]}
+      resultLocation={{
+        runId: 'run-42',
+        specificationUri: 'features/checkout.feature',
+        scenarioId: 'pay',
+        profileId: 'chrome',
+        attempt: 1,
+        tab: 'artifacts',
+      }}
+      resultState="passed"
+      scenarioName="Pay"
+    />,
+  )
+
+  expect(markup).toContain(
+    'href="/runs/run-42/results/features%2Fcheckout.feature/scenarios/pay/profiles/chrome/attempts/1/artifacts/0?tab=artifacts"',
+  )
+  expect(markup).not.toContain('href="/private')
+  expect(markup).toContain('/api/artifact?path=')
 })

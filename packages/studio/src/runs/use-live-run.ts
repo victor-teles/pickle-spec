@@ -20,7 +20,10 @@ import {
   selectLiveInspectorTab,
   startLiveInspection,
 } from './result/live-result-inspection'
-import type { ResultInspectorTab } from './result/result-inspection'
+import type {
+  ResultInspectionLocation,
+  ResultInspectorTab,
+} from './result/result-inspection'
 import type { MatrixCell } from './result/run-view'
 import { type RunOrigin, runOriginFromRequest } from './run-origin'
 
@@ -29,6 +32,7 @@ type UseLiveRunOptions = {
   api: StudioApi
   onClearError: () => void
   onError: (reason: unknown) => void
+  onInspectResult: (location: ResultInspectionLocation) => void
   registerActiveRun: (runId: string) => void
   reloadRunsIndex: () => Promise<StudioRunsIndex>
   runsIndex?: StudioRunsIndex
@@ -100,7 +104,10 @@ export function useLiveRun(options: UseLiveRunOptions) {
   }
 
   function pinSelection(cell: MatrixCell) {
-    updateLive((current) => pinLiveCell(current, cell))
+    if (!live) return
+    const pinned = pinLiveCell(live, cell)
+    setLive(pinned)
+    if (pinned.location) options.onInspectResult(pinned.location)
   }
 
   async function startRun(request: StudioRunRequest) {
