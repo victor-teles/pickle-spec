@@ -2,7 +2,10 @@ import { expect, test } from 'bun:test'
 import { parseSpecification } from '@pickle-spec/spec'
 import type { CredentialStore } from '@pickle-spec/studio'
 import type { PickleConfig } from '../configuration/config'
-import { studioRunReadiness } from './studio-project'
+import {
+  studioRunReadiness,
+  studioRunReadinessWithEnvironment,
+} from './studio-project'
 
 const credentials: CredentialStore = {
   async get() {},
@@ -49,7 +52,7 @@ test('derives aggregate readiness from structured checks', async () => {
     ['selection', 'ready'],
     ['execution-target', 'blocked'],
     ['model-credential', 'not-applicable'],
-    ['mobile-target', 'not-applicable'],
+    ['environment', 'not-applicable'],
   ])
   const blockedReasons = (readiness.checks ?? []).flatMap((check) =>
     check.status === 'blocked' ? check.reasons : [],
@@ -80,4 +83,39 @@ test('validates only the durable scenarioId while preserving scenarioName select
 
   expect(exactReadiness.ready).toBe(true)
   expect(namedReadiness.ready).toBe(false)
+})
+
+test('maps blocked environment diagnostics into actionable Studio readiness', async () => {
+  const readiness = await studioRunReadiness(
+    { root: '/project', credentials },
+    { paths: [specification.source.uri], scenarioId: 'scnreadybbbbbbbbb' },
+    config,
+    [specification],
+  )
+
+  const mapped = studioRunReadinessWithEnvironment(readiness, {
+    ready: false,
+    diagnostics: [
+      {
+        profileIds: ['android'],
+        diagnostic: {
+          id: 'mobile.android-emulator',
+          kind: 'blocked',
+          message: 'Android Emulator is not ready',
+          remediation: [{ summary: 'Boot an Android Emulator' }],
+        },
+      },
+    ],
+    uncheckedProfileIds: [],
+  })
+
+  expect(mapped.ready).toBe(false)
+  expect(mapped.checks?.at(-1)).toEqual({
+    id: 'environment',
+    status: 'blocked',
+    reasons: ['Android Emulator is not ready. Boot an Android Emulator'],
+  })
+  expect(mapped.reasons).toContain(
+    'Android Emulator is not ready. Boot an Android Emulator',
+  )
 })

@@ -15,3 +15,8 @@ export {
   createMobileAdapter,
   iosCapabilities,
 } from './src/adapter/mobile-adapter'
+export type {
+  DiagnoseMobileEnvironmentInput,
+  MobileEnvironmentAdapterFactory,
+} from './src/adapter/mobile-environment'
+export { diagnoseMobileEnvironment } from './src/adapter/mobile-environment'

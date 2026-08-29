@@ -31,6 +31,8 @@
     "@pickle-spec/web": "workspace:*",
     "@types/bun": "catalog:",
     "@typescript/typescript6": "catalog:",
+    "chalk": "5",
+    "ora": "8",
     "zod": "catalog:"
   },
   "devDependencies": {

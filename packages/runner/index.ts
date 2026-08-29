@@ -14,6 +14,10 @@ export {
 } from './src/configuration/configuration'
 export { persistedEvidenceKinds } from './src/evidence/evidence'
 export type {
+  EnvironmentDiagnostic,
+  EnvironmentRemediation,
+} from './src/execution/environment-diagnostic'
+export type {
   ApplicationOutputEvidenceAvailability,
   DiagnosticEntry,
   DiagnosticLevel,

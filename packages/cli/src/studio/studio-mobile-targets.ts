@@ -1,6 +1,7 @@
 import {
   createMobileAdapter,
   type MobileAdapterOptions,
+  type MobileEnvironmentAdapterFactory,
   type MobileExecutionTargetAdapter,
 } from '@pickle-spec/mobile'
 import type { ExecutionTargetAdapter } from '@pickle-spec/runner'
@@ -28,6 +29,27 @@ function discoverableMobileAdapter(
   throw new Error(
     `Execution target profile "${profileId}" does not support mobile target discovery`,
   )
+}
+
+export function studioMobileEnvironmentAdapterFactory(
+  extensionAdapters:
+    | Readonly<Record<string, ExecutionTargetAdapter>>
+    | undefined,
+  profileId: string,
+): MobileEnvironmentAdapterFactory | undefined {
+  const adapter = extensionAdapters?.[profileId] ?? extensionAdapters?.mobile
+  if (!adapter) return
+  return () => {
+    const mobileAdapter = discoverableMobileAdapter(adapter, profileId)
+    if (!mobileAdapter) {
+      throw new Error(
+        `Execution target profile "${profileId}" has no mobile adapter`,
+      )
+    }
+    return {
+      discoverTargets: () => mobileAdapter.discoverTargets(),
+    }
+  }
 }
 
 function errorMessage(reason: unknown): string {

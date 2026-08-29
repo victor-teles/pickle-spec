@@ -24,6 +24,11 @@ export {
   validateWebAdapterOptions,
   webAdapterOptionsSchema,
 } from './src/adapter/web-adapter'
+export type { WebEnvironmentRuntime } from './src/adapter/web-environment'
+export {
+  diagnoseWebEnvironment,
+  webEnvironmentProbeKey,
+} from './src/adapter/web-environment'
 export { defaultModelName, webProfiles } from './src/adapter/web-options'
 export type { WebLogicalSession } from './src/adapter/web-pool'
 export {

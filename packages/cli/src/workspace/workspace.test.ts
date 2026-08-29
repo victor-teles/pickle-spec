@@ -418,6 +418,43 @@ export default {}
     expect(await Bun.file(marker).exists()).toBe(false)
   })
 
+  test('doctor validates custom extensions statically without evaluating them', async () => {
+    const projectName = 'side-effect-free-doctor'
+    const projectPath = join(workspace, projectName)
+    const marker = join(projectPath, 'extension-evaluated.txt')
+    const project = await createCheckProject(projectName, {
+      config: {
+        schemaVersion: 1,
+        specifications: 'features/**/*.feature',
+        executionTargetProfile: { id: 'custom' },
+      },
+      specification: validSpecification,
+      extensions: `
+await Bun.write(${JSON.stringify(marker)}, 'executed')
+export default {
+  adapter: {
+    async openSession() {
+      throw new Error('Doctor must not open a custom adapter')
+    },
+  },
+}
+`,
+    })
+
+    const doctor = Bun.spawnSync({
+      cmd: [pickleCommand, 'doctor'],
+      cwd: project,
+      env: { ...Bun.env },
+    })
+
+    expect(doctor.exitCode).toBe(0)
+    expect(doctor.stderr.toString()).toBe('')
+    expect(doctor.stdout.toString()).toContain(
+      'Automatic environment checks are not available for this profile.',
+    )
+    expect(await Bun.file(marker).exists()).toBe(false)
+  })
+
   test('check rejects invalid imported bindings without evaluating extension code', async () => {
     const projectName = 'invalid-extension-binding'
     const projectPath = join(workspace, projectName)
