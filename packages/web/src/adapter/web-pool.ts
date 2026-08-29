@@ -1,4 +1,4 @@
-import { abortError } from './abort'
+import { abortError, isAbortError, withAbort } from './abort'
 import type { ResolvedFidelity } from './fidelity'
 import type {
   WebAutomation,
@@ -30,7 +30,25 @@ export interface WebProcessPoolOptions {
 
 export interface WebLogicalSession {
   automation: WebAutomation
+  discard(): Promise<void>
   release(): Promise<void>
+}
+
+async function acquireWithAbort<T>(
+  start: () => Promise<T>,
+  signal: AbortSignal | undefined,
+  discardLateResult: (result: T) => Promise<void>,
+): Promise<T> {
+  if (signal?.aborted) throw abortError()
+  const operation = start()
+  try {
+    return await withAbort(operation, signal)
+  } catch (error) {
+    if (isAbortError(error, signal)) {
+      void operation.then(discardLateResult).catch(() => {})
+    }
+    throw error
+  }
 }
 
 function isDirty(state: WebIsolationState): boolean {
@@ -64,23 +82,28 @@ export class WebProcessPool {
     const executionMode = mode ?? 'adaptive'
     const pooled = await this.checkout(browserOptions, signal, executionMode)
     try {
-      const automation = await pooled.process.openContext({
-        browser: browserOptions,
-        mode,
-        fidelity,
+      const automation = await acquireWithAbort(
+        () =>
+          pooled.process.openContext({
+            browser: browserOptions,
+            mode,
+            fidelity,
+            signal,
+          }),
         signal,
-      })
-      const isolation = await automation.readIsolationState()
+        (lateAutomation) => lateAutomation.close(),
+      )
+      const isolation = await withAbort(automation.readIsolationState(), signal)
       if (isDirty(isolation)) {
         await this.closeProcess(pooled)
         throw new IsolationVerificationError(
           'Logical session isolation verification failed',
         )
       }
-      let released = false
+      let finished = false
       const release = async () => {
-        if (released) return
-        released = true
+        if (finished) return
+        finished = true
         const state = await automation.readIsolationState()
         if (isDirty(state)) {
           await this.closeProcess(pooled)
@@ -88,7 +111,12 @@ export class WebProcessPool {
         }
         await this.release(pooled)
       }
-      return { automation, release }
+      const discard = async () => {
+        if (finished) return
+        finished = true
+        await this.closeProcess(pooled)
+      }
+      return { automation, discard, release }
     } catch (error) {
       if (error instanceof IsolationVerificationError) throw error
       await this.closeProcess(pooled)
@@ -117,10 +145,15 @@ export class WebProcessPool {
       this.clearIdleTimer(pooled)
       return pooled
     }
-    const process = await this.factory.launch({
-      browser: browserOptions,
+    const process = await acquireWithAbort(
+      () =>
+        this.factory.launch({
+          browser: browserOptions,
+          signal,
+        }),
       signal,
-    })
+      (lateProcess) => lateProcess.close(),
+    )
     return { process, mode }
   }
 

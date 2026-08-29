@@ -19,7 +19,32 @@
     "rules": {
       "preset": "recommended",
       "style": {
-        "noNonNullAssertion": "off",
+        "noUselessElse": "error",
+        "noNestedTernary": "error",
+
+        "noParameterAssign": {
+          "level": "error",
+          "options": {
+            "propertyAssignment": "deny"
+          }
+        },
+
+        "noNonNullAssertion": "error",
+
+        "noExcessiveLinesPerFile": {
+          "level": "warn",
+          "options": {
+            "maxLines": 350,
+            "skipBlankLines": true
+          }
+        },
+
+        "noExcessiveClassesPerFile": {
+          "level": "error",
+          "options": {
+            "maxClasses": 1
+          }
+        },
         "useNamingConvention": {
           "level": "error",
           "options": {
@@ -37,10 +62,15 @@
         }
       },
       "complexity": {
+        "noUselessUndefined": "error",
         "noExcessiveCognitiveComplexity": {
           "level": "error",
           "options": { "maxAllowedComplexity": 10 }
         }
+      },
+      "suspicious": {
+        "noExplicitAny": "error",
+        "noShadow": "error"
       }
     }
   },

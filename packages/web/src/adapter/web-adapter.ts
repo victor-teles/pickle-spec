@@ -10,9 +10,10 @@ import {
   webPrefixStepCount,
   webTargetConfigurationFingerprint,
 } from '../execution-cache/web-execution-cache'
+import { abortError, isAbortError, withAbort } from './abort'
 import { resolveFidelityPolicy } from './fidelity'
 import { stagehandFactory } from './stagehand-factory'
-import type { WebAutomationFactory } from './web-automation'
+import type { WebAutomation, WebAutomationFactory } from './web-automation'
 import { createWebLiveSession } from './web-live-session'
 import {
   type BrowserOptions,
@@ -20,7 +21,7 @@ import {
   resolveBrowserConnection,
   type WebAdapterOptions,
 } from './web-options'
-import { WebProcessPool } from './web-pool'
+import { type WebLogicalSession, WebProcessPool } from './web-pool'
 
 export type {
   WebActResult,
@@ -135,6 +136,34 @@ function shouldNavigateEagerly(
   )
 }
 
+type CloseWebSessionInput = {
+  automation: WebAutomation
+  interrupted: () => boolean
+  logicalSession: WebLogicalSession
+  signal?: AbortSignal
+}
+
+async function closeWebSession(input: CloseWebSessionInput): Promise<void> {
+  const automationClose = input.automation.close()
+  if (input.interrupted()) {
+    await input.logicalSession.discard()
+    await automationClose
+    return
+  }
+  try {
+    await withAbort(automationClose, input.signal)
+  } catch (error) {
+    await input.logicalSession.discard()
+    if (isAbortError(error, input.signal)) {
+      await automationClose
+      return
+    }
+    throw error
+  }
+  if (input.interrupted()) await input.logicalSession.discard()
+  else await input.logicalSession.release()
+}
+
 export interface WebAdapterBehavior {
   navigationPolicy?: 'delayed' | 'eager'
 }
@@ -189,6 +218,7 @@ export function createWebAdapter(
       )
       const automation = logicalSession.automation
       let closePromise: Promise<void> | undefined
+      let interrupted = Boolean(input.signal?.aborted)
       let stepIndex = 0
       const finishStep = createWebStepFinalizer({
         input,
@@ -199,17 +229,24 @@ export function createWebAdapter(
 
       const close = async () => {
         if (closePromise) return closePromise
-        closePromise = (async () => {
-          input.signal?.removeEventListener('abort', onAbort)
-          await automation.close()
-          await logicalSession.release()
-        })()
+        input.signal?.removeEventListener('abort', onAbort)
+        closePromise = closeWebSession({
+          automation,
+          interrupted: () => interrupted || Boolean(input.signal?.aborted),
+          logicalSession,
+          signal: input.signal,
+        })
         return closePromise
       }
       const onAbort = () => {
+        interrupted = true
         void close()
       }
       input.signal?.addEventListener('abort', onAbort, { once: true })
+      if (input.signal?.aborted) {
+        await close()
+        throw abortError()
+      }
 
       let eagerlyNavigated = false
       if (
@@ -244,7 +281,12 @@ export function createWebAdapter(
         ...runtime,
         async executeStep(step, signal, context) {
           stepIndex++
-          return runtime.executeStep(step, signal, context)
+          try {
+            return await runtime.executeStep(step, signal, context)
+          } catch (error) {
+            if (isAbortError(error, signal)) interrupted = true
+            throw error
+          }
         },
         close,
       }

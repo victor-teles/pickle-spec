@@ -11,6 +11,7 @@ import {
 } from './ui/command'
 import { InputGroup, InputGroupAddon, InputGroupInput } from './ui/input-group'
 import { Skeleton } from './ui/skeleton'
+import { Switch } from './ui/switch'
 
 test('renders the command foundation with Mira data slots', () => {
   const markup = renderToStaticMarkup(
@@ -61,4 +62,17 @@ test('renders reduced-motion-safe presentational skeletons', () => {
   expect(markup).toContain('data-slot="skeleton"')
   expect(markup).toContain('aria-hidden="true"')
   expect(markup).toContain('motion-reduce:animate-none')
+})
+
+test('renders switches with bounded transform and opacity motion', () => {
+  const markup = renderToStaticMarkup(
+    <Switch aria-label="Verbose timeline" defaultChecked />,
+  )
+
+  expect(markup).toContain('data-slot="switch-state"')
+  expect(markup).toContain('transition-opacity duration-120')
+  expect(markup).toContain('transition-transform duration-120')
+  expect(markup).toContain('ease-[cubic-bezier(0.23,1,0.32,1)]')
+  expect(markup).toContain('motion-reduce:transition-none')
+  expect(markup).not.toContain('transition-all')
 })

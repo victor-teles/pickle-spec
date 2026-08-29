@@ -186,4 +186,51 @@ Feature: Search
       await child.exited
     }
   }, 45_000)
+
+  test('keeps live results scoped to their Specification', async () => {
+    const project = await fixture.createProject('live-result-specification')
+    const gate = join(project, 'continue.txt')
+    await Bun.write(
+      join(project, 'features', 'search.feature'),
+      `@pickle:id:specsearchaaaaaaa @pickle:state:active
+Feature: Search
+  @pickle:id:scnquerybbbbbbbb
+  Scenario: Query the catalog
+    Then results are shown`,
+    )
+    const { child, url } = await fixture.start(project, {
+      PICKLE_STUDIO_CONTINUE: gate,
+    })
+    const page = await browser.newPage()
+    try {
+      await page.goto(url)
+      await page
+        .getByRole('button', { name: 'Run Scenario Pay for the order' })
+        .click()
+      const liveResult = page.getByRole('heading', {
+        name: 'Pay for the order · chrome',
+      })
+      await liveResult.waitFor({ timeout: 20_000 })
+
+      await page.getByRole('button', { name: 'Search', exact: true }).click()
+
+      await page.getByRole('heading', { name: 'Search' }).waitFor()
+      expect(await liveResult.count()).toBe(0)
+      await page.getByRole('rowheader', { name: 'Query the catalog' }).waitFor()
+
+      await page.getByRole('button', { name: 'Checkout', exact: true }).click()
+      await liveResult.waitFor()
+      await Bun.write(gate, 'continue')
+      await page
+        .getByRole('button', {
+          name: 'Pay for the order chrome failed',
+          exact: true,
+        })
+        .waitFor({ timeout: 20_000 })
+    } finally {
+      await page.close()
+      child.kill()
+      await child.exited
+    }
+  }, 45_000)
 })

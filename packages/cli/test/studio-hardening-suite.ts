@@ -228,10 +228,10 @@ Feature: Checkout
         await attention.getByRole('listitem').first().textContent(),
       ).toContain('Review the purchase')
       await focusedFailure.click()
-      const selectedEvidence = page.getByRole('region', {
-        name: 'Selected timeline evidence',
+      const selectedEntry = page.getByRole('region', {
+        name: 'Selected timeline entry',
       })
-      expect(await selectedEvidence.textContent()).toContain(
+      expect(await selectedEntry.textContent()).toContain(
         'Then the basket is reviewed',
       )
       await page.goBack()
@@ -239,7 +239,7 @@ Feature: Checkout
       await attention
         .getByRole('button', { name: /Pay for the order.*failed/ })
         .click()
-      expect(await selectedEvidence.textContent()).toContain(
+      expect(await selectedEntry.textContent()).toContain(
         'Then payment is captured',
       )
     } finally {

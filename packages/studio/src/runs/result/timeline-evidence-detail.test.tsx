@@ -35,6 +35,7 @@ test('renders captured screenshots and recordings in the selected timeline entry
   expect(markup).toContain(
     'screenshot from failed result for Pay for the order: Then payment is captured',
   )
+  expect(markup).toContain('aria-label="Selected timeline entry"')
   expect(markup).toContain('Open screenshot preview')
   expect(markup).toContain('Load recording')
   expect(markup).not.toContain('<video')

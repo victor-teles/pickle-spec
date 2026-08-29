@@ -64,15 +64,19 @@ export function useLiveRun(options: UseLiveRunOptions) {
     live?.phase === 'running' ||
     starting ||
     Boolean(options.runsIndex?.activeRunIds.length)
+  const selectedLive =
+    live?.specificationUri === options.selectedSpecificationUri
+      ? live
+      : undefined
   const cells = useMemo(
-    () => (live ? cellsFromLiveInspection(live) : []),
-    [live],
+    () => (selectedLive ? cellsFromLiveInspection(selectedLive) : []),
+    [selectedLive],
   )
-  const selectedResult = live
+  const selectedResult = selectedLive
     ? cells.find(
         (cell) =>
-          cell.scenarioId === live.location?.scenarioId &&
-          cell.profileId === live.location?.profileId,
+          cell.scenarioId === selectedLive.location?.scenarioId &&
+          cell.profileId === selectedLive.location?.profileId,
       )
     : undefined
   useEffect(() => {
@@ -249,7 +253,7 @@ export function useLiveRun(options: UseLiveRunOptions) {
     cancelRun,
     cells,
     clearReadinessAttempt,
-    live,
+    live: selectedLive,
     origin,
     pauseFollowing,
     pinSelection,
