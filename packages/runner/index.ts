@@ -40,6 +40,14 @@ export type {
   ScenarioIdentity,
   ScenarioRun,
   ScenarioTargetSession,
+  SharedEvidenceActivity,
+  SharedEvidenceCacheDecisionType,
+  SharedEvidenceCost,
+  SharedEvidenceExecution,
+  SharedEvidenceObservation,
+  SharedEvidenceOutcome,
+  SharedEvidenceTiming,
+  SharedEvidenceVersionObservation,
   StepEvaluation,
   StepExecution,
   StepExecutionContext,
@@ -60,6 +68,8 @@ export {
   diagnosticOrigins,
   finalScenarioAttempt,
   isEvidenceState,
+  sharedEvidenceCacheDecisionTypes,
+  sharedEvidenceObservationVersion,
   traceActivityKinds,
 } from './src/execution/run-scenario'
 export { runScenario } from './src/execution/run-scenario-entry'

@@ -24,6 +24,7 @@ import {
   stringContainsBinding,
 } from '../execution/scenario-runtime'
 import { requiredValue } from '../required-value'
+import { withSharedEvidenceObservations } from '../results/shared-evidence-observations'
 import {
   type AttemptCacheUse,
   attemptCacheUse,
@@ -95,8 +96,9 @@ async function appendEvent(
     sequence: events.length + 1,
     occurredAt,
   } as RunEvent
-  events.push(event)
-  await input.onEvent?.(event)
+  const versioned = withSharedEvidenceObservations(event)
+  events.push(versioned)
+  await input.onEvent?.(versioned)
 }
 
 async function runCachedAttempts(

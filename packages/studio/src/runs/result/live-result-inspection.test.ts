@@ -5,6 +5,7 @@ import type {
   TestStepResult,
 } from '@pickle-spec/runner'
 import { requiredValue } from '../../required-value'
+import { defaultRunAttemptLocation } from './live-result-follow'
 import {
   cellsFromLiveInspection,
   disconnectLiveInspection,
@@ -418,6 +419,26 @@ test('selects a failed Scenario attempt when the investigation is not pinned', (
   inspection = receiveLiveStreamEvent(inspection, scenarioStarted(3))
   inspection = receiveLiveStreamEvent(inspection, scenarioFinished(5))
   expect(inspection.location?.scenarioId).toBe(scenario.id)
+})
+
+test('opens a persisted Run at the attempt that needs attention', () => {
+  let inspection = startLiveInspection({
+    specificationUri,
+    runId: 'run-79',
+  })
+  inspection = receiveLiveStreamEvent(inspection, runStarted())
+  inspection = receiveLiveStreamEvent(inspection, passingStarted(2))
+  inspection = receiveLiveStreamEvent(inspection, scenarioStarted(3))
+  inspection = receiveLiveStreamEvent(inspection, scenarioFinished(5))
+
+  expect(
+    defaultRunAttemptLocation(requiredValue(inspection.snapshot)),
+  ).toMatchObject({
+    runId: 'run-79',
+    scenarioId: scenario.id,
+    attempt: 1,
+    tab: 'timeline',
+  })
 })
 
 test('represents event loss instead of silently dropping later Run events', () => {

@@ -13,6 +13,7 @@ import {
 } from '../execution-cache/cached-step-prefix'
 import type { ExecutionCacheEnvelope } from '../execution-cache/execution-cache'
 import { requiredValue } from '../required-value'
+import { withSharedEvidenceObservations } from '../results/shared-evidence-observations'
 import type {
   DiagnosticEntry,
   EvidenceAvailability,
@@ -826,12 +827,12 @@ function createAttemptEmitter(
 ): EmitAttemptEvent {
   let sequence = 0
   return async (event, occurredAt = now().toISOString()) => {
-    const versionedEvent = {
+    const versionedEvent = withSharedEvidenceObservations({
       ...event,
       schemaVersion: testRunSchemaVersion,
       sequence: ++sequence,
       occurredAt,
-    } as RunEvent
+    } as RunEvent)
     events.push(versionedEvent)
     await input.onEvent?.(versionedEvent)
     return versionedEvent

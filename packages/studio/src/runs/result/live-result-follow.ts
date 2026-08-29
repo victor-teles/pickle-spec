@@ -44,6 +44,20 @@ export function nextLiveLocation(
     : state.location
 }
 
+export function defaultRunAttemptLocation(
+  snapshot: StudioRunSnapshot,
+): ResultInspectionLocation | undefined {
+  return nextLiveLocation(
+    {
+      pinned: false,
+      following: true,
+      specificationUri: '',
+      runId: snapshot.id,
+    },
+    snapshot,
+  )
+}
+
 export function nextFollowedEntryId(
   state: LiveFollowedEntryState,
   snapshot: StudioRunSnapshot,

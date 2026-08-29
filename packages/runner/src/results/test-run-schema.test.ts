@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test'
 import { requiredValue } from '../required-value'
-import { parseTestRunManifest } from './test-run-schema'
+import { parseRunEvent, parseTestRunManifest } from './test-run-schema'
 import type { TestRunManifest } from './test-run-store'
 
 const unavailableEvidence = [
@@ -200,5 +200,75 @@ test('retains adapter-neutral Test artifact capture metadata', () => {
     name: 'receipt.png',
     capturedAt: attempt.finishedAt,
     sizeBytes: 4_096,
+  })
+})
+
+test('parses run events with shared evidence observations', () => {
+  const occurredAt = '2026-08-22T12:00:00.000Z'
+  const parsed = parseRunEvent(
+    {
+      schemaVersion: 2,
+      sequence: 1,
+      occurredAt,
+      type: 'cache-hit',
+      cacheKey: {
+        projectKey: 'project-1',
+        scenarioId: 'scenario-evidence',
+        scenarioRevision: 'revision-1',
+        executionTargetProfileId: 'web',
+        targetConfigurationFingerprint: 'target-config-1',
+        applicationRevision: 'app-1',
+        adapterKind: 'web',
+        adapterCacheSchemaVersion: '1',
+      },
+      scope: {
+        scenarioId: 'scenario-evidence',
+        executionTargetProfileId: 'web',
+        attempt: 1,
+      },
+      observations: [
+        {
+          version: 1,
+          kind: 'cache',
+          summary: 'Cache Hit',
+          timing: {
+            occurredAt,
+            precision: 'exact',
+          },
+          versions: [
+            {
+              subject: 'contract',
+              label: 'run-event-schema',
+              value: '2',
+            },
+            {
+              subject: 'scenario',
+              label: 'revision',
+              value: 'revision-1',
+            },
+          ],
+          execution: {
+            cacheDecision: {
+              type: 'cache-hit',
+            },
+          },
+        },
+      ],
+    },
+    incompatibleSchema,
+  )
+
+  expect(parsed).toMatchObject({
+    type: 'cache-hit',
+    observations: [
+      {
+        kind: 'cache',
+        execution: {
+          cacheDecision: {
+            type: 'cache-hit',
+          },
+        },
+      },
+    ],
   })
 })

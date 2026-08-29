@@ -26,6 +26,7 @@ export function isEvidenceState(state: TestResultState): boolean {
 export type ExecutionMode = 'adaptive' | 'replay'
 
 export const testRunSchemaVersion = 2 as const
+export const sharedEvidenceObservationVersion = 1 as const
 
 export interface ExecutionTargetProfile {
   id: string
@@ -114,6 +115,71 @@ export interface TraceEntry {
   causalAt?: string
   kind: TraceActivityKind
   description: string
+}
+
+export interface SharedEvidenceTiming {
+  occurredAt: string
+  precision: 'exact' | 'step-finish' | 'attempt-finish'
+  startedAt?: string
+  finishedAt?: string
+  durationMs?: number
+  causalAt?: string
+}
+
+export interface SharedEvidenceVersionObservation {
+  subject: 'contract' | 'application' | 'scenario' | 'adapter'
+  label: string
+  value: string
+}
+
+export interface SharedEvidenceActivity {
+  kind: TraceActivityKind
+  description: string
+}
+
+export interface SharedEvidenceOutcome {
+  state?: TestResultState
+  level?: DiagnosticLevel
+  message?: string
+}
+
+export interface SharedEvidenceCost {
+  inferenceCount: number
+}
+
+export const sharedEvidenceCacheDecisionTypes = [
+  'cache-hit',
+  'cache-miss',
+  'cache-refresh',
+  'replay-diverged',
+  'adaptive-fallback-started',
+  'cache-written',
+  'cache-uncacheable',
+] as const
+export type SharedEvidenceCacheDecisionType =
+  (typeof sharedEvidenceCacheDecisionTypes)[number]
+
+export interface SharedEvidenceExecution {
+  mode?: ExecutionMode
+  cacheOutcome?: CacheOutcome
+  cacheDecision?: {
+    type: SharedEvidenceCacheDecisionType
+    reason?: ExecutionCacheUncacheableReason
+    cacheKey?: ExecutionCacheKey
+  }
+}
+
+export interface SharedEvidenceObservation {
+  version: typeof sharedEvidenceObservationVersion
+  kind: 'activity' | 'diagnostic' | 'artifact' | 'outcome' | 'cache'
+  summary: string
+  timing: SharedEvidenceTiming
+  versions?: readonly SharedEvidenceVersionObservation[]
+  activity?: SharedEvidenceActivity
+  outcome?: SharedEvidenceOutcome
+  cost?: SharedEvidenceCost
+  artifact?: TestArtifact
+  execution?: SharedEvidenceExecution
 }
 
 export interface StepExecution {
@@ -292,8 +358,12 @@ export interface RunEventScope {
   stepIndex?: number
 }
 
+type RunEventWithObservations<Event extends { type: string }> = Event & {
+  observations?: SharedEvidenceObservation[]
+}
+
 export type RunEventPayload =
-  | {
+  | RunEventWithObservations<{
       type: 'run-started'
       run: {
         id: string
@@ -303,52 +373,68 @@ export type RunEventPayload =
         applicationRevision?: string
         evidencePersistence?: 'off' | 'on-failure' | 'always'
       }
-    }
-  | {
+    }>
+  | RunEventWithObservations<{
       type: 'scenario-started'
       scenario: TestResult['scenario']
       executionTargetProfile: ExecutionTargetProfile
       scope: RunEventScope
-    }
-  | {
+    }>
+  | RunEventWithObservations<{
       type: 'step-started'
       step: ScenarioStep
       scenario: TestResult['scenario']
       executionTargetProfile: ExecutionTargetProfile
       scope: RunEventScope
-    }
-  | {
+    }>
+  | RunEventWithObservations<{
       type: 'step-finished'
       result: TestStepResult
       scenario: TestResult['scenario']
       executionTargetProfile: ExecutionTargetProfile
       scope: RunEventScope
-    }
-  | { type: 'cache-hit'; cacheKey: ExecutionCacheKey; scope: RunEventScope }
-  | { type: 'cache-miss'; cacheKey: ExecutionCacheKey; scope: RunEventScope }
-  | { type: 'cache-refresh'; cacheKey: ExecutionCacheKey; scope: RunEventScope }
-  | {
+    }>
+  | RunEventWithObservations<{
+      type: 'cache-hit'
+      cacheKey: ExecutionCacheKey
+      scope: RunEventScope
+    }>
+  | RunEventWithObservations<{
+      type: 'cache-miss'
+      cacheKey: ExecutionCacheKey
+      scope: RunEventScope
+    }>
+  | RunEventWithObservations<{
+      type: 'cache-refresh'
+      cacheKey: ExecutionCacheKey
+      scope: RunEventScope
+    }>
+  | RunEventWithObservations<{
       type: 'replay-diverged'
       cacheKey: ExecutionCacheKey
       scope: RunEventScope
-    }
-  | {
+    }>
+  | RunEventWithObservations<{
       type: 'adaptive-fallback-started'
       cacheKey: ExecutionCacheKey
       scope: RunEventScope
-    }
-  | { type: 'cache-written'; cacheKey: ExecutionCacheKey; scope: RunEventScope }
-  | {
+    }>
+  | RunEventWithObservations<{
+      type: 'cache-written'
+      cacheKey: ExecutionCacheKey
+      scope: RunEventScope
+    }>
+  | RunEventWithObservations<{
       type: 'cache-uncacheable'
       reason: ExecutionCacheUncacheableReason
       scope: RunEventScope
-    }
-  | {
+    }>
+  | RunEventWithObservations<{
       type: 'inference-count-updated'
       inferenceCount: number
       scope: RunEventScope
-    }
-  | {
+    }>
+  | RunEventWithObservations<{
       type: 'scenario-finished'
       specification: TestResult['specification']
       scenario: TestResult['scenario']
@@ -356,7 +442,7 @@ export type RunEventPayload =
       scope: RunEventScope
       attempt: ScenarioAttempt
       scheduleIndex?: number
-    }
+    }>
 
 export type RunEvent = RunEventEnvelope & RunEventPayload
 
