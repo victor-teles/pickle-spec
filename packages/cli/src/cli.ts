@@ -10,7 +10,10 @@ import {
   type TestRunExportRequest,
 } from '@pickle-spec/runner'
 import type { SelectionOptions, SpecificationState } from '@pickle-spec/spec'
-import type { StudioAuthoringModel } from '@pickle-spec/studio'
+import type {
+  StudioAuthoringModel,
+  StudioRunReadinessCheck,
+} from '@pickle-spec/studio'
 import { createCredentialStore, startStudio } from '@pickle-spec/studio'
 import {
   defaultModelName,
@@ -65,6 +68,7 @@ import {
   resolveConfigSecrets,
   saveStudioCredential,
   studioRunReadiness,
+  studioRunReadinessFromChecks,
   studioRunSelection,
 } from './studio/studio-project'
 import { errorMessage, withRecoveryFailure } from './terminal/command-error'
@@ -715,25 +719,31 @@ async function studio(argv: string[]): Promise<number> {
         )
         if (!readiness.ready) return readiness
         try {
-          validateStudioMobileTargetCapabilities(
+          const discoveries = await discoverStudioMobileTargets(
             current,
-            await discoverStudioMobileTargets(
-              current,
-              undefined,
-              extensions.adapters,
-              request?.profiles,
-            ),
+            undefined,
+            extensions.adapters,
             request?.profiles,
           )
-          return readiness
+          validateStudioMobileTargetCapabilities(
+            current,
+            discoveries,
+            request?.profiles,
+          )
+          return withMobileReadiness(
+            readiness,
+            discoveries.length === 0
+              ? { id: 'mobile-target', status: 'not-applicable' }
+              : { id: 'mobile-target', status: 'ready' },
+          )
         } catch (reason) {
-          return {
-            ready: false,
+          return withMobileReadiness(readiness, {
+            id: 'mobile-target',
+            status: 'blocked',
             reasons: [
-              ...readiness.reasons,
               reason instanceof Error ? reason.message : String(reason),
             ],
-          }
+          })
         }
       },
     },
@@ -829,6 +839,16 @@ async function studio(argv: string[]): Promise<number> {
     process.on('SIGTERM', stop)
   })
   return 0
+}
+
+function withMobileReadiness(
+  readiness: Awaited<ReturnType<typeof studioRunReadiness>>,
+  mobileCheck: StudioRunReadinessCheck,
+) {
+  return studioRunReadinessFromChecks([
+    ...(readiness.checks ?? []).filter((check) => check.id !== 'mobile-target'),
+    mobileCheck,
+  ])
 }
 
 async function main(argv: string[]): Promise<number> {

@@ -30,6 +30,8 @@ export type {
   StudioRetentionPolicy,
   StudioRunGateway,
   StudioRunReadiness,
+  StudioRunReadinessCheck,
+  StudioRunReadinessCheckId,
   StudioRunRequest,
   StudioRunSnapshot,
   StudioRunsIndex,

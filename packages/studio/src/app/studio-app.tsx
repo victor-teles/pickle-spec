@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react'
 import { Button } from '../components/ui/button'
+import { FirstRunOnboarding } from '../onboarding/first-run-onboarding'
 import { RunsArea } from '../runs/runs'
 import { SettingsPanel } from '../settings/settings'
 import { SpecificationsScreen } from '../specifications/specifications-screen'
@@ -74,6 +75,16 @@ export function StudioApp({ loadingFallback }: { loadingFallback: ReactNode }) {
         running={studio.run.running}
         onAreaChange={studio.actions.selectArea}
         onOpenCommands={studio.actions.openCommands}
+      />
+      <FirstRunOnboarding
+        activeProfileId={studio.activeProfileId}
+        currentSpecification={studio.selection.selected}
+        onOpenSettings={() => studio.actions.selectArea('Settings')}
+        onRun={studio.run.startRun}
+        project={data.project}
+        readinessAttempt={studio.run.readinessAttempt}
+        running={studio.run.running}
+        runsIndex={data.runsIndex}
       />
       {studio.navigation.area === 'Settings' ? (
         <div className="studio-stage min-h-0 flex-1 overflow-auto">
