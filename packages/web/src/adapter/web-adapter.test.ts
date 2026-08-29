@@ -687,6 +687,90 @@ describe('createWebAdapter', () => {
     ).not.toThrow()
   })
 
+  test('accepts supported CDP URLs and preserves the extension ID', () => {
+    for (const cdpUrl of [
+      'http://127.0.0.1:9222',
+      'https://browser.example.test/cdp',
+      'ws://127.0.0.1:9222/devtools/browser/session',
+      'wss://browser.example.test/devtools/browser/session',
+    ]) {
+      expect(
+        validateWebAdapterOptions({
+          baseUrl: 'https://example.test',
+          browser: { cdpUrl, cdpExtensionId: 'stagehand-extension' },
+        }).browser,
+      ).toMatchObject({ cdpUrl, cdpExtensionId: 'stagehand-extension' })
+    }
+  })
+
+  test('rejects unsupported CDP URL schemes without exposing the value', () => {
+    for (const cdpUrl of [
+      'file:///secret/browser-profile',
+      '/relative/devtools/browser/session',
+    ]) {
+      expect(() =>
+        validateWebAdapterOptions({
+          baseUrl: 'https://example.test',
+          browser: { cdpUrl },
+        }),
+      ).toThrow('web.browser.cdpUrl must be an absolute HTTP(S) or WS(S) URL')
+
+      try {
+        validateWebAdapterOptions({
+          baseUrl: 'https://example.test',
+          browser: { cdpUrl },
+        })
+      } catch (error) {
+        expect(String(error)).not.toContain(cdpUrl)
+      }
+
+      const createInvalidAdapter = () =>
+        createWebAdapter({
+          baseUrl: 'https://example.test',
+          browser: { cdpUrl },
+        })
+
+      expect(createInvalidAdapter).toThrow(
+        'web.browser.cdpUrl must be an absolute HTTP(S) or WS(S) URL',
+      )
+      try {
+        createInvalidAdapter()
+      } catch (error) {
+        expect(String(error)).toContain('web.browser.cdpUrl')
+        expect(String(error)).not.toContain(cdpUrl)
+      }
+    }
+  })
+
+  test('rejects Browserbase with CDP and an extension ID without CDP', () => {
+    expect(() =>
+      validateWebAdapterOptions({
+        baseUrl: 'https://example.test',
+        browser: {
+          environment: 'browserbase',
+          cdpUrl: 'wss://browser.example.test/session',
+        },
+      }),
+    ).toThrow('web.browser.cdpUrl cannot be used with browserbase')
+
+    expect(() =>
+      validateWebAdapterOptions({
+        baseUrl: 'https://example.test',
+        browser: { cdpExtensionId: 'stagehand-extension' },
+      }),
+    ).toThrow('web.browser.cdpExtensionId requires web.browser.cdpUrl')
+
+    expect(() =>
+      validateWebAdapterOptions({
+        baseUrl: 'https://example.test',
+        browser: {
+          cdpUrl: 'wss://browser.example.test/session',
+          cdpExtensionId: '   ',
+        },
+      }),
+    ).toThrow('web.browser.cdpExtensionId must not be empty')
+  })
+
   test('forwards GOOGLE_API_KEY to the automation factory for a Google model', async () => {
     const openContext = mock(async () => stubAutomation())
     const launch = mock(async () => ({
@@ -723,6 +807,28 @@ describe('createWebAdapter', () => {
     const adapter = createWebAdapter({
       baseUrl: 'https://example.test',
       browser: { modelName: 'google/gemini-3.6-flash' },
+    })
+    await withEnv(clearedGoogleApiKeys, async () => {
+      await expect(
+        adapter.openSession({
+          executionTargetProfile: { id: 'web' },
+          specification,
+          scenario,
+        }),
+      ).rejects.toThrow(
+        'Model inference requires a provider API key or a Browserbase session',
+      )
+    })
+  })
+
+  test('does not grant Browserbase model credentials to a direct CDP caller', async () => {
+    const adapter = createWebAdapter({
+      baseUrl: 'https://example.test',
+      browser: {
+        environment: 'browserbase',
+        cdpUrl: 'wss://browser.example.test/session',
+        modelName: 'google/gemini-3.6-flash',
+      },
     })
     await withEnv(clearedGoogleApiKeys, async () => {
       await expect(
