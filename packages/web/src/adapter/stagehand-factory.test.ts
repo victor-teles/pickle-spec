@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, mock, spyOn, test } from 'bun:test'
-import { localBrowser, Stagehand } from '@browserbasehq/stagehand'
+import { browserbase, localBrowser, Stagehand } from '@browserbasehq/stagehand'
 import type { Scenario, Specification } from '@pickle-spec/spec'
 import { z } from 'zod'
 import { createWebAdapter } from '../../index'
@@ -150,5 +150,86 @@ describe('stagehandFactory', () => {
     expect(goto).toHaveBeenCalledTimes(1)
     expect(create).toHaveBeenCalledTimes(1)
     expect(create.mock.calls[0]?.[0]).not.toHaveProperty('model')
+  })
+
+  test('connects to CDP with the configured extension and keeps Replay model-free', async () => {
+    const page = {
+      goto: mock(async () => null),
+      evaluate: mock(async () => 0),
+    }
+    const context = {
+      activePage: mock(async () => page),
+      cookies: mock(async () => []),
+      pages: mock(async () => [page]),
+      addInitScript: mock(async () => {}),
+    }
+    const browser = {
+      context,
+      close: mock(async () => {}),
+    } as unknown as LaunchedBrowser
+    const stagehand = {
+      browser,
+      close: mock(async () => {}),
+    } as unknown as Stagehand
+    const connect = spyOn(localBrowser, 'connect').mockResolvedValue(browser)
+    const create = spyOn(Stagehand, 'create').mockResolvedValue(stagehand)
+    const browserOptions = {
+      cdpUrl: 'wss://browser.example.test/session?token=secret',
+      cdpExtensionId: 'stagehand-extension',
+    }
+    const browserProcess = await stagehandFactory.launch({
+      browser: browserOptions,
+    })
+
+    try {
+      await browserProcess.openContext({
+        browser: browserOptions,
+        mode: 'replay',
+      })
+    } finally {
+      await browserProcess.close()
+    }
+
+    expect(connect).toHaveBeenCalledWith({
+      cdpUrl: browserOptions.cdpUrl,
+      extensionId: browserOptions.cdpExtensionId,
+    })
+    expect(create.mock.calls[0]?.[0]).not.toHaveProperty('model')
+  })
+
+  test('redacts CDP connection failures', async () => {
+    const cdpUrl = 'wss://browser.example.test/session?token=secret'
+    spyOn(localBrowser, 'connect').mockRejectedValue(
+      new Error(`Failed to connect to ${cdpUrl}`),
+    )
+
+    try {
+      await stagehandFactory.launch({ browser: { cdpUrl } })
+      throw new Error('Expected the CDP connection to fail')
+    } catch (error) {
+      expect(String(error)).toContain('web.browser.cdpUrl')
+      expect(String(error)).not.toContain(cdpUrl)
+    }
+  })
+
+  test('keeps the Browserbase launch branch unchanged', async () => {
+    const browser = {
+      close: mock(async () => {}),
+    } as unknown as LaunchedBrowser
+    const launch = spyOn(browserbase, 'launch').mockResolvedValue(browser)
+    const browserProcess = await stagehandFactory.launch({
+      browser: {
+        environment: 'browserbase',
+        browserbaseApiKey: 'browserbase-key',
+        browserbaseProjectId: 'browserbase-project',
+      },
+    })
+
+    await browserProcess.close()
+
+    expect(launch).toHaveBeenCalledWith({
+      apiKey: 'browserbase-key',
+      projectId: 'browserbase-project',
+    })
   })
 })

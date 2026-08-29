@@ -222,4 +222,51 @@ describe('web target configuration fingerprint', () => {
       )
     }
   })
+
+  test('uses a value-free CDP identity without launch-only headless state', () => {
+    const local = createWebAdapter({
+      baseUrl: 'https://example.test',
+    }).executionCache?.targetConfigurationFingerprint
+    const firstCdp = createWebAdapter({
+      baseUrl: 'https://example.test',
+      browser: {
+        cdpUrl: 'wss://first.example.test/session?token=first-secret',
+        cdpExtensionId: 'first-extension',
+        headless: false,
+      },
+    }).executionCache?.targetConfigurationFingerprint
+    const sameEndpointCdp = createWebAdapter({
+      baseUrl: 'https://example.test',
+      browser: {
+        environment: 'local',
+        cdpUrl: 'wss://first.example.test/other-session?token=second-secret',
+        cdpExtensionId: 'second-extension',
+        headless: true,
+      },
+    }).executionCache?.targetConfigurationFingerprint
+    const differentEndpointCdp = createWebAdapter({
+      baseUrl: 'https://example.test',
+      browser: {
+        cdpUrl: 'https://second.example.test/session?token=second-secret',
+      },
+    }).executionCache?.targetConfigurationFingerprint
+
+    expect(firstCdp).not.toBe(local)
+    expect(sameEndpointCdp).toBe(firstCdp)
+    expect(differentEndpointCdp).not.toBe(firstCdp)
+  })
+
+  test('keeps existing non-CDP fingerprints unchanged', () => {
+    expect(
+      createWebAdapter({
+        baseUrl: 'https://example.test',
+      }).executionCache?.targetConfigurationFingerprint,
+    ).toBe('949667228330a3ecee5a9bbf31cfc83496c84058e36d05fbd2d2d2a70d6e812d')
+    expect(
+      createWebAdapter({
+        baseUrl: 'https://example.test',
+        browser: { environment: 'browserbase' },
+      }).executionCache?.targetConfigurationFingerprint,
+    ).toBe('213e0f64d53c65ceabf82bf2e902b11c665fb006574e0c3450f734c9d86222bd')
+  })
 })
