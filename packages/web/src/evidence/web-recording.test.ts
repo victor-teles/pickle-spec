@@ -149,3 +149,36 @@ test.skipIf(!Bun.which('ffmpeg') || !Bun.which('ffprobe'))(
   },
   { timeout: 15_000 },
 )
+
+test.skipIf(!Bun.which('ffmpeg'))(
+  'discards the encoder while a frame capture is still pending',
+  async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'pickle-web-recording-'))
+    const path = join(directory, 'scenario.mp4')
+    const captureStarted = Promise.withResolvers<void>()
+    const pendingFrame = Promise.withResolvers<Uint8Array>()
+    const recording = await startWebRecording({
+      path,
+      async captureFrame() {
+        captureStarted.resolve()
+        return pendingFrame.promise
+      },
+    })
+    try {
+      await captureStarted.promise
+      const discarding = recording.discard()
+      const outcome = await Promise.race([
+        discarding.then(() => 'discarded'),
+        Bun.sleep(250).then(() => 'still-pending'),
+      ])
+      pendingFrame.resolve(jpegFrame)
+      await discarding
+      expect(outcome).toBe('discarded')
+    } finally {
+      pendingFrame.resolve(jpegFrame)
+      await recording.discard()
+      await rm(directory, { recursive: true, force: true })
+    }
+  },
+  { timeout: 5_000 },
+)

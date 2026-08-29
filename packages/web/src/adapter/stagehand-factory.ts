@@ -183,6 +183,12 @@ async function installEvidenceScript(
   }
 }
 
+async function closeQuietly(close: () => Promise<void>): Promise<void> {
+  try {
+    await close()
+  } catch {}
+}
+
 function stagehandClient(
   browser: StagehandBrowser,
   options: BrowserOptions,
@@ -236,15 +242,14 @@ function stagehandClient(
 
   async function close(): Promise<void> {
     closed = true
-    try {
-      if (stagehand) {
-        await stagehand.close()
-        stagehand = undefined
-      }
-    } catch {}
-    try {
-      await browser.close()
-    } catch {}
+    const activeStagehand = stagehand
+    stagehand = undefined
+    await Promise.all([
+      activeStagehand
+        ? closeQuietly(() => activeStagehand.close())
+        : Promise.resolve(),
+      closeQuietly(() => browser.close()),
+    ])
   }
 
   return { openContext, close }

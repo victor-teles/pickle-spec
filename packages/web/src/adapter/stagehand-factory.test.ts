@@ -65,6 +65,46 @@ describe('stagehandFactory', () => {
     }
   })
 
+  test('closes the browser when Stagehand shutdown depends on it', async () => {
+    const browserClosed = Promise.withResolvers<void>()
+    const context = {
+      activePage: mock(async () => null),
+      cookies: mock(async () => []),
+      pages: mock(async () => []),
+      addInitScript: mock(async () => {}),
+    }
+    const browser = {
+      context,
+      close: mock(async () => browserClosed.resolve()),
+    } as unknown as LaunchedBrowser
+    const stagehand = {
+      browser: { context },
+      close: mock(async () => browserClosed.promise),
+    } as unknown as Stagehand
+    spyOn(localBrowser, 'launch').mockResolvedValue(browser)
+    spyOn(Stagehand, 'create').mockResolvedValue(stagehand)
+    const browserOptions = {
+      modelName: 'google/gemini-3.6-flash',
+      modelApiKey: 'test-google-key',
+    }
+    const browserProcess = await stagehandFactory.launch({
+      browser: browserOptions,
+    })
+    await browserProcess.openContext({ browser: browserOptions })
+
+    const closing = browserProcess.close()
+    const outcome = await Promise.race([
+      closing.then(() => 'closed'),
+      Bun.sleep(250).then(() => 'still-pending'),
+    ])
+    browserClosed.resolve()
+    await closing
+
+    expect(outcome).toBe('closed')
+    expect(stagehand.close).toHaveBeenCalledTimes(1)
+    expect(browser.close).toHaveBeenCalledTimes(1)
+  })
+
   test('attaches Stagehand for public cache Replay without a model', async () => {
     const goto = mock(async () => null)
     const page = {

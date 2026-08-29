@@ -124,7 +124,8 @@ export async function startWebRecording(
       if (stopped) return
       stopped = true
       clearInterval(timer)
-      await writes
+      void writes.catch(() => {})
+      stdin.end()
       ffmpeg.kill()
       await ffmpeg.exited
     },
