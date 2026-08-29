@@ -14,6 +14,7 @@
     "indentStyle": "space",
     "indentWidth": 2
   },
+  "plugins": ["./plugins/no-conditional-object-spread.grit"],
   "linter": {
     "enabled": true,
     "rules": {
@@ -66,6 +67,13 @@
         "noExcessiveCognitiveComplexity": {
           "level": "error",
           "options": { "maxAllowedComplexity": 10 }
+        },
+        "noExcessiveLinesPerFunction": {
+          "level": "error",
+          "options": {
+            "maxLines": 50,
+            "skipBlankLines": true
+          }
         }
       },
       "suspicious": {
@@ -74,6 +82,23 @@
       }
     }
   },
+  "overrides": [
+    {
+      "includes": [
+        "**/*.test.{js,jsx,ts,tsx}",
+        "**/*.spec.{js,jsx,ts,tsx}",
+        "**/test/**/*.{js,jsx,ts,tsx}",
+        "**/tests/**/*.{js,jsx,ts,tsx}"
+      ],
+      "linter": {
+        "rules": {
+          "complexity": {
+            "noExcessiveLinesPerFunction": "off"
+          }
+        }
+      }
+    }
+  ],
   "javascript": {
     "formatter": {
       "quoteStyle": "single",

@@ -22,6 +22,7 @@ import {
   resolveSpecificationId,
   type SpecificationState,
 } from '../identity/identity'
+import { requiredValue } from '../required-value'
 
 export interface SpecificationSource {
   uri: string
@@ -211,7 +212,8 @@ function templateVariableNames(
 ): string[] {
   const referenced = new Set<string>()
   const collect = (value: string) => {
-    for (const match of value.matchAll(/<([^>]+)>/g)) referenced.add(match[1]!)
+    for (const match of value.matchAll(/<([^>]+)>/g))
+      referenced.add(requiredValue(match[1]))
   }
   collect(name)
   for (const step of steps) {

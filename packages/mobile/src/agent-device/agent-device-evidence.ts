@@ -1,6 +1,7 @@
 import { mkdir, readFile, stat, writeFile } from 'node:fs/promises'
 import { basename, join, resolve } from 'node:path'
 import { z } from 'zod'
+import { requiredValue } from '../required-value'
 import type {
   MobileArtifactKind,
   MobileTextRedaction,
@@ -216,7 +217,7 @@ export async function finishScenarioEvidence(
   if (active.recordingPath) {
     appendCapturedEvidence(
       await captureEvidence('recording', () =>
-        stopRecording(session, active.recordingPath!),
+        stopRecording(session, requiredValue(active.recordingPath)),
       ),
       artifacts,
       availability,
@@ -225,7 +226,7 @@ export async function finishScenarioEvidence(
   if (active.tracePath) {
     appendCapturedEvidence(
       await captureEvidence('trace', () =>
-        stopTrace(session, active.tracePath!),
+        stopTrace(session, requiredValue(active.tracePath)),
       ),
       artifacts,
       availability,
@@ -234,7 +235,7 @@ export async function finishScenarioEvidence(
   if (session.artifacts.has('device-log')) {
     appendCapturedEvidence(
       await captureEvidence('device-log', () =>
-        captureDeviceLog(session, active.directory!),
+        captureDeviceLog(session, requiredValue(active.directory)),
       ),
       artifacts,
       availability,
@@ -243,7 +244,7 @@ export async function finishScenarioEvidence(
   if (session.artifacts.has('screenshot')) {
     appendCapturedEvidence(
       await captureEvidence('screenshot', () =>
-        captureScreenshot(session, active.directory!),
+        captureScreenshot(session, requiredValue(active.directory)),
       ),
       artifacts,
       availability,

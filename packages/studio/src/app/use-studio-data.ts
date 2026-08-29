@@ -7,6 +7,36 @@ type UseStudioDataOptions = {
   api: StudioApi
 }
 
+interface InitialStudioDataInput {
+  api: StudioApi
+  reportError: (reason: unknown) => void
+  setProject: (project: StudioProject) => void
+  setRunsIndex: (runs: StudioRunsIndex) => void
+}
+
+function useInitialStudioData(input: InitialStudioDataInput): void {
+  const { api, reportError, setProject, setRunsIndex } = input
+  useEffect(() => {
+    let cancelled = false
+    Promise.all([
+      api<StudioProject>('/api/project'),
+      api<StudioRunsIndex>('/api/runs'),
+    ]).then(
+      ([projectValue, runsValue]) => {
+        if (cancelled) return
+        setProject(projectValue)
+        setRunsIndex(runsValue)
+      },
+      (reason: unknown) => {
+        if (!cancelled) reportError(reason)
+      },
+    )
+    return () => {
+      cancelled = true
+    }
+  }, [api, reportError, setProject, setRunsIndex])
+}
+
 export function useStudioData({ api }: UseStudioDataOptions) {
   const [project, setProject] = useState<StudioProject>()
   const [runsIndex, setRunsIndex] = useState<StudioRunsIndex>()
@@ -30,25 +60,7 @@ export function useStudioData({ api }: UseStudioDataOptions) {
     return value
   }, [api])
 
-  useEffect(() => {
-    let cancelled = false
-    Promise.all([
-      api<StudioProject>('/api/project'),
-      api<StudioRunsIndex>('/api/runs'),
-    ]).then(
-      ([projectValue, runsValue]) => {
-        if (cancelled) return
-        setProject(projectValue)
-        setRunsIndex(runsValue)
-      },
-      (reason: unknown) => {
-        if (!cancelled) reportError(reason)
-      },
-    )
-    return () => {
-      cancelled = true
-    }
-  }, [api, reportError])
+  useInitialStudioData({ api, reportError, setProject, setRunsIndex })
 
   async function retryProject() {
     setError(undefined)

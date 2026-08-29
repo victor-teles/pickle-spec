@@ -75,113 +75,149 @@ interface CreateInstructionExecutorInput {
   replay: boolean
 }
 
-export function createWebInstructionExecutor({
-  automation,
-  baseUrl,
-  bindings,
-  replay,
-}: CreateInstructionExecutorInput) {
-  let navigated = false
-  let instructionOrigin: InstructionOrigin = replay ? 'cached' : 'resolved'
+export interface WebInstructionExecutor {
+  executeSequence(
+    instructions: readonly WebInstruction[],
+    signal: AbortSignal | undefined,
+  ): Promise<StepExecution>
+  implicitNavigation(
+    instructions: WebInstruction[],
+    signal: AbortSignal | undefined,
+    persist?: boolean,
+  ): Promise<StepExecution | undefined>
+  markNavigated(): void
+  setOrigin(origin: InstructionOrigin): void
+}
 
-  function failure(
-    instruction: WebInstruction,
-    message: string,
-  ): StepExecution {
+class DirectWebInstructionExecutor implements WebInstructionExecutor {
+  private navigated = false
+  private instructionOrigin: InstructionOrigin
+
+  constructor(private readonly input: CreateInstructionExecutorInput) {
+    this.instructionOrigin = input.replay ? 'cached' : 'resolved'
+  }
+
+  private failure(instruction: WebInstruction, message: string): StepExecution {
     return {
       state: 'failed',
       resolvedActions: [
-        { description: instructionDescription(instruction, instructionOrigin) },
+        {
+          description: instructionDescription(
+            instruction,
+            this.instructionOrigin,
+          ),
+        },
       ],
       message,
     }
   }
 
-  function failurePrefix(): string {
-    return instructionOrigin === 'cached'
+  private failurePrefix(): string {
+    return this.instructionOrigin === 'cached'
       ? 'Replay diverged'
       : 'Deterministic web instruction failed'
   }
 
-  function unavailableMessage(): string {
-    return `${failurePrefix()}: direct browser execution is unavailable`
-  }
-
-  function failedResultMessage(
+  private failedResultMessage(
     instruction: WebInstruction,
     result: { message?: string; actualState?: string },
   ): string {
     return (
       result.message ??
-      `${failurePrefix()}: ${result.actualState ?? instruction.kind}`
+      `${this.failurePrefix()}: ${result.actualState ?? instruction.kind}`
     )
   }
 
-  async function executeDirect(
+  private async executeDirect(
     instruction: WebInstruction,
     signal: AbortSignal | undefined,
   ): Promise<StepExecution | undefined> {
-    if (!automation.executeInstruction) {
-      return failure(instruction, unavailableMessage())
+    if (!this.input.automation.executeInstruction) {
+      return this.failure(
+        instruction,
+        `${this.failurePrefix()}: direct browser execution is unavailable`,
+      )
     }
     try {
-      const result = await automation.executeInstruction(
+      const result = await this.input.automation.executeInstruction(
         instruction,
-        bindings,
+        this.input.bindings,
         signal,
       )
       if (result.success) return undefined
-      return failure(instruction, failedResultMessage(instruction, result))
+      return this.failure(
+        instruction,
+        this.failedResultMessage(instruction, result),
+      )
     } catch (error) {
       if (isAbortError(error, signal)) throw abortError()
-      return failure(instruction, `${failurePrefix()}: ${errorMessage(error)}`)
+      return this.failure(
+        instruction,
+        `${this.failurePrefix()}: ${errorMessage(error)}`,
+      )
     }
   }
 
-  async function executeSequence(
+  async executeSequence(
     instructions: readonly WebInstruction[],
     signal: AbortSignal | undefined,
   ): Promise<StepExecution> {
     const resolvedActions = resolvedInstructions(
       instructions,
-      instructionOrigin,
+      this.instructionOrigin,
     )
     for (const instruction of instructions) {
-      const failed = await executeDirect(instruction, signal)
+      const failed = await this.executeDirect(instruction, signal)
       if (failed) return { ...failed, resolvedActions }
-      if (instruction.kind === 'navigate') navigated = true
+      if (instruction.kind === 'navigate') this.navigated = true
     }
     return { state: 'passed', resolvedActions }
   }
 
-  async function implicitNavigation(
+  async implicitNavigation(
     instructions: WebInstruction[],
     signal: AbortSignal | undefined,
     persist = true,
   ): Promise<StepExecution | undefined> {
-    if (navigated) return undefined
-    const url = parameterizeWebValue(baseUrl, bindings, { template: baseUrl })
+    if (this.navigated) return undefined
+    const url = parameterizeWebValue(this.input.baseUrl, this.input.bindings, {
+      template: this.input.baseUrl,
+    })
     if (!url) {
-      return failure(
-        { kind: 'navigate', url: { segments: [{ literal: baseUrl }] } },
+      return this.failure(
+        {
+          kind: 'navigate',
+          url: { segments: [{ literal: this.input.baseUrl }] },
+        },
         'Deterministic web instruction failed: base URL is not cacheable',
       )
     }
     const navigation: WebInstruction = { kind: 'navigate', url }
-    const failed = await executeDirect(navigation, signal)
+    const failed = await this.executeDirect(navigation, signal)
     if (failed) return failed
     if (persist) instructions.push(navigation)
-    navigated = true
+    this.navigated = true
   }
 
-  return {
-    executeSequence,
-    implicitNavigation,
-    markNavigated() {
-      navigated = true
-    },
-    setOrigin(origin: InstructionOrigin) {
-      instructionOrigin = origin
-    },
+  markNavigated(): void {
+    this.navigated = true
   }
+
+  setOrigin(origin: InstructionOrigin): void {
+    this.instructionOrigin = origin
+  }
+}
+
+export function createWebInstructionExecutor({
+  automation,
+  baseUrl,
+  bindings,
+  replay,
+}: CreateInstructionExecutorInput): WebInstructionExecutor {
+  return new DirectWebInstructionExecutor({
+    automation,
+    baseUrl,
+    bindings,
+    replay,
+  })
 }

@@ -61,9 +61,8 @@ class FakeXmlHttpRequest {
   }
 }
 
-class FakePerformanceObserver {
-  observe() {}
-}
+function FakePerformanceObserver() {}
+FakePerformanceObserver.prototype.observe = () => {}
 
 test('collects console, failed-network, and popup browser buffers once', async () => {
   const collector = createWebEvidenceCollector()

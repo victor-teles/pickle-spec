@@ -20,6 +20,7 @@ import {
   type WebInstruction,
   type WebTemplate,
 } from '../execution-cache/web-execution-cache'
+import { requiredValue } from '../required-value'
 import {
   runWebPerformanceBenchmark,
   type WebPerformanceBenchmarkResult,
@@ -98,20 +99,21 @@ function executeControlledInstruction(
   instruction: WebInstruction,
   page: ControlledPageState,
 ): { success: boolean; message?: string } {
+  const pageState = page
   if (instruction.kind === 'navigate') {
-    page.currentUrl = boundValue(instruction.url)
-    return { success: page.currentUrl !== undefined }
+    pageState.currentUrl = boundValue(instruction.url)
+    return { success: pageState.currentUrl !== undefined }
   }
   if (instruction.kind === 'click') {
     const selector = boundValue(instruction.locator.selector)
-    if (page.currentUrl && selector === '#settings') {
-      page.settingsSelected = true
+    if (pageState.currentUrl && selector === '#settings') {
+      pageState.settingsSelected = true
       return { success: true }
     }
   }
   if (instruction.kind === 'visible') {
     const selector = boundValue(instruction.locator.selector)
-    return { success: page.settingsSelected && selector === '#ready' }
+    return { success: pageState.settingsSelected && selector === '#ready' }
   }
   return {
     success: false,
@@ -186,7 +188,7 @@ Feature: Controlled web benchmark
     Then the account page is ready
 `,
   })
-  return { specification, scenario: specification.scenarios[0]! }
+  return { specification, scenario: requiredValue(specification.scenarios[0]) }
 }
 
 export async function runControlledWebPerformanceBenchmark(

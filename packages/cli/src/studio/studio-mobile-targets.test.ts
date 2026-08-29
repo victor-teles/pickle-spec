@@ -4,6 +4,7 @@ import type {
   MobileExecutionTargetAdapter,
 } from '@pickle-spec/mobile'
 import type { PickleConfig } from '../configuration/config'
+import { requiredValue } from '../required-value'
 import {
   discoverStudioMobileTargets,
   validateStudioMobileTargetCapabilities,
@@ -135,10 +136,13 @@ test('rejects selected target capability mismatches before a mobile session open
     ...config,
     executionTargetProfiles: {
       android: {
-        ...config.executionTargetProfiles!.android!,
+        ...requiredValue(requiredValue(config.executionTargetProfiles).android),
         capabilities: ['android', 'screenshots', 'device-logs'],
         mobile: {
-          ...config.executionTargetProfiles!.android!.mobile!,
+          ...requiredValue(
+            requiredValue(requiredValue(config.executionTargetProfiles).android)
+              .mobile,
+          ),
           targetId: 'emulator-5554',
         },
       },
@@ -181,7 +185,9 @@ test('does not dispose a shared extension adapter after discovery', async () => 
   const androidOnly: PickleConfig = {
     ...config,
     executionTargetProfiles: {
-      android: config.executionTargetProfiles!.android!,
+      android: requiredValue(
+        requiredValue(config.executionTargetProfiles).android,
+      ),
     },
   }
   const adapterNameFallback: MobileExecutionTargetAdapter = {
@@ -230,7 +236,9 @@ test('reuses an adapter-name extension when no profile-specific adapter exists',
   const androidOnly: PickleConfig = {
     ...config,
     executionTargetProfiles: {
-      android: config.executionTargetProfiles!.android!,
+      android: requiredValue(
+        requiredValue(config.executionTargetProfiles).android,
+      ),
     },
   }
 

@@ -10,6 +10,7 @@ import {
   type TestResult,
   type TestRunManifest,
 } from '../../index'
+import { requiredValue } from '../required-value'
 
 const startedAt = '2026-08-15T12:00:01.000Z'
 const finishedAt = '2026-08-15T12:00:02.000Z'
@@ -151,7 +152,7 @@ test('publishes requested outputs independently without replacing destinations',
           scenario: result.scenario,
           executionTargetProfile: result.executionTargetProfile,
           scope: {
-            scenarioId: result.scenario.id!,
+            scenarioId: requiredValue(result.scenario.id),
             examplesRowId: result.scenario.examplesRowId,
             executionTargetProfileId: result.executionTargetProfile.id,
             attempt: attempt.attempt,

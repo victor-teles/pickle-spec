@@ -512,30 +512,6 @@ function useSuiteFieldSync(
   }, [paths, scenario, selectedName, states, suites, tags])
 }
 
-function useProfileFieldSync(
-  profiles: readonly StudioProfile[] | undefined,
-  profileId: string,
-  setters: {
-    adapter: Dispatch<SetStateAction<string>>
-    capabilities: Dispatch<SetStateAction<string>>
-    mobile: Dispatch<SetStateAction<StudioMobileProfile>>
-  },
-): void {
-  const { adapter, capabilities, mobile } = setters
-  useEffect(() => {
-    const profile =
-      profiles?.find((item) => item.id === profileId) ?? profiles?.[0]
-    adapter(profile?.adapter ?? 'custom')
-    capabilities((profile?.capabilities ?? []).join(', '))
-    mobile(
-      profile?.mobile ?? {
-        executionTarget: 'android-emulator',
-        application: { id: '', binaryPath: '' },
-      },
-    )
-  }, [adapter, capabilities, mobile, profileId, profiles])
-}
-
 function useGitStatus(
   api: StudioApi,
   onError: (message: string | undefined) => void,
@@ -558,202 +534,22 @@ function useGitStatus(
   return [git, setGit]
 }
 
-export function SettingsPanel<
-  T extends {
-    suiteDetails?: readonly StudioSuite[]
-    profileDetails?: readonly StudioProfile[]
-    secrets?: readonly StudioCredential[]
-  },
->(props: {
+type ConfigurableProject = {
+  suiteDetails?: readonly StudioSuite[]
+  profileDetails?: readonly StudioProfile[]
+  secrets?: readonly StudioCredential[]
+}
+
+type SettingsProps<T extends ConfigurableProject> = {
   project: T
   api: StudioApi
   onProject: (project: T) => void
   onError: (message: string | undefined) => void
-}) {
-  const initialSuite = initialSuiteEditor(props.project.suiteDetails)
-  const [suiteName, setSuiteName] = useState(initialSuite.name)
-  const [originalSuiteName, setOriginalSuiteName] = useState(suiteName)
-  const [suitePaths, setSuitePaths] = useState(initialSuite.paths)
-  const [suiteTags, setSuiteTags] = useState(initialSuite.tags)
-  const [suiteStates, setSuiteStates] = useState(initialSuite.states)
-  const [suiteScenario, setSuiteScenario] = useState(initialSuite.scenario)
-  const initialProfile = initialProfileEditor(props.project.profileDetails)
-  const [profileId, setProfileId] = useState(initialProfile.id)
-  const [adapter, setAdapter] = useState(initialProfile.adapter)
-  const [capabilities, setCapabilities] = useState(initialProfile.capabilities)
-  const [mobileProfile, setMobileProfile] = useState<StudioMobileProfile>(
-    initialProfile.mobile,
-  )
-  const [secretName, setSecretName] = useState('')
-  const [secretValue, setSecretValue] = useState('')
-  const [git, setGit] = useGitStatus(props.api, props.onError)
-  const [selectedPaths, setSelectedPaths] = useState<string[]>([])
-  const [commitMessage, setCommitMessage] = useState('')
-  const [confirmOpen, setConfirmOpen] = useState(false)
-  const [expandedDiff, setExpandedDiff] = useState<string>()
+}
 
-  useSuiteFieldSync(props.project.suiteDetails, originalSuiteName, {
-    paths: setSuitePaths,
-    tags: setSuiteTags,
-    states: setSuiteStates,
-    scenario: setSuiteScenario,
-  })
-  useProfileFieldSync(props.project.profileDetails, profileId, {
-    adapter: setAdapter,
-    capabilities: setCapabilities,
-    mobile: setMobileProfile,
-  })
-
-  async function saveSuites() {
-    const name = suiteName.trim()
-    if (!name) {
-      props.onError('A test suite name is required')
-      return
-    }
-    const suites = existingSuites(props.project.suiteDetails)
-    suites[name] = editedSuiteConfiguration({
-      paths: suitePaths,
-      tags: suiteTags,
-      states: suiteStates,
-      scenario: suiteScenario,
-    })
-    if (originalSuiteName && originalSuiteName !== name) {
-      delete suites[originalSuiteName]
-    }
-    props.onError(undefined)
-    try {
-      props.onProject(
-        await props.api<T>('/api/config', {
-          method: 'PUT',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ suites }),
-        }),
-      )
-      setOriginalSuiteName(name)
-    } catch (reason) {
-      props.onError(reasonMessage(reason))
-    }
-  }
-
-  async function saveProfiles() {
-    const id = profileId.trim()
-    if (!id) {
-      props.onError('An execution target profile id is required')
-      return
-    }
-    const profiles = existingProfiles(props.project.profileDetails)
-    profiles[id] = editedProfileConfiguration(
-      adapter,
-      capabilities,
-      mobileProfile,
-    )
-    props.onError(undefined)
-    try {
-      const project = await props.api<T>('/api/config', {
-        method: 'PUT',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ executionTargetProfiles: profiles }),
-      })
-      props.onProject(project)
-      toast.add({
-        type: 'success',
-        title: 'Execution target profile saved',
-        description: `${id} is ready for Test runs.`,
-      })
-    } catch (reason) {
-      props.onError(reasonMessage(reason))
-    }
-  }
-
-  async function saveCredential() {
-    props.onError(undefined)
-    try {
-      props.onProject(
-        await props.api<T>('/api/credentials', {
-          method: 'PUT',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ name: secretName, secret: secretValue }),
-        }),
-      )
-      setSecretValue('')
-    } catch (reason) {
-      props.onError(reasonMessage(reason))
-    }
-  }
-
-  async function refreshGit() {
-    setGit(await props.api<GitStatus>('/api/git'))
-  }
-
-  async function stageSelected() {
-    props.onError(undefined)
-    try {
-      setGit(
-        await props.api<GitStatus>('/api/git/stage', {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ paths: selectedPaths }),
-        }),
-      )
-    } catch (reason) {
-      props.onError(reasonMessage(reason))
-    }
-  }
-
-  async function commitSelected() {
-    props.onError(undefined)
-    try {
-      setGit(
-        await props.api<GitStatus>('/api/git/commit', {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({
-            message: commitMessage,
-            confirmed: true,
-            paths: selectedPaths,
-          }),
-        }),
-      )
-      setConfirmOpen(false)
-      setCommitMessage('')
-      setSelectedPaths([])
-    } catch (reason) {
-      props.onError(reasonMessage(reason))
-    }
-  }
-
-  async function openPullRequest() {
-    props.onError(undefined)
-    try {
-      await props.api('/api/git/pull-request', { method: 'POST' })
-      await refreshGit()
-    } catch (reason) {
-      props.onError(reasonMessage(reason))
-    }
-  }
-
-  function openPullRequestFromSettings() {
-    void openPullRequest()
-  }
-
-  function selectSuite(suite: StudioSuite) {
-    setSuiteName(suite.name)
-    setOriginalSuiteName(suite.name)
-  }
-
-  function newSuite() {
-    setSuiteName('')
-    setOriginalSuiteName('')
-    setSuitePaths('')
-    setSuiteTags('')
-    setSuiteStates('active')
-    setSuiteScenario('')
-  }
-
-  const secrets: readonly StudioCredential[] = props.project.secrets ?? []
-  const profiles: readonly StudioProfile[] = props.project.profileDetails ?? []
-  const suites: readonly StudioSuite[] = props.project.suiteDetails ?? []
-
+export function SettingsPanel<T extends ConfigurableProject>(
+  props: SettingsProps<T>,
+) {
   return (
     <main className="mx-auto min-w-0 max-w-5xl space-y-6 p-4 sm:p-5">
       <header className="space-y-1">
@@ -764,174 +560,430 @@ export function SettingsPanel<
         </p>
       </header>
       <ExecutionCacheSettings api={props.api} />
-
-      <section
-        className="space-y-4 border-t border-border pt-5"
-        aria-labelledby="suites-heading"
-      >
-        <h2 id="suites-heading" className="studio-display text-sm">
-          Test suites
-        </h2>
-        <SuiteSelector
-          suites={suites}
-          selectedName={originalSuiteName}
-          onSelect={selectSuite}
-          onNew={newSuite}
-        />
-        <div className="grid gap-3 sm:grid-cols-2">
-          <div className="space-y-1">
-            <Label htmlFor="suite-name">Suite name</Label>
-            <Input
-              id="suite-name"
-              aria-label="Suite name"
-              value={suiteName}
-              onChange={(event) => setSuiteName(event.target.value)}
-            />
-          </div>
-          <div className="space-y-1">
-            <Label htmlFor="suite-paths">Paths</Label>
-            <Input
-              id="suite-paths"
-              aria-label="Suite paths"
-              value={suitePaths}
-              onChange={(event) => setSuitePaths(event.target.value)}
-            />
-          </div>
-          <div className="space-y-1">
-            <Label htmlFor="suite-tags">Tag expression</Label>
-            <Input
-              id="suite-tags"
-              aria-label="Suite tag expression"
-              value={suiteTags}
-              onChange={(event) => setSuiteTags(event.target.value)}
-            />
-          </div>
-          <div className="space-y-1">
-            <Label htmlFor="suite-states">States</Label>
-            <Input
-              id="suite-states"
-              aria-label="Suite states"
-              value={suiteStates}
-              onChange={(event) => setSuiteStates(event.target.value)}
-            />
-          </div>
-          <div className="space-y-1 sm:col-span-2">
-            <Label htmlFor="suite-scenario">Scenario name</Label>
-            <Input
-              id="suite-scenario"
-              aria-label="Suite scenario name"
-              value={suiteScenario}
-              onChange={(event) => setSuiteScenario(event.target.value)}
-            />
-          </div>
-        </div>
-        <Button type="button" onClick={() => void saveSuites()}>
-          Save test suite
-        </Button>
-      </section>
-
-      <section
-        className="space-y-4 border-t border-border pt-5"
-        aria-labelledby="profiles-heading"
-      >
-        <h2 id="profiles-heading" className="studio-display text-sm">
-          Execution target profiles
-        </h2>
-        <ProfileSelector
-          profiles={profiles}
-          selectedId={profileId}
-          onSelect={setProfileId}
-        />
-        <div className="grid gap-3 sm:grid-cols-3">
-          <div className="space-y-1">
-            <Label htmlFor="profile-id">Profile id</Label>
-            <Input
-              id="profile-id"
-              aria-label="Profile id"
-              value={profileId}
-              onChange={(event) => setProfileId(event.target.value)}
-            />
-          </div>
-          <div className="space-y-1">
-            <Label htmlFor="profile-adapter">Adapter</Label>
-            <Input
-              id="profile-adapter"
-              aria-label="Profile adapter"
-              value={adapter}
-              onChange={(event) => setAdapter(event.target.value)}
-            />
-          </div>
-          <div className="space-y-1">
-            <Label htmlFor="profile-capabilities">Capabilities</Label>
-            <Input
-              id="profile-capabilities"
-              aria-label="Profile capabilities"
-              value={capabilities}
-              onChange={(event) => setCapabilities(event.target.value)}
-            />
-          </div>
-        </div>
-        <MobileAdapterConfiguration
-          adapter={adapter}
-          api={props.api}
-          mobileProfile={mobileProfile}
-          profileId={profileId}
-          onChange={setMobileProfile}
-          onError={props.onError}
-        />
-        <Button type="button" onClick={() => void saveProfiles()}>
-          Save execution target profile
-        </Button>
-      </section>
-
-      <section
-        className="space-y-4 border-t border-border pt-5"
-        aria-labelledby="credentials-heading"
-      >
-        <h2 id="credentials-heading" className="studio-display text-sm">
-          Credentials
-        </h2>
-        <CredentialReferences secrets={secrets} />
-        <div className="grid gap-3 sm:grid-cols-2">
-          <div className="space-y-1">
-            <Label htmlFor="credential-name">Credential name</Label>
-            <Input
-              id="credential-name"
-              aria-label="Credential name"
-              value={secretName}
-              onChange={(event) => setSecretName(event.target.value)}
-            />
-          </div>
-          <div className="space-y-1">
-            <Label htmlFor="credential-secret">Secret</Label>
-            <Input
-              id="credential-secret"
-              aria-label="Credential secret"
-              type="password"
-              value={secretValue}
-              onChange={(event) => setSecretValue(event.target.value)}
-            />
-          </div>
-        </div>
-        <Button type="button" onClick={() => void saveCredential()}>
-          Save credential
-        </Button>
-      </section>
-
-      <RepositorySettings
-        git={git}
-        selectedPaths={selectedPaths}
-        expandedDiff={expandedDiff}
-        commitMessage={commitMessage}
-        confirmOpen={confirmOpen}
-        onSelectedPaths={setSelectedPaths}
-        onExpandedDiff={setExpandedDiff}
-        onCommitMessage={setCommitMessage}
-        onConfirmOpen={setConfirmOpen}
-        onStage={stageSelected}
-        onCommit={commitSelected}
-        onPullRequest={openPullRequestFromSettings}
-      />
+      <SuiteSettings {...props} />
+      <ProfileSettings {...props} />
+      <CredentialSettings {...props} />
+      <RepositorySettingsContainer api={props.api} onError={props.onError} />
     </main>
   )
+}
+
+function SuiteSettings<T extends ConfigurableProject>(props: SettingsProps<T>) {
+  const editor = useSuiteEditor(props.project.suiteDetails)
+  const save = () => void saveSuite(props, editor)
+  return (
+    <section
+      className="space-y-4 border-t border-border pt-5"
+      aria-labelledby="suites-heading"
+    >
+      <h2 id="suites-heading" className="studio-display text-sm">
+        Test suites
+      </h2>
+      <SuiteSelector
+        suites={props.project.suiteDetails ?? []}
+        selectedName={editor.originalName}
+        onSelect={editor.select}
+        onNew={editor.create}
+      />
+      <SuiteFields {...editor.fields} />
+      <Button type="button" onClick={save}>
+        Save test suite
+      </Button>
+    </section>
+  )
+}
+
+function useSuiteEditor(suites: readonly StudioSuite[] | undefined) {
+  const initialSuite = initialSuiteEditor(suites)
+  const [suiteName, setSuiteName] = useState(initialSuite.name)
+  const [originalSuiteName, setOriginalSuiteName] = useState(suiteName)
+  const [suitePaths, setSuitePaths] = useState(initialSuite.paths)
+  const [suiteTags, setSuiteTags] = useState(initialSuite.tags)
+  const [suiteStates, setSuiteStates] = useState(initialSuite.states)
+  const [suiteScenario, setSuiteScenario] = useState(initialSuite.scenario)
+  useSuiteFieldSync(suites, originalSuiteName, {
+    paths: setSuitePaths,
+    tags: setSuiteTags,
+    states: setSuiteStates,
+    scenario: setSuiteScenario,
+  })
+  const select = (suite: StudioSuite) => {
+    setSuiteName(suite.name)
+    setOriginalSuiteName(suite.name)
+  }
+
+  const create = () => {
+    setSuiteName('')
+    setOriginalSuiteName('')
+    setSuitePaths('')
+    setSuiteTags('')
+    setSuiteStates('active')
+    setSuiteScenario('')
+  }
+
+  return {
+    create,
+    fields: {
+      name: suiteName,
+      paths: suitePaths,
+      tags: suiteTags,
+      states: suiteStates,
+      scenario: suiteScenario,
+      onName: setSuiteName,
+      onPaths: setSuitePaths,
+      onTags: setSuiteTags,
+      onStates: setSuiteStates,
+      onScenario: setSuiteScenario,
+    },
+    originalName: originalSuiteName,
+    select,
+    setOriginalName: setOriginalSuiteName,
+  }
+}
+
+async function saveSuite<T extends ConfigurableProject>(
+  props: SettingsProps<T>,
+  editor: ReturnType<typeof useSuiteEditor>,
+) {
+  const name = editor.fields.name.trim()
+  if (!name) return props.onError('A test suite name is required')
+  const suites = existingSuites(props.project.suiteDetails)
+  suites[name] = editedSuiteConfiguration(editor.fields)
+  if (editor.originalName && editor.originalName !== name)
+    delete suites[editor.originalName]
+  props.onError(undefined)
+  try {
+    props.onProject(
+      await props.api<T>('/api/config', {
+        method: 'PUT',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ suites }),
+      }),
+    )
+    editor.setOriginalName(name)
+  } catch (reason) {
+    props.onError(reasonMessage(reason))
+  }
+}
+
+function SuiteFields(props: {
+  name: string
+  paths: string
+  tags: string
+  states: string
+  scenario: string
+  onName: (value: string) => void
+  onPaths: (value: string) => void
+  onTags: (value: string) => void
+  onStates: (value: string) => void
+  onScenario: (value: string) => void
+}) {
+  return (
+    <div className="grid gap-3 sm:grid-cols-2">
+      <SettingField
+        id="suite-name"
+        label="Suite name"
+        value={props.name}
+        onChange={props.onName}
+      />
+      <SettingField
+        id="suite-paths"
+        label="Paths"
+        ariaLabel="Suite paths"
+        value={props.paths}
+        onChange={props.onPaths}
+      />
+      <SettingField
+        id="suite-tags"
+        label="Tag expression"
+        ariaLabel="Suite tag expression"
+        value={props.tags}
+        onChange={props.onTags}
+      />
+      <SettingField
+        id="suite-states"
+        label="States"
+        ariaLabel="Suite states"
+        value={props.states}
+        onChange={props.onStates}
+      />
+      <div className="sm:col-span-2">
+        <SettingField
+          id="suite-scenario"
+          label="Scenario name"
+          ariaLabel="Suite scenario name"
+          value={props.scenario}
+          onChange={props.onScenario}
+        />
+      </div>
+    </div>
+  )
+}
+
+function SettingField(props: {
+  id: string
+  label: string
+  ariaLabel?: string
+  value: string
+  type?: string
+  onChange: (value: string) => void
+}) {
+  return (
+    <div className="space-y-1">
+      <Label htmlFor={props.id}>{props.label}</Label>
+      <Input
+        id={props.id}
+        aria-label={props.ariaLabel ?? props.label}
+        type={props.type}
+        value={props.value}
+        onChange={(event) => props.onChange(event.target.value)}
+      />
+    </div>
+  )
+}
+
+function ProfileSettings<T extends ConfigurableProject>(
+  props: SettingsProps<T>,
+) {
+  const initial = initialProfileEditor(props.project.profileDetails)
+  const [profileId, setProfileId] = useState(initial.id)
+  const [adapter, setAdapter] = useState(initial.adapter)
+  const [capabilities, setCapabilities] = useState(initial.capabilities)
+  const [mobileProfile, setMobileProfile] = useState<StudioMobileProfile>(
+    initial.mobile,
+  )
+  const selectProfile = (id: string) => {
+    const profile = props.project.profileDetails?.find((item) => item.id === id)
+    setProfileId(id)
+    setAdapter(profile?.adapter ?? 'custom')
+    setCapabilities((profile?.capabilities ?? []).join(', '))
+    setMobileProfile(profile?.mobile ?? initial.mobile)
+  }
+  const save = () =>
+    void saveProfile(props, { adapter, capabilities, mobileProfile, profileId })
+  return (
+    <section
+      className="space-y-4 border-t border-border pt-5"
+      aria-labelledby="profiles-heading"
+    >
+      <h2 id="profiles-heading" className="studio-display text-sm">
+        Execution target profiles
+      </h2>
+      <ProfileSelector
+        profiles={props.project.profileDetails ?? []}
+        selectedId={profileId}
+        onSelect={selectProfile}
+      />
+      <div className="grid gap-3 sm:grid-cols-3">
+        <SettingField
+          id="profile-id"
+          label="Profile id"
+          ariaLabel="Profile id"
+          value={profileId}
+          onChange={setProfileId}
+        />
+        <SettingField
+          id="profile-adapter"
+          label="Adapter"
+          ariaLabel="Profile adapter"
+          value={adapter}
+          onChange={setAdapter}
+        />
+        <SettingField
+          id="profile-capabilities"
+          label="Capabilities"
+          ariaLabel="Profile capabilities"
+          value={capabilities}
+          onChange={setCapabilities}
+        />
+      </div>
+      <MobileAdapterConfiguration
+        adapter={adapter}
+        api={props.api}
+        mobileProfile={mobileProfile}
+        profileId={profileId}
+        onChange={setMobileProfile}
+        onError={props.onError}
+      />
+      <Button type="button" onClick={save}>
+        Save execution target profile
+      </Button>
+    </section>
+  )
+}
+
+async function saveProfile<T extends ConfigurableProject>(
+  props: SettingsProps<T>,
+  editor: {
+    adapter: string
+    capabilities: string
+    mobileProfile: StudioMobileProfile
+    profileId: string
+  },
+) {
+  const id = editor.profileId.trim()
+  if (!id) return props.onError('An execution target profile id is required')
+  const profiles = existingProfiles(props.project.profileDetails)
+  profiles[id] = editedProfileConfiguration(
+    editor.adapter,
+    editor.capabilities,
+    editor.mobileProfile,
+  )
+  props.onError(undefined)
+  try {
+    props.onProject(
+      await props.api<T>('/api/config', {
+        method: 'PUT',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ executionTargetProfiles: profiles }),
+      }),
+    )
+    toast.add({
+      type: 'success',
+      title: 'Execution target profile saved',
+      description: `${id} is ready for Test runs.`,
+    })
+  } catch (reason) {
+    props.onError(reasonMessage(reason))
+  }
+}
+
+function CredentialSettings<T extends ConfigurableProject>(
+  props: SettingsProps<T>,
+) {
+  const [name, setName] = useState('')
+  const [secret, setSecret] = useState('')
+  const save = async () => {
+    props.onError(undefined)
+    try {
+      props.onProject(
+        await props.api<T>('/api/credentials', {
+          method: 'PUT',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ name, secret }),
+        }),
+      )
+      setSecret('')
+    } catch (reason) {
+      props.onError(reasonMessage(reason))
+    }
+  }
+  return (
+    <section
+      className="space-y-4 border-t border-border pt-5"
+      aria-labelledby="credentials-heading"
+    >
+      <h2 id="credentials-heading" className="studio-display text-sm">
+        Credentials
+      </h2>
+      <CredentialReferences secrets={props.project.secrets ?? []} />
+      <div className="grid gap-3 sm:grid-cols-2">
+        <SettingField
+          id="credential-name"
+          label="Credential name"
+          value={name}
+          onChange={setName}
+        />
+        <SettingField
+          id="credential-secret"
+          label="Secret"
+          ariaLabel="Credential secret"
+          type="password"
+          value={secret}
+          onChange={setSecret}
+        />
+      </div>
+      <Button type="button" onClick={() => void save()}>
+        Save credential
+      </Button>
+    </section>
+  )
+}
+
+function RepositorySettingsContainer(props: {
+  api: StudioApi
+  onError: (message?: string) => void
+}) {
+  const [git, setGit] = useGitStatus(props.api, props.onError)
+  const [selectedPaths, setSelectedPaths] = useState<string[]>([])
+  const [commitMessage, setCommitMessage] = useState('')
+  const [confirmOpen, setConfirmOpen] = useState(false)
+  const [expandedDiff, setExpandedDiff] = useState<string>()
+  const actions = repositoryActions({
+    ...props,
+    commitMessage,
+    selectedPaths,
+    setCommitMessage,
+    setConfirmOpen,
+    setGit,
+    setSelectedPaths,
+  })
+  return (
+    <RepositorySettings
+      git={git}
+      selectedPaths={selectedPaths}
+      expandedDiff={expandedDiff}
+      commitMessage={commitMessage}
+      confirmOpen={confirmOpen}
+      onSelectedPaths={setSelectedPaths}
+      onExpandedDiff={setExpandedDiff}
+      onCommitMessage={setCommitMessage}
+      onConfirmOpen={setConfirmOpen}
+      onStage={actions.stage}
+      onCommit={actions.commit}
+      onPullRequest={actions.pullRequest}
+    />
+  )
+}
+
+function repositoryActions(input: {
+  api: StudioApi
+  onError: (message?: string) => void
+  commitMessage: string
+  selectedPaths: string[]
+  setCommitMessage: (value: string) => void
+  setConfirmOpen: (value: boolean) => void
+  setGit: Dispatch<SetStateAction<GitStatus | undefined>>
+  setSelectedPaths: (value: string[]) => void
+}) {
+  const request = async (path: string, body?: unknown) =>
+    input.api<GitStatus>(path, {
+      method: 'POST',
+      headers: body ? { 'content-type': 'application/json' } : undefined,
+      body: body ? JSON.stringify(body) : undefined,
+    })
+  const safely = async (action: () => Promise<void>) => {
+    input.onError(undefined)
+    try {
+      await action()
+    } catch (reason) {
+      input.onError(reasonMessage(reason))
+    }
+  }
+  return {
+    stage: () =>
+      safely(async () =>
+        input.setGit(
+          await request('/api/git/stage', { paths: input.selectedPaths }),
+        ),
+      ),
+    commit: () =>
+      safely(async () => {
+        input.setGit(
+          await request('/api/git/commit', {
+            message: input.commitMessage,
+            confirmed: true,
+            paths: input.selectedPaths,
+          }),
+        )
+        input.setConfirmOpen(false)
+        input.setCommitMessage('')
+        input.setSelectedPaths([])
+      }),
+    pullRequest: () =>
+      safely(async () => {
+        await request('/api/git/pull-request')
+        input.setGit(await input.api('/api/git'))
+      }),
+  }
 }

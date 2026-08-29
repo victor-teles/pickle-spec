@@ -52,7 +52,7 @@ export function createRunReportingSession(
     fail(error, durationMs) {
       try {
         reporter.fail?.(error, durationMs)
-        return undefined
+        return
       } catch (reporterRecoveryError) {
         return { error: reporterRecoveryError }
       }

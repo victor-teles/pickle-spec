@@ -1,4 +1,4 @@
 interface:
   display_name: "10x-coder"
-  short_description: "Keep code small, clean, and composable"
-  default_prompt: "Use $10x-coder to simplify my current diff without expanding its scope."
+  short_description: "Design and review the smallest coherent code change"
+  default_prompt: "Use $10x-coder to implement or review this change with narrow scope, stable contracts, and proportionate verification."

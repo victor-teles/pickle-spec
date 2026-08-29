@@ -14,14 +14,22 @@ import {
   defaultWebActionTimeoutMs,
   defaultWebNavigationTimeoutMs,
 } from '../execution-cache/web-execution-cache'
+import { requiredValue } from '../required-value'
 import { abortError } from './abort'
 import {
   type BlockedResourceType,
   blockedResourceTypes,
   type ResolvedFidelity,
 } from './fidelity'
-import { createStagehandAutomation } from './stagehand-automation'
-import type { WebAutomationFactory, WebClientContext } from './web-automation'
+import {
+  createStagehandAutomation,
+  type StagehandTimeouts,
+} from './stagehand-automation'
+import type {
+  WebAutomationFactory,
+  WebBrowserProcess,
+  WebClientContext,
+} from './web-automation'
 import {
   type BrowserOptions,
   defaultModelName,
@@ -32,6 +40,7 @@ const defaultDomSettleTimeoutMs = 3_000
 const defaultObserveTimeoutMs = 10_000
 
 type StagehandBrowser = Awaited<ReturnType<typeof localBrowser.launch>>
+type WebEvidenceCollector = ReturnType<typeof createWebEvidenceCollector>
 
 type FidelityRoute = {
   request: () => { resourceType: () => string }
@@ -131,112 +140,139 @@ function stagehandCreateOptions(
   return createOptions
 }
 
+async function launchStagehandBrowser(
+  options: BrowserOptions,
+): Promise<StagehandBrowser> {
+  const connection = resolveBrowserConnection(options)
+  if (connection.kind === 'cdp') {
+    try {
+      return await localBrowser.connect({
+        cdpUrl: connection.cdpUrl,
+        extensionId: connection.extensionId,
+      })
+    } catch {
+      throw new Error('Could not connect to web.browser.cdpUrl')
+    }
+  }
+  if (connection.kind === 'browserbase') {
+    return browserbase.launch({
+      apiKey:
+        options.browserbaseApiKey ??
+        requiredValue(process.env.BROWSERBASE_API_KEY),
+      projectId:
+        options.browserbaseProjectId ??
+        requiredValue(process.env.BROWSERBASE_PROJECT_ID),
+    })
+  }
+  return localBrowser.launch({ headless: options.headless ?? true })
+}
+
+async function installEvidenceScript(
+  browser: StagehandBrowser,
+  evidence: WebEvidenceCollector,
+): Promise<boolean> {
+  try {
+    await browser.context.addInitScript(installWebEvidenceScript)
+    return true
+  } catch (error) {
+    evidence.recordAdapterFailure(
+      'Browser evidence initialization failed',
+      error,
+    )
+    return false
+  }
+}
+
+function stagehandClient(
+  browser: StagehandBrowser,
+  options: BrowserOptions,
+): WebBrowserProcess {
+  let stagehand: Stagehand | undefined
+  let stagehandCreation: Promise<Stagehand> | undefined
+  let closed = false
+  let evidenceScriptInstalled = false
+
+  async function acceptCreatedStagehand(
+    created: Stagehand,
+    signal?: AbortSignal,
+  ): Promise<Stagehand> {
+    if (!closed && !signal?.aborted) return created
+    await created.close().catch(() => {})
+    throw abortError()
+  }
+
+  async function ensureStagehand(
+    context: WebClientContext,
+  ): Promise<Stagehand> {
+    if (stagehand) return stagehand
+    if (closed || context.signal?.aborted) throw abortError()
+    const creation =
+      stagehandCreation ??
+      Stagehand.create(stagehandCreateOptions(browser, context, options))
+    stagehandCreation = creation
+    try {
+      stagehand = await acceptCreatedStagehand(await creation, context.signal)
+      return stagehand
+    } finally {
+      stagehandCreation = undefined
+    }
+  }
+
+  async function openContext(context: WebClientContext) {
+    if (context.signal?.aborted) throw abortError()
+    const activeStagehand = await ensureStagehand(context)
+    await applyFidelity(browser.context, context.fidelity)
+    const evidence = createWebEvidenceCollector()
+    if (!evidenceScriptInstalled) {
+      evidenceScriptInstalled = await installEvidenceScript(browser, evidence)
+    }
+    return createStagehandAutomation(
+      browser,
+      activeStagehand,
+      stagehandTimeouts(context, options),
+      evidence,
+    )
+  }
+
+  async function close(): Promise<void> {
+    closed = true
+    try {
+      if (stagehand) {
+        await stagehand.close()
+        stagehand = undefined
+      }
+    } catch {}
+    try {
+      await browser.close()
+    } catch {}
+  }
+
+  return { openContext, close }
+}
+
+function stagehandTimeouts(
+  context: WebClientContext,
+  options: BrowserOptions,
+): StagehandTimeouts {
+  return {
+    navigationTimeoutMs:
+      context.browser.navigationTimeoutMs ??
+      options.navigationTimeoutMs ??
+      defaultWebNavigationTimeoutMs,
+    observeTimeoutMs:
+      context.browser.observeTimeoutMs ??
+      options.observeTimeoutMs ??
+      defaultObserveTimeoutMs,
+    actTimeoutMs:
+      context.browser.actTimeoutMs ??
+      options.actTimeoutMs ??
+      defaultWebActionTimeoutMs,
+  }
+}
+
 export const stagehandFactory: WebAutomationFactory = {
   async launch({ browser: options, signal }) {
     if (signal?.aborted) throw abortError()
-    const connection = resolveBrowserConnection(options)
-    let browser: StagehandBrowser
-    if (connection.kind === 'cdp') {
-      try {
-        browser = await localBrowser.connect({
-          cdpUrl: connection.cdpUrl,
-          extensionId: connection.extensionId,
-        })
-      } catch {
-        throw new Error('Could not connect to web.browser.cdpUrl')
-      }
-    } else if (connection.kind === 'browserbase') {
-      browser = await browserbase.launch({
-        apiKey: options.browserbaseApiKey ?? process.env.BROWSERBASE_API_KEY!,
-        projectId:
-          options.browserbaseProjectId ?? process.env.BROWSERBASE_PROJECT_ID!,
-      })
-    } else {
-      browser = await localBrowser.launch({
-        headless: options.headless ?? true,
-      })
-    }
-
-    let stagehand: Stagehand | undefined
-    let stagehandCreation: Promise<Stagehand> | undefined
-    let closed = false
-    let evidenceScriptInstalled = false
-
-    async function acceptCreatedStagehand(
-      created: Stagehand,
-      signal?: AbortSignal,
-    ): Promise<Stagehand> {
-      if (!closed && !signal?.aborted) return created
-      await created.close().catch(() => {})
-      throw abortError()
-    }
-
-    async function ensureStagehand(
-      context: WebClientContext,
-    ): Promise<Stagehand> {
-      if (stagehand) return stagehand
-      if (closed || context.signal?.aborted) throw abortError()
-      const creation =
-        stagehandCreation ??
-        Stagehand.create(stagehandCreateOptions(browser, context, options))
-      stagehandCreation = creation
-      try {
-        stagehand = await acceptCreatedStagehand(await creation, context.signal)
-        return stagehand
-      } finally {
-        stagehandCreation = undefined
-      }
-    }
-
-    return {
-      async openContext(context) {
-        if (context.signal?.aborted) throw abortError()
-        const activeStagehand = await ensureStagehand(context)
-        await applyFidelity(browser.context, context.fidelity)
-        const evidence = createWebEvidenceCollector()
-        if (!evidenceScriptInstalled) {
-          try {
-            await browser.context.addInitScript(installWebEvidenceScript)
-            evidenceScriptInstalled = true
-          } catch (error) {
-            evidence.recordAdapterFailure(
-              'Browser evidence initialization failed',
-              error,
-            )
-          }
-        }
-        return createStagehandAutomation(
-          browser,
-          activeStagehand,
-          {
-            navigationTimeoutMs:
-              context.browser.navigationTimeoutMs ??
-              options.navigationTimeoutMs ??
-              defaultWebNavigationTimeoutMs,
-            observeTimeoutMs:
-              context.browser.observeTimeoutMs ??
-              options.observeTimeoutMs ??
-              defaultObserveTimeoutMs,
-            actTimeoutMs:
-              context.browser.actTimeoutMs ??
-              options.actTimeoutMs ??
-              defaultWebActionTimeoutMs,
-          },
-          evidence,
-        )
-      },
-      async close() {
-        closed = true
-        try {
-          if (stagehand) {
-            await stagehand.close()
-            stagehand = undefined
-          }
-        } catch {}
-        try {
-          await browser.close()
-        } catch {}
-      },
-    }
+    return stagehandClient(await launchStagehandBrowser(options), options)
   },
 }

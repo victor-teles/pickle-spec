@@ -1,5 +1,6 @@
 import { expect, test } from 'bun:test'
 import { finalScenarioAttempt } from '@pickle-spec/runner'
+import { requiredValue } from '../required-value'
 import { createRunReporter } from './run-reporter'
 import {
   finishReporter,
@@ -150,7 +151,7 @@ test('commits each completed Test result while its Specification is still runnin
       executionTargetProfile: result.executionTargetProfile,
     })),
   )
-  reporter.complete?.(runs[0]!.result)
+  reporter.complete?.(requiredValue(runs[0]).result)
 
   const committedOutput = terminal.operations
     .filter((operation) => operation.type === 'commit')
@@ -226,8 +227,9 @@ test('updates active Specifications and commits each completed result once', () 
     sequence: 1,
     occurredAt,
     type: 'scenario-started',
-    scenario: runs[0]!.result.scenario,
-    executionTargetProfile: runs[0]!.result.executionTargetProfile,
+    scenario: requiredValue(runs[0]).result.scenario,
+    executionTargetProfile: requiredValue(runs[0]).result
+      .executionTargetProfile,
     scope: eventScope('scenario-a-one', 'web'),
   })
 
@@ -238,14 +240,15 @@ test('updates active Specifications and commits each completed result once', () 
   expect(initialFrame?.lines.join('\n')).toContain('First Scenario')
   expect(initialFrame?.lines.join('\n')).not.toContain('Second Scenario')
 
-  reporter.complete?.(runs[0]!.result)
+  reporter.complete?.(requiredValue(runs[0]).result)
   reporter.event({
     schemaVersion: 2,
     sequence: 2,
     occurredAt,
     type: 'scenario-started',
-    scenario: runs[4]!.result.scenario,
-    executionTargetProfile: runs[4]!.result.executionTargetProfile,
+    scenario: requiredValue(runs[4]).result.scenario,
+    executionTargetProfile: requiredValue(runs[4]).result
+      .executionTargetProfile,
     scope: eventScope('scenario-b', 'web'),
   })
 
@@ -278,7 +281,7 @@ test('updates active Specifications and commits each completed result once', () 
     'features/b.feature',
   )
 
-  reporter.complete?.(runs[4]!.result)
+  reporter.complete?.(requiredValue(runs[4]).result)
   finishReporter(reporter, runs, 50)
 
   const finishes = terminal.operations.filter(
@@ -543,9 +546,9 @@ test('keeps every active Specification visible within the terminal bounds', () =
       sequence: 1,
       occurredAt,
       type: 'scenario-started',
-      scenario: specificationRuns[0]!.result.scenario,
-      executionTargetProfile:
-        specificationRuns[0]!.result.executionTargetProfile,
+      scenario: requiredValue(specificationRuns[0]).result.scenario,
+      executionTargetProfile: requiredValue(specificationRuns[0]).result
+        .executionTargetProfile,
       scope: eventScope(`scenario-${specificationId}-0`, 'web'),
     })
     for (const run of specificationRuns.slice(0, 5)) {
@@ -556,9 +559,9 @@ test('keeps every active Specification visible within the terminal bounds', () =
       sequence: 2,
       occurredAt,
       type: 'scenario-started',
-      scenario: specificationRuns[5]!.result.scenario,
-      executionTargetProfile:
-        specificationRuns[5]!.result.executionTargetProfile,
+      scenario: requiredValue(specificationRuns[5]).result.scenario,
+      executionTargetProfile: requiredValue(specificationRuns[5]).result
+        .executionTargetProfile,
       scope: eventScope(`scenario-${specificationId}-5`, 'web'),
     })
   }
@@ -617,7 +620,7 @@ test('pages active Specification headers when their wrapped rows exceed the term
       type: 'scenario-started',
       scenario: run.result.scenario,
       executionTargetProfile: run.result.executionTargetProfile,
-      scope: eventScope(run.result.scenario.id!, 'web'),
+      scope: eventScope(requiredValue(run.result.scenario.id), 'web'),
     })
   })
   const operationStart = terminal.operations.length

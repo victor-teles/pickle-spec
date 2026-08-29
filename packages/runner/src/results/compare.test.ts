@@ -5,6 +5,7 @@ import {
   type ScenarioAttempt,
   type TestResult,
 } from '../execution/run-scenario'
+import { requiredValue } from '../required-value'
 import type { TestRunManifest } from './test-run-store'
 
 interface ResultFixtureOptions {
@@ -146,15 +147,15 @@ test('compareTestRuns matches results by Scenario and execution target profile i
       {
         scenarioId: 'scn-complete-a-purchase',
         executionTargetProfileId: 'web',
-        baseline: baseline.results[0]!,
-        candidate: candidate.results[0]!,
+        baseline: requiredValue(baseline.results[0]),
+        candidate: requiredValue(candidate.results[0]),
         changes: ['duration', 'flaky'],
       },
       {
         scenarioId: 'scn-pay-for-the-order',
         executionTargetProfileId: 'web',
-        baseline: baseline.results[1]!,
-        candidate: candidate.results[1]!,
+        baseline: requiredValue(baseline.results[1]),
+        candidate: requiredValue(candidate.results[1]),
         changes: ['state', 'execution-mode', 'resolved-actions', 'artifacts'],
       },
     ],
@@ -162,14 +163,14 @@ test('compareTestRuns matches results by Scenario and execution target profile i
       {
         scenarioId: 'scn-skip-the-purchase',
         executionTargetProfileId: 'web',
-        result: baseline.results[2]!,
+        result: requiredValue(baseline.results[2]),
       },
     ],
     added: [
       {
         scenarioId: 'scn-mobile-purchase',
         executionTargetProfileId: 'android',
-        result: candidate.results[2]!,
+        result: requiredValue(candidate.results[2]),
       },
     ],
   })
@@ -213,9 +214,9 @@ test('compareTestRuns does not pair different durable Scenario identifiers by na
     id: 'run-renamed',
     results: [
       {
-        ...baseline.results[0]!,
+        ...requiredValue(baseline.results[0]),
         scenario: {
-          name: baseline.results[0]!.scenario.name,
+          name: requiredValue(baseline.results[0]).scenario.name,
           id: 'scn-different-scenario',
         },
       },

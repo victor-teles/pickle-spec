@@ -122,12 +122,128 @@ export function ResultInspector(props: ResultInspectorProps) {
   )
 }
 
-function InspectedResultView(
-  props: ResultInspectorProps & {
-    snapshot: StudioRunSnapshot
-    inspected: NonNullable<ReturnType<typeof findInspectedResult>>
+type InspectedResultViewProps = ResultInspectorProps & {
+  snapshot: StudioRunSnapshot
+  inspected: NonNullable<ReturnType<typeof findInspectedResult>>
+}
+
+function ResultInspectorHeader(
+  props: InspectedResultViewProps & {
+    displayState: ReturnType<typeof displayedAttemptState>
   },
 ) {
+  const { inspected, snapshot } = props
+  return (
+    <header className="mb-4 flex flex-wrap items-start justify-between gap-3 border-b border-border pb-4">
+      <div className="min-w-0 space-y-2">
+        {props.onBack ? (
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            onClick={props.onBack}
+          >
+            Back to run
+          </Button>
+        ) : null}
+        <div className="flex min-w-0 flex-wrap items-center gap-2">
+          <h3 id="result-inspector-title" className="studio-display text-sm">
+            {inspected.result.scenario.name} ·{' '}
+            {inspected.result.executionTargetProfile.id}
+          </h3>
+          <Badge
+            variant={
+              props.displayState === 'running'
+                ? 'running'
+                : resultBadgeVariant(props.displayState)
+            }
+          >
+            <ResultMark state={props.displayState} />
+            {props.displayState}
+          </Badge>
+        </div>
+        <p className="font-mono text-xs text-muted-foreground">
+          Test run {snapshot.id} · Attempt {inspected.attempt.attempt}
+        </p>
+        <ConnectionStatus connection={props.connection} />
+      </div>
+      {props.following === false && props.onResumeFollowing ? (
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={props.onResumeFollowing}
+        >
+          Resume following
+        </Button>
+      ) : null}
+    </header>
+  )
+}
+
+function ResultInspectorTabs(
+  props: InspectedResultViewProps & {
+    activeTab: ResultInspectorTab
+    artifacts: ReturnType<typeof artifactsFor>
+    diagnostics: ReturnType<typeof diagnosticsFor>
+    displayState: ReturnType<typeof displayedAttemptState>
+    inProgress: boolean
+    resultState: TestResultState
+    timeline: ReturnType<typeof timelineFor>
+  },
+) {
+  const { inspected } = props
+  return (
+    <Tabs
+      value={props.activeTab}
+      onValueChange={(value) => props.onTabChange(value as ResultInspectorTab)}
+    >
+      <TabsList variant="line" aria-label="Test result evidence">
+        <TabsTrigger value="overview">Overview</TabsTrigger>
+        <TabsTrigger value="timeline">Timeline</TabsTrigger>
+        <TabsTrigger value="artifacts">Artifacts</TabsTrigger>
+        <TabsTrigger value="diagnostics">Diagnostics</TabsTrigger>
+      </TabsList>
+      <TabsContent value="overview">
+        <ResultOverview {...inspected} inProgress={props.inProgress} />
+      </TabsContent>
+      <TabsContent value="timeline">
+        <ResultEvidenceTimeline
+          entries={props.timeline}
+          startedAt={inspected.attempt.startedAt}
+          durationMs={inspected.attempt.durationMs}
+          state={props.displayState}
+          scenarioName={inspected.result.scenario.name}
+          resultState={props.resultState}
+          follow={props.following}
+          followedEntryId={props.followedEntryId}
+          onPauseFollowing={props.onPauseFollowing}
+        />
+      </TabsContent>
+      <TabsContent value="artifacts">
+        <ResultArtifacts
+          artifacts={props.artifacts}
+          availability={inspected.attempt.evidenceAvailability}
+          onOpenArtifact={props.onOpenArtifact}
+          resultLocation={props.location}
+          scenarioName={inspected.result.scenario.name}
+          resultState={props.resultState}
+        />
+      </TabsContent>
+      <TabsContent value="diagnostics">
+        <ResultDiagnostics
+          diagnostics={props.diagnostics}
+          availability={inspected.attempt.evidenceAvailability}
+          applicationOutputAvailability={
+            inspected.attempt.applicationOutputAvailability
+          }
+        />
+      </TabsContent>
+    </Tabs>
+  )
+}
+
+function InspectedResultView(props: InspectedResultViewProps) {
   const { snapshot, inspected } = props
   const displayState = displayedAttemptState(inspected.attempt)
   const inProgress = isAttemptInProgress(inspected.attempt)
@@ -160,98 +276,17 @@ function InspectedResultView(
       aria-labelledby="result-inspector-title"
       className="min-h-0 flex-1 overflow-auto px-3 py-4 sm:px-5"
     >
-      <header className="mb-4 flex flex-wrap items-start justify-between gap-3 border-b border-border pb-4">
-        <div className="min-w-0 space-y-2">
-          {props.onBack ? (
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              onClick={props.onBack}
-            >
-              Back to run
-            </Button>
-          ) : null}
-          <div className="flex min-w-0 flex-wrap items-center gap-2">
-            <h3 id="result-inspector-title" className="studio-display text-sm">
-              {inspected.result.scenario.name} ·{' '}
-              {inspected.result.executionTargetProfile.id}
-            </h3>
-            <Badge
-              variant={
-                displayState === 'running'
-                  ? 'running'
-                  : resultBadgeVariant(displayState)
-              }
-            >
-              <ResultMark state={displayState} />
-              {displayState}
-            </Badge>
-          </div>
-          <p className="font-mono text-xs text-muted-foreground">
-            Test run {snapshot.id} · Attempt {inspected.attempt.attempt}
-          </p>
-          <ConnectionStatus connection={props.connection} />
-        </div>
-        {props.following === false && props.onResumeFollowing ? (
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={props.onResumeFollowing}
-          >
-            Resume following
-          </Button>
-        ) : null}
-      </header>
-      <Tabs
-        value={activeTab}
-        onValueChange={(value) =>
-          props.onTabChange(value as ResultInspectorTab)
-        }
-      >
-        <TabsList variant="line" aria-label="Test result evidence">
-          <TabsTrigger value="overview">Overview</TabsTrigger>
-          <TabsTrigger value="timeline">Timeline</TabsTrigger>
-          <TabsTrigger value="artifacts">Artifacts</TabsTrigger>
-          <TabsTrigger value="diagnostics">Diagnostics</TabsTrigger>
-        </TabsList>
-        <TabsContent value="overview">
-          <ResultOverview {...inspected} inProgress={inProgress} />
-        </TabsContent>
-        <TabsContent value="timeline">
-          <ResultEvidenceTimeline
-            entries={timeline}
-            startedAt={inspected.attempt.startedAt}
-            durationMs={inspected.attempt.durationMs}
-            state={displayState}
-            scenarioName={inspected.result.scenario.name}
-            resultState={resultState}
-            follow={props.following}
-            followedEntryId={props.followedEntryId}
-            onPauseFollowing={props.onPauseFollowing}
-          />
-        </TabsContent>
-        <TabsContent value="artifacts">
-          <ResultArtifacts
-            artifacts={artifacts}
-            availability={inspected.attempt.evidenceAvailability}
-            onOpenArtifact={props.onOpenArtifact}
-            resultLocation={props.location}
-            scenarioName={inspected.result.scenario.name}
-            resultState={resultState}
-          />
-        </TabsContent>
-        <TabsContent value="diagnostics">
-          <ResultDiagnostics
-            diagnostics={diagnostics}
-            availability={inspected.attempt.evidenceAvailability}
-            applicationOutputAvailability={
-              inspected.attempt.applicationOutputAvailability
-            }
-          />
-        </TabsContent>
-      </Tabs>
+      <ResultInspectorHeader {...props} displayState={displayState} />
+      <ResultInspectorTabs
+        {...props}
+        activeTab={activeTab}
+        artifacts={artifacts}
+        diagnostics={diagnostics}
+        displayState={displayState}
+        inProgress={inProgress}
+        resultState={resultState}
+        timeline={timeline}
+      />
     </section>
   )
 }

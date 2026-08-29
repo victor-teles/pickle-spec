@@ -57,89 +57,123 @@ type RunReporterOptions = {
   scheduleRefresh?: (refresh: () => void) => () => void
 }
 
-function createBufferedRunReporter(options: RunReporterOptions): RunReporter {
-  const write = options.write ?? console.log
-  const now = options.now ?? (() => new Date())
-  const projectRoot = options.projectRoot ?? process.cwd()
-  const version = options.version ?? 'unknown'
-  const color = options.color ?? false
-  let startTime = ''
-  let completedResults: Array<TestResult | undefined> = []
-  let scheduleIndexQueues = new Map<string, ScheduleIndexQueue>()
-  let multipleProfiles = false
+interface BufferedReporterState {
+  color: boolean
+  completedResults: Array<TestResult | undefined>
+  multipleProfiles: boolean
+  now: () => Date
+  options: RunReporterOptions
+  projectRoot: string
+  scheduleIndexQueues: Map<string, ScheduleIndexQueue>
+  startTime: string
+  version: string
+  write: WriteLine
+}
 
-  function prepare(schedule: readonly ScheduledTestResult[]): void {
-    completedResults = Array.from({ length: schedule.length })
-    scheduleIndexQueues = createScheduleIndexQueues(schedule)
-    multipleProfiles =
-      new Set(schedule.map((result) => result.executionTargetProfile.id)).size >
-      1
-  }
+function prepareBufferedReporter(
+  state: BufferedReporterState,
+  schedule: readonly ScheduledTestResult[],
+): void {
+  const reporter = state
+  reporter.completedResults = Array.from({ length: schedule.length })
+  reporter.scheduleIndexQueues = createScheduleIndexQueues(schedule)
+  reporter.multipleProfiles =
+    new Set(schedule.map((result) => result.executionTargetProfile.id)).size > 1
+}
 
-  function writeCompletedResult(result: TestResult): void {
-    for (const line of renderTestResult(
-      result,
-      `${result.specification.uri} > ${result.scenario.name}`,
-      {
-        color,
-        columns: options.columns,
-        multipleProfiles,
-      },
-    )) {
-      write(line)
-    }
-  }
-
-  function complete(result: TestResult): void {
-    const scheduleIndex = claimScheduleIndex(scheduleIndexQueues, result)
-    if (scheduleIndex === undefined) return
-    completedResults[scheduleIndex] = result
-    writeCompletedResult(result)
-  }
-
-  function finishReport(
-    runs: readonly ScenarioRun[],
-    durationMs: number,
-    exitStatus: TestRunExitStatus,
-  ): void {
-    const results = runs.map((run) => run.result)
-    if (completedResults.length === 0) {
-      prepare(orderedScheduleFromResults(results))
-    }
-    if (completedResults.some((result) => !result)) {
-      for (const result of results) complete(result)
-    }
-    const lines = [
-      ...diagnosticLines(results, {
-        projectRoot,
-        color,
-        columns: options.columns,
-        multipleProfiles,
-      }),
-      ...interruptionLines(exitStatus, options.columns),
-      ...summaryLines(groupResults(results), results, startTime, durationMs),
-    ]
-    for (const line of lines) write(line)
-  }
-
-  return {
-    start() {
-      startTime = clockLabel(now())
-      write('')
-      const bannerPrefix = ` RUN  pickle ${version} `
-      writeWrapped(
-        write,
-        bannerPrefix,
-        projectRoot,
-        ' '.repeat(bannerPrefix.length),
-        options.columns,
-      )
-      write('')
+function writeBufferedResult(
+  state: BufferedReporterState,
+  result: TestResult,
+): void {
+  const lines = renderTestResult(
+    result,
+    `${result.specification.uri} > ${result.scenario.name}`,
+    {
+      color: state.color,
+      columns: state.options.columns,
+      multipleProfiles: state.multipleProfiles,
     },
-    prepare,
+  )
+  for (const line of lines) state.write(line)
+}
+
+function completeBufferedResult(
+  state: BufferedReporterState,
+  result: TestResult,
+): void {
+  const reporter = state
+  const scheduleIndex = claimScheduleIndex(state.scheduleIndexQueues, result)
+  if (scheduleIndex === undefined) return
+  reporter.completedResults[scheduleIndex] = result
+  writeBufferedResult(reporter, result)
+}
+
+function finishBufferedReport(
+  state: BufferedReporterState,
+  runs: readonly ScenarioRun[],
+  durationMs: number,
+  exitStatus: TestRunExitStatus,
+): void {
+  const results = runs.map((run) => run.result)
+  if (state.completedResults.length === 0) {
+    prepareBufferedReporter(state, orderedScheduleFromResults(results))
+  }
+  if (state.completedResults.some((result) => !result)) {
+    for (const result of results) completeBufferedResult(state, result)
+  }
+  const lines = [
+    ...diagnosticLines(results, {
+      projectRoot: state.projectRoot,
+      color: state.color,
+      columns: state.options.columns,
+      multipleProfiles: state.multipleProfiles,
+    }),
+    ...interruptionLines(exitStatus, state.options.columns),
+    ...summaryLines(
+      groupResults(results),
+      results,
+      state.startTime,
+      durationMs,
+    ),
+  ]
+  for (const line of lines) state.write(line)
+}
+
+function startBufferedReporter(state: BufferedReporterState): void {
+  const reporter = state
+  reporter.startTime = clockLabel(reporter.now())
+  reporter.write('')
+  const bannerPrefix = ` RUN  pickle ${reporter.version} `
+  writeWrapped(
+    reporter.write,
+    bannerPrefix,
+    reporter.projectRoot,
+    ' '.repeat(bannerPrefix.length),
+    reporter.options.columns,
+  )
+  reporter.write('')
+}
+
+function createBufferedRunReporter(options: RunReporterOptions): RunReporter {
+  const state: BufferedReporterState = {
+    color: options.color ?? false,
+    completedResults: [],
+    multipleProfiles: false,
+    now: options.now ?? (() => new Date()),
+    options,
+    projectRoot: options.projectRoot ?? process.cwd(),
+    scheduleIndexQueues: new Map(),
+    startTime: '',
+    version: options.version ?? 'unknown',
+    write: options.write ?? console.log,
+  }
+  return {
+    start: () => startBufferedReporter(state),
+    prepare: (schedule) => prepareBufferedReporter(state, schedule),
     event() {},
-    complete,
-    finish: finishReport,
+    complete: (result) => completeBufferedResult(state, result),
+    finish: (runs, durationMs, exitStatus) =>
+      finishBufferedReport(state, runs, durationMs, exitStatus),
   }
 }
 

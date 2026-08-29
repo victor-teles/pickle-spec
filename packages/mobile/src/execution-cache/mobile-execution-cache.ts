@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto'
 import type { ExecutionCacheAdapter } from '@pickle-spec/runner'
 import { z } from 'zod'
+import { requiredValue } from '../required-value'
 import type { MobilePlatform } from '../worker/worker-protocol'
 
 export const mobileExecutionCacheAdapterKind = 'mobile.agent-device'
@@ -103,7 +104,7 @@ function hasSupportedScriptShape(
   const open = openPattern.exec(lines[1] ?? '')
   if (!open) return false
   try {
-    if (JSON.parse(open[1]!) !== applicationId) return false
+    if (JSON.parse(requiredValue(open[1])) !== applicationId) return false
   } catch {
     return false
   }
@@ -181,15 +182,15 @@ export function createMobileExecutionCache(
     prefixStepCount: mobilePrefixStepCount,
     parse(payload, requiredVariables) {
       const parsed = mobileExecutionCachePayloadSchema.safeParse(payload)
-      if (!parsed.success) return undefined
-      if (!hasValidRanges(parsed.data.stepRanges)) return undefined
+      if (!parsed.success) return
+      if (!hasValidRanges(parsed.data.stepRanges)) return
       if (
         !rangesMatchScenarioOperations(
           parsed.data.script,
           parsed.data.stepRanges,
         )
       ) {
-        return undefined
+        return
       }
       if (
         !hasSupportedScriptShape(
@@ -198,10 +199,10 @@ export function createMobileExecutionCache(
           input.applicationId,
         )
       ) {
-        return undefined
+        return
       }
       if (!hasExactVariables(parsed.data.script, requiredVariables)) {
-        return undefined
+        return
       }
       return parsed.data
     },

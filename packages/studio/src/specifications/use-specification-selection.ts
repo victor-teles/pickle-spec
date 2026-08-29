@@ -1,4 +1,10 @@
-import { useEffect, useRef, useState } from 'react'
+import {
+  type Dispatch,
+  type SetStateAction,
+  useEffect,
+  useRef,
+  useState,
+} from 'react'
 import type { CurrentScenario } from '../app/command-palette'
 import type { StudioRoute } from '../app/studio-route'
 import type { StudioScenario, StudioSpecification } from '../server/server'
@@ -26,6 +32,68 @@ type ResolvedSpecificationSelection = {
 type SelectionFocus =
   | { kind: 'scenario'; request: number; scenarioId: string }
   | { kind: 'specification'; request: number }
+
+interface SelectionActionsInput {
+  options: UseSpecificationSelectionOptions
+  resolved: ResolvedSpecificationSelection
+  setFocus: Dispatch<SetStateAction<SelectionFocus | undefined>>
+}
+
+function specificationSelectionActions(input: SelectionActionsInput) {
+  const { options, resolved, setFocus } = input
+  return {
+    selectSpecification(specificationId: string) {
+      options.navigate({ kind: 'specification', specificationId })
+      setFocus(undefined)
+    },
+    jumpToSpecification(
+      specification: StudioSpecification,
+      scenario?: StudioScenario,
+    ) {
+      options.navigate(
+        scenario
+          ? {
+              kind: 'scenario',
+              specificationId: specification.id,
+              scenarioId: scenario.id,
+            }
+          : { kind: 'specification', specificationId: specification.id },
+      )
+      setFocus((current) =>
+        scenario
+          ? {
+              kind: 'scenario',
+              request: (current?.request ?? 0) + 1,
+              scenarioId: scenario.id,
+            }
+          : {
+              kind: 'specification',
+              request: (current?.request ?? 0) + 1,
+            },
+      )
+    },
+    selectScenario(scenario: StudioScenario) {
+      if (!resolved.selected) return
+      options.navigate({
+        kind: 'scenario',
+        specificationId: resolved.selected.id,
+        scenarioId: scenario.id,
+      })
+    },
+    selectCreatedSpecification(
+      specifications: readonly StudioSpecification[],
+      uri: string,
+    ) {
+      const created = specifications.find((item) => item.uri === uri)
+      if (created) {
+        options.navigate({
+          kind: 'specification',
+          specificationId: created.id,
+        })
+      }
+    },
+  }
+}
 
 export function resolveSpecificationSelection(
   route: StudioRoute,
@@ -84,69 +152,17 @@ export function useSpecificationSelection(
     headingRef.current?.focus()
   }, [focus])
 
-  function selectSpecification(specificationId: string) {
-    options.navigate({ kind: 'specification', specificationId })
-    setFocus(undefined)
-  }
-
-  function jumpToSpecification(
-    specification: StudioSpecification,
-    scenario?: StudioScenario,
-  ) {
-    options.navigate(
-      scenario
-        ? {
-            kind: 'scenario',
-            specificationId: specification.id,
-            scenarioId: scenario.id,
-          }
-        : { kind: 'specification', specificationId: specification.id },
-    )
-    if (scenario) {
-      setFocus((current) => ({
-        kind: 'scenario',
-        request: (current?.request ?? 0) + 1,
-        scenarioId: scenario.id,
-      }))
-      return
-    }
-    setFocus((current) => ({
-      kind: 'specification',
-      request: (current?.request ?? 0) + 1,
-    }))
-  }
-
-  function selectScenario(scenario: StudioScenario) {
-    if (!resolved.selected) return
-    options.navigate({
-      kind: 'scenario',
-      specificationId: resolved.selected.id,
-      scenarioId: scenario.id,
-    })
-  }
-
-  function selectCreatedSpecification(
-    specifications: readonly StudioSpecification[],
-    uri: string,
-  ) {
-    const created = specifications.find((item) => item.uri === uri)
-    if (created) {
-      options.navigate({
-        kind: 'specification',
-        specificationId: created.id,
-      })
-    }
-  }
+  const actions = specificationSelectionActions({ options, resolved, setFocus })
 
   return {
     currentScenarioContext,
     focus,
     headingRef,
-    jumpToSpecification,
+    jumpToSpecification: actions.jumpToSpecification,
     missing: resolved.missing,
-    selectCreatedSpecification,
+    selectCreatedSpecification: actions.selectCreatedSpecification,
     selected: resolved.selected,
-    selectScenario,
-    selectSpecification,
+    selectScenario: actions.selectScenario,
+    selectSpecification: actions.selectSpecification,
   }
 }

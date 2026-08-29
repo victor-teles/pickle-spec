@@ -42,89 +42,97 @@ type UseLiveRunOptions = {
   selectedSpecificationUri?: string
 }
 
+type SetValue<Value> = React.Dispatch<React.SetStateAction<Value>>
+
 export type StudioReadinessAttempt = {
   readiness: StudioRunReadiness
   request: StudioRunRequest
 }
 
-export function useLiveRun(options: UseLiveRunOptions) {
-  const [runId, setRunId] = useState<string>()
-  const [starting, setStarting] = useState(false)
-  const [origin, setOrigin] = useState<RunOrigin>()
-  const [live, setLive] = useState<LiveResultInspection>()
-  const [readinessAttempt, setReadinessAttempt] =
-    useState<StudioReadinessAttempt>()
-  const clearReadinessAttempt = useCallback(
-    () => setReadinessAttempt(undefined),
-    [],
-  )
-  const activeRunIds = options.runsIndex?.activeRunIds ?? noActiveRunIds
+type LiveRunSetters = {
+  setLive: SetValue<LiveResultInspection | undefined>
+  setOrigin: SetValue<RunOrigin | undefined>
+  setReadinessAttempt: SetValue<StudioReadinessAttempt | undefined>
+  setRunId: SetValue<string | undefined>
+  setStarting: SetValue<boolean>
+}
 
-  const running =
-    live?.phase === 'running' ||
-    starting ||
-    Boolean(options.runsIndex?.activeRunIds.length)
-  const selectedLive =
-    live?.specificationUri === options.selectedSpecificationUri
-      ? live
-      : undefined
-  const cells = useMemo(
-    () => (selectedLive ? cellsFromLiveInspection(selectedLive) : []),
-    [selectedLive],
-  )
-  const selectedResult = selectedLive
-    ? cells.find(
-        (cell) =>
-          cell.scenarioId === selectedLive.location?.scenarioId &&
-          cell.profileId === selectedLive.location?.profileId,
-      )
-    : undefined
-  useEffect(() => {
-    if (
-      runId ||
-      live ||
-      starting ||
-      !options.selectedSpecificationUri ||
-      activeRunIds.length === 0
-    ) {
-      return
-    }
-    let cancelled = false
-    const specificationUri = options.selectedSpecificationUri
-    void Promise.all(
-      activeRunIds.map((activeRunId) =>
-        options.api<StudioRunSnapshot>(
-          `/api/runs/${encodeURIComponent(activeRunId)}`,
-        ),
+async function restoreActiveRun(input: {
+  activeRunIds: readonly string[]
+  api: StudioApi
+  cancelled: () => boolean
+  onError: (reason: unknown) => void
+  setLive: SetValue<LiveResultInspection | undefined>
+  setRunId: SetValue<string | undefined>
+  specificationUri: string
+}): Promise<void> {
+  try {
+    const snapshots = await Promise.all(
+      input.activeRunIds.map((runId) =>
+        input.api<StudioRunSnapshot>(`/api/runs/${encodeURIComponent(runId)}`),
       ),
-    ).then(
-      (snapshots) => {
-        if (cancelled) return
-        const snapshot = snapshots.find((candidate) =>
-          candidate.schedule?.some(
-            (scheduled) => scheduled.specification.uri === specificationUri,
-          ),
-        )
-        if (!snapshot) return
-        setLive(liveInspectionFromSnapshot(snapshot, specificationUri))
-        setRunId(snapshot.id)
-      },
-      (reason: unknown) => {
-        if (!cancelled) options.onError(reason)
-      },
     )
+    if (input.cancelled()) return
+    const snapshot = snapshots.find((candidate) =>
+      candidate.schedule?.some(
+        (scheduled) => scheduled.specification.uri === input.specificationUri,
+      ),
+    )
+    if (!snapshot) return
+    input.setLive(liveInspectionFromSnapshot(snapshot, input.specificationUri))
+    input.setRunId(snapshot.id)
+  } catch (reason) {
+    if (!input.cancelled()) input.onError(reason)
+  }
+}
+
+function useRestoreActiveRun(input: {
+  activeRunIds: readonly string[]
+  live?: LiveResultInspection
+  options: UseLiveRunOptions
+  runId?: string
+  setLive: SetValue<LiveResultInspection | undefined>
+  setRunId: SetValue<string | undefined>
+  starting: boolean
+}): void {
+  useEffect(() => {
+    const specificationUri = input.options.selectedSpecificationUri
+    if (input.runId || input.live || input.starting || !specificationUri) return
+    if (input.activeRunIds.length === 0) return
+    let cancelled = false
+    void restoreActiveRun({
+      activeRunIds: input.activeRunIds,
+      api: input.options.api,
+      cancelled: () => cancelled,
+      onError: input.options.onError,
+      setLive: input.setLive,
+      setRunId: input.setRunId,
+      specificationUri,
+    })
     return () => {
       cancelled = true
     }
   }, [
-    activeRunIds,
-    live,
-    options.api,
-    options.onError,
-    options.selectedSpecificationUri,
-    runId,
-    starting,
+    input.activeRunIds,
+    input.live,
+    input.options.api,
+    input.options.onError,
+    input.options.selectedSpecificationUri,
+    input.runId,
+    input.setLive,
+    input.setRunId,
+    input.starting,
   ])
+}
+
+function useLiveRunSocket(input: {
+  options: UseLiveRunOptions
+  runId?: string
+  setLive: SetValue<LiveResultInspection | undefined>
+  setOrigin: SetValue<RunOrigin | undefined>
+}): void {
+  const { api, onError, reloadRunsIndex } = input.options
+  const { runId, setLive, setOrigin } = input
   useEffect(() => {
     if (!runId) return
     let closedByClient = false
@@ -137,16 +145,16 @@ export function useLiveRun(options: UseLiveRunOptions) {
       setLive((current) =>
         current ? receiveLiveStreamEvent(current, event) : current,
       )
-      if (event.type !== 'run-finished') return
-      setOrigin(undefined)
-      void options
-        .api<StudioRunSnapshot>(`/api/runs/${encodeURIComponent(runId)}`)
-        .then((snapshot) => {
-          setLive((current) =>
-            current ? hydrateLiveInspection(current, snapshot) : current,
-          )
-          void options.reloadRunsIndex()
-        }, options.onError)
+      if (event.type === 'run-finished') {
+        setOrigin(undefined)
+        void hydrateFinishedRun({
+          api,
+          onError,
+          reloadRunsIndex,
+          runId,
+          setLive,
+        })
+      }
     }
     socket.onclose = () => {
       if (closedByClient) return
@@ -160,110 +168,246 @@ export function useLiveRun(options: UseLiveRunOptions) {
       closedByClient = true
       socket.close()
     }
-  }, [options.api, options.onError, options.reloadRunsIndex, runId])
+  }, [api, onError, reloadRunsIndex, runId, setLive, setOrigin])
+}
 
-  function updateLive(
-    update: (inspection: LiveResultInspection) => LiveResultInspection,
-  ) {
-    setLive((current) => (current ? update(current) : current))
+async function hydrateFinishedRun(input: {
+  api: StudioApi
+  onError: (reason: unknown) => void
+  reloadRunsIndex: () => Promise<StudioRunsIndex>
+  runId: string
+  setLive: SetValue<LiveResultInspection | undefined>
+}): Promise<void> {
+  try {
+    const snapshot = await input.api<StudioRunSnapshot>(
+      `/api/runs/${encodeURIComponent(input.runId)}`,
+    )
+    input.setLive((current) =>
+      current ? hydrateLiveInspection(current, snapshot) : current,
+    )
+    await input.reloadRunsIndex()
+  } catch (reason) {
+    input.onError(reason)
   }
+}
 
-  function pinSelection(cell: MatrixCell) {
-    if (!live) return
-    const pinned = pinLiveCell(live, cell)
-    setLive(pinned)
-    if (pinned.location) options.onInspectResult(pinned.location)
+function useLiveRunState() {
+  const [runId, setRunId] = useState<string>()
+  const [starting, setStarting] = useState(false)
+  const [origin, setOrigin] = useState<RunOrigin>()
+  const [live, setLive] = useState<LiveResultInspection>()
+  const [readinessAttempt, setReadinessAttempt] =
+    useState<StudioReadinessAttempt>()
+  const clearReadinessAttempt = useCallback(
+    () => setReadinessAttempt(undefined),
+    [],
+  )
+  return {
+    clearReadinessAttempt,
+    live,
+    origin,
+    readinessAttempt,
+    runId,
+    setters: {
+      setLive,
+      setOrigin,
+      setReadinessAttempt,
+      setRunId,
+      setStarting,
+    },
+    starting,
   }
+}
 
-  async function startRun(request: StudioRunRequest) {
-    if (running) return
-    options.onClearError()
-    setRunId(undefined)
-    setLive(undefined)
-    setOrigin(runOriginFromRequest(request))
-    setStarting(true)
-    try {
-      const readiness = await options.api<StudioRunReadiness>(
-        '/api/run-readiness',
-        {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify(request),
-        },
-      )
-      setReadinessAttempt({ readiness, request })
-      if (!readiness.ready) throw new Error(readiness.reasons.join('\n'))
+function selectedResultFrom(
+  live: LiveResultInspection | undefined,
+  cells: readonly MatrixCell[],
+): MatrixCell | undefined {
+  if (!live) return
+  return cells.find(
+    (cell) =>
+      cell.scenarioId === live.location?.scenarioId &&
+      cell.profileId === live.location?.profileId,
+  )
+}
 
-      const started = await options.api<{ id: string }>('/api/runs', {
+async function startLiveRun(
+  options: UseLiveRunOptions,
+  setters: LiveRunSetters,
+  running: boolean,
+  request: StudioRunRequest,
+): Promise<void> {
+  if (running) return
+  options.onClearError()
+  setters.setRunId(undefined)
+  setters.setLive(undefined)
+  setters.setOrigin(runOriginFromRequest(request))
+  setters.setStarting(true)
+  try {
+    const readiness = await options.api<StudioRunReadiness>(
+      '/api/run-readiness',
+      {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify(request),
-      })
-      setRunId(started.id)
-      options.registerActiveRun(started.id)
-      setLive(
-        startLiveInspection({
-          specificationUri:
-            request.paths?.[0] ?? options.selectedSpecificationUri ?? '',
-          runId: started.id,
-        }),
-      )
-    } catch (reason) {
-      setOrigin(undefined)
-      options.onError(reason)
-    } finally {
-      setStarting(false)
-    }
+      },
+    )
+    setters.setReadinessAttempt({ readiness, request })
+    if (!readiness.ready) throw new Error(readiness.reasons.join('\n'))
+    const started = await options.api<{ id: string }>('/api/runs', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(request),
+    })
+    setters.setRunId(started.id)
+    options.registerActiveRun(started.id)
+    setters.setLive(
+      startLiveInspection({
+        specificationUri:
+          request.paths?.[0] ?? options.selectedSpecificationUri ?? '',
+        runId: started.id,
+      }),
+    )
+  } catch (reason) {
+    setters.setOrigin(undefined)
+    options.onError(reason)
+  } finally {
+    setters.setStarting(false)
   }
+}
+
+async function cancelLiveRun(
+  options: UseLiveRunOptions,
+  running: boolean,
+  runId?: string,
+): Promise<void> {
+  if (!runId || !running) return
+  options.onClearError()
+  try {
+    const response = await fetch(
+      `/api/runs/${encodeURIComponent(runId)}/cancel`,
+      {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${studioToken}` },
+      },
+    )
+    if (!response.ok) throw new Error(await response.text())
+  } catch (reason) {
+    options.onError(reason)
+  }
+}
+
+function liveInspectionControls(
+  live: LiveResultInspection | undefined,
+  setLive: SetValue<LiveResultInspection | undefined>,
+  onInspectResult: (location: ResultInspectionLocation) => void,
+) {
+  const update = (
+    transform: (inspection: LiveResultInspection) => LiveResultInspection,
+  ) => setLive((current) => (current ? transform(current) : current))
+  return {
+    pauseFollowing: () => update(pauseLiveFollowing),
+    pinSelection: (cell: MatrixCell) => {
+      if (!live) return
+      const pinned = pinLiveCell(live, cell)
+      setLive(pinned)
+      if (pinned.location) onInspectResult(pinned.location)
+    },
+    resumeFollowing: () => update(resumeLiveFollowing),
+    selectInspectorTab: (tab: ResultInspectorTab) =>
+      update((current) => selectLiveInspectorTab(current, tab)),
+  }
+}
+
+function liveRunIsRunning(
+  live: LiveResultInspection | undefined,
+  starting: boolean,
+  runsIndex: StudioRunsIndex | undefined,
+): boolean {
+  return (
+    live?.phase === 'running' ||
+    starting ||
+    Boolean(runsIndex?.activeRunIds.length)
+  )
+}
+
+function selectedLiveForSpecification(
+  live: LiveResultInspection | undefined,
+  specificationUri: string | undefined,
+): LiveResultInspection | undefined {
+  return live?.specificationUri === specificationUri ? live : undefined
+}
+
+function useSelectedLiveRun(
+  live: LiveResultInspection | undefined,
+  specificationUri: string | undefined,
+) {
+  const selectedLive = selectedLiveForSpecification(live, specificationUri)
+  const cells = useMemo(
+    () => (selectedLive ? cellsFromLiveInspection(selectedLive) : []),
+    [selectedLive],
+  )
+  return {
+    cells,
+    selectedLive,
+    selectedResult: selectedResultFrom(selectedLive, cells),
+  }
+}
+
+export function useLiveRun(options: UseLiveRunOptions) {
+  const {
+    clearReadinessAttempt,
+    live,
+    origin,
+    readinessAttempt,
+    runId,
+    setters,
+    starting,
+  } = useLiveRunState()
+  const { setLive, setOrigin, setRunId } = setters
+  const activeRunIds = options.runsIndex?.activeRunIds ?? noActiveRunIds
+  const running = liveRunIsRunning(live, starting, options.runsIndex)
+  const { cells, selectedLive, selectedResult } = useSelectedLiveRun(
+    live,
+    options.selectedSpecificationUri,
+  )
+  useRestoreActiveRun({
+    activeRunIds,
+    live,
+    options,
+    runId,
+    setLive,
+    setRunId,
+    starting,
+  })
+  useLiveRunSocket({ options, runId, setLive, setOrigin })
+  const controls = liveInspectionControls(
+    live,
+    setLive,
+    options.onInspectResult,
+  )
+  const startRun = (request: StudioRunRequest) =>
+    startLiveRun(options, setters, running, request)
 
   async function startNewRun(request: StudioRunRequest) {
     await startRun(targetNewRun(request, options.activeProfileId))
   }
 
-  async function cancelRun(requestedRunId = runId) {
-    if (!requestedRunId || !running) return
-    options.onClearError()
-    try {
-      const response = await fetch(
-        `/api/runs/${encodeURIComponent(requestedRunId)}/cancel`,
-        {
-          method: 'POST',
-          headers: { Authorization: `Bearer ${studioToken}` },
-        },
-      )
-      if (!response.ok) throw new Error(await response.text())
-    } catch (reason) {
-      options.onError(reason)
-    }
-  }
-
-  function resumeFollowing() {
-    updateLive(resumeLiveFollowing)
-  }
-
-  function pauseFollowing() {
-    updateLive(pauseLiveFollowing)
-  }
-
-  function selectInspectorTab(tab: ResultInspectorTab) {
-    updateLive((current) => selectLiveInspectorTab(current, tab))
-  }
+  const cancelRun = (requestedRunId = runId) =>
+    cancelLiveRun(options, running, requestedRunId)
 
   return {
+    ...controls,
     cancelRun,
     cells,
     clearReadinessAttempt,
     live: selectedLive,
     origin,
-    pauseFollowing,
-    pinSelection,
     readinessAttempt,
     runId,
     running,
-    selectInspectorTab,
     selectedResult,
     startNewRun,
     startRun,
-    resumeFollowing,
   }
 }

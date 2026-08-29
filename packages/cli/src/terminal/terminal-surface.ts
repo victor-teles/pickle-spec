@@ -1,3 +1,4 @@
+import { requiredValue } from '../required-value'
 export interface InteractiveTerminalSurface {
   activate?(): void
   columns(): number | undefined
@@ -73,9 +74,9 @@ export function createInteractiveTerminalSurface(
     maxRows: number,
   ): readonly string[] {
     const tail: string[] = []
-    let usedRows = renderedRows([lines[0]!, '…'])
+    let usedRows = renderedRows([requiredValue(lines[0]), '…'])
     for (let index = lines.length - 1; index > 0; index--) {
-      const line = lines[index]!
+      const line = requiredValue(lines[index])
       const lineRows = renderedRows([line])
       if (usedRows + lineRows > maxRows) break
       tail.unshift(line)
@@ -88,7 +89,7 @@ export function createInteractiveTerminalSurface(
     const maxRows = availableTerminalRows(options.rows?.())
     if (renderedRows(lines) <= maxRows) return lines
     if (maxRows === 1) return ['…']
-    const firstLine = lines[0]!
+    const firstLine = requiredValue(lines[0])
     const tail = visibleTail(lines, maxRows)
     const hiddenCount = lines.length - tail.length - 1
     return [firstLine, hiddenLine(hiddenCount), ...tail]
@@ -133,19 +134,22 @@ function outputText(chunk: unknown): string {
   return String(chunk)
 }
 
+function captureTerminalStreams(
+  streams: readonly TerminalOutputStream[],
+): CapturedTerminalStream[] {
+  return streams.map((stream) => ({
+    stream,
+    originalMethod: stream.write,
+    write: stream.write.bind(stream) as TerminalWriteCall,
+  }))
+}
+
 export function createProcessTerminalSurface(
   stream: TerminalOutputStream,
   externalStreams: readonly TerminalOutputStream[] = [],
 ): InteractiveTerminalSurface {
-  const capturedStreams: CapturedTerminalStream[] = [
-    stream,
-    ...externalStreams,
-  ].map((capturedStream) => ({
-    stream: capturedStream,
-    originalMethod: capturedStream.write,
-    write: capturedStream.write.bind(capturedStream) as TerminalWriteCall,
-  }))
-  const outputStream = capturedStreams[0]!
+  const capturedStreams = captureTerminalStreams([stream, ...externalStreams])
+  const outputStream = requiredValue(capturedStreams[0])
   const surface = createInteractiveTerminalSurface({
     write: (output) => {
       outputStream.write(output)

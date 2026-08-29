@@ -7,15 +7,11 @@ import type {
   WebIsolationState,
 } from './web-automation'
 import type { BrowserOptions } from './web-options'
+import { IsolationVerificationError } from './web-pool-error'
 
 const defaultIdleTimeoutMs = 30_000
 
-export class IsolationVerificationError extends Error {
-  constructor(message: string) {
-    super(message)
-    this.name = 'IsolationVerificationError'
-  }
-}
+export { IsolationVerificationError } from './web-pool-error'
 
 interface PooledProcess {
   process: WebBrowserProcess
@@ -162,11 +158,12 @@ export class WebProcessPool {
       await this.closeProcess(pooled)
       return
     }
-    this.clearIdleTimer(pooled)
-    pooled.idleTimer = setTimeout(() => {
-      void this.closeIdle(pooled)
+    const availableProcess = pooled
+    this.clearIdleTimer(availableProcess)
+    availableProcess.idleTimer = setTimeout(() => {
+      void this.closeIdle(availableProcess)
     }, this.idleTimeoutMs)
-    this.available.push(pooled)
+    this.available.push(availableProcess)
   }
 
   private async closeIdle(pooled: PooledProcess): Promise<void> {
@@ -182,7 +179,8 @@ export class WebProcessPool {
   }
 
   private clearIdleTimer(pooled: PooledProcess): void {
-    if (pooled.idleTimer) clearTimeout(pooled.idleTimer)
-    pooled.idleTimer = undefined
+    const availableProcess = pooled
+    if (availableProcess.idleTimer) clearTimeout(availableProcess.idleTimer)
+    availableProcess.idleTimer = undefined
   }
 }

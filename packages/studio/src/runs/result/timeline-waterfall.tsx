@@ -201,22 +201,66 @@ type TimelinePlotEntryProps = {
   onSelect: (entryId: string) => void
 }
 
-function TimelinePlotEntry(props: TimelinePlotEntryProps) {
-  const spanWidth =
-    props.geometry.type === 'duration' ? props.geometry.width : undefined
-  const midpoint = props.geometry.left + (spanWidth ?? 0) / 2
+type TimelinePlotMarkProps = {
+  entry: TimelineEntry
+  geometry: TimelinePlotGeometry
+  markClassName: string
+}
+
+function TimelinePlotMark(props: TimelinePlotMarkProps) {
+  if (props.geometry.type === 'point') {
+    return (
+      <span
+        data-timeline-mark
+        className={cn(
+          'absolute top-3 flex size-5 -translate-x-1/2 items-center justify-center rounded-md ring-2 ring-background',
+          props.markClassName,
+        )}
+        style={{ left: `${props.geometry.left}%` }}
+      >
+        <TimelineKindIcon kind={props.entry.kind} className="size-3" />
+      </span>
+    )
+  }
+  return (
+    <span
+      data-timeline-mark
+      className={cn(
+        'absolute top-3 flex h-5 min-w-1.5 items-center overflow-hidden rounded-md px-1.5 font-mono text-[0.625rem] font-medium whitespace-nowrap tabular-nums',
+        props.markClassName,
+      )}
+      style={{
+        left: `${props.geometry.left}%`,
+        width: `${props.geometry.width}%`,
+      }}
+    >
+      <span data-timeline-duration-label className="min-w-0 truncate">
+        {durationLabel(props.geometry.durationMs)}
+      </span>
+    </span>
+  )
+}
+
+function timelinePlotPointerStyle(geometry: TimelinePlotGeometry) {
+  const spanWidth = geometry.type === 'duration' ? geometry.width : undefined
+  const midpoint = geometry.left + (spanWidth ?? 0) / 2
   const pointerWidth =
     spanWidth === undefined ? '44px' : `max(44px, ${spanWidth}%)`
   const pointerHalfWidth =
     spanWidth === undefined ? '22px' : `max(22px, ${spanWidth / 2}%)`
-  const pointerLeft = `clamp(0px, calc(${midpoint}% - ${pointerHalfWidth}), calc(100% - ${pointerWidth}))`
+  return {
+    left: `clamp(0px, calc(${midpoint}% - ${pointerHalfWidth}), calc(100% - ${pointerWidth}))`,
+    width: pointerWidth,
+  }
+}
+
+function TimelinePlotEntry(props: TimelinePlotEntryProps) {
   const markClassName = cn(
     'border border-transparent transition-none peer-hover:border-foreground/30 peer-active:border-foreground/45',
     timelineKindSolidClassName(props.entry.kind),
     props.entry.causal && 'ring-2 ring-destructive/60',
     props.selected && 'border-foreground/35',
   )
-
   return (
     <div
       aria-hidden="true"
@@ -236,41 +280,54 @@ function TimelinePlotEntry(props: TimelinePlotEntryProps) {
         onMouseDown={(event) => event.preventDefault()}
         onClick={() => props.onSelect(props.entry.id)}
         className="peer absolute top-0 z-20 h-11 min-w-0 cursor-pointer rounded-none border-0 bg-transparent p-0 transition-none hover:bg-transparent active:bg-transparent"
-        style={{ left: pointerLeft, width: pointerWidth }}
+        style={timelinePlotPointerStyle(props.geometry)}
       />
-      {props.geometry.type === 'point' ? (
-        <span
-          data-timeline-mark
-          className={cn(
-            'absolute top-3 flex size-5 -translate-x-1/2 items-center justify-center rounded-md ring-2 ring-background',
-            markClassName,
-          )}
-          style={{ left: `${props.geometry.left}%` }}
-        >
-          <TimelineKindIcon kind={props.entry.kind} className="size-3" />
-        </span>
-      ) : (
-        <span
-          data-timeline-mark
-          className={cn(
-            'absolute top-3 flex h-5 min-w-1.5 items-center overflow-hidden rounded-md px-1.5 font-mono text-[0.625rem] font-medium whitespace-nowrap tabular-nums',
-            markClassName,
-          )}
-          style={{
-            left: `${props.geometry.left}%`,
-            width: `${props.geometry.width}%`,
-          }}
-        >
-          <span data-timeline-duration-label className="min-w-0 truncate">
-            {durationLabel(props.geometry.durationMs)}
-          </span>
-        </span>
-      )}
+      <TimelinePlotMark
+        entry={props.entry}
+        geometry={props.geometry}
+        markClassName={markClassName}
+      />
     </div>
   )
 }
 
-function TimelineChart(
+type TimelineChartRowProps = {
+  entry: TimelineEntry
+  scale: ReturnType<typeof createTimelineScale>
+  attemptStartedAt: string
+  selectedEntryId?: string
+  onSelect: (entryId: string) => void
+}
+
+function TimelineChartRow(props: TimelineChartRowProps) {
+  const entryStartMs = elapsedMs(props.entry.startedAt, props.attemptStartedAt)
+  const left = percentage(entryStartMs, props.scale.durationMs)
+  const endMs = props.entry.finishedAt
+    ? elapsedMs(props.entry.finishedAt, props.attemptStartedAt)
+    : undefined
+  const geometry: TimelinePlotGeometry =
+    endMs === undefined
+      ? { type: 'point', left }
+      : {
+          type: 'duration',
+          left,
+          width: Math.max(
+            0.8,
+            percentage(endMs - entryStartMs, props.scale.durationMs),
+          ),
+          durationMs: endMs - entryStartMs,
+        }
+  return (
+    <TimelinePlotEntry
+      entry={props.entry}
+      geometry={geometry}
+      selected={props.entry.id === props.selectedEntryId}
+      onSelect={props.onSelect}
+    />
+  )
+}
+
+function timelineChartLayout(
   props: TimelineWaterfallProps & { scaleEntries: readonly TimelineEntry[] },
 ) {
   const latestEntryMs = Math.max(
@@ -281,10 +338,22 @@ function TimelineChart(
   )
   const scale = createTimelineScale(Math.max(props.durationMs, latestEntryMs))
   const causalAt = props.scaleEntries.find((entry) => entry.causalAt)?.causalAt
-  const causalPosition = causalAt
-    ? percentage(elapsedMs(causalAt, props.attemptStartedAt), scale.durationMs)
-    : undefined
-  const minWidth = Math.max(560, scale.ticks.length * 112)
+  return {
+    scale,
+    causalPosition: causalAt
+      ? percentage(
+          elapsedMs(causalAt, props.attemptStartedAt),
+          scale.durationMs,
+        )
+      : undefined,
+    minWidth: Math.max(560, scale.ticks.length * 112),
+  }
+}
+
+function TimelineChart(
+  props: TimelineWaterfallProps & { scaleEntries: readonly TimelineEntry[] },
+) {
+  const { scale, causalPosition, minWidth } = timelineChartLayout(props)
   return (
     <ScrollArea
       scrollbars="horizontal"
@@ -335,102 +404,164 @@ function TimelineChart(
               style={{ left: `${causalPosition}%` }}
             />
           )}
-          {props.entries.map((entry) => {
-            const entryStartMs = elapsedMs(
-              entry.startedAt,
-              props.attemptStartedAt,
-            )
-            const left = percentage(entryStartMs, scale.durationMs)
-            const endMs = entry.finishedAt
-              ? elapsedMs(entry.finishedAt, props.attemptStartedAt)
-              : undefined
-            const spanWidth =
-              endMs === undefined
-                ? 0
-                : Math.max(
-                    0.8,
-                    percentage(endMs - entryStartMs, scale.durationMs),
-                  )
-            return (
-              <TimelinePlotEntry
-                key={entry.id}
-                entry={entry}
-                geometry={
-                  endMs === undefined
-                    ? { type: 'point', left }
-                    : {
-                        type: 'duration',
-                        left,
-                        width: spanWidth,
-                        durationMs: endMs - entryStartMs,
-                      }
-                }
-                selected={entry.id === props.selectedEntryId}
-                onSelect={props.onSelect}
-              />
-            )
-          })}
+          {props.entries.map((entry) => (
+            <TimelineChartRow
+              key={entry.id}
+              entry={entry}
+              scale={scale}
+              attemptStartedAt={props.attemptStartedAt}
+              selectedEntryId={props.selectedEntryId}
+              onSelect={props.onSelect}
+            />
+          ))}
         </div>
       </div>
     </ScrollArea>
   )
 }
 
-export function TimelineWaterfall(props: TimelineWaterfallProps) {
-  const [requestedPage, setRequestedPage] = useState(0)
-  const [pendingFocus, setPendingFocus] = useState<number>()
-  const rowsRef = useRef<HTMLDivElement>(null)
-  const pageCount = Math.max(
-    1,
-    Math.ceil(props.entries.length / timelinePageSize),
+function TimelinePagination(props: {
+  entryCount: number
+  page: number
+  pageCount: number
+  pageStart: number
+  visibleCount: number
+  onShowPage: (page: number) => void
+}) {
+  if (props.pageCount <= 1) return null
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border px-3 py-2">
+      <p role="status" className="text-xs text-muted-foreground">
+        Showing {props.pageStart + 1}–{props.pageStart + props.visibleCount} of{' '}
+        {props.entryCount} entries
+      </p>
+      <nav aria-label="Timeline pages" className="flex gap-2">
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          disabled={props.page === 0}
+          onClick={() => props.onShowPage(props.page - 1)}
+        >
+          Previous 100
+        </Button>
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          disabled={props.page === props.pageCount - 1}
+          onClick={() => props.onShowPage(props.page + 1)}
+        >
+          Next 100
+        </Button>
+      </nav>
+    </div>
   )
-  const targetEntryId = props.following
-    ? props.followedEntryId
-    : props.selectedEntryId
-  const targetIndex = props.entries.findIndex(
-    (entry) => entry.id === targetEntryId,
+}
+
+function useTimelinePageEffects(input: {
+  pendingFocus?: number
+  rowsRef: RefObject<HTMLDivElement | null>
+  setPendingFocus: (index: number | undefined) => void
+  setRequestedPage: (page: number) => void
+  targetPage: number
+}): void {
+  useEffect(
+    () => input.setRequestedPage(input.targetPage),
+    [input.setRequestedPage, input.targetPage],
   )
+  useEffect(() => {
+    if (input.pendingFocus === undefined) return
+    const target = input.rowsRef.current?.querySelector<HTMLElement>(
+      `[data-timeline-index="${input.pendingFocus}"]`,
+    )
+    if (!target) return
+    target.focus()
+    input.setPendingFocus(undefined)
+  }, [input.pendingFocus, input.rowsRef, input.setPendingFocus])
+}
+
+interface TimelineNavigationInput {
+  entries: readonly TimelineEntry[]
+  onSelect: (entryId: string) => void
+  setPendingFocus: (index: number | undefined) => void
+  setRequestedPage: (page: number) => void
+}
+
+function moveTimelineFocus(
+  input: TimelineNavigationInput,
+  event: KeyboardEvent,
+  index: number,
+): void {
+  const nextIndex = nextTimelineIndex(event.key, index, input.entries.length)
+  if (nextIndex === undefined || nextIndex === index) return
+  const nextEntry = input.entries[nextIndex]
+  if (!nextEntry) return
+  event.preventDefault()
+  input.setPendingFocus(nextIndex)
+  input.setRequestedPage(Math.floor(nextIndex / timelinePageSize))
+  input.onSelect(nextEntry.id)
+}
+
+function showTimelinePage(
+  input: TimelineNavigationInput,
+  nextPage: number,
+): void {
+  const nextEntry = input.entries[nextPage * timelinePageSize]
+  if (!nextEntry) return
+  input.setRequestedPage(nextPage)
+  input.onSelect(nextEntry.id)
+}
+
+function timelinePage(
+  entries: readonly TimelineEntry[],
+  targetEntryId: string | undefined,
+  requestedPage: number,
+) {
+  const pageCount = Math.max(1, Math.ceil(entries.length / timelinePageSize))
+  const targetIndex = entries.findIndex((entry) => entry.id === targetEntryId)
   const targetPage =
     targetIndex < 0 ? 0 : Math.floor(targetIndex / timelinePageSize)
   const page = Math.min(requestedPage, pageCount - 1)
   const pageStart = page * timelinePageSize
-  const pageEntries = props.entries.slice(
+  return {
+    pageCount,
+    targetPage,
+    page,
     pageStart,
-    Math.min(props.entries.length, pageStart + timelinePageSize),
+    pageEntries: entries.slice(
+      pageStart,
+      Math.min(entries.length, pageStart + timelinePageSize),
+    ),
+  }
+}
+
+export function TimelineWaterfall(props: TimelineWaterfallProps) {
+  const [requestedPage, setRequestedPage] = useState(0)
+  const [pendingFocus, setPendingFocus] = useState<number>()
+  const rowsRef = useRef<HTMLDivElement>(null)
+  const targetEntryId = props.following
+    ? props.followedEntryId
+    : props.selectedEntryId
+  const { pageCount, targetPage, page, pageStart, pageEntries } = timelinePage(
+    props.entries,
+    targetEntryId,
+    requestedPage,
   )
   const visibleProps = { ...props, entries: pageEntries }
 
-  useEffect(() => {
-    setRequestedPage(targetPage)
-  }, [targetPage])
-
-  useEffect(() => {
-    if (pendingFocus === undefined) return
-    const target = rowsRef.current?.querySelector<HTMLElement>(
-      `[data-timeline-index="${pendingFocus}"]`,
-    )
-    if (!target) return
-    target.focus()
-    setPendingFocus(undefined)
-  }, [pendingFocus])
-
-  function moveFocus(event: KeyboardEvent, index: number) {
-    const nextIndex = nextTimelineIndex(event.key, index, props.entries.length)
-    if (nextIndex === undefined || nextIndex === index) return
-    const nextEntry = props.entries[nextIndex]
-    if (!nextEntry) return
-    event.preventDefault()
-    setPendingFocus(nextIndex)
-    setRequestedPage(Math.floor(nextIndex / timelinePageSize))
-    props.onSelect(nextEntry.id)
-  }
-
-  function showPage(nextPage: number) {
-    const nextIndex = nextPage * timelinePageSize
-    const nextEntry = props.entries[nextIndex]
-    if (!nextEntry) return
-    setRequestedPage(nextPage)
-    props.onSelect(nextEntry.id)
+  useTimelinePageEffects({
+    pendingFocus,
+    rowsRef,
+    setPendingFocus,
+    setRequestedPage,
+    targetPage,
+  })
+  const navigation = {
+    entries: props.entries,
+    onSelect: props.onSelect,
+    setPendingFocus,
+    setRequestedPage,
   }
 
   return (
@@ -446,38 +577,20 @@ export function TimelineWaterfall(props: TimelineWaterfallProps) {
           {...visibleProps}
           entryOffset={pageStart}
           totalEntries={props.entries.length}
-          onMoveFocus={moveFocus}
+          onMoveFocus={(event, index) =>
+            moveTimelineFocus(navigation, event, index)
+          }
         />
         <TimelineChart {...visibleProps} scaleEntries={props.entries} />
       </div>
-      {pageCount > 1 ? (
-        <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border px-3 py-2">
-          <p role="status" className="text-xs text-muted-foreground">
-            Showing {pageStart + 1}–{pageStart + pageEntries.length} of{' '}
-            {props.entries.length} entries
-          </p>
-          <nav aria-label="Timeline pages" className="flex gap-2">
-            <Button
-              type="button"
-              size="sm"
-              variant="outline"
-              disabled={page === 0}
-              onClick={() => showPage(page - 1)}
-            >
-              Previous 100
-            </Button>
-            <Button
-              type="button"
-              size="sm"
-              variant="outline"
-              disabled={page === pageCount - 1}
-              onClick={() => showPage(page + 1)}
-            >
-              Next 100
-            </Button>
-          </nav>
-        </div>
-      ) : null}
+      <TimelinePagination
+        entryCount={props.entries.length}
+        page={page}
+        pageCount={pageCount}
+        pageStart={pageStart}
+        visibleCount={pageEntries.length}
+        onShowPage={(nextPage) => showTimelinePage(navigation, nextPage)}
+      />
     </section>
   )
 }

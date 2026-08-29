@@ -1,5 +1,6 @@
 import type { ScenarioStep, ScenarioVariableBinding } from '@pickle-spec/spec'
 import { z } from 'zod'
+import { requiredValue } from '../required-value'
 import type {
   WebInstruction,
   WebLocator,
@@ -162,7 +163,8 @@ export function webInstructionVariables(
 export function stepVariableNames(step: ScenarioStep): string[] {
   const variables = new Set<string>()
   const collect = (value: string) => {
-    for (const match of value.matchAll(/<([^>]+)>/g)) variables.add(match[1]!)
+    for (const match of value.matchAll(/<([^>]+)>/g))
+      variables.add(requiredValue(match[1]))
   }
   collect(step.text)
   for (const row of step.argument?.dataTable ?? []) {
@@ -231,7 +233,7 @@ function compileCountAssertion(
   }
   const expected = parameterizeWebValue(draft.expected, bindings)
   if (expected?.segments.length !== 1) return undefined
-  const segment = expected.segments[0]!
+  const segment = requiredValue(expected.segments[0])
   if (!('literal' in segment))
     return { kind: draft.kind, locator, expected: segment }
   const count = Number(segment.literal)
@@ -274,7 +276,7 @@ function compileActionWithArguments(
     case 'fill':
     case 'type': {
       if (args.length !== 1) return undefined
-      const value = parameterizeWebValue(args[0]!, bindings)
+      const value = parameterizeWebValue(requiredValue(args[0]), bindings)
       return value ? { kind: method, locator, value } : undefined
     }
     case 'selectOption':

@@ -1,4 +1,5 @@
 import { expect, test } from 'bun:test'
+import { requiredValue } from '../required-value'
 import { parseTestRunManifest } from './test-run-schema'
 import type { TestRunManifest } from './test-run-store'
 
@@ -50,7 +51,9 @@ const incompatibleSchema = (version: unknown): never => {
 
 test('requires one availability entry for every evidence kind', () => {
   const input = manifest()
-  input.results[0]!.attempts[0]!.evidenceAvailability = []
+  requiredValue(
+    requiredValue(input.results[0]).attempts[0],
+  ).evidenceAvailability = []
 
   expect(() => parseTestRunManifest(input, incompatibleSchema)).toThrow(
     'Evidence availability must include "screenshot"',
@@ -59,7 +62,9 @@ test('requires one availability entry for every evidence kind', () => {
 
 test('rejects duplicate evidence availability kinds', () => {
   const input = manifest()
-  input.results[0]!.attempts[0]!.evidenceAvailability.push({
+  requiredValue(
+    requiredValue(input.results[0]).attempts[0],
+  ).evidenceAvailability.push({
     kind: 'screenshot',
     state: 'not-requested',
   })
@@ -71,7 +76,9 @@ test('rejects duplicate evidence availability kinds', () => {
 
 test('requires available artifact evidence to match persisted artifacts', () => {
   const input = manifest()
-  input.results[0]!.attempts[0]!.evidenceAvailability[0] = {
+  requiredValue(
+    requiredValue(input.results[0]).attempts[0],
+  ).evidenceAvailability[0] = {
     kind: 'screenshot',
     state: 'available',
   }
@@ -83,7 +90,7 @@ test('requires available artifact evidence to match persisted artifacts', () => 
 
 test('treats Diagnostic entries as persisted diagnostics evidence', () => {
   const input = manifest()
-  const attempt = input.results[0]!.attempts[0]!
+  const attempt = requiredValue(requiredValue(input.results[0]).attempts[0])
   const occurredAt = attempt.startedAt
   attempt.evidenceAvailability[4] = { kind: 'diagnostics', state: 'available' }
   attempt.diagnostics = [
@@ -105,7 +112,7 @@ test('treats Diagnostic entries as persisted diagnostics evidence', () => {
 
 test('retains the managed application stream on Diagnostic entries', () => {
   const input = manifest()
-  const attempt = input.results[0]!.attempts[0]!
+  const attempt = requiredValue(requiredValue(input.results[0]).attempts[0])
   attempt.evidenceAvailability[4] = { kind: 'diagnostics', state: 'available' }
   attempt.diagnostics = [
     {
@@ -126,7 +133,7 @@ test('retains the managed application stream on Diagnostic entries', () => {
 
 test('treats Pickle-native trace entries as persisted trace evidence', () => {
   const input = manifest()
-  const attempt = input.results[0]!.attempts[0]!
+  const attempt = requiredValue(requiredValue(input.results[0]).attempts[0])
   const occurredAt = attempt.startedAt
   attempt.evidenceAvailability[1] = { kind: 'trace', state: 'available' }
   attempt.steps = [
@@ -158,7 +165,7 @@ test('treats Pickle-native trace entries as persisted trace evidence', () => {
 
 test('retains adapter-neutral Test artifact capture metadata', () => {
   const input = manifest()
-  const attempt = input.results[0]!.attempts[0]!
+  const attempt = requiredValue(requiredValue(input.results[0]).attempts[0])
   attempt.evidenceAvailability[0] = {
     kind: 'screenshot',
     state: 'available',

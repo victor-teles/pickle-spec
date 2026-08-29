@@ -7,6 +7,7 @@ import {
   resolveLocalProjectStorage,
   type TestRunManifest,
 } from '@pickle-spec/runner'
+import { requiredValue } from '../required-value'
 
 describe('public CLI workspace seam', () => {
   let workspace: string
@@ -311,9 +312,9 @@ Feature: Release acceptance
       }),
     ]
     expect(manifests).toHaveLength(1)
-    const runId = dirname(manifests[0]!)
+    const runId = dirname(requiredValue(manifests[0]))
     const manifest = (await Bun.file(
-      join(runsDirectory(project), manifests[0]!),
+      join(runsDirectory(project), requiredValue(manifests[0])),
     ).json()) as {
       id: string
       finishedAt?: string
@@ -1384,7 +1385,7 @@ export default {
       }),
     ]
     expect(manifestPaths).toHaveLength(1)
-    const runId = dirname(manifestPaths[0]!)
+    const runId = dirname(requiredValue(manifestPaths[0]))
     const runDirectory = join(storage.runsDirectory, runId)
     const manifest = (await Bun.file(
       join(runDirectory, 'manifest.json'),
@@ -1394,7 +1395,7 @@ export default {
     expect(manifest.id).toBe(runId)
     expect(manifest.state).toBe('failed')
     expect(manifest.results).toHaveLength(1)
-    const result = manifest.results[0]!
+    const result = requiredValue(manifest.results[0])
     expect(result.schemaVersion).toBe(2)
     expect(result.specification).toEqual({
       name: 'Checkout',
@@ -1409,17 +1410,17 @@ export default {
     expect(result.executionTargetProfile.id).toBe('chrome')
     expect(result.state).toBe('failed')
     expect(result.attempts).toHaveLength(1)
-    const attempt = result.attempts[0]!
+    const attempt = requiredValue(result.attempts[0])
     expect(attempt.attempt).toBe(1)
     expect(attempt.state).toBe('failed')
     expect(attempt.steps).toHaveLength(2)
-    const actionStep = attempt.steps[0]!
+    const actionStep = requiredValue(attempt.steps[0])
     expect(actionStep.index).toBe(0)
     expect(actionStep.state).toBe('passed')
     expect(actionStep.resolvedActions).toEqual([
       { description: 'Click pay on chrome' },
     ])
-    const outcomeStep = attempt.steps[1]!
+    const outcomeStep = requiredValue(attempt.steps[1])
     expect(outcomeStep.index).toBe(1)
     expect(outcomeStep.state).toBe('failed')
     expect(outcomeStep.resolvedActions).toEqual([
@@ -1453,11 +1454,11 @@ export default {
     }
 
     expect(
-      resolve(screenshot!.path).startsWith(
+      resolve(requiredValue(screenshot).path).startsWith(
         `${resolve(join(runDirectory, 'artifacts'))}${sep}`,
       ),
     ).toBe(true)
-    expect(await Bun.file(screenshot!.path).exists()).toBe(true)
+    expect(await Bun.file(requiredValue(screenshot).path).exists()).toBe(true)
 
     const reopened = await openTestRunStore({ root: project, pickleHome }).open(
       runId,
@@ -1634,7 +1635,7 @@ export default {
         cwd: runsDirectory(project),
       }),
     ]
-    const sourceId = dirname(sourceManifest!)
+    const sourceId = dirname(requiredValue(sourceManifest))
     const rerun = Bun.spawnSync({
       cmd: [pickleCommand, 'run', '--rerun', sourceId, '--reporter', 'ndjson'],
       cwd: project,
@@ -2124,7 +2125,7 @@ Feature: Purchase
     ]
     expect(manifests).toHaveLength(1)
     const manifest = (await Bun.file(
-      join(runsDirectory(project), manifests[0]!),
+      join(runsDirectory(project), requiredValue(manifests[0])),
     ).json()) as {
       schemaVersion: number
       id: string
@@ -2138,7 +2139,11 @@ Feature: Purchase
     })
     const events = (
       await Bun.file(
-        join(runsDirectory(project), dirname(manifests[0]!), 'events.ndjson'),
+        join(
+          runsDirectory(project),
+          dirname(requiredValue(manifests[0])),
+          'events.ndjson',
+        ),
       ).text()
     )
       .trim()
@@ -2308,7 +2313,7 @@ export default {
       }),
     ]
     expect(sourceManifests).toHaveLength(1)
-    const sourceId = dirname(sourceManifests[0]!)
+    const sourceId = dirname(requiredValue(sourceManifests[0]))
     const sourceEvents = await Bun.file(
       join(runsDirectory(project), sourceId, 'events.ndjson'),
     ).text()
@@ -2331,9 +2336,9 @@ export default {
       }),
     ]
     expect(manifests).toHaveLength(2)
-    const rerunManifestPath = manifests.find(
-      (path) => dirname(path) !== sourceId,
-    )!
+    const rerunManifestPath = requiredValue(
+      manifests.find((path) => dirname(path) !== sourceId),
+    )
     const rerunManifest = (await Bun.file(
       join(runsDirectory(project), rerunManifestPath),
     ).json()) as {
@@ -2400,11 +2405,13 @@ export default {
     })
     expect(run.exitCode).toBe(1)
     const sourceId = dirname(
-      [
-        ...new Bun.Glob('*/manifest.json').scanSync({
-          cwd: runsDirectory(project),
-        }),
-      ][0]!,
+      requiredValue(
+        [
+          ...new Bun.Glob('*/manifest.json').scanSync({
+            cwd: runsDirectory(project),
+          }),
+        ][0],
+      ),
     )
     const archivePath = join(project, 'run.archive.json')
     const allurePath = join(project, 'allure-results')
@@ -2428,7 +2435,9 @@ export default {
     ]
     expect(allureResultPaths).toHaveLength(1)
     expect(
-      await Bun.file(join(allurePath, allureResultPaths[0]!)).json(),
+      await Bun.file(
+        join(allurePath, requiredValue(allureResultPaths[0])),
+      ).json(),
     ).toMatchObject({
       testCaseId: 'scnpurchasebbbbbb',
       status: 'failed',
@@ -2611,7 +2620,9 @@ export default {
 
     expect(run.stderr.toString()).toBe('')
     expect(run.exitCode).toBe(0)
-    const result = JSON.parse(run.stdout.toString().trim().split('\n').at(-1)!)
+    const result = JSON.parse(
+      requiredValue(run.stdout.toString().trim().split('\n').at(-1)),
+    )
     expect(result).toMatchObject({
       kind: 'test-result',
       result: {
@@ -2673,8 +2684,10 @@ Feature: Slow checkout
     Then the purchase succeeds`,
     )
 
-    const { openTestRunStore } = await import('@pickle-spec/runner')
-    const store = openTestRunStore({
+    const { openTestRunStore: openLocalTestRunStore } = await import(
+      '@pickle-spec/runner'
+    )
+    const store = openLocalTestRunStore({
       root: project,
       createId: () => 'prior-run',
       now: () => new Date('2026-08-15T12:00:00.000Z'),

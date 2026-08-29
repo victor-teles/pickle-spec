@@ -85,7 +85,7 @@ export async function startWebRecording(
     try {
       return await input.captureFrame()
     } catch {
-      return undefined
+      return
     }
   }
 

@@ -168,6 +168,42 @@ function attemptArtifacts(attempt: ScenarioAttempt): TestArtifact[] {
   return attempt.steps.flatMap((step) => step.artifacts ?? [])
 }
 
+function allureAttachments(
+  attempt: ScenarioAttempt,
+  uuid: string,
+): Array<{
+  descriptor: NonNullable<AllureTestResult['attachments']>[number]
+  file: AllureAttachmentFile
+}> {
+  return attemptArtifacts(attempt).map((artifact, index) => {
+    const fileName = `${uuid}-${index + 1}-attachment${attachmentExtension(artifact)}`
+    return {
+      descriptor: {
+        name: artifact.name ?? artifact.kind,
+        source: fileName,
+        type: artifact.mediaType,
+      },
+      file: { sourcePath: artifact.path, fileName },
+    }
+  })
+}
+
+function allureParameters(
+  result: TestResult,
+  attempt: ScenarioAttempt,
+): AllureTestResult['parameters'] {
+  return [
+    ...(result.scenario.examplesRowId
+      ? [{ name: 'examplesRowId', value: result.scenario.examplesRowId }]
+      : []),
+    {
+      name: 'executionTargetProfile',
+      value: result.executionTargetProfile.id,
+    },
+    { name: 'attempt', value: String(attempt.attempt), excluded: true },
+  ]
+}
+
 function projectAttempt(
   manifest: TestRunManifest,
   result: TestResult,
@@ -188,32 +224,8 @@ function projectAttempt(
     result.executionTargetProfile.id,
     attempt.attempt,
   )
-  const attachments = attemptArtifacts(attempt).map((artifact, index) => {
-    const fileName = `${uuid}-${index + 1}-attachment${attachmentExtension(artifact)}`
-    return {
-      descriptor: {
-        name: artifact.name ?? artifact.kind,
-        source: fileName,
-        type: artifact.mediaType,
-      },
-      file: { sourcePath: artifact.path, fileName },
-    }
-  })
-  const parameters: AllureTestResult['parameters'] = [
-    ...(result.scenario.examplesRowId
-      ? [
-          {
-            name: 'examplesRowId',
-            value: result.scenario.examplesRowId,
-          },
-        ]
-      : []),
-    {
-      name: 'executionTargetProfile',
-      value: result.executionTargetProfile.id,
-    },
-    { name: 'attempt', value: String(attempt.attempt), excluded: true },
-  ]
+  const attachments = allureAttachments(attempt, uuid)
+  const parameters = allureParameters(result, attempt)
   const details = statusDetails(attempt.message, result.flaky)
   const testResult: AllureTestResult = {
     uuid,

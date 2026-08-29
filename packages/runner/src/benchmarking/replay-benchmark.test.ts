@@ -3,11 +3,18 @@ import {
   evaluateReplayPerformanceBenchmark,
   runReplayPerformanceBenchmark,
 } from '../../benchmarking'
+import { requiredValue } from '../required-value'
+
+function replayDuration(index: number): number {
+  if (index < 10) return 50
+  if (index < 19) return 65
+  return 100
+}
 
 test('evaluates nearest-rank percentiles against inclusive Replay budgets', () => {
   const samples = Array.from({ length: 20 }, (_, index) => ({
     adaptiveMs: 100,
-    replayMs: index < 10 ? 50 : index < 19 ? 65 : 100,
+    replayMs: replayDuration(index),
   }))
 
   expect(
@@ -46,7 +53,7 @@ test('rejects non-finite and negative measured durations', () => {
       adaptiveMs: 100,
       replayMs: 50,
     }))
-    samples[0]!.replayMs = invalidDuration
+    requiredValue(samples[0]).replayMs = invalidDuration
 
     expect(() =>
       evaluateReplayPerformanceBenchmark({

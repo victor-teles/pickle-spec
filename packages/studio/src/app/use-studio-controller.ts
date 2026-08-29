@@ -10,6 +10,41 @@ import { type StudioArea, useStudioNavigation } from './use-studio-navigation'
 
 const noSpecifications: readonly StudioSpecification[] = []
 
+interface StudioActionsInput {
+  commandPalette: ReturnType<typeof useCommandPalette>
+  navigation: ReturnType<typeof useStudioNavigation>
+  run: ReturnType<typeof useLiveRun>
+}
+
+function studioActions({
+  commandPalette,
+  navigation,
+  run,
+}: StudioActionsInput) {
+  return {
+    cancelCurrentRun: () => void run.cancelRun(),
+    cancelRun: (activeRunId: string) => void run.cancelRun(activeRunId),
+    jumpRun: (activeRunId: string) =>
+      navigation.navigate({ kind: 'run', runId: activeRunId }),
+    openCommands: () => commandPalette.setVisibility(true),
+    refreshSpecification: (specification: StudioSpecification) =>
+      void run.startNewRun({
+        paths: [specification.uri],
+        refreshCache: true,
+      }),
+    selectArea: (area: StudioArea) => navigation.showArea(area),
+    startAll: () => void run.startNewRun({}),
+    startNewRun: (request: StudioRunRequest) => void run.startNewRun(request),
+    startScenario: ({ specification, scenario }: CurrentScenario) =>
+      void run.startNewRun({
+        paths: [specification.uri],
+        scenarioId: scenario.id,
+      }),
+    startSpecification: (specification: StudioSpecification) =>
+      void run.startNewRun({ paths: [specification.uri] }),
+  }
+}
+
 export function useStudioController() {
   const data = useStudioData({ api: studioApi })
   const navigation = useStudioNavigation()
@@ -42,65 +77,8 @@ export function useStudioController() {
     if (data.project) run.clearReadinessAttempt()
   }, [data.project, run.clearReadinessAttempt])
 
-  function selectArea(area: StudioArea) {
-    navigation.showArea(area)
-  }
-
-  function openCommands() {
-    commandPalette.setVisibility(true)
-  }
-
-  function cancelRun(activeRunId: string) {
-    void run.cancelRun(activeRunId)
-  }
-
-  function cancelCurrentRun() {
-    void run.cancelRun()
-  }
-
-  function jumpRun(activeRunId: string) {
-    navigation.navigate({ kind: 'run', runId: activeRunId })
-  }
-
-  function refreshSpecification(specification: StudioSpecification) {
-    void run.startNewRun({
-      paths: [specification.uri],
-      refreshCache: true,
-    })
-  }
-
-  function startAll() {
-    void run.startNewRun({})
-  }
-
-  function startScenario({ specification, scenario }: CurrentScenario) {
-    void run.startNewRun({
-      paths: [specification.uri],
-      scenarioId: scenario.id,
-    })
-  }
-
-  function startSpecification(specification: StudioSpecification) {
-    void run.startNewRun({ paths: [specification.uri] })
-  }
-
-  function startNewRun(request: StudioRunRequest) {
-    void run.startNewRun(request)
-  }
-
   return {
-    actions: {
-      cancelCurrentRun,
-      cancelRun,
-      jumpRun,
-      openCommands,
-      refreshSpecification,
-      selectArea,
-      startAll,
-      startNewRun,
-      startScenario,
-      startSpecification,
-    },
+    actions: studioActions({ commandPalette, navigation, run }),
     activeProfileId,
     authoring,
     commandPalette,

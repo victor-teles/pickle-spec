@@ -6,45 +6,110 @@ import { SettingsPanel } from '../settings/settings'
 import { SpecificationsScreen } from '../specifications/specifications-screen'
 import { CommandPalette } from './command-palette'
 import { studioApi } from './studio-api'
+import type { StudioRoute } from './studio-route'
 import { StudioTopbar } from './studio-topbar'
 import { useStudioController } from './use-studio-controller'
 
-export function StudioApp({ loadingFallback }: { loadingFallback: ReactNode }) {
-  const studio = useStudioController()
+type RunsRoute = Extract<
+  StudioRoute,
+  { kind: 'runs' | 'run' | 'result' | 'artifact' }
+>
+
+function isRunsRoute(route: StudioRoute): route is RunsRoute {
+  return ['runs', 'run', 'result', 'artifact'].includes(route.kind)
+}
+
+type StudioController = ReturnType<typeof useStudioController>
+
+function StudioSpecificationsArea(props: { studio: StudioController }) {
+  const { studio } = props
   const { data } = studio
+  if (!data.project) return null
+  return (
+    <SpecificationsScreen
+      api={studioApi}
+      authoring={studio.authoring}
+      error={data.error}
+      onAuthoringChange={studio.setAuthoring}
+      onError={data.setErrorMessage}
+      onReloadProject={data.reloadProject}
+      project={data.project}
+      run={{
+        cells: studio.run.cells,
+        live: studio.run.live,
+        onCancel: studio.actions.cancelCurrentRun,
+        onPauseFollowing: studio.run.pauseFollowing,
+        onPinSelection: studio.run.pinSelection,
+        onResumeFollowing: studio.run.resumeFollowing,
+        onRun: studio.actions.startNewRun,
+        onSelectInspectorTab: studio.run.selectInspectorTab,
+        origin: studio.run.origin,
+        runId: studio.run.runId,
+        running: studio.run.running,
+        selectedResult: studio.run.selectedResult,
+      }}
+      selection={{
+        currentScenarioId: studio.selection.currentScenarioContext?.scenario.id,
+        focusRequest: studio.selection.focus?.request ?? 0,
+        focusTargetId:
+          studio.selection.focus?.kind === 'scenario'
+            ? studio.selection.focus.scenarioId
+            : undefined,
+        headingRef: studio.selection.headingRef,
+        missing: studio.selection.missing,
+        onSelectScenario: studio.selection.selectScenario,
+        onSelect: studio.selection.selectSpecification,
+        onSelectCreated: studio.selection.selectCreatedSpecification,
+        selected: studio.selection.selected,
+      }}
+    />
+  )
+}
 
-  if (data.error && !data.project) {
-    return <InitialErrorState error={data.error} onRetry={data.retryProject} />
+function StudioAreaContent(props: { studio: StudioController }) {
+  const { studio } = props
+  const { data, navigation } = studio
+  if (!data.project) return null
+  if (navigation.area === 'Settings') {
+    return (
+      <div className="studio-stage min-h-0 flex-1 overflow-auto">
+        <SettingsPanel
+          project={data.project}
+          api={studioApi}
+          onProject={data.setProject}
+          onError={data.setErrorMessage}
+        />
+      </div>
+    )
   }
-  if (!data.project) return loadingFallback
+  if (navigation.area === 'Runs' && isRunsRoute(navigation.route)) {
+    return (
+      <div className="studio-stage flex min-h-0 flex-1 overflow-hidden">
+        <RunsArea
+          api={studioApi}
+          index={data.runsIndex}
+          project={data.project}
+          route={navigation.route}
+          runsBlocked={studio.run.running}
+          onCancel={studio.actions.cancelRun}
+          onError={data.setErrorMessage}
+          onNavigate={navigation.navigate}
+          onRerun={studio.run.startRun}
+          reloadIndex={data.reloadRunsIndex}
+        />
+      </div>
+    )
+  }
+  return <StudioSpecificationsArea studio={studio} />
+}
 
-  const specificationSelection = {
-    currentScenarioId: studio.selection.currentScenarioContext?.scenario.id,
-    focusRequest: studio.selection.focus?.request ?? 0,
-    focusTargetId:
-      studio.selection.focus?.kind === 'scenario'
-        ? studio.selection.focus.scenarioId
-        : undefined,
-    headingRef: studio.selection.headingRef,
-    missing: studio.selection.missing,
-    onSelectScenario: studio.selection.selectScenario,
-    onSelect: studio.selection.selectSpecification,
-    onSelectCreated: studio.selection.selectCreatedSpecification,
-    selected: studio.selection.selected,
-  }
-  const specificationRun = {
-    cells: studio.run.cells,
-    live: studio.run.live,
-    onCancel: studio.actions.cancelCurrentRun,
-    onPauseFollowing: studio.run.pauseFollowing,
-    onPinSelection: studio.run.pinSelection,
-    onResumeFollowing: studio.run.resumeFollowing,
-    onRun: studio.actions.startNewRun,
-    onSelectInspectorTab: studio.run.selectInspectorTab,
-    origin: studio.run.origin,
-    runId: studio.run.runId,
-    running: studio.run.running,
-    selectedResult: studio.run.selectedResult,
+function StudioWorkspace(props: { studio: StudioController }) {
+  const { studio } = props
+  const { data } = studio
+  if (!data.project) return null
+
+  function handleOpenSettings() {
+    studio.actions.selectArea('Settings')
   }
 
   return (
@@ -78,56 +143,28 @@ export function StudioApp({ loadingFallback }: { loadingFallback: ReactNode }) {
       <FirstRunOnboarding
         activeProfileId={studio.activeProfileId}
         currentSpecification={studio.selection.selected}
-        onOpenSettings={() => studio.actions.selectArea('Settings')}
+        onOpenSettings={handleOpenSettings}
         onRun={studio.run.startRun}
         project={data.project}
         readinessAttempt={studio.run.readinessAttempt}
         running={studio.run.running}
         runsIndex={data.runsIndex}
       />
-      {studio.navigation.area === 'Settings' ? (
-        <div className="studio-stage min-h-0 flex-1 overflow-auto">
-          <SettingsPanel
-            project={data.project}
-            api={studioApi}
-            onProject={data.setProject}
-            onError={data.setErrorMessage}
-          />
-        </div>
-      ) : studio.navigation.area === 'Runs' &&
-        (studio.navigation.route.kind === 'runs' ||
-          studio.navigation.route.kind === 'run' ||
-          studio.navigation.route.kind === 'result' ||
-          studio.navigation.route.kind === 'artifact') ? (
-        <div className="studio-stage flex min-h-0 flex-1 overflow-hidden">
-          <RunsArea
-            api={studioApi}
-            index={data.runsIndex}
-            project={data.project}
-            route={studio.navigation.route}
-            runsBlocked={studio.run.running}
-            onCancel={studio.actions.cancelRun}
-            onError={data.setErrorMessage}
-            onNavigate={studio.navigation.navigate}
-            onRerun={studio.run.startRun}
-            reloadIndex={data.reloadRunsIndex}
-          />
-        </div>
-      ) : (
-        <SpecificationsScreen
-          api={studioApi}
-          authoring={studio.authoring}
-          error={data.error}
-          onAuthoringChange={studio.setAuthoring}
-          onError={data.setErrorMessage}
-          onReloadProject={data.reloadProject}
-          project={data.project}
-          run={specificationRun}
-          selection={specificationSelection}
-        />
-      )}
+      <StudioAreaContent studio={studio} />
     </div>
   )
+}
+
+export function StudioApp({ loadingFallback }: { loadingFallback: ReactNode }) {
+  const studio = useStudioController()
+  const { data } = studio
+
+  if (data.error && !data.project) {
+    return <InitialErrorState error={data.error} onRetry={data.retryProject} />
+  }
+  if (!data.project) return loadingFallback
+
+  return <StudioWorkspace studio={studio} />
 }
 
 type InitialErrorStateProps = {

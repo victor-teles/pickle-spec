@@ -57,6 +57,179 @@ type PaletteAction = {
   searchValue: string
 }
 
+type PaletteItems = ReturnType<typeof buildCommandPaletteItems>
+type ProfileTarget = { profileId?: string; searchValue: string }
+type SelectPaletteAction = (action: () => void) => void
+
+function PaletteActions(props: {
+  actions: readonly PaletteAction[]
+  select: SelectPaletteAction
+}) {
+  if (props.actions.length === 0) return null
+  return (
+    <CommandGroup heading="Actions">
+      {props.actions.map((action) => (
+        <CommandItem
+          key={action.label}
+          value={action.searchValue}
+          disabled={action.disabled}
+          onSelect={() => props.select(action.onSelect)}
+        >
+          <span>{action.label}</span>
+        </CommandItem>
+      ))}
+    </CommandGroup>
+  )
+}
+
+function PaletteSpecifications(props: {
+  items: PaletteItems['specifications']
+  onJump: CommandPaletteProps['onJumpSpecification']
+  select: SelectPaletteAction
+}) {
+  if (props.items.length === 0) return null
+  return (
+    <CommandGroup heading="Specifications">
+      {props.items.map(({ specification, searchValue }) => (
+        <CommandItem
+          key={specification.id}
+          value={searchValue}
+          onSelect={() => props.select(() => props.onJump(specification))}
+        >
+          <span className="min-w-0 flex-1 truncate">{specification.name}</span>
+          <span className="max-w-48 truncate font-mono text-[0.625rem] text-foreground">
+            {specification.uri}
+          </span>
+        </CommandItem>
+      ))}
+    </CommandGroup>
+  )
+}
+
+function PaletteScenarios(props: {
+  items: PaletteItems['scenarios']
+  onJump: CommandPaletteProps['onJumpSpecification']
+  select: SelectPaletteAction
+}) {
+  if (props.items.length === 0) return null
+  return (
+    <CommandGroup heading="Scenarios">
+      {props.items.map(({ scenario, specification, searchValue }) => (
+        <CommandItem
+          key={`${specification.id}:${scenario.id}`}
+          value={searchValue}
+          onSelect={() =>
+            props.select(() => props.onJump(specification, scenario))
+          }
+        >
+          <span className="min-w-0 flex-1 truncate">{scenario.name}</span>
+          <span className="max-w-40 truncate text-foreground">
+            {specification.name}
+          </span>
+        </CommandItem>
+      ))}
+    </CommandGroup>
+  )
+}
+
+function PaletteRuns(props: {
+  items: PaletteItems['runs']
+  onJump: CommandPaletteProps['onJumpRun']
+  select: SelectPaletteAction
+}) {
+  if (props.items.length === 0) return null
+  return (
+    <CommandGroup heading="Runs">
+      {props.items.map((run) => (
+        <CommandItem
+          key={run.id}
+          value={run.searchValue}
+          onSelect={() => props.select(() => props.onJump(run.id))}
+        >
+          <span className="min-w-0 flex-1 truncate font-mono">{run.id}</span>
+          <span className="max-w-48 truncate text-foreground">
+            {runDescription(run.active, run.summary)}
+          </span>
+        </CommandItem>
+      ))}
+    </CommandGroup>
+  )
+}
+
+function PaletteProfiles(props: {
+  activeProfileId?: string
+  items: readonly ProfileTarget[]
+  onSelectProfile: CommandPaletteProps['onSelectProfile']
+  select: SelectPaletteAction
+}) {
+  if (props.items.length === 0) return null
+  return (
+    <>
+      <CommandSeparator />
+      <CommandGroup heading="Run target">
+        {props.items.map(({ profileId, searchValue }) => (
+          <CommandItem
+            key={profileId ?? 'all-profiles'}
+            value={searchValue}
+            data-checked={props.activeProfileId === profileId}
+            aria-current={
+              props.activeProfileId === profileId ? 'true' : undefined
+            }
+            onSelect={() =>
+              props.select(() => props.onSelectProfile(profileId))
+            }
+          >
+            {profileId ?? 'All profiles'}
+          </CommandItem>
+        ))}
+      </CommandGroup>
+    </>
+  )
+}
+
+function PaletteResults(props: {
+  actions: readonly PaletteAction[]
+  items: PaletteItems
+  profiles: readonly ProfileTarget[]
+  palette: CommandPaletteProps
+  select: SelectPaletteAction
+}) {
+  const hasDestinations =
+    props.items.specifications.length > 0 ||
+    props.items.scenarios.length > 0 ||
+    props.items.runs.length > 0
+  return (
+    <CommandList>
+      <CommandEmpty>No Studio commands match this search.</CommandEmpty>
+      <PaletteActions actions={props.actions} select={props.select} />
+      {props.actions.length > 0 && hasDestinations ? (
+        <CommandSeparator />
+      ) : null}
+      <PaletteSpecifications
+        items={props.items.specifications}
+        onJump={props.palette.onJumpSpecification}
+        select={props.select}
+      />
+      <PaletteScenarios
+        items={props.items.scenarios}
+        onJump={props.palette.onJumpSpecification}
+        select={props.select}
+      />
+      <PaletteRuns
+        items={props.items.runs}
+        onJump={props.palette.onJumpRun}
+        select={props.select}
+      />
+      <PaletteProfiles
+        activeProfileId={props.palette.activeProfileId}
+        items={props.profiles}
+        onSelectProfile={props.palette.onSelectProfile}
+        select={props.select}
+      />
+    </CommandList>
+  )
+}
+
 export function CommandPalette(props: CommandPaletteProps) {
   const [query, setQuery] = useState('')
   const items = useMemo(
@@ -111,113 +284,13 @@ export function CommandPalette(props: CommandPaletteProps) {
           value={query}
           onValueChange={setQuery}
         />
-        <CommandList>
-          <CommandEmpty>No Studio commands match this search.</CommandEmpty>
-          {visibleActions.length > 0 ? (
-            <CommandGroup heading="Actions">
-              {visibleActions.map((action) => (
-                <CommandItem
-                  key={action.label}
-                  value={action.searchValue}
-                  disabled={action.disabled}
-                  onSelect={() => select(action.onSelect)}
-                >
-                  <span>{action.label}</span>
-                </CommandItem>
-              ))}
-            </CommandGroup>
-          ) : null}
-          {visibleActions.length > 0 &&
-          (items.specifications.length > 0 ||
-            items.scenarios.length > 0 ||
-            items.runs.length > 0) ? (
-            <CommandSeparator />
-          ) : null}
-          {items.specifications.length > 0 ? (
-            <CommandGroup heading="Specifications">
-              {items.specifications.map(({ specification, searchValue }) => (
-                <CommandItem
-                  key={specification.id}
-                  value={searchValue}
-                  onSelect={() =>
-                    select(() => props.onJumpSpecification(specification))
-                  }
-                >
-                  <span className="min-w-0 flex-1 truncate">
-                    {specification.name}
-                  </span>
-                  <span className="max-w-48 truncate font-mono text-[0.625rem] text-foreground">
-                    {specification.uri}
-                  </span>
-                </CommandItem>
-              ))}
-            </CommandGroup>
-          ) : null}
-          {items.scenarios.length > 0 ? (
-            <CommandGroup heading="Scenarios">
-              {items.scenarios.map(
-                ({ scenario, specification, searchValue }) => (
-                  <CommandItem
-                    key={`${specification.id}:${scenario.id}`}
-                    value={searchValue}
-                    onSelect={() =>
-                      select(() =>
-                        props.onJumpSpecification(specification, scenario),
-                      )
-                    }
-                  >
-                    <span className="min-w-0 flex-1 truncate">
-                      {scenario.name}
-                    </span>
-                    <span className="max-w-40 truncate text-foreground">
-                      {specification.name}
-                    </span>
-                  </CommandItem>
-                ),
-              )}
-            </CommandGroup>
-          ) : null}
-          {items.runs.length > 0 ? (
-            <CommandGroup heading="Runs">
-              {items.runs.map((run) => (
-                <CommandItem
-                  key={run.id}
-                  value={run.searchValue}
-                  onSelect={() => select(() => props.onJumpRun(run.id))}
-                >
-                  <span className="min-w-0 flex-1 truncate font-mono">
-                    {run.id}
-                  </span>
-                  <span className="max-w-48 truncate text-foreground">
-                    {runDescription(run.active, run.summary)}
-                  </span>
-                </CommandItem>
-              ))}
-            </CommandGroup>
-          ) : null}
-          {visibleProfileTargets.length > 0 ? (
-            <>
-              <CommandSeparator />
-              <CommandGroup heading="Run target">
-                {visibleProfileTargets.map(({ profileId, searchValue }) => (
-                  <CommandItem
-                    key={profileId ?? 'all-profiles'}
-                    value={searchValue}
-                    data-checked={props.activeProfileId === profileId}
-                    aria-current={
-                      props.activeProfileId === profileId ? 'true' : undefined
-                    }
-                    onSelect={() =>
-                      select(() => props.onSelectProfile(profileId))
-                    }
-                  >
-                    {profileId ?? 'All profiles'}
-                  </CommandItem>
-                ))}
-              </CommandGroup>
-            </>
-          ) : null}
-        </CommandList>
+        <PaletteResults
+          actions={visibleActions}
+          items={items}
+          profiles={visibleProfileTargets}
+          palette={props}
+          select={select}
+        />
       </Command>
     </CommandDialog>
   )

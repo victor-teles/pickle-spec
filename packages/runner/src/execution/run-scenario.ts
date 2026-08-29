@@ -12,6 +12,7 @@ import {
   reseatGap,
 } from '../execution-cache/cached-step-prefix'
 import type { ExecutionCacheEnvelope } from '../execution-cache/execution-cache'
+import { requiredValue } from '../required-value'
 import type {
   DiagnosticEntry,
   EvidenceAvailability,
@@ -302,7 +303,7 @@ export function withFinalAttempt(
   const attempts = result.attempts.map((attempt, index) =>
     index === result.attempts.length - 1 ? { ...attempt, ...update } : attempt,
   )
-  const final = attempts.at(-1)!
+  const final = requiredValue(attempts.at(-1))
   return {
     ...result,
     state: final.state,
@@ -322,7 +323,7 @@ export function scenarioFinishedPayload(result: TestResult): RunEventPayload {
     scenario: result.scenario,
     executionTargetProfile: result.executionTargetProfile,
     scope: {
-      scenarioId: result.scenario.id!,
+      scenarioId: requiredValue(result.scenario.id),
       examplesRowId: result.scenario.examplesRowId,
       executionTargetProfileId: result.executionTargetProfile.id,
       attempt: attempt.attempt,
@@ -463,20 +464,21 @@ async function recordStepExecution(
   startedAt: string,
   execution: StepExecution,
 ): Promise<boolean> {
+  const progress = context.progress
   const templateStep = templateStepAt(context.input.scenario, stepIndex)
   const projected = publicStepExecution(execution, context.bindings)
-  context.progress.runtimeValueExposed ||= projected.runtimeValueExposed
-  context.progress.evidenceAvailability.push(
+  progress.runtimeValueExposed ||= projected.runtimeValueExposed
+  progress.evidenceAvailability.push(
     ...(projected.execution.evidenceAvailability ?? []),
   )
   if (context.input.signal?.aborted) {
-    context.progress.state = 'cancelled'
-    context.progress.message = 'Scenario cancelled during step execution'
+    progress.state = 'cancelled'
+    progress.message = 'Scenario cancelled during step execution'
     await context.recordStep(stepIndex, startedAt, {
       step: templateStep,
-      state: context.progress.state,
+      state: progress.state,
       resolvedActions: projected.execution.resolvedActions,
-      message: context.progress.message,
+      message: progress.message,
     })
     return false
   }
@@ -498,14 +500,14 @@ async function recordStepExecution(
       : undefined,
   })
   if (execution.replayDiverged) {
-    context.progress.replayDiverged = true
-    context.progress.state = 'failed'
-    context.progress.message = projected.execution.message
+    progress.replayDiverged = true
+    progress.state = 'failed'
+    progress.message = projected.execution.message
     return false
   }
   if (execution.state === 'passed') return true
-  context.progress.state = execution.state
-  context.progress.message = projected.execution.message
+  progress.state = execution.state
+  progress.message = projected.execution.message
   return false
 }
 
@@ -606,16 +608,20 @@ function recordExecutionError(
   signal?: AbortSignal,
   stepIndex?: number,
 ): void {
+  const attemptProgress = progress
   const rawMessage = errorMessage(error)
-  progress.runtimeValueExposed ||= stringContainsBinding(rawMessage, bindings)
-  progress.state = isCancellation(error, signal)
+  attemptProgress.runtimeValueExposed ||= stringContainsBinding(
+    rawMessage,
+    bindings,
+  )
+  attemptProgress.state = isCancellation(error, signal)
     ? 'cancelled'
     : 'infrastructure-error'
-  progress.message = redactString(rawMessage, bindings)
-  progress.diagnostics.push(
+  attemptProgress.message = redactString(rawMessage, bindings)
+  attemptProgress.diagnostics.push(
     runnerDiagnostic(
       input,
-      progress.message,
+      attemptProgress.message,
       occurredAt,
       stepIndex,
       stepIndex === undefined
@@ -813,17 +819,13 @@ async function executeStepSession(
   progress.replayedStepCount = cursor.replayUntil
 }
 
-export async function runScenarioAttempt(
+function createAttemptEmitter(
   input: ScenarioAttemptInput,
-): Promise<AttemptScenarioRun> {
-  const now = input.now ?? (() => new Date())
-  const scenarioWallStartedAt = Date.now()
-  const events: RunEvent[] = []
+  now: () => Date,
+  events: RunEvent[],
+): EmitAttemptEvent {
   let sequence = 0
-  const emit = async (
-    event: RunEventPayload,
-    occurredAt = now().toISOString(),
-  ): Promise<RunEvent> => {
+  return async (event, occurredAt = now().toISOString()) => {
     const versionedEvent = {
       ...event,
       schemaVersion: testRunSchemaVersion,
@@ -834,9 +836,10 @@ export async function runScenarioAttempt(
     await input.onEvent?.(versionedEvent)
     return versionedEvent
   }
+}
 
-  let completion: TargetSessionCompletion | undefined
-  const progress: AttemptProgress = {
+function initialAttemptProgress(): AttemptProgress {
+  return {
     state: 'passed',
     replayDiverged: false,
     runtimeValueExposed: false,
@@ -845,11 +848,133 @@ export async function runScenarioAttempt(
     replayedStepCount: 0,
     adaptiveEvaluated: false,
   }
+}
+
+function openAttemptSession(
+  input: ScenarioAttemptInput,
+): Promise<TargetSession> {
+  return input.adapter.openSession({
+    executionTargetProfile: input.executionTargetProfile,
+    specification: input.specification,
+    scenario: input.scenario,
+    mode: input.mode,
+    executionCache: input.cacheEntry
+      ? {
+          adapterPayload: input.cacheEntry.adapterPayload,
+          requiredVariables: input.cacheEntry.requiredVariables,
+        }
+      : undefined,
+    scenarioTemplate: input.scenario.template,
+    runtimeBindings: input.scenario.runtimeBindings,
+    signal: input.signal,
+  })
+}
+
+function createStepRecorder(
+  input: ScenarioAttemptInput,
+  now: () => Date,
+  emit: EmitAttemptEvent,
+  steps: TestStepResult[],
+): RecordStep {
+  return async (stepIndex, startedAt, result) => {
+    const finishedAt = now().toISOString()
+    const timedResult: TestStepResult = {
+      ...result,
+      index: stepIndex,
+      startedAt,
+      finishedAt,
+      durationMs: durationMs(startedAt, finishedAt),
+    }
+    steps.push(timedResult)
+    await emit(
+      {
+        type: 'step-finished',
+        result: timedResult,
+        ...attemptIdentity(input, stepIndex),
+      },
+      finishedAt,
+    )
+  }
+}
+
+interface ExecuteOpenedAttemptInput {
+  emit: EmitAttemptEvent
+  events: RunEvent[]
+  input: ScenarioAttemptInput
+  now: () => Date
+  progress: AttemptProgress
+  scenarioStartedAt: string
+  scenarioWallStartedAt: number
+  session: TargetSession
+}
+
+async function startScenarioAttempt(
+  input: ScenarioAttemptInput,
+  emit: EmitAttemptEvent,
+): Promise<string> {
   const started = await emit({
     type: 'scenario-started',
     ...attemptIdentity(input),
   })
-  const scenarioStartedAt = started.occurredAt
+  return started.occurredAt
+}
+
+async function executeOpenedAttempt(context: ExecuteOpenedAttemptInput) {
+  const {
+    emit,
+    events,
+    input,
+    now,
+    progress,
+    scenarioStartedAt,
+    scenarioWallStartedAt,
+    session,
+  } = context
+  const steps: TestStepResult[] = []
+  const recordStep = createStepRecorder(input, now, emit, steps)
+  progress.state = input.signal?.aborted ? 'cancelled' : 'passed'
+  progress.message = input.signal?.aborted
+    ? 'Scenario cancelled before step execution started'
+    : undefined
+  const bindings = nonemptyBindings(input.scenario.runtimeBindings)
+  const recordExecution = (
+    stepIndex: number,
+    startedAt: string,
+    execution: StepExecution,
+  ) =>
+    recordStepExecution(
+      { input, bindings, progress, recordStep },
+      stepIndex,
+      startedAt,
+      execution,
+    )
+  const completion = await executeTargetSession(
+    session,
+    scenarioWallStartedAt,
+    {
+      input,
+      bindings,
+      progress,
+      latestOccurredAt: () => events.at(-1)?.occurredAt ?? scenarioStartedAt,
+      emit,
+      recordExecution,
+      recordStep,
+    },
+  )
+  return { completion, steps }
+}
+
+export async function runScenarioAttempt(
+  input: ScenarioAttemptInput,
+): Promise<AttemptScenarioRun> {
+  const now = input.now ?? (() => new Date())
+  const scenarioWallStartedAt = Date.now()
+  const events: RunEvent[] = []
+  const emit = createAttemptEmitter(input, now, events)
+
+  let completion: TargetSessionCompletion | undefined
+  const progress = initialAttemptProgress()
+  const scenarioStartedAt = await startScenarioAttempt(input, emit)
 
   const finish = async (
     state: TestResultState,
@@ -875,21 +1000,7 @@ export async function runScenarioAttempt(
 
   let session: TargetSession
   try {
-    session = await input.adapter.openSession({
-      executionTargetProfile: input.executionTargetProfile,
-      specification: input.specification,
-      scenario: input.scenario,
-      mode: input.mode,
-      executionCache: input.cacheEntry
-        ? {
-            adapterPayload: input.cacheEntry.adapterPayload,
-            requiredVariables: input.cacheEntry.requiredVariables,
-          }
-        : undefined,
-      scenarioTemplate: input.scenario.template,
-      runtimeBindings: input.scenario.runtimeBindings,
-      signal: input.signal,
-    })
+    session = await openAttemptSession(input)
   } catch (error) {
     const bindings = nonemptyBindings(input.scenario.runtimeBindings)
     recordExecutionError(
@@ -903,59 +1014,17 @@ export async function runScenarioAttempt(
     return finish(progress.state, [], progress.message)
   }
 
-  const steps: TestStepResult[] = []
-  const recordStep: RecordStep = async (stepIndex, startedAt, result) => {
-    const finishedAt = now().toISOString()
-    const timedResult: TestStepResult = {
-      ...result,
-      index: stepIndex,
-      startedAt,
-      finishedAt,
-      durationMs: durationMs(startedAt, finishedAt),
-    }
-    steps.push(timedResult)
-    await emit(
-      {
-        type: 'step-finished',
-        result: timedResult,
-        ...attemptIdentity(input, stepIndex),
-      },
-      finishedAt,
-    )
-  }
-  progress.state = input.signal?.aborted ? 'cancelled' : 'passed'
-  progress.message = input.signal?.aborted
-    ? 'Scenario cancelled before step execution started'
-    : undefined
-  const bindings = nonemptyBindings(input.scenario.runtimeBindings)
-
-  const recordExecution = async (
-    stepIndex: number,
-    startedAt: string,
-    execution: StepExecution,
-  ): Promise<boolean> =>
-    recordStepExecution(
-      { input, bindings, progress, recordStep },
-      stepIndex,
-      startedAt,
-      execution,
-    )
-
-  const executionContext: SessionExecutionContext = {
-    input,
-    bindings,
-    progress,
-    latestOccurredAt: () => events.at(-1)?.occurredAt ?? scenarioStartedAt,
+  const executed = await executeOpenedAttempt({
     emit,
-    recordExecution,
-    recordStep,
-  }
-
-  completion = await executeTargetSession(
-    session,
+    events,
+    input,
+    now,
+    progress,
+    scenarioStartedAt,
     scenarioWallStartedAt,
-    executionContext,
-  )
+    session,
+  })
+  completion = executed.completion
 
-  return finish(progress.state, steps, progress.message)
+  return finish(progress.state, executed.steps, progress.message)
 }

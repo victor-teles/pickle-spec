@@ -4,6 +4,7 @@ import {
   type ScenarioRun,
   type TestResultState,
 } from '@pickle-spec/runner'
+import { requiredValue } from '../required-value'
 import { createRunReporter, terminalReporterCapabilities } from './run-reporter'
 import { finishReporter, passedRun } from './run-reporter.test-support.ts'
 
@@ -11,21 +12,26 @@ function setResultState(
   run: ScenarioRun,
   state: TestResultState,
 ): ReturnType<typeof finalScenarioAttempt> {
-  run.result.state = state
-  const attempt = finalScenarioAttempt(run.result)
+  const mutableRun = run
+  mutableRun.result.state = state
+  const attempt = finalScenarioAttempt(mutableRun.result)
   attempt.state = state
   return attempt
 }
 
 function markFlaky(run: ScenarioRun, attemptCount: number): void {
-  const finalAttempt = finalScenarioAttempt(run.result)
-  run.result.flaky = true
-  run.result.attempts = Array.from({ length: attemptCount }, (_, index) => ({
-    ...finalAttempt,
-    attempt: index + 1,
-    state: index === attemptCount - 1 ? 'passed' : 'failed',
-    steps: index === attemptCount - 1 ? finalAttempt.steps : [],
-  }))
+  const mutableRun = run
+  const finalAttempt = finalScenarioAttempt(mutableRun.result)
+  mutableRun.result.flaky = true
+  mutableRun.result.attempts = Array.from(
+    { length: attemptCount },
+    (_, index) => ({
+      ...finalAttempt,
+      attempt: index + 1,
+      state: index === attemptCount - 1 ? 'passed' : 'failed',
+      steps: index === attemptCount - 1 ? finalAttempt.steps : [],
+    }),
+  )
 }
 
 test('renders completed Test results as Vitest-style lines', () => {
@@ -166,7 +172,7 @@ test('streams Test results in completion order without repeating them at finish'
   progressiveReporter.start()
   progressiveReporter.prepare?.(schedule)
   for (const index of [4, 5, 3, 1, 0]) {
-    progressiveReporter.complete?.(runs[index]!.result)
+    progressiveReporter.complete?.(requiredValue(runs[index]).result)
   }
   expect(progressiveLines.join('\n')).toContain(
     '✓ [web] features/b.feature > Ready early [50ms]',
@@ -175,7 +181,7 @@ test('streams Test results in completion order without repeating them at finish'
     '✓ [web] features/a.feature > First Scenario [10ms]',
   )
 
-  progressiveReporter.complete?.(runs[2]!.result)
+  progressiveReporter.complete?.(requiredValue(runs[2]).result)
   finishReporter(progressiveReporter, runs, 100)
 
   const resultLines = progressiveLines.filter((line) => /[✓×!↓○]/u.test(line))
@@ -217,7 +223,7 @@ test('keeps schedule and completion callbacks out of NDJSON output', () => {
 
   finishReporter(reporter, [run], 10)
   expect(lines).toHaveLength(1)
-  expect(JSON.parse(lines[0]!)).toEqual({
+  expect(JSON.parse(requiredValue(lines[0]))).toEqual({
     kind: 'test-result',
     result: run.result,
   })

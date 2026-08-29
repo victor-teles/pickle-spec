@@ -94,47 +94,65 @@ type SpecificationDetailProps = SpecificationsScreenProps & {
   canRunAll: boolean
 }
 
+function MissingSpecification(props: {
+  missing: NonNullable<SpecificationDetailProps['selection']['missing']>
+}) {
+  const label =
+    props.missing.kind === 'scenario'
+      ? `Scenario ${props.missing.scenarioId}`
+      : `Specification ${props.missing.specificationId}`
+  return (
+    <main className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden p-5">
+      <p role="alert" className="text-sm text-destructive">
+        {label} was not found in this project.
+      </p>
+    </main>
+  )
+}
+
+function EmptySpecificationSelection() {
+  return (
+    <main className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+      <p className="p-5 text-sm text-muted-foreground">
+        No Specifications found. Add a feature file matching the project
+        configuration.
+      </p>
+    </main>
+  )
+}
+
+function selectCreatedSpecification(
+  props: SpecificationDetailProps,
+  uri: string,
+): void {
+  void props.onReloadProject().then((project) => {
+    props.selection.onSelectCreated(project.specifications, uri)
+  })
+}
+
+async function reloadSpecificationCatalog(
+  props: SpecificationDetailProps,
+): Promise<void> {
+  await props.onReloadProject()
+}
+
+function specificationRunReasons(
+  specification: StudioSpecification,
+  props: SpecificationDetailProps,
+) {
+  return specification.runReasons ?? props.project.readiness?.reasons
+}
+
 function SpecificationDetail(props: SpecificationDetailProps) {
   const { selected } = props.selection
   if (props.selection.missing) {
-    const missing = props.selection.missing
-    const label =
-      missing.kind === 'scenario'
-        ? `Scenario ${missing.scenarioId}`
-        : `Specification ${missing.specificationId}`
-    return (
-      <main className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden p-5">
-        <p role="alert" className="text-sm text-destructive">
-          {label} was not found in this project.
-        </p>
-      </main>
-    )
+    return <MissingSpecification missing={props.selection.missing} />
   }
-  if (!selected) {
-    return (
-      <main className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
-        <p className="p-5 text-sm text-muted-foreground">
-          No Specifications found. Add a feature file matching the project
-          configuration.
-        </p>
-      </main>
-    )
-  }
+  if (!selected) return <EmptySpecificationSelection />
 
   const specification = selected
   const canRun = specification.canRun ?? props.canRunAll
-  const runReasons =
-    specification.runReasons ?? props.project.readiness?.reasons
-
-  async function handleCatalogChange() {
-    await props.onReloadProject()
-  }
-
-  function handleCreated(uri: string) {
-    void props.onReloadProject().then((project) => {
-      props.selection.onSelectCreated(project.specifications, uri)
-    })
-  }
+  const runReasons = specificationRunReasons(specification, props)
 
   return (
     <main className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
@@ -152,8 +170,8 @@ function SpecificationDetail(props: SpecificationDetailProps) {
         namespaces={Object.keys(props.project.links ?? {})}
         onAuthoringChange={props.onAuthoringChange}
         onCancelRun={props.run.onCancel}
-        onCatalogChange={handleCatalogChange}
-        onCreated={handleCreated}
+        onCatalogChange={() => reloadSpecificationCatalog(props)}
+        onCreated={(uri) => selectCreatedSpecification(props, uri)}
         onError={props.onError}
         onRun={props.run.onRun}
         origin={props.run.origin}

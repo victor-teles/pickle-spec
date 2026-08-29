@@ -3,6 +3,7 @@ import { browserbase, localBrowser, Stagehand } from '@browserbasehq/stagehand'
 import type { Scenario, Specification } from '@pickle-spec/spec'
 import { z } from 'zod'
 import { createWebAdapter } from '../../index'
+import { requiredValue } from '../required-value'
 import { stagehandFactory } from './stagehand-factory'
 
 type LaunchedBrowser = Awaited<ReturnType<typeof localBrowser.launch>>
@@ -137,9 +138,9 @@ describe('stagehandFactory', () => {
           },
         },
       })
-      await session.executeStep(scenario.steps[0]!, undefined, {
+      await session.executeStep(requiredValue(scenario.steps[0]), undefined, {
         stepIndex: 0,
-        templateStep: scenario.steps[0]!,
+        templateStep: requiredValue(scenario.steps[0]),
         runtimeBindings: [],
       })
       await session.close()

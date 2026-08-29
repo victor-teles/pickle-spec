@@ -4,6 +4,7 @@ import {
   parseWebExecutionCachePayload,
   type WebExecutionCachePayload,
 } from '../../index'
+import { requiredValue } from '../required-value'
 import {
   compileObservedWebAction,
   compileWebAssertion,
@@ -116,13 +117,18 @@ describe('web Execution cache payload', () => {
     const bindings = [{ name: 'email', value: 'Alice "QA"+test@example.test' }]
 
     expect(
-      parameterizeWebValue(bindings[0]!.value, bindings, {
+      parameterizeWebValue(requiredValue(bindings[0]).value, bindings, {
         template: '<email>',
       }),
     ).toEqual(variableTemplate('email'))
-    expect(parameterizeWebValue(bindings[0]!.value, bindings)).toBeUndefined()
     expect(
-      parameterizeWebValue(JSON.stringify(bindings[0]!.value), bindings),
+      parameterizeWebValue(requiredValue(bindings[0]).value, bindings),
+    ).toBeUndefined()
+    expect(
+      parameterizeWebValue(
+        JSON.stringify(requiredValue(bindings[0]).value),
+        bindings,
+      ),
     ).toBeUndefined()
     expect(
       parameterizeWebValue(
@@ -147,7 +153,7 @@ describe('web Execution cache payload', () => {
     expect(
       compileObservedWebAction(
         {
-          selector: `[data-email=${JSON.stringify(bindings[0]!.value)}]`,
+          selector: `[data-email=${JSON.stringify(requiredValue(bindings[0]).value)}]`,
           method: 'click',
         },
         bindings,

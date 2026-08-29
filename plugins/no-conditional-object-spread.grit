@@ -1,0 +1,5 @@
+language js
+
+`{ ...($condition ? $value : {}) }` as $spread where {
+  register_diagnostic(span=$spread, message="Avoid conditional object spreads. Build the object explicitly.")
+}

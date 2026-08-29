@@ -10,8 +10,9 @@ import {
   webPrefixStepCount,
   webTargetConfigurationFingerprint,
 } from '../execution-cache/web-execution-cache'
+import { requiredValue } from '../required-value'
 import { abortError, isAbortError, withAbort } from './abort'
-import { resolveFidelityPolicy } from './fidelity'
+import { type ResolvedFidelity, resolveFidelityPolicy } from './fidelity'
 import { stagehandFactory } from './stagehand-factory'
 import type { WebAutomation, WebAutomationFactory } from './web-automation'
 import { createWebLiveSession } from './web-live-session'
@@ -21,7 +22,7 @@ import {
   resolveBrowserConnection,
   type WebAdapterOptions,
 } from './web-options'
-import { type WebLogicalSession, WebProcessPool } from './web-pool'
+import { WebProcessPool } from './web-pool'
 
 export type {
   WebActResult,
@@ -61,7 +62,7 @@ type BrowserLaunchConfig = {
 }
 
 function providerApiKeyEnvNames(modelName: string | undefined): string[] {
-  const provider = (modelName ?? defaultModelName).split('/')[0]!
+  const provider = requiredValue((modelName ?? defaultModelName).split('/')[0])
   return providerApiKeyEnvNamesByProvider[provider] ?? []
 }
 
@@ -139,7 +140,7 @@ function shouldNavigateEagerly(
 type CloseWebSessionInput = {
   automation: WebAutomation
   interrupted: () => boolean
-  logicalSession: WebLogicalSession
+  logicalSession: LogicalWebSession
   signal?: AbortSignal
 }
 
@@ -168,6 +169,171 @@ export interface WebAdapterBehavior {
   navigationPolicy?: 'delayed' | 'eager'
 }
 
+type LogicalWebSession = Awaited<
+  ReturnType<WebProcessPool['openLogicalSession']>
+>
+
+interface OpenWebSessionContext {
+  options: WebAdapterOptions
+  behavior: WebAdapterBehavior
+  requireProviderApiKey: boolean
+  fidelity: ResolvedFidelity
+  pool: WebProcessPool
+}
+
+function webSessionCloser(
+  input: OpenSessionInput,
+  automation: WebAutomation,
+  logicalSession: LogicalWebSession,
+): {
+  close: () => Promise<void>
+  markInterrupted: () => void
+} {
+  let closePromise: Promise<void> | undefined
+  let interrupted = Boolean(input.signal?.aborted)
+  const close = async () => {
+    if (closePromise) return closePromise
+    input.signal?.removeEventListener('abort', onAbort)
+    closePromise = closeWebSession({
+      automation,
+      interrupted: () => interrupted || Boolean(input.signal?.aborted),
+      logicalSession,
+      signal: input.signal,
+    })
+    return closePromise
+  }
+  const markInterrupted = () => {
+    interrupted = true
+  }
+  const onAbort = () => {
+    markInterrupted()
+    void close()
+  }
+  input.signal?.addEventListener('abort', onAbort, { once: true })
+  return { close, markInterrupted }
+}
+
+function createWebRuntime(
+  cacheReplay: boolean,
+  executionMode: OpenSessionInput['mode'],
+  input: OpenSessionInput,
+  options: WebAdapterOptions,
+  automation: WebAutomation,
+  finish: ReturnType<typeof createWebStepFinalizer>,
+  initiallyNavigated: boolean,
+): Omit<StepTargetSession, 'close'> {
+  if (
+    cacheReplay ||
+    (executionMode === 'adaptive' && automation.executeInstruction)
+  ) {
+    return createWebCacheSession({ input, options, automation, finish })
+  }
+  return createWebLiveSession({
+    input,
+    options,
+    automation,
+    finish,
+    initiallyNavigated,
+  })
+}
+
+type CreateWebSessionRuntimeInput = {
+  automation: WebAutomation
+  cacheReplay: boolean
+  context: OpenWebSessionContext
+  executionMode: OpenSessionInput['mode']
+  finish: ReturnType<typeof createWebStepFinalizer>
+  input: OpenSessionInput
+}
+
+async function createWebSessionRuntime(
+  input: CreateWebSessionRuntimeInput,
+): Promise<Omit<StepTargetSession, 'close'>> {
+  let initiallyNavigated = false
+  if (
+    shouldNavigateEagerly(
+      input.context.behavior,
+      input.cacheReplay,
+      Boolean(input.automation.executeInstruction),
+    )
+  ) {
+    await input.automation.navigate(
+      input.context.options.baseUrl,
+      input.input.signal,
+    )
+    initiallyNavigated = true
+  }
+  return createWebRuntime(
+    input.cacheReplay,
+    input.executionMode,
+    input.input,
+    input.context.options,
+    input.automation,
+    input.finish,
+    initiallyNavigated,
+  )
+}
+
+async function openWebSession(
+  context: OpenWebSessionContext,
+  input: OpenSessionInput,
+): Promise<StepTargetSession> {
+  const executionMode = input.mode ?? 'adaptive'
+  const cacheReplay =
+    executionMode === 'replay' && input.executionCache !== undefined
+  const browserOptions = browserOptionsForSession(
+    input,
+    context.options,
+    context.requireProviderApiKey,
+  )
+  const logicalSession = await context.pool.openLogicalSession(
+    browserOptions,
+    input.signal,
+    context.fidelity,
+    executionMode,
+  )
+  const automation = logicalSession.automation
+  const { close, markInterrupted } = webSessionCloser(
+    input,
+    automation,
+    logicalSession,
+  )
+  if (input.signal?.aborted) {
+    await close()
+    throw abortError()
+  }
+  let stepIndex = 0
+  const finish = createWebStepFinalizer({
+    input,
+    options: context.options,
+    automation,
+    stepNumber: () => stepIndex,
+  })
+  const runtime = await createWebSessionRuntime({
+    automation,
+    cacheReplay,
+    context,
+    executionMode,
+    finish,
+    input,
+  })
+  return {
+    async executeStep(step, signal, stepContext) {
+      stepIndex++
+      try {
+        return await runtime.executeStep(step, signal, stepContext)
+      } catch (error) {
+        if (isAbortError(error, signal)) markInterrupted()
+        throw error
+      }
+    },
+    ...(runtime.complete
+      ? { complete: () => requiredValue(runtime.complete).call(runtime) }
+      : {}),
+    close,
+  }
+}
+
 export function createWebAdapter(
   options: WebAdapterOptions,
   factory?: WebAutomationFactory,
@@ -180,6 +346,13 @@ export function createWebAdapter(
     factory: automationFactory,
     idleTimeoutMs: options.browser?.idleTimeoutMs,
   })
+  const sessionContext: OpenWebSessionContext = {
+    options,
+    behavior,
+    requireProviderApiKey,
+    fidelity,
+    pool,
+  }
 
   return {
     capabilities: ['web', 'screenshots', 'traces', 'diagnostics', 'recordings'],
@@ -202,94 +375,7 @@ export function createWebAdapter(
       await pool.dispose()
     },
     async openSession(input) {
-      const executionMode = input.mode ?? 'adaptive'
-      const cacheReplay =
-        executionMode === 'replay' && input.executionCache !== undefined
-      const browserOptions = browserOptionsForSession(
-        input,
-        options,
-        requireProviderApiKey,
-      )
-      const logicalSession = await pool.openLogicalSession(
-        browserOptions,
-        input.signal,
-        fidelity,
-        executionMode,
-      )
-      const automation = logicalSession.automation
-      let closePromise: Promise<void> | undefined
-      let interrupted = Boolean(input.signal?.aborted)
-      let stepIndex = 0
-      const finishStep = createWebStepFinalizer({
-        input,
-        options,
-        automation,
-        stepNumber: () => stepIndex,
-      })
-
-      const close = async () => {
-        if (closePromise) return closePromise
-        input.signal?.removeEventListener('abort', onAbort)
-        closePromise = closeWebSession({
-          automation,
-          interrupted: () => interrupted || Boolean(input.signal?.aborted),
-          logicalSession,
-          signal: input.signal,
-        })
-        return closePromise
-      }
-      const onAbort = () => {
-        interrupted = true
-        void close()
-      }
-      input.signal?.addEventListener('abort', onAbort, { once: true })
-      if (input.signal?.aborted) {
-        await close()
-        throw abortError()
-      }
-
-      let eagerlyNavigated = false
-      if (
-        shouldNavigateEagerly(
-          behavior,
-          cacheReplay,
-          Boolean(automation.executeInstruction),
-        )
-      ) {
-        await automation.navigate(options.baseUrl, input.signal)
-        eagerlyNavigated = true
-      }
-
-      const runtime: Omit<StepTargetSession, 'close'> =
-        cacheReplay ||
-        (executionMode === 'adaptive' && automation.executeInstruction)
-          ? createWebCacheSession({
-              input,
-              options,
-              automation,
-              finish: finishStep,
-            })
-          : createWebLiveSession({
-              input,
-              options,
-              automation,
-              finish: finishStep,
-              initiallyNavigated: eagerlyNavigated,
-            })
-
-      return {
-        ...runtime,
-        async executeStep(step, signal, context) {
-          stepIndex++
-          try {
-            return await runtime.executeStep(step, signal, context)
-          } catch (error) {
-            if (isAbortError(error, signal)) interrupted = true
-            throw error
-          }
-        },
-        close,
-      }
+      return openWebSession(sessionContext, input)
     },
   }
 }

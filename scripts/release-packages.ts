@@ -1,6 +1,7 @@
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { requiredValue } from './required-value'
 
 type PackageManifest = {
   name?: string
@@ -188,10 +189,9 @@ export function releaseDistTagFromTag(tag: string): string {
   const prereleaseSeparator = version.indexOf('-')
   if (prereleaseSeparator === -1) return 'latest'
 
-  const channel = version
-    .slice(prereleaseSeparator + 1)
-    .split('.')[0]!
-    .toLowerCase()
+  const channel = requiredValue(
+    version.slice(prereleaseSeparator + 1).split('.')[0],
+  ).toLowerCase()
   if (channel === 'latest') {
     throw new Error('Prerelease npm dist-tag cannot be latest')
   }
@@ -235,76 +235,105 @@ export async function prepareRelease(root: string, tag: string): Promise<void> {
   )
 }
 
-export async function validateReleasePackages(
-  root: string,
-): Promise<ReleasePackageValidation> {
-  const packages: ValidatedReleasePackage[] = []
-  let releaseVersion: string | undefined
+type ReleaseDefinition = (typeof releasePackageDefinitions)[number]
+type ReleaseManifest = Awaited<ReturnType<typeof readManifest>>
+type PackedManifest = Awaited<ReturnType<typeof readPackedManifest>>
 
-  for (const definition of releasePackageDefinitions) {
-    const manifest = await readManifest(root, definition.directory)
-    assertRelease(
-      manifest.name === definition.name,
-      `${definition.directory} must publish as ${definition.name}`,
-    )
-    assertRelease(
-      typeof manifest.version === 'string' &&
-        versionPattern.test(manifest.version),
-      `${definition.name} must have a valid release version`,
-    )
-    releaseVersion ??= manifest.version
-    assertRelease(
-      manifest.version === releaseVersion,
-      `${definition.name} must use lockstep version ${releaseVersion}`,
-    )
-    assertRelease(
-      manifest.publishConfig?.access === 'public',
-      `${definition.name} must publish with public access`,
-    )
-    assertRelease(
-      sameEntries(manifest.exports, definition.exports),
-      `${definition.name} exports must match its documented public entry points`,
-    )
-    assertRelease(
-      manifest.files?.includes('!src/**/*.test.ts'),
-      `${definition.name} must exclude tests from its package artifact`,
-    )
-    await assertExportTargets(root, definition)
-    const packed = await readPackedManifest(root, definition)
-    assertRelease(
-      packed.manifest.version === releaseVersion,
-      `${definition.name} package artifact must use version ${releaseVersion}`,
-    )
-    assertRelease(
-      sameEntries(packed.manifest.exports, definition.exports),
-      `${definition.name} package artifact exports do not match its public entry points`,
-    )
-    assertRelease(
-      !packed.entries.some((entry) => /\.test\.[cm]?[jt]sx?$/.test(entry)),
-      `${definition.name} package artifact must not include test sources`,
-    )
-    const internalDependencyNames = Object.keys(
-      manifest.dependencies ?? {},
-    ).filter((name) => releasePackageNames.has(name))
-    const dependencies = Object.fromEntries(
-      internalDependencyNames.map((name) => [
-        name,
-        packed.manifest.dependencies?.[name] ?? '',
-      ]),
-    )
-    assertRelease(
-      internalDependencyNames.every(
-        (name) => packed.manifest.dependencies?.[name] === releaseVersion,
-      ),
-      `${definition.name} package artifact must depend on release packages at ${releaseVersion}`,
-    )
-    packages.push({
+function validateSourceManifest(
+  definition: ReleaseDefinition,
+  manifest: ReleaseManifest,
+  expectedVersion: string | undefined,
+): string {
+  assertRelease(
+    manifest.name === definition.name,
+    `${definition.directory} must publish as ${definition.name}`,
+  )
+  assertRelease(
+    typeof manifest.version === 'string' &&
+      versionPattern.test(manifest.version),
+    `${definition.name} must have a valid release version`,
+  )
+  const version = expectedVersion ?? manifest.version
+  assertRelease(
+    manifest.version === version,
+    `${definition.name} must use lockstep version ${version}`,
+  )
+  assertRelease(
+    manifest.publishConfig?.access === 'public',
+    `${definition.name} must publish with public access`,
+  )
+  assertRelease(
+    sameEntries(manifest.exports, definition.exports),
+    `${definition.name} exports must match its documented public entry points`,
+  )
+  assertRelease(
+    manifest.files?.includes('!src/**/*.test.ts'),
+    `${definition.name} must exclude tests from its package artifact`,
+  )
+  return version
+}
+
+function validatePackedRelease(
+  definition: ReleaseDefinition,
+  manifest: ReleaseManifest,
+  packed: PackedManifest,
+  version: string,
+): Record<string, string> {
+  assertRelease(
+    packed.manifest.version === version,
+    `${definition.name} package artifact must use version ${version}`,
+  )
+  assertRelease(
+    sameEntries(packed.manifest.exports, definition.exports),
+    `${definition.name} package artifact exports do not match its public entry points`,
+  )
+  assertRelease(
+    !packed.entries.some((entry) => /\.test\.[cm]?[jt]sx?$/.test(entry)),
+    `${definition.name} package artifact must not include test sources`,
+  )
+  const internalNames = Object.keys(manifest.dependencies ?? {}).filter(
+    (name) => releasePackageNames.has(name),
+  )
+  assertRelease(
+    internalNames.every(
+      (name) => packed.manifest.dependencies?.[name] === version,
+    ),
+    `${definition.name} package artifact must depend on release packages at ${version}`,
+  )
+  return Object.fromEntries(
+    internalNames.map((name) => [
+      name,
+      packed.manifest.dependencies?.[name] ?? '',
+    ]),
+  )
+}
+
+async function validateReleasePackage(
+  root: string,
+  definition: ReleaseDefinition,
+  expectedVersion: string | undefined,
+): Promise<{ package: ValidatedReleasePackage; version: string }> {
+  const manifest = await readManifest(root, definition.directory)
+  const version = validateSourceManifest(definition, manifest, expectedVersion)
+  await assertExportTargets(root, definition)
+  const packed = await readPackedManifest(root, definition)
+  const dependencies = validatePackedRelease(
+    definition,
+    manifest,
+    packed,
+    version,
+  )
+  return {
+    version,
+    package: {
       directory: definition.directory,
       name: definition.name,
       dependencies,
-    })
+    },
   }
+}
 
+async function validateCliRelease(root: string): Promise<void> {
   const cli = await readManifest(root, 'packages/cli')
   assertRelease(
     cli.bin?.pickle === './src/cli.ts',
@@ -323,6 +352,24 @@ export async function validateReleasePackages(
     !(await Bun.file(join(root, 'packages/pickle-spec/package.json')).exists()),
     'The legacy monolithic package must not remain in the workspace',
   )
+}
+
+export async function validateReleasePackages(
+  root: string,
+): Promise<ReleasePackageValidation> {
+  const packages: ValidatedReleasePackage[] = []
+  let releaseVersion: string | undefined
+
+  for (const definition of releasePackageDefinitions) {
+    const validated = await validateReleasePackage(
+      root,
+      definition,
+      releaseVersion,
+    )
+    releaseVersion = validated.version
+    packages.push(validated.package)
+  }
+  await validateCliRelease(root)
   assertRelease(releaseVersion, 'The release must contain at least one package')
 
   return { version: releaseVersion, packages }

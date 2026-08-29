@@ -68,6 +68,100 @@ interface PublishLeaseInput {
   now: () => Date
 }
 
+function renewLease(
+  database: LocalExecutionCacheDatabase,
+  lease: ExecutionCacheLease,
+  timing: ExecutionCacheLeaseTiming,
+  now: () => Date,
+): Promise<boolean> {
+  return database.use((db) => {
+    const timestamp = now().getTime()
+    const result = db.run(
+      `UPDATE leases SET expires_at = ?
+       WHERE key_digest = ? AND owner_token = ? AND expires_at > ?`,
+      [
+        timestamp + timing.ttlMs,
+        executionCacheKeyDigest(lease.key),
+        lease.ownerToken,
+        timestamp,
+      ],
+    )
+    return result.changes === 1
+  })
+}
+
+function publishLocalLease(
+  options: LocalExecutionCacheCoordinationOptions,
+  lease: ExecutionCacheLease,
+  serialized: SerializedExecutionCacheEnvelope,
+  metadata: ExecutionCacheWriteMetadata,
+): Promise<ExecutionCacheLeasePublicationResult> {
+  const { database, maxBytes, now, projectKey } = options
+  assertExecutionCacheProjectKey(projectKey, lease.key)
+  assertExecutionCacheProjectKey(projectKey, serialized.key)
+  if (
+    executionCacheKeyDigest(lease.key) !==
+    executionCacheKeyDigest(serialized.key)
+  ) {
+    throw new Error('Execution cache lease cannot publish another key')
+  }
+  return database.use((db) =>
+    db
+      .transaction(() =>
+        publishLeaseEntry({
+          db,
+          lease,
+          serialized,
+          metadata,
+          projectKey,
+          maxBytes,
+          now,
+        }),
+      )
+      .immediate(),
+  )
+}
+
+function completeLocalLease(
+  options: LocalExecutionCacheCoordinationOptions,
+  lease: ExecutionCacheLease,
+  terminalOutcome: SerializedExecutionCacheTerminalOutcome,
+): Promise<boolean> {
+  const { database, now, projectKey } = options
+  return database.use((db) =>
+    db
+      .transaction(() => {
+        const digestKey = executionCacheKeyDigest(lease.key)
+        const timestamp = now().getTime()
+        const active = db
+          .query(
+            `SELECT 1 FROM leases
+             WHERE key_digest = ? AND owner_token = ? AND expires_at > ?`,
+          )
+          .get(digestKey, lease.ownerToken, timestamp)
+        if (!active) return false
+        db.run(
+          `INSERT INTO lease_outcomes (
+             key_digest, project_key, owner_token, terminal_outcome, completed_at
+           ) VALUES (?, ?, ?, ?, ?)`,
+          [
+            digestKey,
+            projectKey,
+            lease.ownerToken,
+            terminalOutcome.source,
+            timestamp,
+          ],
+        )
+        db.run('DELETE FROM leases WHERE key_digest = ? AND owner_token = ?', [
+          digestKey,
+          lease.ownerToken,
+        ])
+        return true
+      })
+      .immediate(),
+  )
+}
+
 const defaultTiming: ExecutionCacheLeaseTiming = {
   ttlMs: 30_000,
   heartbeatMs: 10_000,
@@ -333,7 +427,7 @@ function acquireLease(
 export function createLocalExecutionCacheCoordination(
   options: LocalExecutionCacheCoordinationOptions,
 ): ExecutionCacheCoordination {
-  const { database, maxBytes, now, projectKey } = options
+  const { database, now, projectKey } = options
   const timing = validateTiming(options.timing)
   return {
     async readCurrent(key) {
@@ -352,20 +446,7 @@ export function createLocalExecutionCacheCoordination(
     },
     async renew(lease) {
       assertExecutionCacheProjectKey(projectKey, lease.key)
-      return database.use((db) => {
-        const timestamp = now().getTime()
-        const result = db.run(
-          `UPDATE leases SET expires_at = ?
-           WHERE key_digest = ? AND owner_token = ? AND expires_at > ?`,
-          [
-            timestamp + timing.ttlMs,
-            executionCacheKeyDigest(lease.key),
-            lease.ownerToken,
-            timestamp,
-          ],
-        )
-        return result.changes === 1
-      })
+      return renewLease(database, lease, timing, now)
     },
     async wait(key, ownerToken, baselineRevision, signal) {
       assertExecutionCacheProjectKey(projectKey, key)
@@ -380,65 +461,11 @@ export function createLocalExecutionCacheCoordination(
       })
     },
     async publish(lease, serialized, metadata) {
-      assertExecutionCacheProjectKey(projectKey, lease.key)
-      assertExecutionCacheProjectKey(projectKey, serialized.key)
-      if (
-        executionCacheKeyDigest(lease.key) !==
-        executionCacheKeyDigest(serialized.key)
-      ) {
-        throw new Error('Execution cache lease cannot publish another key')
-      }
-      return database.use((db) =>
-        db
-          .transaction(() =>
-            publishLeaseEntry({
-              db,
-              lease,
-              serialized,
-              metadata,
-              projectKey,
-              maxBytes,
-              now,
-            }),
-          )
-          .immediate(),
-      )
+      return publishLocalLease(options, lease, serialized, metadata)
     },
     async complete(lease, terminalOutcome) {
       assertExecutionCacheProjectKey(projectKey, lease.key)
-      return database.use((db) =>
-        db
-          .transaction(() => {
-            const digestKey = executionCacheKeyDigest(lease.key)
-            const timestamp = now().getTime()
-            const active = db
-              .query(
-                `SELECT 1 FROM leases
-                 WHERE key_digest = ? AND owner_token = ? AND expires_at > ?`,
-              )
-              .get(digestKey, lease.ownerToken, timestamp)
-            if (!active) return false
-            db.run(
-              `INSERT INTO lease_outcomes (
-                 key_digest, project_key, owner_token, terminal_outcome,
-                 completed_at
-               ) VALUES (?, ?, ?, ?, ?)`,
-              [
-                digestKey,
-                projectKey,
-                lease.ownerToken,
-                terminalOutcome.source,
-                timestamp,
-              ],
-            )
-            db.run(
-              'DELETE FROM leases WHERE key_digest = ? AND owner_token = ?',
-              [digestKey, lease.ownerToken],
-            )
-            return true
-          })
-          .immediate(),
-      )
+      return completeLocalLease(options, lease, terminalOutcome)
     },
     async release(lease) {
       assertExecutionCacheProjectKey(projectKey, lease.key)

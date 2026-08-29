@@ -10,6 +10,7 @@ import {
   type WebAutomation,
   type WebAutomationFactory,
 } from '../../index'
+import { requiredValue } from '../required-value'
 
 function stubAutomation(overrides: Partial<WebAutomation> = {}): WebAutomation {
   return {
@@ -137,9 +138,11 @@ describe('createWebAdapter', () => {
       scenario,
     })
 
-    const navigation = await session.executeStep(scenario.steps[0]!)
-    const action = await session.executeStep(scenario.steps[1]!)
-    const outcome = await session.executeStep(scenario.steps[2]!)
+    const navigation = await session.executeStep(
+      requiredValue(scenario.steps[0]),
+    )
+    const action = await session.executeStep(requiredValue(scenario.steps[1]))
+    const outcome = await session.executeStep(requiredValue(scenario.steps[2]))
     await session.close()
 
     expect(navigate).toHaveBeenCalledWith(
@@ -158,7 +161,11 @@ describe('createWebAdapter', () => {
       artifacts: [{ kind: 'screenshot', mediaType: 'image/png' }],
     })
     expect(navigation.artifacts?.[0]?.path).toContain(artifactDirectory)
-    expect(await Bun.file(navigation.artifacts![0]!.path).exists()).toBe(true)
+    expect(
+      await Bun.file(
+        requiredValue(requiredValue(navigation.artifacts)[0]).path,
+      ).exists(),
+    ).toBe(true)
     expect(observe).toHaveBeenCalledTimes(1)
     expect(act).toHaveBeenCalledTimes(1)
     expect(verify).toHaveBeenCalledTimes(1)
@@ -215,9 +222,11 @@ describe('createWebAdapter', () => {
       specification,
       scenario,
     })
-    const navigation = await session.executeStep(scenario.steps[0]!)
-    const action = await session.executeStep(scenario.steps[1]!)
-    const outcome = await session.executeStep(scenario.steps[2]!)
+    const navigation = await session.executeStep(
+      requiredValue(scenario.steps[0]),
+    )
+    const action = await session.executeStep(requiredValue(scenario.steps[1]))
+    const outcome = await session.executeStep(requiredValue(scenario.steps[2]))
     await session.close()
 
     expect(navigation.artifacts?.map((artifact) => artifact.kind)).toEqual([
@@ -282,9 +291,11 @@ describe('createWebAdapter', () => {
       specification,
       scenario,
     })
-    const navigation = await session.executeStep(scenario.steps[0]!)
-    const action = await session.executeStep(scenario.steps[1]!)
-    const outcome = await session.executeStep(scenario.steps[2]!)
+    const navigation = await session.executeStep(
+      requiredValue(scenario.steps[0]),
+    )
+    const action = await session.executeStep(requiredValue(scenario.steps[1]))
+    const outcome = await session.executeStep(requiredValue(scenario.steps[2]))
     await session.close()
 
     expect(navigation.artifacts?.map((artifact) => artifact.kind)).toEqual([
@@ -320,7 +331,7 @@ describe('createWebAdapter', () => {
       scenario,
     })
 
-    const result = await session.executeStep(scenario.steps[0]!)
+    const result = await session.executeStep(requiredValue(scenario.steps[0]))
     await session.close()
 
     expect(result.artifacts).toBeUndefined()
@@ -391,9 +402,9 @@ describe('createWebAdapter', () => {
       scenario,
     })
 
-    await session.executeStep(scenario.steps[0]!)
-    await session.executeStep(scenario.steps[1]!)
-    const outcome = await session.executeStep(scenario.steps[2]!)
+    await session.executeStep(requiredValue(scenario.steps[0]))
+    await session.executeStep(requiredValue(scenario.steps[1]))
+    const outcome = await session.executeStep(requiredValue(scenario.steps[2]))
     await session.close()
 
     expect(outcome.state).toBe('failed')
@@ -473,8 +484,8 @@ describe('createWebAdapter', () => {
     })
 
     const [firstResult, secondResult] = await Promise.all([
-      first.executeStep(scenario.steps[0]!),
-      second.executeStep(scenario.steps[0]!),
+      first.executeStep(requiredValue(scenario.steps[0])),
+      second.executeStep(requiredValue(scenario.steps[0])),
     ])
     await Promise.all([first.close(), second.close()])
     await adapter.dispose?.()
@@ -486,8 +497,8 @@ describe('createWebAdapter', () => {
     expect(firstPath).not.toBe(secondPath)
     expect(firstPath).toMatch(/examples-row-[a-f0-9]{16}/)
     expect(secondPath).toMatch(/examples-row-[a-f0-9]{16}/)
-    expect(await Bun.file(firstPath!).text()).not.toBe(
-      await Bun.file(secondPath!).text(),
+    expect(await Bun.file(requiredValue(firstPath)).text()).not.toBe(
+      await Bun.file(requiredValue(secondPath)).text(),
     )
   })
 
@@ -638,8 +649,8 @@ describe('createWebAdapter', () => {
       scenario,
     })
 
-    await session.executeStep(scenario.steps[0]!)
-    await session.executeStep(scenario.steps[1]!)
+    await session.executeStep(requiredValue(scenario.steps[0]))
+    await session.executeStep(requiredValue(scenario.steps[1]))
     await session.close()
 
     expect(navigate).toHaveBeenCalledTimes(1)
@@ -899,11 +910,15 @@ describe('createWebAdapter', () => {
         },
       },
     })
-    await session.executeStep(replayScenario.steps[0]!, undefined, {
-      stepIndex: 0,
-      templateStep: replayScenario.steps[0]!,
-      runtimeBindings: [],
-    })
+    await session.executeStep(
+      requiredValue(replayScenario.steps[0]),
+      undefined,
+      {
+        stepIndex: 0,
+        templateStep: requiredValue(replayScenario.steps[0]),
+        runtimeBindings: [],
+      },
+    )
     await session.close()
     await adapter.dispose?.()
 
@@ -999,7 +1014,10 @@ describe('createWebAdapter', () => {
       scenario,
       signal: controller.signal,
     })
-    const execution = session.executeStep(scenario.steps[0]!, controller.signal)
+    const execution = session.executeStep(
+      requiredValue(scenario.steps[0]),
+      controller.signal,
+    )
     controller.abort()
     await expect(execution).rejects.toThrow('Scenario cancelled')
     const closeOutcome = await Promise.race([

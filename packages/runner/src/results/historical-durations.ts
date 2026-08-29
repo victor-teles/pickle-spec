@@ -1,4 +1,5 @@
 import type { TestResult } from '../execution/run-scenario'
+import { requiredValue } from '../required-value'
 import type { TestRunStore } from './test-run-store'
 
 function resultScenarioKey(result: TestResult): string {
@@ -27,7 +28,11 @@ export async function latestHistoricalDurations(
   const runs = await store.list()
   const latest = runs
     .filter((run) => run.finishedAt)
-    .sort((left, right) => right.finishedAt!.localeCompare(left.finishedAt!))[0]
+    .sort((left, right) =>
+      requiredValue(right.finishedAt).localeCompare(
+        requiredValue(left.finishedAt),
+      ),
+    )[0]
   if (!latest) return {}
   const persisted = await store.open(latest.id)
   const manifest = await persisted.materialize()

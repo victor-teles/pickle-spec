@@ -139,29 +139,37 @@ async function executeObservedActions(
       }
 }
 
-export function createWebAdaptiveRuntime({
-  input,
-  options,
-  automation,
-  executor,
-  compiledSteps,
-  inference,
-  uncacheable,
-}: CreateAdaptiveRuntimeInput) {
-  const runtimeBindings = input.runtimeBindings ?? []
+interface WebAdaptiveRuntime {
+  executeStep(
+    step: ScenarioStep,
+    prompt: string,
+    context: StepExecutionContext,
+    signal: AbortSignal | undefined,
+  ): Promise<StepExecution>
+}
 
-  async function executeCompiledStep(
+class AdaptiveWebRuntime implements WebAdaptiveRuntime {
+  private readonly runtimeBindings
+
+  constructor(private readonly context: CreateAdaptiveRuntimeInput) {
+    this.runtimeBindings = context.input.runtimeBindings ?? []
+  }
+
+  private async executeCompiledStep(
     instructions: WebInstruction[],
     executableInstructions: readonly WebInstruction[],
     index: number,
     signal: AbortSignal | undefined,
   ): Promise<StepExecution> {
-    const result = await executor.executeSequence(
+    const result = await this.context.executor.executeSequence(
       executableInstructions,
       signal,
     )
-    if (result.state === 'passed' && uncacheable.reason === undefined) {
-      compiledSteps[index] = { instructions }
+    if (
+      result.state === 'passed' &&
+      this.context.uncacheable.reason === undefined
+    ) {
+      this.context.compiledSteps[index] = { instructions }
     }
     return {
       ...result,
@@ -169,38 +177,43 @@ export function createWebAdaptiveRuntime({
     }
   }
 
-  async function adaptiveNavigation(
+  private async adaptiveNavigation(
     templateStep: ScenarioStep,
     target: string,
     index: number,
     signal: AbortSignal | undefined,
   ): Promise<StepExecution> {
-    const url = navigationUrl(options.baseUrl, target)
+    const url = navigationUrl(this.context.options.baseUrl, target)
     const templateTarget = navigationTarget(promptFor(templateStep))
     const instruction = templateTarget
       ? compileWebNavigation(
-          options.baseUrl,
+          this.context.options.baseUrl,
           target,
           templateTarget,
-          runtimeBindings,
+          this.runtimeBindings,
         )
       : undefined
     if (
       instruction &&
       instructionCoversStepVariables([instruction], templateStep)
     ) {
-      return executeCompiledStep([instruction], [instruction], index, signal)
+      return this.executeCompiledStep(
+        [instruction],
+        [instruction],
+        index,
+        signal,
+      )
     }
-    uncacheable.reason = 'bound-parameter-value'
-    await automation.navigate(url, signal)
-    executor.markNavigated()
+    this.context.uncacheable.reason = 'bound-parameter-value'
+    await this.context.automation.navigate(url, signal)
+    this.context.executor.markNavigated()
     return {
       state: 'passed',
       resolvedActions: [{ description: `Navigate to ${url}` }],
     }
   }
 
-  function usableInstructions(
+  private usableInstructions(
     compiled: WebInstruction[] | undefined,
     templateStep: ScenarioStep,
   ): WebInstruction[] | undefined {
@@ -210,7 +223,7 @@ export function createWebAdaptiveRuntime({
       : undefined
   }
 
-  async function compileObservedOutcomeInstructions(
+  private async compileObservedOutcomeInstructions(
     step: ScenarioStep,
     prompt: string,
     templateStep: ScenarioStep,
@@ -218,36 +231,41 @@ export function createWebAdaptiveRuntime({
   ): Promise<WebInstruction[] | undefined> {
     if (stepVariableNames(templateStep).length > 0) return undefined
     const actions = await observeOnce(
-      automation,
+      this.context.automation,
       observeInstruction(step),
       signal,
-      () => inference.count++,
+      () => this.context.inference.count++,
     )
-    return usableInstructions(
-      compileObservedOutcomes(actions, prompt, runtimeBindings),
+    return this.usableInstructions(
+      compileObservedOutcomes(actions, prompt, this.runtimeBindings),
       templateStep,
     )
   }
 
-  async function compileExtractedOutcomeInstructions(
+  private async compileExtractedOutcomeInstructions(
     prompt: string,
     templateStep: ScenarioStep,
     signal: AbortSignal | undefined,
   ): Promise<WebInstruction[] | undefined> {
-    inference.count++
-    const drafts = await compileAssertionDrafts(automation, prompt, signal)
+    this.context.inference.count++
+    const drafts = await compileAssertionDrafts(
+      this.context.automation,
+      prompt,
+      signal,
+    )
     const compiled = drafts.map((draft) =>
-      compileWebAssertion(draft, runtimeBindings),
+      compileWebAssertion(draft, this.runtimeBindings),
     )
     const usable = definedInstructions(compiled)
-      ? usableInstructions(compiled, templateStep)
+      ? this.usableInstructions(compiled, templateStep)
       : undefined
     if (usable) return usable
-    if (drafts.length > 0) uncacheable.reason = 'bound-parameter-value'
+    if (drafts.length > 0)
+      this.context.uncacheable.reason = 'bound-parameter-value'
     return undefined
   }
 
-  async function adaptiveOutcome(
+  private async adaptiveOutcome(
     step: ScenarioStep,
     prompt: string,
     templateStep: ScenarioStep,
@@ -255,28 +273,32 @@ export function createWebAdaptiveRuntime({
     signal: AbortSignal | undefined,
   ): Promise<StepExecution> {
     const instructions: WebInstruction[] = []
-    const navigationFailure = await executor.implicitNavigation(
+    const navigationFailure = await this.context.executor.implicitNavigation(
       instructions,
       signal,
     )
     if (navigationFailure) return navigationFailure
     const compiled =
-      (await compileObservedOutcomeInstructions(
+      (await this.compileObservedOutcomeInstructions(
         step,
         prompt,
         templateStep,
         signal,
       )) ??
-      (await compileExtractedOutcomeInstructions(prompt, templateStep, signal))
+      (await this.compileExtractedOutcomeInstructions(
+        prompt,
+        templateStep,
+        signal,
+      ))
     if (compiled) {
       instructions.push(...compiled)
-      return executeCompiledStep(instructions, compiled, index, signal)
+      return this.executeCompiledStep(instructions, compiled, index, signal)
     }
-    if (uncacheable.reason === undefined) {
-      uncacheable.reason = 'non-deterministic-assertion'
+    if (this.context.uncacheable.reason === undefined) {
+      this.context.uncacheable.reason = 'non-deterministic-assertion'
     }
-    inference.count++
-    const verification = await automation.verify(prompt, signal)
+    this.context.inference.count++
+    const verification = await this.context.automation.verify(prompt, signal)
     return verificationExecution(
       prompt,
       verification.meetsExpectation,
@@ -284,28 +306,28 @@ export function createWebAdaptiveRuntime({
     )
   }
 
-  async function adaptiveAction(
+  private async adaptiveAction(
     prompt: string,
     templateStep: ScenarioStep,
     index: number,
     signal: AbortSignal | undefined,
   ): Promise<StepExecution> {
     const instructions: WebInstruction[] = []
-    const navigationFailure = await executor.implicitNavigation(
+    const navigationFailure = await this.context.executor.implicitNavigation(
       instructions,
       signal,
     )
     if (navigationFailure) return navigationFailure
     const actions = await observeActions(
-      automation,
+      this.context.automation,
       prompt,
       signal,
-      () => inference.count++,
+      () => this.context.inference.count++,
     )
     const compiled = actions.map((action) => {
       const payload = parseObservedActionPayload(action.handle)
       return payload
-        ? compileObservedWebAction(payload, runtimeBindings)
+        ? compileObservedWebAction(payload, this.runtimeBindings)
         : undefined
     })
     if (
@@ -314,47 +336,51 @@ export function createWebAdaptiveRuntime({
       instructionCoversStepVariables(compiled, templateStep)
     ) {
       instructions.push(...compiled)
-      return executeCompiledStep(instructions, compiled, index, signal)
+      return this.executeCompiledStep(instructions, compiled, index, signal)
     }
-    uncacheable.reason = 'non-deterministic-action'
+    this.context.uncacheable.reason = 'non-deterministic-action'
     return executeObservedActions(
-      automation,
+      this.context.automation,
       actions,
       signal,
-      () => inference.count++,
+      () => this.context.inference.count++,
     )
   }
 
-  return {
-    executeStep(
-      step: ScenarioStep,
-      prompt: string,
-      context: StepExecutionContext,
-      signal: AbortSignal | undefined,
-    ): Promise<StepExecution> {
-      const target = navigationTarget(prompt)
-      if (target) {
-        return adaptiveNavigation(
+  executeStep(
+    step: ScenarioStep,
+    prompt: string,
+    context: StepExecutionContext,
+    signal: AbortSignal | undefined,
+  ): Promise<StepExecution> {
+    const target = navigationTarget(prompt)
+    if (target) {
+      return this.adaptiveNavigation(
+        context.templateStep,
+        target,
+        context.stepIndex,
+        signal,
+      )
+    }
+    return step.type === 'outcome'
+      ? this.adaptiveOutcome(
+          step,
+          prompt,
           context.templateStep,
-          target,
           context.stepIndex,
           signal,
         )
-      }
-      return step.type === 'outcome'
-        ? adaptiveOutcome(
-            step,
-            prompt,
-            context.templateStep,
-            context.stepIndex,
-            signal,
-          )
-        : adaptiveAction(
-            observeInstruction(step),
-            context.templateStep,
-            context.stepIndex,
-            signal,
-          )
-    },
+      : this.adaptiveAction(
+          observeInstruction(step),
+          context.templateStep,
+          context.stepIndex,
+          signal,
+        )
   }
+}
+
+export function createWebAdaptiveRuntime(
+  input: CreateAdaptiveRuntimeInput,
+): WebAdaptiveRuntime {
+  return new AdaptiveWebRuntime(input)
 }
