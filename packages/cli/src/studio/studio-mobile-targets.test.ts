@@ -6,7 +6,9 @@ import { expect, test } from 'vitest'
 import type { PickleConfig } from '../configuration/config'
 import { requiredValue } from '../required-value'
 import {
+  configuredMobileAdapter,
   discoverStudioMobileTargets,
+  type StudioMobileAdapterFactory,
   studioMobileEnvironmentAdapterFactory,
   validateStudioMobileTargetCapabilities,
 } from './studio-mobile-targets'
@@ -39,6 +41,28 @@ const config: PickleConfig = {
     },
   },
 }
+
+test('forwards live viewport behavior to configured mobile adapters', () => {
+  let receivedBehavior: Parameters<StudioMobileAdapterFactory>[1]
+  const createAdapter: StudioMobileAdapterFactory = (_options, behavior) => {
+    receivedBehavior = behavior
+    return {
+      async discoverTargets() {
+        return []
+      },
+      async openSession() {
+        throw new Error('not used')
+      },
+    }
+  }
+  const onLiveViewport = () => {}
+
+  configuredMobileAdapter(config, 'android', createAdapter, {
+    onLiveViewport,
+  })
+
+  expect(receivedBehavior?.onLiveViewport).toBe(onLiveViewport)
+})
 
 test('discovers Android Emulator and iOS Simulator targets per configured profile', async () => {
   const disposed: string[] = []

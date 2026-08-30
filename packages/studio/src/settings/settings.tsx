@@ -163,6 +163,16 @@ function editedProfileConfiguration(
 ) {
   const selectedAdapter = adapter.trim() || 'custom'
   const nextCapabilities = commaSeparatedValues(capabilities)
+  const application =
+    'installed' in mobileProfile.application
+      ? {
+          id: mobileProfile.application.id.trim(),
+          installed: true as const,
+        }
+      : {
+          id: mobileProfile.application.id.trim(),
+          binaryPath: mobileProfile.application.binaryPath.trim(),
+        }
   return {
     adapter: selectedAdapter,
     ...(nextCapabilities.length ? { capabilities: nextCapabilities } : {}),
@@ -171,10 +181,7 @@ function editedProfileConfiguration(
           mobile: {
             ...mobileProfile,
             targetId: mobileProfile.targetId?.trim() || undefined,
-            application: {
-              id: mobileProfile.application.id.trim(),
-              binaryPath: mobileProfile.application.binaryPath.trim(),
-            },
+            application,
           },
         }
       : {}),

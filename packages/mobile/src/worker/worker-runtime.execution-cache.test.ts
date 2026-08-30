@@ -88,7 +88,7 @@ test('routes one complete Scenario through the versioned worker protocol', async
 
   await expect(
     runtime.handle({
-      version: 3,
+      version: 5,
       type: 'open-session',
       sessionId: 'session-1',
       platform: 'android',
@@ -96,26 +96,26 @@ test('routes one complete Scenario through the versioned worker protocol', async
       mode: 'adaptive',
       scenario,
     }),
-  ).resolves.toMatchObject({ version: 3, type: 'session-opened' })
+  ).resolves.toMatchObject({ version: 5, type: 'session-opened' })
   await expect(
     runtime.handle({
-      version: 3,
+      version: 5,
       type: 'execute-scenario',
       sessionId: 'session-1',
     }),
   ).resolves.toMatchObject({
-    version: 3,
+    version: 5,
     type: 'scenario-executed',
     execution: { stepExecutions: [{ state: 'passed' }, { state: 'passed' }] },
   })
   await expect(
     runtime.handle({
-      version: 3,
+      version: 5,
       type: 'complete-session',
       sessionId: 'session-1',
     }),
   ).resolves.toMatchObject({
-    version: 3,
+    version: 5,
     type: 'session-completed',
     completion: {
       inferenceCount: 0,

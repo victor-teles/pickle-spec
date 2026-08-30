@@ -1,7 +1,7 @@
 import { z } from 'zod'
-import { mobileExecutionCachePayloadSchema } from '../execution-cache/mobile-execution-cache'
+import { mobileExecutionCachePayloadSchema } from '../execution-cache/mobile-execution-cache.ts'
 
-export const mobileWorkerProtocolVersion = 3 as const
+export const mobileWorkerProtocolVersion = 5 as const
 
 export const androidCapabilities = [
   'android',
@@ -30,10 +30,16 @@ const mobileTargetSchema = z.strictObject({
   capabilities: z.array(z.string()),
 })
 
-const mobileApplicationSchema = z.strictObject({
-  id: z.string().min(1),
-  binaryPath: z.string().min(1),
-})
+const mobileApplicationSchema = z.union([
+  z.strictObject({
+    id: z.string().min(1),
+    binaryPath: z.string().min(1),
+  }),
+  z.strictObject({
+    id: z.string().min(1),
+    installed: z.literal(true),
+  }),
+])
 
 const mobileArtifactKindSchema = z.enum([
   'screenshot',
@@ -263,6 +269,36 @@ export const workerResponseMessageSchema = z.discriminatedUnion('ok', [
   }),
 ])
 
+const mobileWorkerViewportFrameSchema = z.strictObject({
+  data: z.string().min(1),
+  mimeType: z.literal('image/png'),
+  width: z.number().int().positive().optional(),
+  height: z.number().int().positive().optional(),
+})
+
+export const mobileWorkerEventSchema = z.discriminatedUnion('type', [
+  z.strictObject({
+    type: z.literal('viewport-frame'),
+    sessionId: z.string().min(1),
+    frame: mobileWorkerViewportFrameSchema,
+  }),
+  z.strictObject({
+    type: z.literal('viewport-closed'),
+    sessionId: z.string().min(1),
+  }),
+])
+
+export const workerEventMessageSchema = z.strictObject({
+  version: z.literal(mobileWorkerProtocolVersion),
+  type: z.literal('event'),
+  payload: mobileWorkerEventSchema,
+})
+
+export const workerOutputMessageSchema = z.discriminatedUnion('type', [
+  workerResponseMessageSchema,
+  workerEventMessageSchema,
+])
+
 export const workerRequestMessageSchema = z.strictObject({
   version: z.literal(mobileWorkerProtocolVersion),
   type: z.literal('request'),
@@ -291,3 +327,5 @@ export type WorkerSessionCompletion = z.infer<
 >
 export type MobileWorkerRequest = z.infer<typeof mobileWorkerRequestSchema>
 export type MobileWorkerResponse = z.infer<typeof mobileWorkerResponseSchema>
+export type MobileWorkerEvent = z.infer<typeof mobileWorkerEventSchema>
+export type WorkerOutputMessage = z.infer<typeof workerOutputMessageSchema>

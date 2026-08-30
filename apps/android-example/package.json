@@ -1,0 +1,14 @@
+{
+  "name": "@pickle-spec/android-example",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "check": "pickle check",
+    "run:android": "pickle run --profile android --suite smoke",
+    "studio": "pickle studio"
+  },
+  "dependencies": {
+    "@pickle-spec/cli": "workspace:*",
+    "@pickle-spec/mobile": "workspace:*"
+  }
+}

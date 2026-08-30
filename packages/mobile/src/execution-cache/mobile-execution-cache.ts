@@ -1,8 +1,8 @@
 import { createHash } from 'node:crypto'
 import type { ExecutionCacheAdapter } from '@pickle-spec/runner'
 import { z } from 'zod'
-import { requiredValue } from '../required-value'
-import type { MobilePlatform } from '../worker/worker-protocol'
+import { requiredValue } from '../required-value.ts'
+import type { MobilePlatform } from '../worker/worker-protocol.ts'
 
 export const mobileExecutionCacheAdapterKind = 'mobile.agent-device'
 export const mobileExecutionCacheSchemaVersion = 'agent-device-ad.1+0.20.10'

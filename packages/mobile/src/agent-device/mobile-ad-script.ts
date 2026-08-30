@@ -2,13 +2,13 @@ import type { ExecutionCacheUncacheableReason } from '@pickle-spec/runner'
 import {
   type MobileExecutionCachePayload,
   mobileReplayVariableName,
-} from '../execution-cache/mobile-execution-cache'
-import { requiredValue } from '../required-value'
+} from '../execution-cache/mobile-execution-cache.ts'
+import { requiredValue } from '../required-value.ts'
 import type {
   MobilePlatform,
   MobileStep,
   MobileWorkerScenario,
-} from '../worker/worker-protocol'
+} from '../worker/worker-protocol.ts'
 
 export type MobileAssertionPredicate =
   | 'text'
@@ -44,7 +44,6 @@ export interface CompiledMobileScenario {
 
 interface CompileMobileScenarioInput {
   platform: MobilePlatform
-  applicationId: string
   scenario: MobileWorkerScenario
 }
 
@@ -226,7 +225,6 @@ export function compileMobileScenario(
   const operations = mobileOperations(input)
   const lines = [
     `context platform=${input.platform}`,
-    `open ${quote(input.applicationId)} --relaunch`,
     ...operations.map(operationLine),
   ]
   const script = `${lines.join('\n')}\n`

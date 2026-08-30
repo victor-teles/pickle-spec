@@ -74,10 +74,9 @@ export interface StudioProfile {
 
 export interface StudioMobileProfile {
   executionTarget: 'android-emulator' | 'ios-simulator'
-  application: {
-    id: string
-    binaryPath: string
-  }
+  application:
+    | { id: string; binaryPath: string }
+    | { id: string; installed: true }
   targetId?: string
   artifactDirectory?: string
   artifacts?: readonly ('screenshot' | 'trace' | 'recording' | 'device-log')[]

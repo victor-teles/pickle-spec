@@ -21,7 +21,6 @@ import {
   defaultModelName,
   screenshotModes,
   type WebAdapterOptions,
-  type WebLiveViewportUpdate,
 } from '@pickle-spec/web'
 import cliPackage from '../package.json' with { type: 'json' }
 import {
@@ -43,6 +42,7 @@ import {
   loadExtensions,
   loadPersistedRun,
   loadProjectSpecifications,
+  type ProjectLiveViewportUpdate,
   startProjectRun,
 } from './run/execute-run'
 import { parseTestRunOutput } from './run/output-arguments'
@@ -789,7 +789,7 @@ interface StudioRunGatewayInput {
 }
 
 function studioLiveViewportEvent(
-  update: WebLiveViewportUpdate,
+  update: ProjectLiveViewportUpdate,
 ): StudioLiveViewportEvent {
   if (update.kind === 'closed') {
     return { type: 'viewport-closed', target: update.target }

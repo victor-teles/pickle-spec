@@ -1,6 +1,6 @@
 import { createAgentDeviceClient, isAgentDeviceError } from 'agent-device'
 import { z } from 'zod'
-import type { MobilePlatform } from '../worker/worker-protocol'
+import type { MobilePlatform } from '../worker/worker-protocol.ts'
 
 export interface AgentDeviceClientConfig {
   session: string
@@ -72,7 +72,11 @@ export interface AgentDeviceClientPort {
     run(options: ReplayRunOptions): Promise<unknown>
   }
   capture: {
-    screenshot(options: { path?: string }): Promise<unknown>
+    screenshot(options: {
+      path?: string
+      scale?: number
+      stabilize?: boolean
+    }): Promise<unknown>
   }
   observability: {
     logs(options: LogsOptions): Promise<unknown>

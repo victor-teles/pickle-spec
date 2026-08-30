@@ -5,9 +5,12 @@ export type {
   IosApplication,
   IosMobileAdapterOptions,
   IosTarget,
+  MobileAdapterBehavior,
   MobileAdapterOptions,
   MobileArtifactKind,
   MobileExecutionTargetAdapter,
+  MobileLiveViewportTarget,
+  MobileLiveViewportUpdate,
   MobileTextRedaction,
 } from './src/adapter/mobile-adapter'
 export {

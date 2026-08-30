@@ -12,10 +12,24 @@
         "vitest": "catalog:",
       },
     },
+    "apps/android-example": {
+      "name": "@pickle-spec/android-example",
+      "dependencies": {
+        "@pickle-spec/cli": "workspace:*",
+        "@pickle-spec/mobile": "workspace:*",
+      },
+    },
     "apps/example": {
       "name": "@pickle-spec/example",
       "dependencies": {
         "@pickle-spec/cli": "workspace:*",
+      },
+    },
+    "apps/ios-example": {
+      "name": "@pickle-spec/ios-example",
+      "dependencies": {
+        "@pickle-spec/cli": "workspace:*",
+        "@pickle-spec/mobile": "workspace:*",
       },
     },
     "packages/cli": {
@@ -61,6 +75,7 @@
       "version": "1.0.2",
       "dependencies": {
         "@pickle-spec/runner": "workspace:*",
+        "@pickle-spec/spec": "workspace:*",
         "agent-device": "catalog:",
         "zod": "catalog:",
       },
@@ -263,11 +278,15 @@
 
     "@oxc-project/types": ["@oxc-project/types@0.147.0", "", {}, "sha512-IJ3s6ltHLp45S0bh7phkX+gJO7A1Wuz2EaqpAhb8WjqDwbzMiWKHhyyT42tskaWjEYXtHtVCPpnBJVT9+dcRLg=="],
 
+    "@pickle-spec/android-example": ["@pickle-spec/android-example@workspace:apps/android-example"],
+
     "@pickle-spec/cli": ["@pickle-spec/cli@workspace:packages/cli"],
 
     "@pickle-spec/configuration": ["@pickle-spec/configuration@workspace:packages/configuration"],
 
     "@pickle-spec/example": ["@pickle-spec/example@workspace:apps/example"],
+
+    "@pickle-spec/ios-example": ["@pickle-spec/ios-example@workspace:apps/ios-example"],
 
     "@pickle-spec/mobile": ["@pickle-spec/mobile@workspace:packages/mobile"],
 

@@ -9,7 +9,7 @@ import type {
   MobileWorkerScenario,
   WorkerScenarioExecution,
   WorkerSessionCompletion,
-} from './worker-protocol'
+} from './worker-protocol.ts'
 import { mobileWorkerProtocolVersion } from './worker-protocol.ts'
 
 export interface OpenMobileGatewaySessionInput {

@@ -3,6 +3,7 @@ import type {
   OpenSessionInput,
   ScenarioTargetSession,
 } from '@pickle-spec/runner'
+import { resolveScenarioId } from '@pickle-spec/spec'
 import { createMobileExecutionCache } from '../execution-cache/mobile-execution-cache'
 import {
   createNodeWorkerClient,
@@ -19,6 +20,7 @@ import {
   type MobileArtifactKind,
   type MobilePlatform,
   type MobileTextRedaction,
+  type MobileWorkerEvent,
   type MobileWorkerRequest,
   mobileWorkerProtocolVersion,
 } from '../worker/worker-protocol'
@@ -64,6 +66,28 @@ export interface MobileExecutionTargetAdapter
   discoverTargets(): Promise<Array<AndroidTarget | IosTarget>>
 }
 
+export type MobileLiveViewportTarget = {
+  scenarioId: string
+  examplesRowId?: string
+  profileId: string
+  attempt?: number
+}
+
+export type MobileLiveViewportUpdate =
+  | {
+      kind: 'device-frame'
+      data: string
+      mimeType: 'image/png'
+      width?: number
+      height?: number
+      target: MobileLiveViewportTarget
+    }
+  | { kind: 'closed'; target: MobileLiveViewportTarget }
+
+export interface MobileAdapterBehavior {
+  onLiveViewport?: (update: MobileLiveViewportUpdate) => void
+}
+
 interface ExecutionTargetPolicy {
   capabilities: readonly string[]
   platform: MobilePlatform
@@ -82,6 +106,43 @@ const executionTargetPolicies = {
 
 type OpenSessionRequest = Extract<MobileWorkerRequest, { type: 'open-session' }>
 type ScenarioStep = OpenSessionInput['scenario']['steps'][number]
+
+function mobileLiveViewportTarget(
+  input: OpenSessionInput,
+): MobileLiveViewportTarget {
+  return {
+    scenarioId:
+      input.scenario.id ??
+      resolveScenarioId(
+        input.specification.source.uri,
+        input.specification.name,
+        input.scenario.template?.name ?? input.scenario.name,
+        input.scenario.tags,
+      ),
+    examplesRowId: input.scenario.examplesRowId,
+    profileId: input.executionTargetProfile.id,
+  }
+}
+
+function subscribeLiveViewport(input: {
+  behavior: MobileAdapterBehavior
+  sessionId: string
+  target: MobileLiveViewportTarget
+  worker: MobileWorkerClient
+}): () => void {
+  return input.worker.subscribe((event: MobileWorkerEvent) => {
+    if (event.sessionId !== input.sessionId) return
+    if (event.type === 'viewport-closed') {
+      input.behavior.onLiveViewport?.({ kind: 'closed', target: input.target })
+      return
+    }
+    input.behavior.onLiveViewport?.({
+      ...event.frame,
+      kind: 'device-frame',
+      target: input.target,
+    })
+  })
+}
 
 function workerStep(
   step: ScenarioStep,
@@ -144,9 +205,50 @@ function openSessionRequest(
   }
 }
 
+async function openMobileSession(input: {
+  behavior: MobileAdapterBehavior
+  executionCache: ReturnType<typeof createMobileExecutionCache>
+  openSession: OpenSessionInput
+  options: MobileAdapterOptions
+  platform: MobilePlatform
+  worker: MobileWorkerClient
+}): Promise<MobileWorkerSession> {
+  const sessionId = crypto.randomUUID()
+  const unsubscribe = subscribeLiveViewport({
+    behavior: input.behavior,
+    sessionId,
+    target: mobileLiveViewportTarget(input.openSession),
+    worker: input.worker,
+  })
+  const session = new MobileWorkerSession(
+    input.worker,
+    sessionId,
+    input.openSession.signal,
+    unsubscribe,
+  )
+  try {
+    const response = await input.worker.request(
+      openSessionRequest(
+        input.openSession,
+        input.options,
+        input.platform,
+        input.executionCache,
+        sessionId,
+      ),
+      input.openSession.signal,
+    )
+    await session.confirmOpened(response)
+  } catch (error) {
+    await session.handleOpenFailure()
+    throw error
+  }
+  return session
+}
+
 export function createMobileAdapter(
   options: MobileAdapterOptions,
   workerFactory?: MobileWorkerFactory,
+  behavior: MobileAdapterBehavior = {},
 ): MobileExecutionTargetAdapter {
   const executionTarget = options.executionTarget ?? 'android-emulator'
   const policy = executionTargetPolicies[executionTarget]
@@ -178,30 +280,14 @@ export function createMobileAdapter(
       return expectWorkerResponse(response, 'targets-discovered').targets
     },
     async openSession(input) {
-      const sessionId = crypto.randomUUID()
-      const mobileWorker = ensureWorker()
-      const session = new MobileWorkerSession(
-        mobileWorker,
-        sessionId,
-        input.signal,
-      )
-      try {
-        const response = await mobileWorker.request(
-          openSessionRequest(
-            input,
-            options,
-            policy.platform,
-            executionCache,
-            sessionId,
-          ),
-          input.signal,
-        )
-        await session.confirmOpened(response)
-      } catch (error) {
-        await session.handleOpenFailure()
-        throw error
-      }
-      return session
+      return openMobileSession({
+        behavior,
+        executionCache,
+        openSession: input,
+        options,
+        platform: policy.platform,
+        worker: ensureWorker(),
+      })
     },
     async dispose() {
       if (!worker) return

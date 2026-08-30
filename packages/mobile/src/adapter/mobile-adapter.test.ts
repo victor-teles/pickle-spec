@@ -45,7 +45,7 @@ function workerClient(
   request: MobileWorkerClient['request'],
   dispose: MobileWorkerClient['dispose'] = async () => {},
 ): MobileWorkerClient {
-  return { request, dispose }
+  return { request, subscribe: () => () => {}, dispose }
 }
 
 function successfulWorker(
@@ -56,7 +56,7 @@ function successfulWorker(
     switch (request.type) {
       case 'discover-targets':
         return {
-          version: 3,
+          version: 5,
           type: 'targets-discovered',
           targets: [
             {
@@ -69,14 +69,14 @@ function successfulWorker(
         }
       case 'open-session':
         return {
-          version: 3,
+          version: 5,
           type: 'session-opened',
           sessionId: request.sessionId,
           targetId: 'emulator-5554',
         }
       case 'execute-scenario':
         return {
-          version: 3,
+          version: 5,
           type: 'scenario-executed',
           sessionId: request.sessionId,
           execution: {
@@ -88,20 +88,20 @@ function successfulWorker(
         }
       case 'complete-session':
         return {
-          version: 3,
+          version: 5,
           type: 'session-completed',
           sessionId: request.sessionId,
           completion: { inferenceCount: 0 },
         }
       case 'close-session':
         return {
-          version: 3,
+          version: 5,
           type: 'session-closed',
           sessionId: request.sessionId,
         }
       case 'cancel-session':
         return {
-          version: 3,
+          version: 5,
           type: 'session-cancelled',
           sessionId: request.sessionId,
         }
@@ -123,7 +123,7 @@ test('exposes mobile targets and deterministic cache identity', async () => {
     adapterCacheSchemaVersion: 'agent-device-ad.1+0.20.10',
   })
   expect(requests[0]).toEqual({
-    version: 3,
+    version: 5,
     type: 'discover-targets',
     platform: 'android',
   })
@@ -158,7 +158,7 @@ test('runs one complete Scenario and completes it through the worker', async () 
     'close-session',
   ])
   expect(requests[0]).toMatchObject({
-    version: 3,
+    version: 5,
     type: 'open-session',
     mode: 'adaptive',
     scenario: {
@@ -173,6 +173,51 @@ test('runs one complete Scenario and completes it through the worker', async () 
       runtimeBindings: [{ name: 'product', value: 'Pickles' }],
     },
   })
+})
+
+test('maps only the logical session worker frames to its live viewport target', async () => {
+  const requests: MobileWorkerRequest[] = []
+  const listeners = new Set<Parameters<MobileWorkerClient['subscribe']>[0]>()
+  const worker = successfulWorker(requests)
+  worker.subscribe = (listener) => {
+    listeners.add(listener)
+    return () => listeners.delete(listener)
+  }
+  const updates: unknown[] = []
+  const adapter = createMobileAdapter({ application }, () => worker, {
+    onLiveViewport: (update) => updates.push(update),
+  })
+  const session = await adapter.openSession({
+    executionTargetProfile: { id: 'android' },
+    specification,
+    scenario: { ...scenario, id: 'scenario-buy' },
+  })
+  const opened = requests[0]
+  if (opened?.type !== 'open-session') throw new Error('Session did not open')
+
+  for (const listener of listeners) {
+    listener({
+      type: 'viewport-frame',
+      sessionId: 'another-session',
+      frame: { data: 'ignored', mimeType: 'image/png' },
+    })
+    listener({
+      type: 'viewport-frame',
+      sessionId: opened.sessionId,
+      frame: { data: 'frame', mimeType: 'image/png' },
+    })
+  }
+  await session.close()
+
+  expect(updates).toEqual([
+    {
+      kind: 'device-frame',
+      data: 'frame',
+      mimeType: 'image/png',
+      target: { scenarioId: 'scenario-buy', profileId: 'android' },
+    },
+  ])
+  expect(listeners.size).toBe(0)
 })
 
 test('passes only a validated complete .ad payload into Replay', async () => {
@@ -263,7 +308,7 @@ test('cancels installation when abort occurs while opening', async () => {
       }
       if (message.type === 'cancel-session') {
         return {
-          version: 3,
+          version: 5,
           type: 'session-cancelled',
           sessionId: message.sessionId,
         }

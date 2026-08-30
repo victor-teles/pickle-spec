@@ -1,13 +1,13 @@
 import { mkdir, readFile, stat, writeFile } from 'node:fs/promises'
 import { basename, join, resolve } from 'node:path'
 import { z } from 'zod'
-import { requiredValue } from '../required-value'
+import { requiredValue } from '../required-value.ts'
 import type {
   MobileArtifactKind,
   MobileTextRedaction,
   WorkerStepExecution,
-} from '../worker/worker-protocol'
-import type { AgentDeviceClientPort } from './agent-device-client'
+} from '../worker/worker-protocol.ts'
+import type { AgentDeviceClientPort } from './agent-device-client.ts'
 
 type MobileArtifact = NonNullable<WorkerStepExecution['artifacts']>[number]
 export type MobileEvidenceAvailability = NonNullable<

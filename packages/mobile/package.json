@@ -20,6 +20,7 @@
   },
   "dependencies": {
     "@pickle-spec/runner": "workspace:*",
+    "@pickle-spec/spec": "workspace:*",
     "agent-device": "catalog:",
     "zod": "catalog:"
   },

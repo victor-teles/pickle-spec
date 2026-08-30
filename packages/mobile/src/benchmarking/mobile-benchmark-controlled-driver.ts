@@ -114,7 +114,6 @@ function controlledScenarioExecution(
     session.mode === 'adaptive'
       ? compileMobileScenario({
           platform: 'android',
-          applicationId,
           scenario: session.scenario,
         })
       : undefined
@@ -130,7 +129,7 @@ function controlledScenarioExecution(
     throw new Error('Controlled modes did not execute the same .ad')
   }
   return {
-    version: 3 as const,
+    version: 5 as const,
     type: 'scenario-executed' as const,
     sessionId: request.sessionId,
     execution: {
@@ -152,7 +151,7 @@ function controlledSessionCompletion(
     throw new Error('Controlled Adaptive representation is absent')
   }
   return {
-    version: 3 as const,
+    version: 5 as const,
     type: 'session-completed' as const,
     sessionId: request.sessionId,
     completion:
@@ -176,22 +175,23 @@ function closeControlledSession(
 ) {
   state.opened.delete(sessionId)
   state.executedAdaptive.delete(sessionId)
-  return { version: 3 as const, type, sessionId }
+  return { version: 5 as const, type, sessionId }
 }
 
 function createControlledWorker(
   state: ControlledWorkerState,
 ): MobileWorkerClient {
   return {
+    subscribe: () => () => {},
     async request(request) {
       switch (request.type) {
         case 'discover-targets':
-          return { version: 3, type: 'targets-discovered', targets: [] }
+          return { version: 5, type: 'targets-discovered', targets: [] }
         case 'open-session':
           state.opened.set(request.sessionId, request)
           state.modes.push(request.mode)
           return {
-            version: 3,
+            version: 5,
             type: 'session-opened',
             sessionId: request.sessionId,
             targetId: 'controlled-emulator',

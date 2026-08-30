@@ -112,11 +112,23 @@ function MobileTargetKindSelector(props: MobileProfileSettingsProps) {
 }
 
 function MobileApplicationFields(props: MobileProfileSettingsProps) {
-  const updateApplication = (field: 'id' | 'binaryPath', value: string) =>
+  const updateApplicationId = (id: string) =>
     props.onChange({
       ...props.profile,
-      application: { ...props.profile.application, [field]: value },
+      application: { ...props.profile.application, id },
     })
+  const updateBinaryPath = (nextBinaryPath: string) =>
+    props.onChange({
+      ...props.profile,
+      application: {
+        id: props.profile.application.id,
+        binaryPath: nextBinaryPath,
+      },
+    })
+  const binaryPath =
+    'binaryPath' in props.profile.application
+      ? props.profile.application.binaryPath
+      : ''
   return (
     <div className="grid gap-3 sm:grid-cols-3">
       <div className="space-y-1">
@@ -125,7 +137,7 @@ function MobileApplicationFields(props: MobileProfileSettingsProps) {
           id="mobile-application-id"
           aria-label="Mobile application id"
           value={props.profile.application.id}
-          onChange={(event) => updateApplication('id', event.target.value)}
+          onChange={(event) => updateApplicationId(event.target.value)}
         />
       </div>
       <div className="space-y-1">
@@ -133,10 +145,13 @@ function MobileApplicationFields(props: MobileProfileSettingsProps) {
         <Input
           id="mobile-binary-path"
           aria-label="Mobile application binary path"
-          value={props.profile.application.binaryPath}
-          onChange={(event) =>
-            updateApplication('binaryPath', event.target.value)
+          value={binaryPath}
+          placeholder={
+            'installed' in props.profile.application
+              ? 'Uses the installed application'
+              : undefined
           }
+          onChange={(event) => updateBinaryPath(event.target.value)}
         />
       </div>
       <div className="space-y-1">

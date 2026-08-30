@@ -217,14 +217,22 @@ const projectProfileSchema = strictObject('executionTargetProfiles', {
   web: webAdapterOptionsSchema.optional(),
   mobile: strictObject('executionTargetProfiles.mobile', {
     executionTarget: z.enum(['android-emulator', 'ios-simulator']).optional(),
-    application: strictObject('executionTargetProfiles.mobile.application', {
-      id: nonemptyTrimmedString(
-        'executionTargetProfiles.mobile.application.id',
-      ),
-      binaryPath: nonemptyTrimmedString(
-        'executionTargetProfiles.mobile.application.binaryPath',
-      ),
-    }),
+    application: z.union([
+      strictObject('executionTargetProfiles.mobile.application', {
+        id: nonemptyTrimmedString(
+          'executionTargetProfiles.mobile.application.id',
+        ),
+        binaryPath: nonemptyTrimmedString(
+          'executionTargetProfiles.mobile.application.binaryPath',
+        ),
+      }),
+      strictObject('executionTargetProfiles.mobile.application', {
+        id: nonemptyTrimmedString(
+          'executionTargetProfiles.mobile.application.id',
+        ),
+        installed: z.literal(true),
+      }),
+    ]),
     targetId: optionalNonemptyTrimmedString(
       'executionTargetProfiles.mobile.targetId',
     ),
