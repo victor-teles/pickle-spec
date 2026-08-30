@@ -910,6 +910,9 @@ export default {
       expect(await selectedEntry.textContent()).toContain(
         'Payment was declined',
       )
+      await timelineFilters
+        .getByRole('button', { name: 'Test artifact' })
+        .click()
       const artifactEntry = timeline.getByRole('button', {
         name: /Test artifact screenshot/,
       })
@@ -1406,6 +1409,12 @@ Feature: Search
       expect(await evidenceTimeline.textContent()).not.toContain(
         'Diagnostic entry',
       )
+      expect(await evidenceTimeline.textContent()).not.toContain(
+        'Test artifact',
+      )
+      await evidenceTimelineFilters
+        .getByRole('button', { name: 'Test artifact' })
+        .click()
       expect(await evidenceTimeline.textContent()).toContain('Test artifact')
       await evidenceTimelineFilters
         .getByRole('button', { name: 'Diagnostic entry' })

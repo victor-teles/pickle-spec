@@ -1398,9 +1398,32 @@ export default {
         attempts: [
           {
             steps: [
-              { artifacts: [{ kind: 'screenshot', mediaType: 'image/png' }] },
-              { resolvedActions: [{ description: 'Search for pickles' }] },
-              { state: 'passed' },
+              {
+                resolvedActions: [
+                  { description: expect.stringMatching(/^Navigate to /) },
+                ],
+                artifacts: [
+                  { kind: 'screenshot', mediaType: 'image/png' },
+                  { kind: 'screenshot', mediaType: 'image/png' },
+                ],
+              },
+              {
+                resolvedActions: [{ description: 'Search for pickles' }],
+                artifacts: [
+                  { kind: 'screenshot', mediaType: 'image/png' },
+                  { kind: 'screenshot', mediaType: 'image/png' },
+                ],
+              },
+              {
+                state: 'passed',
+                resolvedActions: [
+                  { description: 'Verify: pickle results are visible' },
+                ],
+                artifacts: [
+                  { kind: 'screenshot', mediaType: 'image/png' },
+                  { kind: 'screenshot', mediaType: 'image/png' },
+                ],
+              },
             ],
           },
         ],
@@ -1409,7 +1432,7 @@ export default {
     const screenshots = new Bun.Glob('**/*.png').scanSync({
       cwd: artifactDirectory,
     })
-    expect([...screenshots]).toHaveLength(3)
+    expect([...screenshots]).toHaveLength(6)
     expect(stdout).not.toContain('Stagehand')
     expect(stdout).not.toContain('gherkinDocument')
   })
@@ -1545,20 +1568,35 @@ export default {
     const actionStep = requiredValue(attempt.steps[0])
     expect(actionStep.index).toBe(0)
     expect(actionStep.state).toBe('passed')
-    expect(actionStep.resolvedActions).toEqual([
-      { description: 'Click pay on chrome' },
+    expect(actionStep.resolvedActions).toMatchObject([
+      {
+        description: expect.stringMatching(/^Navigate to /),
+        evidence: { ordinal: 0, state: 'passed' },
+      },
+      {
+        description: 'Click pay on chrome',
+        evidence: { ordinal: 1, state: 'passed' },
+      },
     ])
     const outcomeStep = requiredValue(attempt.steps[1])
     expect(outcomeStep.index).toBe(1)
     expect(outcomeStep.state).toBe('failed')
-    expect(outcomeStep.resolvedActions).toEqual([
-      { description: 'Verify: payment is captured' },
+    expect(outcomeStep.resolvedActions).toMatchObject([
+      {
+        description: 'Verify: payment is captured',
+        evidence: { ordinal: 0, state: 'failed' },
+      },
     ])
     expect(outcomeStep.message).toBe(
       'Expected: "payment is captured" | Actual: Payment was declined',
     )
-    expect(outcomeStep.artifacts).toHaveLength(1)
-    const screenshot = outcomeStep.artifacts?.[0]
+    expect(outcomeStep.artifacts).toHaveLength(2)
+    expect(
+      new Set(outcomeStep.artifacts?.map((artifact) => artifact.path)).size,
+    ).toBe(2)
+    const screenshot = outcomeStep.artifacts?.find(
+      (artifact) => artifact.name === 'step-02-failed.png',
+    )
     expect(screenshot?.kind).toBe('screenshot')
     expect(typeof screenshot?.path).toBe('string')
     expect(screenshot?.mediaType).toBe('image/png')
