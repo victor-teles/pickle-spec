@@ -1,13 +1,20 @@
 import type {
   ExecutionCacheUncacheableReason,
   OpenSessionInput,
-  ResolvedAction,
   StepExecution,
   StepExecutionContext,
 } from '@pickle-spec/runner'
 import type { ScenarioStep } from '@pickle-spec/spec'
-import type { WebAutomation } from '../adapter/web-automation'
-import type { WebAdapterOptions } from '../adapter/web-options'
+import type { WebAutomation } from '../adapter/automation/web-automation'
+import type { WebAdapterOptions } from '../adapter/configuration/web-options'
+import {
+  compileAssertionDrafts,
+  definedInstructions,
+  executeObservedActions,
+  observeActions,
+  observeOnce,
+  verificationExecution,
+} from './web-adaptive-operations'
 import { resolvedInstructions } from './web-cache-instructions'
 import {
   compileObservedOutcomes,
@@ -17,7 +24,6 @@ import {
   instructionCoversStepVariables,
   parseObservedActionPayload,
   stepVariableNames,
-  type WebAssertionDraft,
   type WebExecutionCachePayload,
   type WebInstruction,
 } from './web-execution-cache'
@@ -49,94 +55,6 @@ interface CreateAdaptiveRuntimeInput {
   compiledSteps: Array<WebExecutionCachePayload['steps'][number] | undefined>
   inference: { count: number }
   uncacheable: { reason?: ExecutionCacheUncacheableReason }
-}
-
-function definedInstructions(
-  values: readonly (WebInstruction | undefined)[],
-): values is WebInstruction[] {
-  return values.every((value) => value !== undefined)
-}
-
-async function compileAssertionDrafts(
-  automation: WebAutomation,
-  prompt: string,
-  signal: AbortSignal | undefined,
-): Promise<WebAssertionDraft[]> {
-  try {
-    const drafts = await automation.compileAssertion?.(prompt, signal)
-    if (drafts === undefined) return []
-    if ('kind' in drafts) return [drafts]
-    return [...drafts]
-  } catch {
-    return []
-  }
-}
-
-function verificationExecution(
-  prompt: string,
-  meetsExpectation: boolean,
-  actualState: string,
-): StepExecution {
-  const resolvedActions = [{ description: `Verify: ${prompt}` }]
-  return meetsExpectation
-    ? { state: 'passed', resolvedActions }
-    : {
-        state: 'failed',
-        resolvedActions,
-        message: `Expected: "${prompt}" | Actual: ${actualState}`,
-      }
-}
-
-type ObservedActions = Awaited<ReturnType<WebAutomation['observe']>>
-
-async function observeOnce(
-  automation: WebAutomation,
-  prompt: string,
-  signal: AbortSignal | undefined,
-  onInference: () => void,
-): Promise<ObservedActions> {
-  const actions = await automation.observe(prompt, signal)
-  onInference()
-  return actions
-}
-
-async function observeActions(
-  automation: WebAutomation,
-  prompt: string,
-  signal: AbortSignal | undefined,
-  onInference: () => void,
-): Promise<ObservedActions> {
-  const actions = await observeOnce(automation, prompt, signal, onInference)
-  if (actions.length > 0) return actions
-  return observeOnce(automation, prompt, signal, onInference)
-}
-
-async function executeObservedActions(
-  automation: WebAutomation,
-  actions: ObservedActions,
-  signal: AbortSignal | undefined,
-  onInference: () => void,
-): Promise<StepExecution> {
-  const resolvedActions: ResolvedAction[] = []
-  for (const action of actions) {
-    onInference()
-    const result = await automation.act(action, signal)
-    resolvedActions.push({ description: action.description })
-    if (!result.success) {
-      return {
-        state: 'failed',
-        resolvedActions,
-        message: result.message ?? 'Web action failed',
-      }
-    }
-  }
-  return actions.length > 0
-    ? { state: 'passed', resolvedActions }
-    : {
-        state: 'failed',
-        resolvedActions,
-        message: 'Observe returned no actions',
-      }
 }
 
 interface WebAdaptiveRuntime {

@@ -2,8 +2,8 @@ import { afterEach, describe, expect, mock, spyOn, test } from 'bun:test'
 import { browserbase, localBrowser, Stagehand } from '@browserbasehq/stagehand'
 import type { Scenario, Specification } from '@pickle-spec/spec'
 import { z } from 'zod'
-import { createWebAdapter } from '../../index'
-import { requiredValue } from '../required-value'
+import { createWebAdapter } from '../../../index'
+import { requiredValue } from '../../required-value'
 import { stagehandFactory } from './stagehand-factory'
 
 type LaunchedBrowser = Awaited<ReturnType<typeof localBrowser.launch>>

@@ -4,7 +4,7 @@ import {
   createWebAdapter,
   type WebAutomation,
   type WebAutomationFactory,
-} from '../../index'
+} from '../../../index'
 
 const scenario: Scenario = {
   name: 'Search for pickles',

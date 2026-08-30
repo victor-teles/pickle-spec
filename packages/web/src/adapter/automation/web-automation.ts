@@ -1,12 +1,12 @@
 import type { TestArtifact } from '@pickle-spec/runner'
 import type { ScenarioVariableBinding } from '@pickle-spec/spec'
-import type { CollectedWebEvidence } from '../evidence/web-evidence'
+import type { CollectedWebEvidence } from '../../evidence/web-evidence'
 import type {
   WebAssertionDraft,
   WebInstruction,
-} from '../execution-cache/web-execution-cache'
-import type { ResolvedFidelity } from './fidelity'
-import type { BrowserOptions } from './web-options'
+} from '../../execution-cache/web-execution-cache'
+import type { ResolvedFidelity } from '../configuration/fidelity'
+import type { BrowserOptions } from '../configuration/web-options'
 
 export interface WebObservedAction {
   description: string

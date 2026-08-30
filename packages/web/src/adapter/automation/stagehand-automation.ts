@@ -8,13 +8,16 @@ import { z } from 'zod'
 import {
   type createWebEvidenceCollector,
   instrumentWebEvidencePages,
-} from '../evidence/web-evidence'
-import { startWebRecording, type WebRecording } from '../evidence/web-recording'
+} from '../../evidence/web-evidence'
+import {
+  startWebRecording,
+  type WebRecording,
+} from '../../evidence/web-recording'
 import {
   type WebAssertionDraft,
   type WebInstruction,
   webAssertionCompileSchema,
-} from '../execution-cache/web-execution-cache'
+} from '../../execution-cache/web-execution-cache'
 import { withAbort } from './abort'
 import { createDirectBrowser } from './direct-browser'
 import { stabilizeSelector } from './stable-selector'

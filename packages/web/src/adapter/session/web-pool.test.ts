@@ -3,7 +3,7 @@ import type {
   WebAutomation,
   WebAutomationFactory,
   WebBrowserProcess,
-} from './web-adapter'
+} from '../web-adapter'
 import { IsolationVerificationError, WebProcessPool } from './web-pool'
 
 function isolatedAutomation(

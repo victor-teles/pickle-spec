@@ -1,12 +1,12 @@
-import { abortError, isAbortError, withAbort } from './abort'
-import type { ResolvedFidelity } from './fidelity'
+import { abortError, isAbortError, withAbort } from '../automation/abort'
 import type {
   WebAutomation,
   WebAutomationFactory,
   WebBrowserProcess,
   WebIsolationState,
-} from './web-automation'
-import type { BrowserOptions } from './web-options'
+} from '../automation/web-automation'
+import type { ResolvedFidelity } from '../configuration/fidelity'
+import type { BrowserOptions } from '../configuration/web-options'
 import { IsolationVerificationError } from './web-pool-error'
 
 const defaultIdleTimeoutMs = 30_000

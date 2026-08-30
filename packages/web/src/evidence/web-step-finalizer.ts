@@ -9,11 +9,11 @@ import {
   type TestArtifact,
 } from '@pickle-spec/runner'
 import type { ScenarioStep } from '@pickle-spec/spec'
-import type { WebAutomation } from '../adapter/web-automation'
+import type { WebAutomation } from '../adapter/automation/web-automation'
 import type {
   ScreenshotOptions,
   WebAdapterOptions,
-} from '../adapter/web-options'
+} from '../adapter/configuration/web-options'
 import {
   capturedWebArtifact,
   resolveWebArtifactCapture,

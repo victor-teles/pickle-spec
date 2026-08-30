@@ -1,7 +1,7 @@
 import type { ResolvedAction, StepExecution } from '@pickle-spec/runner'
 import type { ScenarioStep, ScenarioVariableBinding } from '@pickle-spec/spec'
-import { abortError, isAbortError } from '../adapter/abort'
-import type { WebAutomation } from '../adapter/web-automation'
+import { abortError, isAbortError } from '../adapter/automation/abort'
+import type { WebAutomation } from '../adapter/automation/web-automation'
 import {
   parameterizeWebValue,
   type WebInstruction,

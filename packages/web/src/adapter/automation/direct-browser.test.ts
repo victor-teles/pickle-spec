@@ -1,6 +1,6 @@
 import { describe, expect, mock, test } from 'bun:test'
 import type { BrowserContext, Locator, Page } from '@browserbasehq/stagehand'
-import type { WebInstruction } from '../execution-cache/web-execution-cache'
+import type { WebInstruction } from '../../execution-cache/web-execution-cache'
 import { createDirectBrowser } from './direct-browser'
 
 const literal = (value: string) => ({ segments: [{ literal: value }] })

@@ -56,10 +56,10 @@ Exit criteria: every Studio entity has a stable URL. After target access and cre
 
 Phase 2 makes concurrent execution understandable during and after a run. The live view and result inspector must use the same event and evidence contracts.
 
-- [ ] Shared evidence contract: version observations, tool activity, outcomes, timing, cost, artifact references, execution mode, and cache decisions. Redact secrets before streaming or persistence. Never store private chain-of-thought.
-- [ ] Live browser viewport: stream CDP screencast frames from a local or attached browser over the per-run WebSocket. Embed the Browserbase live session for remote runs.
-- [ ] Live device mirror: stream Android emulator and iOS simulator frames through the existing Node worker protocol. Render the active device beside the step timeline.
-- [ ] Web diagnostics: capture redacted traces, recordings, network activity, and console output. Link each artifact to its step and event range.
+- [x] Shared evidence contract: version observations, tool activity, outcomes, timing, cost, artifact references, execution mode, and cache decisions. Redact secrets before streaming or persistence. Never store private chain-of-thought.
+- [x] Live browser viewport: stream CDP screencast frames from a local or attached browser over the per-run WebSocket. Embed the Browserbase live session for remote runs.
+- [x] Live device mirror: stream Android emulator and iOS simulator frames through the existing Node worker protocol. Render the active device beside the step timeline.
+- [x] Web diagnostics: capture redacted traces, recordings, network activity, and console output. Link each artifact to its step and event range.
 - [ ] Time-travel inspector: connect each action to target state, diagnostics, source evidence, retries, and before-and-after screenshots. Use the same view for live and completed runs.
 - [ ] Replay divergence explainer: show the divergence step, sealed prefix, and Adaptive fallback. Use the existing `replay-diverged` and `adaptive-fallback-started` events.
 - [ ] Operator controls: let an operator pin or cancel a scenario, open its live session, and capture evidence. Add pause-after-step only after the runner defines a safe suspension contract.
