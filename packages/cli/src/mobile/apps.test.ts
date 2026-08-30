@@ -5,7 +5,7 @@ test('shows progress while listing apps and stops before printing results', asyn
   const calls: string[] = []
 
   const exitCode = await runAppsCommand(
-    ['apps', '--platform', 'ios', '--all'],
+    { platform: 'ios', all: true },
     {
       async list(input) {
         calls.push(`list:${input.platform}:${input.scope}`)
@@ -38,21 +38,24 @@ test('stops progress when app discovery fails', async () => {
   const calls: string[] = []
 
   await expect(
-    runAppsCommand(['apps', '--platform', 'android'], {
-      async list() {
-        calls.push('list')
-        throw new Error('ADB unavailable')
-      },
-      progress: {
-        start(label) {
-          calls.push(`start:${label}`)
+    runAppsCommand(
+      { platform: 'android', all: false },
+      {
+        async list() {
+          calls.push('list')
+          throw new Error('ADB unavailable')
         },
-        stop() {
-          calls.push('stop')
+        progress: {
+          start(label) {
+            calls.push(`start:${label}`)
+          },
+          stop() {
+            calls.push('stop')
+          },
         },
+        report() {},
       },
-      report() {},
-    }),
+    ),
   ).rejects.toThrow('ADB unavailable')
 
   expect(calls).toEqual(['start:Listing Android apps', 'list', 'stop'])

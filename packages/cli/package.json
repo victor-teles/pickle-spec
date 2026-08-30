@@ -18,9 +18,12 @@
   ],
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "test": "bun run test:confidentiality && bun run test:remaining",
-    "test:confidentiality": "bunx --bun vitest run --configLoader runner --experimental.viteModuleRunner=false --experimental.nodeLoader=false --config vitest.config.ts src/execution-cache/execution-cache-confidentiality.test.ts",
-    "test:remaining": "bunx --bun vitest run --configLoader runner --experimental.viteModuleRunner=false --experimental.nodeLoader=false --config vitest.config.ts --exclude '**/execution-cache-confidentiality.test.ts'"
+    "test": "bun run test:unit",
+    "test:unit": "bunx --bun vitest run --configLoader runner --experimental.viteModuleRunner=false --experimental.nodeLoader=false --config vitest.config.ts",
+    "test:integration": "bun run test:integration:confidentiality && bun run test:integration:main",
+    "test:integration:confidentiality": "bunx --bun vitest run --configLoader runner --experimental.viteModuleRunner=false --experimental.nodeLoader=false --config vitest.integration.config.ts src/execution-cache/execution-cache-confidentiality.test.ts",
+    "test:integration:main": "bunx --bun vitest run --configLoader runner --experimental.viteModuleRunner=false --experimental.nodeLoader=false --config vitest.integration.config.ts --exclude '**/execution-cache-confidentiality.test.ts'",
+    "test:all": "bun run test:unit && bun run test:integration"
   },
   "dependencies": {
     "@pickle-spec/configuration": "workspace:*",
@@ -31,12 +34,15 @@
     "@pickle-spec/web": "workspace:*",
     "@types/bun": "catalog:",
     "@typescript/typescript6": "catalog:",
-    "chalk": "5",
+    "commander": "^15.0.0",
     "ora": "8",
+    "picocolors": "^1.1.1",
+    "prompts": "^2.4.2",
     "zod": "catalog:"
   },
   "devDependencies": {
     "@axe-core/playwright": "^4.13.0",
+    "@types/prompts": "^2.4.9",
     "playwright": "^1.55.0",
     "typescript": "catalog:",
     "vitest": "catalog:"

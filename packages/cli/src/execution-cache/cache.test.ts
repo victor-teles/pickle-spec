@@ -92,7 +92,7 @@ describe('pickle cache commands', () => {
       report: (message: string) => messages.push(message),
     }
 
-    expect(await runCacheCommand(['cache', 'inspect'], options)).toBe(0)
+    expect(await runCacheCommand({ operation: 'inspect' }, options)).toBe(0)
     const inspection = messages.at(-1) ?? ''
     expect(inspection).toContain('scenario-checkout')
     expect(inspection).toContain('payloadDigest')
@@ -100,20 +100,8 @@ describe('pickle cache commands', () => {
     expect(inspection).not.toContain('serializedEnvelope')
     expect(inspection).not.toContain('password')
 
-    expect(await runCacheCommand(['cache', 'clear'], options)).toBe(0)
+    expect(await runCacheCommand({ operation: 'clear' }, options)).toBe(0)
     expect(messages.at(-1)).toBe('Cleared 1 Execution cache entry')
     expect(await cache.inspect()).toEqual([])
-  })
-
-  test('rejects unsupported cache subcommands and arguments', async () => {
-    const projectRoot = await tempRoot('pickle-project')
-    const options = { projectRoot, cacheRoot: await tempRoot('pickle-cache') }
-
-    await expect(runCacheCommand(['cache'], options)).rejects.toThrow(
-      'Usage: pickle cache <inspect|clear>',
-    )
-    await expect(
-      runCacheCommand(['cache', 'inspect', '--verbose'], options),
-    ).rejects.toThrow('Usage: pickle cache inspect')
   })
 })

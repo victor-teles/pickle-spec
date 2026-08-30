@@ -7,8 +7,8 @@ on:
     branches: [main]
 
 jobs:
-  check:
-    name: Lint, Type Check & Test
+  quality-and-unit:
+    name: Quality and unit tests
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -33,7 +33,7 @@ jobs:
       - name: Type check
         run: bun run typecheck
 
-      - name: Test
+      - name: Unit tests
         run: bun run test
 
       - name: Release package acceptance
@@ -41,3 +41,18 @@ jobs:
 
       - name: Replay performance gate
         run: bun run benchmark:replay
+
+  cli-integration:
+    name: CLI integration and e2e tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.11
+
+      - run: bun install --frozen-lockfile
+
+      - name: CLI integration and e2e tests
+        run: bun run test:integration
