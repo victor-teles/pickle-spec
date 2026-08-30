@@ -3,13 +3,13 @@ import { expect, test } from 'vitest'
 import {
   firstRunOnboardingState,
   firstRunTarget,
-} from '../../../src/onboarding/first-run-onboarding-model'
+} from '../../../src/features/onboarding/first-run-onboarding-model'
 import { requiredValue } from '../../../src/required-value'
 import type {
   StudioProject,
   StudioRunReadiness,
   StudioRunsIndex,
-} from '../../../src/server/server'
+} from '../../../src/server/contracts'
 
 const ready: StudioRunReadiness = { ready: true, reasons: [] }
 const blocked: StudioRunReadiness = {

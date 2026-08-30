@@ -2,19 +2,7 @@ export type {
   StudioLiveViewport,
   StudioLiveViewportEvent,
   StudioLiveViewportTarget,
-} from './src/live-viewport'
-export type { CredentialStore } from './src/server/credentials'
-export {
-  createCredentialStore,
-  createDirectoryCredentialStore,
-} from './src/server/credentials'
-export type {
-  GitWorkspace,
-  StudioGitFile,
-  StudioGitStatus,
-  StudioPullRequestResult,
-} from './src/server/git'
-export { createGitWorkspace } from './src/server/git'
+} from './src/features/runs/live-viewport'
 export type {
   StudioAuthoringGateway,
   StudioAuthoringModel,
@@ -44,5 +32,17 @@ export type {
   StudioServer,
   StudioSpecification,
   StudioSuite,
-} from './src/server/server'
+} from './src/server/contracts'
+export type { CredentialStore } from './src/server/credentials'
+export {
+  createCredentialStore,
+  createDirectoryCredentialStore,
+} from './src/server/credentials'
+export type {
+  GitWorkspace,
+  StudioGitFile,
+  StudioGitStatus,
+  StudioPullRequestResult,
+} from './src/server/git'
+export { createGitWorkspace } from './src/server/git'
 export { startStudio } from './src/server/server'

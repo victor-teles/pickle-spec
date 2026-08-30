@@ -1,7 +1,7 @@
 import { renderToStaticMarkup } from 'react-dom/server'
 import { expect, test } from 'vitest'
-import type { TimelineEntry } from '../../../../src/runs/result/result-evidence'
-import { ResultEvidenceTimeline } from '../../../../src/runs/result/result-evidence-timeline'
+import type { TimelineEntry } from '../../../../src/features/runs/result/result-evidence'
+import { ResultEvidenceTimeline } from '../../../../src/features/runs/result/result-evidence-timeline'
 
 function entry(
   id: string,

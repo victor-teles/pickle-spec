@@ -1,11 +1,11 @@
 import type { ScenarioAttempt } from '@pickle-spec/runner'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { expect, test } from 'vitest'
-import { ArtifactViewer } from '../../../../src/runs/result/artifact-viewer'
+import { ArtifactViewer } from '../../../../src/features/runs/result/artifact-viewer'
 import {
   ResultArtifacts,
   ResultDiagnostics,
-} from '../../../../src/runs/result/result-evidence-panels'
+} from '../../../../src/features/runs/result/result-evidence-panels'
 
 const diagnosticsAvailability: ScenarioAttempt['evidenceAvailability'] = [
   { kind: 'diagnostics', state: 'available' },

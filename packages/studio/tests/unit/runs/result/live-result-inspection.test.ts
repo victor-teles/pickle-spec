@@ -4,8 +4,7 @@ import type {
   TestStepResult,
 } from '@pickle-spec/runner'
 import { expect, test } from 'vitest'
-import { requiredValue } from '../../../../src/required-value'
-import { defaultRunAttemptLocation } from '../../../../src/runs/result/live-result-follow'
+import { defaultRunAttemptLocation } from '../../../../src/features/runs/result/live-result-follow'
 import {
   cellsFromLiveInspection,
   disconnectLiveInspection,
@@ -17,7 +16,7 @@ import {
   receiveLiveStreamEvent,
   resumeLiveFollowing,
   startLiveInspection,
-} from '../../../../src/runs/result/live-result-inspection'
+} from '../../../../src/features/runs/result/live-result-inspection'
 import {
   artifactsFor,
   defaultResultInspectorTab,
@@ -25,7 +24,8 @@ import {
   findInspectedResult,
   timelineFor,
   visibleTimelineEntries,
-} from '../../../../src/runs/result/result-evidence'
+} from '../../../../src/features/runs/result/result-evidence'
+import { requiredValue } from '../../../../src/required-value'
 
 const specificationUri = 'features/checkout.feature'
 const scenario = {

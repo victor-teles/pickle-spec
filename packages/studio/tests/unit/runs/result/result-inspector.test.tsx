@@ -1,6 +1,6 @@
 import { renderToStaticMarkup } from 'react-dom/server'
 import { expect, test } from 'vitest'
-import { ResultViewportPanel } from '../../../../src/runs/result/result-inspector'
+import { ResultViewportPanel } from '../../../../src/features/runs/result/result-inspector'
 
 test('renders local screencast frames in the viewport panel', () => {
   const markup = renderToStaticMarkup(

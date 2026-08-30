@@ -1,12 +1,12 @@
 import { expect, test } from 'vitest'
-import { requiredValue } from '../../../../src/required-value'
 import {
   type ClientEvent,
   emptyRunView,
   pinCell,
   reduceRun,
   type TestResult,
-} from '../../../../src/runs/result/run-view'
+} from '../../../../src/features/runs/result/run-view'
+import { requiredValue } from '../../../../src/required-value'
 
 function started(name: string, id: string, profileId = 'chrome'): ClientEvent {
   return {

@@ -1,8 +1,8 @@
 import type { ActionEvidence } from '@pickle-spec/runner'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { expect, test } from 'vitest'
-import { ActionEvidenceDetail } from '../../../../src/runs/result/action-evidence-detail'
-import type { TimeTravelAction } from '../../../../src/runs/result/time-travel-inspection'
+import { ActionEvidenceDetail } from '../../../../src/features/runs/result/action-evidence-detail'
+import type { TimeTravelAction } from '../../../../src/features/runs/result/time-travel-inspection'
 
 const evidence: ActionEvidence = {
   version: 1,

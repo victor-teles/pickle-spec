@@ -3,13 +3,13 @@ import { expect, test } from 'vitest'
 import {
   receiveLiveStreamEvent,
   startLiveInspection,
-} from '../../../src/runs/result/live-result-inspection'
+} from '../../../src/features/runs/result/live-result-inspection'
 import {
   activeRunListItem,
   filterRuns,
   type RunListItem,
   runProgress,
-} from '../../../src/runs/runs-model'
+} from '../../../src/features/runs/runs-model'
 
 const checkoutRun: TestRunSummary = {
   id: 'run-checkout',

@@ -1,6 +1,6 @@
 import { renderToStaticMarkup } from 'react-dom/server'
 import { expect, test } from 'vitest'
-import { TimelineEvidenceDetail } from '../../../../src/runs/result/timeline-evidence-detail'
+import { TimelineEvidenceDetail } from '../../../../src/features/runs/result/timeline-evidence-detail'
 
 test('renders captured screenshots and recordings in the selected timeline entry', () => {
   const markup = renderToStaticMarkup(

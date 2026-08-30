@@ -4,10 +4,10 @@ import type {
   TestRunManifest,
 } from '@pickle-spec/runner'
 import { expect, test } from 'vitest'
-import { timelineFor } from '../../../../src/runs/result/result-evidence'
-import type { ResultInspectionLocation } from '../../../../src/runs/result/result-inspection'
-import { timeTravelInspection } from '../../../../src/runs/result/time-travel-inspection'
-import type { StudioRunSnapshot } from '../../../../src/server/server'
+import { timelineFor } from '../../../../src/features/runs/result/result-evidence'
+import type { ResultInspectionLocation } from '../../../../src/features/runs/result/result-inspection'
+import { timeTravelInspection } from '../../../../src/features/runs/result/time-travel-inspection'
+import type { StudioRunSnapshot } from '../../../../src/server/contracts'
 
 const location: ResultInspectionLocation = {
   specificationUri: 'features/checkout.feature',

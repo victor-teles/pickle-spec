@@ -2,7 +2,7 @@ import { expect, test } from 'vitest'
 import {
   isBusyOrigin,
   runOriginFromRequest,
-} from '../../../src/runs/run-origin'
+} from '../../../src/features/runs/run-origin'
 
 test('derives the origin from the run request', () => {
   expect(runOriginFromRequest({ scenarioId: 'pay' })).toEqual({

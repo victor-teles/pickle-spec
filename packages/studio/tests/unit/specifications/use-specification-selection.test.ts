@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest'
-import type { StudioSpecification } from '../../../src/server/server'
-import { resolveSpecificationSelection } from '../../../src/specifications/use-specification-selection'
+import { resolveSpecificationSelection } from '../../../src/features/specifications/use-specification-selection'
+import type { StudioSpecification } from '../../../src/server/contracts'
 
 const specifications = [
   {

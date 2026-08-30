@@ -6,10 +6,6 @@ import type {
 } from '@pickle-spec/runner'
 import { expect, test } from 'vitest'
 import {
-  parseStudioRoute,
-  studioRouteHref,
-} from '../../../../src/app/studio-route'
-import {
   artifactLoadFailureGuidance,
   artifactsFor,
   artifactViewerKind,
@@ -23,8 +19,12 @@ import {
   timelineEntriesOfKinds,
   timelineFor,
   visibleTimelineEntries,
-} from '../../../../src/runs/result/result-evidence'
-import type { StudioRunSnapshot } from '../../../../src/server/server'
+} from '../../../../src/features/runs/result/result-evidence'
+import {
+  parseStudioRoute,
+  studioRouteHref,
+} from '../../../../src/features/studio/studio-route'
+import type { StudioRunSnapshot } from '../../../../src/server/contracts'
 
 const evidenceAvailability: ScenarioAttempt['evidenceAvailability'] = [
   { kind: 'screenshot', state: 'not-requested' },

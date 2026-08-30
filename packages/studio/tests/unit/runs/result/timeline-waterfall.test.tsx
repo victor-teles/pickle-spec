@@ -1,7 +1,7 @@
 import { renderToStaticMarkup } from 'react-dom/server'
 import { expect, test } from 'vitest'
-import type { TimelineEntry } from '../../../../src/runs/result/result-evidence'
-import { TimelineWaterfall } from '../../../../src/runs/result/timeline-waterfall'
+import type { TimelineEntry } from '../../../../src/features/runs/result/result-evidence'
+import { TimelineWaterfall } from '../../../../src/features/runs/result/timeline-waterfall'
 
 test('renders pointer-only plot proxies for point and duration entries', () => {
   const entries: TimelineEntry[] = [

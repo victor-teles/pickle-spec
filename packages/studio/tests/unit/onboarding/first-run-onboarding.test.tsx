@@ -1,7 +1,7 @@
 import { renderToStaticMarkup } from 'react-dom/server'
 import { expect, test } from 'vitest'
-import { FirstRunOnboarding } from '../../../src/onboarding/first-run-onboarding'
-import type { StudioProject } from '../../../src/server/server'
+import { FirstRunOnboarding } from '../../../src/features/onboarding/first-run-onboarding'
+import type { StudioProject } from '../../../src/server/contracts'
 
 const project: StudioProject = {
   name: 'shop',
