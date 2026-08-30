@@ -123,7 +123,10 @@ function checkPackageScripts(file: string, manifest: JsonObject): Violation[] {
 
   if (!file.startsWith('packages/')) return violations
 
-  return scripts.test?.includes(expectedPackageConfig)
+  const packageTestScript = scripts.test?.includes('test:unit')
+    ? scripts['test:unit']
+    : scripts.test
+  return packageTestScript?.includes(expectedPackageConfig)
     ? violations
     : [
         ...violations,
