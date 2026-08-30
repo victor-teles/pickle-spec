@@ -1,11 +1,11 @@
 import type { ServerWebSocket } from 'bun'
 import type { ServerRequest } from 'srvx'
 import { staticMiddleware } from 'srvx/static'
+import { createDocumentRoutes } from '../features/documents/document.routes'
 import {
   createSpecificationWorkspace,
   type SpecificationWorkspace,
-} from '../authoring/documents'
-import { createDocumentRoutes } from '../features/documents/document.routes'
+} from '../features/documents/documents'
 import { createWorkspaceEventHub } from '../features/documents/workspace-event-hub'
 import { createExecutionCacheRoutes } from '../features/execution-cache/execution-cache.routes'
 import { createGitRoutes } from '../features/git/git.routes'

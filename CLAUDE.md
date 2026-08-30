@@ -76,6 +76,12 @@ server-side behavior. Keep `src/server` limited to transport, security,
 composition, and lifecycle concerns; do not create cross-feature API or
 server-function grab bags.
 
+Keep TanStack route files composition-only. React pages, feature-specific
+components, hooks, models, tests, and server modules belong to their owning
+feature. Keep only proven cross-feature primitives and infrastructure in
+`src/components`, `src/hooks`, and `src/lib`; do not recreate flat `app`,
+`runs`, `settings`, or page-specific shared folders.
+
 The CLI still owns Studio process lifecycle and injects project gateways. The
 embedded srvx host is limited to binding, security headers, static assets, and
 WebSocket upgrades. Do not add application routing back to a `Bun.serve`

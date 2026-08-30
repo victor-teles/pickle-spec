@@ -1,9 +1,9 @@
 import type { ServerWebSocket } from 'bun'
+import type { StudioSocketData } from '../../server/socket-data'
 import {
   liveViewportTargetKey,
   type StudioLiveViewportEvent,
-} from '../../live-viewport'
-import type { StudioSocketData } from '../../server/socket-data'
+} from './live-viewport'
 import type { StudioRunStreamEvent } from './run.contracts'
 
 type RetainedViewportEvent = Extract<

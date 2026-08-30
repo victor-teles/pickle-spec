@@ -4,16 +4,13 @@ import type {
 } from '@pickle-spec/spec'
 import { specificationSourceDiff } from '@pickle-spec/spec'
 import {
-  DocumentConflictError,
-  type SpecificationWorkspace,
-} from '../../authoring/documents'
-import {
   requestError,
   routeKey,
   type StudioHttpHandler,
   unavailable,
 } from '../../server/http'
 import type { StudioAuthoringGateway } from '../project/project.contracts'
+import { DocumentConflictError, type SpecificationWorkspace } from './documents'
 
 type DocumentPreviewRequest = {
   uri: string

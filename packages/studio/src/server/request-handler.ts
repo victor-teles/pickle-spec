@@ -1,5 +1,5 @@
 import type { ServerRequest } from 'srvx'
-import { parseStudioRoute } from '../app/studio-route'
+import { parseStudioRoute } from '../features/studio/studio-route'
 import { secureStudioResponse } from './response-security'
 import type { StudioRuntime } from './runtime'
 

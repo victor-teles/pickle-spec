@@ -4,7 +4,7 @@ import type {
   ScheduledTestResult,
   TestRunManifest,
 } from '@pickle-spec/runner'
-import type { StudioLiveViewportEvent } from '../../live-viewport'
+import type { StudioLiveViewportEvent } from './live-viewport'
 
 export interface StudioRunRequest {
   suite?: string

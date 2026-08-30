@@ -1,4 +1,4 @@
-import type { DiskChangeEvent } from '../authoring/documents'
+import type { DiskChangeEvent } from '../features/documents/documents'
 import type { StudioRunStreamEvent } from '../features/runs/run.contracts'
 
 export type WorkspaceStreamEvent = DiskChangeEvent & { type: 'disk-changed' }

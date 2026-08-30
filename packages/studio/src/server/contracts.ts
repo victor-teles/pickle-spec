@@ -1,4 +1,4 @@
-import type { SpecificationWorkspace } from '../authoring/documents'
+import type { SpecificationWorkspace } from '../features/documents/documents'
 import type { StudioExecutionCacheGateway } from '../features/execution-cache/execution-cache.contracts'
 import type { StudioHistoryGateway } from '../features/history/history.contracts'
 import type {

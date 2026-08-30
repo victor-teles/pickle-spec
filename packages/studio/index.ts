@@ -2,7 +2,7 @@ export type {
   StudioLiveViewport,
   StudioLiveViewportEvent,
   StudioLiveViewportTarget,
-} from './src/live-viewport'
+} from './src/features/runs/live-viewport'
 export type {
   StudioAuthoringGateway,
   StudioAuthoringModel,
