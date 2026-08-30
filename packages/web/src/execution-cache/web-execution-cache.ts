@@ -1,10 +1,10 @@
-import type { ResolvedFidelity } from '../adapter/fidelity'
-import type { WebAdapterBehavior } from '../adapter/web-adapter'
+import type { ResolvedFidelity } from '../adapter/configuration/fidelity'
 import {
   cdpEndpointOrigin,
   resolveBrowserConnection,
   type WebAdapterOptions,
-} from '../adapter/web-options'
+} from '../adapter/configuration/web-options'
+import type { WebAdapterBehavior } from '../adapter/web-adapter'
 import { webInstructionVariables } from './web-cache-compilation'
 import {
   type WebExecutionCachePayload,

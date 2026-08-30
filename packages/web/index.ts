@@ -2,11 +2,25 @@ export type { FidelityPolicy } from '@pickle-spec/runner'
 export type {
   BlockedResourceType,
   ResolvedFidelity,
-} from './src/adapter/fidelity'
+} from './src/adapter/configuration/fidelity'
 export {
   blockedResourceTypes,
   resolveFidelityPolicy,
-} from './src/adapter/fidelity'
+} from './src/adapter/configuration/fidelity'
+export type { WebEnvironmentRuntime } from './src/adapter/configuration/web-environment'
+export {
+  diagnoseWebEnvironment,
+  webEnvironmentProbeKey,
+} from './src/adapter/configuration/web-environment'
+export {
+  defaultModelName,
+  webProfiles,
+} from './src/adapter/configuration/web-options'
+export type { WebLogicalSession } from './src/adapter/session/web-pool'
+export {
+  IsolationVerificationError,
+  WebProcessPool,
+} from './src/adapter/session/web-pool'
 export type {
   BrowserOptions,
   ScreenshotOptions,
@@ -26,17 +40,6 @@ export {
   validateWebAdapterOptions,
   webAdapterOptionsSchema,
 } from './src/adapter/web-adapter'
-export type { WebEnvironmentRuntime } from './src/adapter/web-environment'
-export {
-  diagnoseWebEnvironment,
-  webEnvironmentProbeKey,
-} from './src/adapter/web-environment'
-export { defaultModelName, webProfiles } from './src/adapter/web-options'
-export type { WebLogicalSession } from './src/adapter/web-pool'
-export {
-  IsolationVerificationError,
-  WebProcessPool,
-} from './src/adapter/web-pool'
 export { resolveWebArtifactCapture } from './src/evidence/web-artifact'
 export type {
   WebExecutionCachePayload,

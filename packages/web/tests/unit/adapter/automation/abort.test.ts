@@ -1,5 +1,9 @@
 import { expect, test } from 'vitest'
-import { abortError, isAbortError, withAbort } from '../../../src/adapter/abort'
+import {
+  abortError,
+  isAbortError,
+  withAbort,
+} from '../../../../src/adapter/automation/abort'
 
 test('withAbort returns the operation result without a signal', async () => {
   await expect(withAbort(Promise.resolve('completed'))).resolves.toBe(

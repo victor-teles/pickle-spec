@@ -1,7 +1,7 @@
 import { stat } from 'node:fs/promises'
 import { basename } from 'node:path'
 import type { TestArtifact, TestResultState } from '@pickle-spec/runner'
-import type { ScreenshotOptions } from '../adapter/web-options'
+import type { ScreenshotOptions } from '../adapter/configuration/web-options'
 
 export type ArtifactCapturePolicy = 'off' | 'on-failure' | 'always'
 

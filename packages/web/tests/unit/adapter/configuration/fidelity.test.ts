@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest'
-import { resolveFidelityPolicy } from '../../../src/adapter/fidelity'
-import { validateWebAdapterOptions } from '../../../src/adapter/web-options'
+import { resolveFidelityPolicy } from '../../../../src/adapter/configuration/fidelity'
+import { validateWebAdapterOptions } from '../../../../src/adapter/configuration/web-options'
 
 describe('resolveFidelityPolicy', () => {
   test('preserves full fidelity for the default profile', () => {

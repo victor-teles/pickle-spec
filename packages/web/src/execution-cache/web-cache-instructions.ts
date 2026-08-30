@@ -4,9 +4,9 @@ import type {
   StepExecutionContext,
 } from '@pickle-spec/runner'
 import type { ScenarioStep, ScenarioVariableBinding } from '@pickle-spec/spec'
-import { abortError, isAbortError } from '../adapter/abort'
-import type { WebAutomation } from '../adapter/web-automation'
-import type { WebAdapterOptions } from '../adapter/web-options'
+import { abortError, isAbortError } from '../adapter/automation/abort'
+import type { WebAutomation } from '../adapter/automation/web-automation'
+import type { WebAdapterOptions } from '../adapter/configuration/web-options'
 import {
   capturedActionFromError,
   captureWebAction,

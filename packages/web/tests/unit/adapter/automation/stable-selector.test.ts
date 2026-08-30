@@ -4,7 +4,7 @@ import {
   stabilizeSelector,
   stableSelectorFor,
   xpathValue,
-} from '../../../src/adapter/stable-selector'
+} from '../../../../src/adapter/automation/stable-selector'
 
 describe('stableSelectorFor', () => {
   test('prefers an id over data-test and name', () => {

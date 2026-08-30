@@ -1,7 +1,7 @@
 import type { Page, StagehandBrowser } from '@browserbasehq/stagehand'
 import { z } from 'zod'
 import { requiredValue } from '../required-value'
-import type { BrowserOptions } from './web-options'
+import type { BrowserOptions } from './configuration/web-options'
 
 export type WebLiveViewportTarget = {
   scenarioId: string

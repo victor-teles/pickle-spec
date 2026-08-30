@@ -3,7 +3,7 @@ import {
   diagnoseWebEnvironment,
   type WebEnvironmentRuntime,
   webEnvironmentProbeKey,
-} from '../../../index'
+} from '../../../../index'
 
 function runtime(
   launchLocalBrowser: WebEnvironmentRuntime['launchLocalBrowser'],

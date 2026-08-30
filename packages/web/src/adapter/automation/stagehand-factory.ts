@@ -1,5 +1,4 @@
 import {
-  type BrowserContext,
   browserbase,
   localBrowser,
   type ModelConfig,
@@ -9,98 +8,34 @@ import {
 import {
   createWebEvidenceCollector,
   installWebEvidenceScript,
-} from '../evidence/web-evidence'
+} from '../../evidence/web-evidence'
 import {
   defaultWebActionTimeoutMs,
   defaultWebNavigationTimeoutMs,
-} from '../execution-cache/web-execution-cache'
-import { requiredValue } from '../required-value'
-import { abortError } from './abort'
+} from '../../execution-cache/web-execution-cache'
+import { requiredValue } from '../../required-value'
 import {
-  type BlockedResourceType,
-  blockedResourceTypes,
-  type ResolvedFidelity,
-} from './fidelity'
+  type BrowserOptions,
+  defaultModelName,
+  resolveBrowserConnection,
+} from '../configuration/web-options'
+import { abortError } from './abort'
 import {
   createStagehandAutomation,
   type StagehandTimeouts,
 } from './stagehand-automation'
+import { applyStagehandFidelity } from './stagehand-fidelity'
 import type {
   WebAutomationFactory,
   WebBrowserProcess,
   WebClientContext,
 } from './web-automation'
-import {
-  type BrowserOptions,
-  defaultModelName,
-  resolveBrowserConnection,
-} from './web-options'
 
 const defaultDomSettleTimeoutMs = 3_000
 const defaultObserveTimeoutMs = 10_000
 
 type StagehandBrowser = Awaited<ReturnType<typeof localBrowser.launch>>
 type WebEvidenceCollector = ReturnType<typeof createWebEvidenceCollector>
-
-type FidelityRoute = {
-  request: () => { resourceType: () => string }
-  abort: () => Promise<void>
-  continue: () => Promise<void>
-}
-
-type FidelityBrowserPage = {
-  addInitScript: (script: string) => Promise<void>
-}
-
-type FidelityBrowserContext = {
-  route?: (
-    pattern: string,
-    handler: (route: FidelityRoute) => Promise<void>,
-  ) => Promise<void>
-  unroute?: (pattern: string) => Promise<void>
-  activePage: () => Promise<FidelityBrowserPage | null>
-}
-
-function isBlockedResourceType(value: string): value is BlockedResourceType {
-  return blockedResourceTypes.includes(value as BlockedResourceType)
-}
-
-async function applyFidelity(
-  browserContext: BrowserContext,
-  fidelity?: ResolvedFidelity,
-): Promise<void> {
-  const context = browserContext as FidelityBrowserContext
-
-  if (!fidelity || fidelity.profile === 'default') {
-    if (context.unroute) await context.unroute('**/*')
-    return
-  }
-
-  const blocked = new Set(fidelity.blockResources)
-  if (context.unroute) await context.unroute('**/*')
-  if (blocked.size > 0 && context.route) {
-    await context.route('**/*', (route) => {
-      const resourceType = route.request().resourceType()
-      if (isBlockedResourceType(resourceType) && blocked.has(resourceType)) {
-        return route.abort()
-      }
-      return route.continue()
-    })
-  }
-  if (fidelity.disableAnimations) {
-    const page = await context.activePage()
-    if (page) {
-      await page.addInitScript(`
-        (() => {
-          const style = document.createElement('style')
-          style.textContent =
-            '*, *::before, *::after { animation: none !important; transition: none !important; }'
-          document.documentElement.appendChild(style)
-        })()
-      `)
-    }
-  }
-}
 
 function stagehandModel(
   context: WebClientContext,
@@ -246,7 +181,7 @@ function stagehandClient(
   async function openContext(context: WebClientContext) {
     if (context.signal?.aborted) throw abortError()
     const activeStagehand = await ensureStagehand(context)
-    await applyFidelity(browser.context, context.fidelity)
+    await applyStagehandFidelity(browser.context, context.fidelity)
     const evidence = createWebEvidenceCollector()
     if (!evidenceScriptInstalled) {
       evidenceScriptInstalled = await installEvidenceScript(browser, evidence)

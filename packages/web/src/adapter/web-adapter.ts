@@ -1,39 +1,19 @@
-import type {
-  OpenSessionInput,
-  StepExecutionTargetAdapter,
-  StepTargetSession,
-} from '@pickle-spec/runner'
-import { resolveScenarioId } from '@pickle-spec/spec'
-import { createWebStepFinalizer } from '../evidence/web-step-finalizer'
-import { createWebCacheSession } from '../execution-cache/web-cache-session'
+import type { StepExecutionTargetAdapter } from '@pickle-spec/runner'
 import {
   parseWebExecutionCachePayload,
   webPrefixStepCount,
   webTargetConfigurationFingerprint,
 } from '../execution-cache/web-execution-cache'
-import { requiredValue } from '../required-value'
-import { abortError, isAbortError, withAbort } from './abort'
-import { type ResolvedFidelity, resolveFidelityPolicy } from './fidelity'
-import type {
-  WebLiveViewport,
-  WebLiveViewportTarget,
-  WebLiveViewportUpdate,
-} from './live-viewport'
-import { stagehandFactory } from './stagehand-factory'
-import type { WebAutomation, WebAutomationFactory } from './web-automation'
-import { createWebLiveSession } from './web-live-session'
+import { stagehandFactory } from './automation/stagehand-factory'
+import type { WebAutomationFactory } from './automation/web-automation'
+import { resolveFidelityPolicy } from './configuration/fidelity'
+import type { WebAdapterOptions } from './configuration/web-options'
+import { WebProcessPool } from './session/web-pool'
 import {
-  type BrowserOptions,
-  defaultModelName,
-  resolveBrowserConnection,
-  type WebAdapterOptions,
-} from './web-options'
-import { WebProcessPool } from './web-pool'
-
-export type {
-  WebLiveViewportTarget,
-  WebLiveViewportUpdate,
-} from './live-viewport'
+  type OpenWebSessionContext,
+  openWebSession,
+  type WebAdapterBehavior,
+} from './session/web-session'
 
 export type {
   WebActResult,
@@ -46,331 +26,23 @@ export type {
   WebObservedAction,
   WebScreenshotCapture,
   WebVerificationResult,
-} from './web-automation'
+} from './automation/web-automation'
 export type {
   BrowserOptions,
   ScreenshotOptions,
   WebAdapterOptions,
-} from './web-options'
+} from './configuration/web-options'
 export {
   screenshotModes,
   validateWebAdapterOptions,
   webAdapterOptionsSchema,
-} from './web-options'
+} from './configuration/web-options'
+export type {
+  WebLiveViewportTarget,
+  WebLiveViewportUpdate,
+} from './live-viewport'
 
-const providerApiKeyEnvNamesByProvider: Record<string, string[]> = {
-  openai: ['OPENAI_API_KEY'],
-  anthropic: ['ANTHROPIC_API_KEY'],
-  google: ['GOOGLE_GENERATIVE_AI_API_KEY', 'GOOGLE_API_KEY', 'GEMINI_API_KEY'],
-  groq: ['GROQ_API_KEY'],
-  cerebras: ['CEREBRAS_API_KEY'],
-}
-
-type BrowserLaunchConfig = {
-  browser: BrowserOptions | undefined
-  requireProviderApiKey: boolean
-  requiresInference: boolean
-}
-
-function providerApiKeyEnvNames(modelName: string | undefined): string[] {
-  const provider = requiredValue((modelName ?? defaultModelName).split('/')[0])
-  return providerApiKeyEnvNamesByProvider[provider] ?? []
-}
-
-function resolveModelApiKey(
-  browser: BrowserOptions | undefined,
-): string | undefined {
-  const configured = browser?.modelApiKey?.trim()
-  if (configured) return configured
-  for (const name of providerApiKeyEnvNames(browser?.modelName)) {
-    const value = process.env[name]?.trim()
-    if (value) return value
-  }
-}
-
-function resolveBrowserLaunchOptions({
-  browser,
-  requireProviderApiKey,
-  requiresInference,
-}: BrowserLaunchConfig): BrowserOptions {
-  const modelApiKey = requiresInference
-    ? resolveModelApiKey(browser)
-    : undefined
-  const resolvedBrowser = {
-    ...browser,
-    modelApiKey,
-  }
-  if (
-    requireProviderApiKey &&
-    requiresInference &&
-    resolveBrowserConnection(resolvedBrowser).kind !== 'browserbase' &&
-    !resolvedBrowser.modelApiKey
-  ) {
-    const envNames = providerApiKeyEnvNames(resolvedBrowser.modelName)
-    throw new Error(
-      'Model inference requires a provider API key or a Browserbase session. ' +
-        `Set ${envNames.join(', ')}, or web.browser.modelApiKey.`,
-    )
-  }
-  return resolvedBrowser
-}
-
-function browserOptionsForSession(
-  input: OpenSessionInput,
-  options: WebAdapterOptions,
-  requireProviderApiKey: boolean,
-): BrowserOptions {
-  const executionMode = input.mode ?? 'adaptive'
-  const cacheReplay =
-    executionMode === 'replay' && input.executionCache !== undefined
-  return resolveBrowserLaunchOptions({
-    browser: {
-      ...options.browser,
-      selfHeal:
-        executionMode === 'replay'
-          ? false
-          : (options.browser?.selfHeal ?? true),
-    },
-    requireProviderApiKey,
-    requiresInference: !cacheReplay,
-  })
-}
-
-function shouldNavigateEagerly(
-  behavior: WebAdapterBehavior,
-  cacheReplay: boolean,
-  supportsInstructions: boolean,
-): boolean {
-  return (
-    behavior.navigationPolicy === 'eager' &&
-    !cacheReplay &&
-    !supportsInstructions
-  )
-}
-
-type CloseWebSessionInput = {
-  automation: WebAutomation
-  interrupted: () => boolean
-  logicalSession: LogicalWebSession
-  signal?: AbortSignal
-}
-
-async function closeWebSession(input: CloseWebSessionInput): Promise<void> {
-  const automationClose = input.automation.close()
-  if (input.interrupted()) {
-    await input.logicalSession.discard()
-    await automationClose
-    return
-  }
-  try {
-    await withAbort(automationClose, input.signal)
-  } catch (error) {
-    await input.logicalSession.discard()
-    if (isAbortError(error, input.signal)) {
-      await automationClose
-      return
-    }
-    throw error
-  }
-  if (input.interrupted()) await input.logicalSession.discard()
-  else await input.logicalSession.release()
-}
-
-export interface WebAdapterBehavior {
-  navigationPolicy?: 'delayed' | 'eager'
-  onLiveViewport?: (update: WebLiveViewportUpdate) => void
-}
-
-type LogicalWebSession = Awaited<
-  ReturnType<WebProcessPool['openLogicalSession']>
->
-
-interface OpenWebSessionContext {
-  options: WebAdapterOptions
-  behavior: WebAdapterBehavior
-  requireProviderApiKey: boolean
-  fidelity: ResolvedFidelity
-  pool: WebProcessPool
-}
-
-function liveViewportTarget(input: OpenSessionInput): WebLiveViewportTarget {
-  return {
-    scenarioId:
-      input.scenario.id ??
-      resolveScenarioId(
-        input.specification.source.uri,
-        input.specification.name,
-        input.scenario.template?.name ?? input.scenario.name,
-        input.scenario.tags,
-      ),
-    examplesRowId: input.scenario.examplesRowId,
-    profileId: input.executionTargetProfile.id,
-  }
-}
-
-function liveViewportSink(
-  behavior: WebAdapterBehavior,
-  input: OpenSessionInput,
-): ((viewport: WebLiveViewport) => void) | undefined {
-  if (!behavior.onLiveViewport) return
-  const target = liveViewportTarget(input)
-  return (viewport) => behavior.onLiveViewport?.({ ...viewport, target })
-}
-
-function webSessionCloser(
-  input: OpenSessionInput,
-  automation: WebAutomation,
-  logicalSession: LogicalWebSession,
-): {
-  close: () => Promise<void>
-  markInterrupted: () => void
-} {
-  let closePromise: Promise<void> | undefined
-  let interrupted = Boolean(input.signal?.aborted)
-  const close = async () => {
-    if (closePromise) return closePromise
-    input.signal?.removeEventListener('abort', onAbort)
-    closePromise = closeWebSession({
-      automation,
-      interrupted: () => interrupted || Boolean(input.signal?.aborted),
-      logicalSession,
-      signal: input.signal,
-    })
-    return closePromise
-  }
-  const markInterrupted = () => {
-    interrupted = true
-  }
-  const onAbort = () => {
-    markInterrupted()
-    void close()
-  }
-  input.signal?.addEventListener('abort', onAbort, { once: true })
-  return { close, markInterrupted }
-}
-
-function createWebRuntime(
-  cacheReplay: boolean,
-  executionMode: OpenSessionInput['mode'],
-  input: OpenSessionInput,
-  options: WebAdapterOptions,
-  automation: WebAutomation,
-  finish: ReturnType<typeof createWebStepFinalizer>,
-  initiallyNavigated: boolean,
-): Omit<StepTargetSession, 'close'> {
-  if (
-    cacheReplay ||
-    (executionMode === 'adaptive' && automation.executeInstruction)
-  ) {
-    return createWebCacheSession({ input, options, automation, finish })
-  }
-  return createWebLiveSession({
-    input,
-    options,
-    automation,
-    finish,
-    initiallyNavigated,
-  })
-}
-
-type CreateWebSessionRuntimeInput = {
-  automation: WebAutomation
-  cacheReplay: boolean
-  context: OpenWebSessionContext
-  executionMode: OpenSessionInput['mode']
-  finish: ReturnType<typeof createWebStepFinalizer>
-  input: OpenSessionInput
-}
-
-async function createWebSessionRuntime(
-  input: CreateWebSessionRuntimeInput,
-): Promise<Omit<StepTargetSession, 'close'>> {
-  let initiallyNavigated = false
-  if (
-    shouldNavigateEagerly(
-      input.context.behavior,
-      input.cacheReplay,
-      Boolean(input.automation.executeInstruction),
-    )
-  ) {
-    await input.automation.navigate(
-      input.context.options.baseUrl,
-      input.input.signal,
-    )
-    initiallyNavigated = true
-  }
-  return createWebRuntime(
-    input.cacheReplay,
-    input.executionMode,
-    input.input,
-    input.context.options,
-    input.automation,
-    input.finish,
-    initiallyNavigated,
-  )
-}
-
-async function openWebSession(
-  context: OpenWebSessionContext,
-  input: OpenSessionInput,
-): Promise<StepTargetSession> {
-  const executionMode = input.mode ?? 'adaptive'
-  const cacheReplay =
-    executionMode === 'replay' && input.executionCache !== undefined
-  const browserOptions = browserOptionsForSession(
-    input,
-    context.options,
-    context.requireProviderApiKey,
-  )
-  const logicalSession = await context.pool.openLogicalSession(
-    browserOptions,
-    input.signal,
-    context.fidelity,
-    executionMode,
-    liveViewportSink(context.behavior, input),
-  )
-  const automation = logicalSession.automation
-  const { close, markInterrupted } = webSessionCloser(
-    input,
-    automation,
-    logicalSession,
-  )
-  if (input.signal?.aborted) {
-    await close()
-    throw abortError()
-  }
-  let stepIndex = 0
-  const finish = createWebStepFinalizer({
-    input,
-    options: context.options,
-    automation,
-    stepNumber: () => stepIndex,
-  })
-  await finish.start()
-  const runtime = await createWebSessionRuntime({
-    automation,
-    cacheReplay,
-    context,
-    executionMode,
-    finish,
-    input,
-  })
-  return {
-    async executeStep(step, signal, stepContext) {
-      stepIndex++
-      try {
-        return await runtime.executeStep(step, signal, stepContext)
-      } catch (error) {
-        if (isAbortError(error, signal)) markInterrupted()
-        throw error
-      }
-    },
-    ...(runtime.complete
-      ? { complete: () => requiredValue(runtime.complete).call(runtime) }
-      : {}),
-    close,
-  }
-}
+export type { WebAdapterBehavior } from './session/web-session'
 
 export function createWebAdapter(
   options: WebAdapterOptions,

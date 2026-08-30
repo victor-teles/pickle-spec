@@ -6,8 +6,8 @@ import type {
   StepExecutionContext,
 } from '@pickle-spec/runner'
 import { resolveLocalProjectStorage } from '@pickle-spec/runner'
-import type { WebAutomation } from '../adapter/web-automation'
-import type { WebAdapterOptions } from '../adapter/web-options'
+import type { WebAutomation } from '../adapter/automation/web-automation'
+import type { WebAdapterOptions } from '../adapter/configuration/web-options'
 import { capturedWebArtifact, resolveWebArtifactCapture } from './web-artifact'
 
 type ActionOutcome = { state: 'passed' | 'failed'; message?: string }

@@ -1,13 +1,13 @@
 import { afterEach, describe, expect, test, vi } from 'vitest'
+import {
+  IsolationVerificationError,
+  WebProcessPool,
+} from '../../../../src/adapter/session/web-pool'
 import type {
   WebAutomation,
   WebAutomationFactory,
   WebBrowserProcess,
-} from '../../../src/adapter/web-adapter'
-import {
-  IsolationVerificationError,
-  WebProcessPool,
-} from '../../../src/adapter/web-pool'
+} from '../../../../src/adapter/web-adapter'
 
 function isolatedAutomation(
   overrides: Partial<WebAutomation> = {},

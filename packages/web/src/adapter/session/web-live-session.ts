@@ -9,17 +9,17 @@ import type { ScenarioStep } from '@pickle-spec/spec'
 import {
   capturedActionFromError,
   captureWebAction,
-} from '../evidence/web-action-evidence'
+} from '../../evidence/web-action-evidence'
 import {
   errorMessage,
   navigationTarget,
   navigationUrl,
   observeInstruction,
   promptFor,
-} from '../execution-cache/web-step'
-import { abortError, isAbortError } from './abort'
-import type { WebAutomation } from './web-automation'
-import type { WebAdapterOptions } from './web-options'
+} from '../../execution-cache/web-step'
+import { abortError, isAbortError } from '../automation/abort'
+import type { WebAutomation } from '../automation/web-automation'
+import type { WebAdapterOptions } from '../configuration/web-options'
 
 type FinishStep = (
   execution: StepExecution,

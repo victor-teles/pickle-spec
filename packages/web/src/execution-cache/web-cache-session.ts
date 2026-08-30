@@ -7,12 +7,12 @@ import type {
   TargetSessionCompletion,
 } from '@pickle-spec/runner'
 import type { ScenarioStep } from '@pickle-spec/spec'
-import { abortError, isAbortError } from '../adapter/abort'
-import type { WebAutomation } from '../adapter/web-automation'
+import { abortError, isAbortError } from '../adapter/automation/abort'
+import type { WebAutomation } from '../adapter/automation/web-automation'
 import {
   defaultModelName,
   type WebAdapterOptions,
-} from '../adapter/web-options'
+} from '../adapter/configuration/web-options'
 import { capturedActionFromError } from '../evidence/web-action-evidence'
 import { createWebAdaptiveRuntime } from './web-cache-adaptive-session'
 import {

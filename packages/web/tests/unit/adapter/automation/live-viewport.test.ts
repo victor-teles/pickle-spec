@@ -1,6 +1,6 @@
 import type { Page, StagehandBrowser } from '@browserbasehq/stagehand'
 import { expect, test } from 'vitest'
-import { startCdpScreencast } from '../../../src/adapter/live-viewport'
+import { startCdpScreencast } from '../../../../src/adapter/live-viewport'
 
 test('streams CDP frames, acknowledges them, and stops the target session', async () => {
   const methods: string[] = []

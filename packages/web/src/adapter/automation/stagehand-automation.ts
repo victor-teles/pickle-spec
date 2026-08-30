@@ -8,20 +8,24 @@ import { z } from 'zod'
 import {
   type createWebEvidenceCollector,
   instrumentWebEvidencePages,
-} from '../evidence/web-evidence'
-import { startWebRecording, type WebRecording } from '../evidence/web-recording'
+} from '../../evidence/web-evidence'
+import {
+  startWebRecording,
+  type WebRecording,
+} from '../../evidence/web-recording'
 import {
   type WebAssertionDraft,
   type WebInstruction,
   webAssertionCompileSchema,
-} from '../execution-cache/web-execution-cache'
-import { withAbort } from './abort'
-import { createDirectBrowser } from './direct-browser'
+} from '../../execution-cache/web-execution-cache'
+import type { BrowserOptions } from '../configuration/web-options'
 import {
   startStagehandLiveViewport,
   type WebLiveViewport,
   type WebLiveViewportController,
-} from './live-viewport'
+} from '../live-viewport'
+import { withAbort } from './abort'
+import { createDirectBrowser } from './direct-browser'
 import { stabilizeSelector } from './stable-selector'
 import type {
   WebAutomation,
@@ -29,7 +33,6 @@ import type {
   WebObservedAction,
   WebScreenshotCapture,
 } from './web-automation'
-import type { BrowserOptions } from './web-options'
 
 const verificationSchema = z.object({
   meetsExpectation: z
