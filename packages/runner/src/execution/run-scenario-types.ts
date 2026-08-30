@@ -39,6 +39,16 @@ export interface ResolvedAction {
   replay?: Record<string, unknown>
 }
 
+export interface RunEventRange {
+  startSequence: number
+  endSequence: number
+}
+
+export interface ArtifactEvidenceLink {
+  stepIndex: number
+  eventRange: RunEventRange
+}
+
 export interface TestArtifact {
   kind: 'screenshot' | 'trace' | 'recording' | 'device-log'
   path: string
@@ -46,6 +56,7 @@ export interface TestArtifact {
   name?: string
   capturedAt?: string
   sizeBytes?: number
+  evidenceLink?: ArtifactEvidenceLink
 }
 
 export const evidenceKinds = [

@@ -156,6 +156,14 @@ export function visibleTimelineEntries<Entry extends TimelineDensityEntry>(
   }
 }
 
+export function timelineEntriesOfKinds<Entry extends TimelineDensityEntry>(
+  entries: readonly Entry[],
+  kinds: readonly TimelineEntryKind[],
+): readonly Entry[] {
+  const includedKinds = new Set(kinds)
+  return entries.filter((entry) => includedKinds.has(entry.kind))
+}
+
 export function causalTimelineEntry(
   entries: readonly TimelineEntry[],
 ): TimelineEntry | undefined {
@@ -531,6 +539,8 @@ function stepTimelineEntries(
       ...own,
       ...context.attemptRecordings.filter(
         (recording) =>
+          (recording.evidenceLink === undefined ||
+            recording.evidenceLink.stepIndex === step.index) &&
           !own.some((artifact) => artifact.path === recording.path),
       ),
     ]

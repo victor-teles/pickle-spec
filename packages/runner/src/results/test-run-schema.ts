@@ -75,6 +75,15 @@ const artifactSchema = z.object({
   name: z.string().min(1).optional(),
   capturedAt: timestampSchema.optional(),
   sizeBytes: nonNegativeIntegerSchema.optional(),
+  evidenceLink: z
+    .object({
+      stepIndex: nonNegativeIntegerSchema,
+      eventRange: z.object({
+        startSequence: nonNegativeIntegerSchema,
+        endSequence: nonNegativeIntegerSchema,
+      }),
+    })
+    .optional(),
 })
 
 const diagnosticEntrySchema = z.object({

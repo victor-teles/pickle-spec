@@ -39,6 +39,7 @@ interface WebStepFinalizerState extends CreateWebStepFinalizerInput {
   examplesRowArtifactId?: string
   previousResolvedActionTrace: StepExecution['trace']
   recordingState: WebRecordingState
+  recordingStartFailure?: EvidenceAvailability
   capture: ReturnType<typeof resolveWebArtifactCapture>
 }
 
@@ -221,13 +222,9 @@ async function finalizeWebStep(
       finalizerState.previousResolvedActionTrace ?? [],
   })
   finalizerState.previousResolvedActionTrace = projected.nextResolvedActionTrace
-  const startFailure = await startWebStepRecording({
-    enabled: state.capture.recording,
-    automation: state.automation,
-    directory: evidenceDirectory(state),
-    state: state.recordingState,
-  })
   const screenshot = await captureScreenshot(state, execution.state)
+  const startFailure = finalizerState.recordingStartFailure
+  finalizerState.recordingStartFailure = undefined
   const recording = await finishWebStepRecording({
     automation: state.automation,
     state: state.recordingState,
@@ -272,6 +269,15 @@ export function createWebStepFinalizer({
       screenshotMode: options.screenshots?.mode ?? 'off',
     }),
   }
-  return (execution: StepExecution, step: ScenarioStep) =>
+  const finalize = (execution: StepExecution, step: ScenarioStep) =>
     finalizeWebStep(state, execution, step)
+  finalize.start = async () => {
+    state.recordingStartFailure = await startWebStepRecording({
+      enabled: state.capture.recording,
+      automation: state.automation,
+      directory: evidenceDirectory(state),
+      state: state.recordingState,
+    })
+  }
+  return finalize
 }

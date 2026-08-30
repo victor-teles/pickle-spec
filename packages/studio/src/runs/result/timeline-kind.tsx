@@ -9,6 +9,7 @@ import {
 import { HugeiconsIcon, type IconSvgElement } from '@hugeicons/react'
 import type { ComponentProps } from 'react'
 import { Badge } from '../../components/ui/badge'
+import { Button } from '../../components/ui/button'
 import { cn } from '../../lib/utils'
 import type { TimelineEntryKind } from './result-evidence'
 
@@ -95,6 +96,33 @@ export function TimelineKindBadge(
       <TimelineKindIcon kind={kind} className="size-3" />
       {kind}
     </Badge>
+  )
+}
+
+type TimelineKindFilterProps = {
+  kind: TimelineEntryKind
+  selected: boolean
+  onPressedChange: (selected: boolean) => void
+}
+
+export function TimelineKindFilter(props: TimelineKindFilterProps) {
+  return (
+    <Button
+      type="button"
+      variant="outline"
+      size="xs"
+      aria-pressed={props.selected}
+      onClick={() => props.onPressedChange(!props.selected)}
+      className={cn(
+        'h-6 rounded-full border normal-case tracking-normal transition-[background-color,border-color,color,opacity]',
+        props.selected
+          ? timelineKindPresentation[props.kind].badgeClassName
+          : 'border-input bg-background text-muted-foreground opacity-60 hover:opacity-100',
+      )}
+    >
+      <TimelineKindIcon kind={props.kind} className="size-3" />
+      {props.kind}
+    </Button>
   )
 }
 

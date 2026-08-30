@@ -184,6 +184,7 @@ describe('createWebAdapter', () => {
     )
     artifactDirectories.push(artifactDirectory)
     let recordingPath = ''
+    const lifecycle: string[] = []
     const adapter = createWebAdapter(
       {
         baseUrl: 'https://example.test',
@@ -192,6 +193,7 @@ describe('createWebAdapter', () => {
       factoryFor(
         stubAutomation({
           async observe() {
+            lifecycle.push('step')
             return [
               {
                 description: 'Fill the search field',
@@ -209,6 +211,7 @@ describe('createWebAdapter', () => {
             return new Uint8Array([137, 80, 78, 71])
           },
           async startRecording(path) {
+            lifecycle.push('recording-started')
             recordingPath = path
             await Bun.write(path, 'video-bytes')
           },
@@ -234,6 +237,8 @@ describe('createWebAdapter', () => {
     const action = await session.executeStep(requiredValue(scenario.steps[1]))
     const outcome = await session.executeStep(requiredValue(scenario.steps[2]))
     await session.close()
+
+    expect(lifecycle[0]).toBe('recording-started')
 
     expect(navigation.artifacts?.map((artifact) => artifact.kind)).toEqual([
       'screenshot',
@@ -315,6 +320,46 @@ describe('createWebAdapter', () => {
       'screenshot',
       'recording',
     ])
+  })
+
+  test('reports a recording start failure once', async () => {
+    const adapter = createWebAdapter(
+      {
+        baseUrl: 'https://example.test',
+        screenshots: { mode: 'on-step' },
+      },
+      factoryFor(
+        stubAutomation({
+          async startRecording() {
+            throw new Error('encoder unavailable')
+          },
+        }),
+      ),
+    )
+    const session = await adapter.openSession({
+      executionTargetProfile: { id: 'web' },
+      specification,
+      scenario,
+    })
+
+    const results = []
+    for (const step of scenario.steps) {
+      results.push(await session.executeStep(step))
+    }
+    await session.close()
+
+    expect(
+      results.flatMap((result) => result.evidenceAvailability ?? []),
+    ).toContainEqual({
+      kind: 'recording',
+      state: 'capture-failed',
+      message: 'encoder unavailable',
+    })
+    expect(
+      results
+        .flatMap((result) => result.evidenceAvailability ?? [])
+        .filter((availability) => availability.kind === 'recording'),
+    ).toHaveLength(1)
   })
 
   test('reports a requested screenshot that could not be captured', async () => {

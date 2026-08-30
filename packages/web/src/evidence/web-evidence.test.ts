@@ -12,7 +12,7 @@ function observablePage() {
   return {
     page: {
       async evaluate() {
-        return buffered.splice(0)
+        return { entries: buffered.splice(0), droppedCount: 0 }
       },
     },
     buffer(entries: unknown[]) {
@@ -29,7 +29,9 @@ type BrowserScriptEntry = {
 }
 
 type BrowserScriptContext = {
-  console: Record<string, () => void>
+  // biome-ignore lint/style/useNamingConvention: matches the browser API.
+  URL: typeof URL
+  console: Record<string, (...args: unknown[]) => void>
   location: { href: string }
   addEventListener: () => void
   fetch: (url: string) => Promise<{
@@ -41,16 +43,19 @@ type BrowserScriptContext = {
   XMLHttpRequest: typeof FakeXmlHttpRequest
   // biome-ignore lint/style/useNamingConvention: matches the browser API.
   PerformanceObserver: typeof FakePerformanceObserver
-  __pickleSpecWebEvidenceV1?: BrowserScriptEntry[]
+  __pickleSpecWebEvidenceV1?: {
+    entries: BrowserScriptEntry[]
+    droppedCount: number
+  }
 }
 
 class FakeXmlHttpRequest {
   status = 404
   // biome-ignore lint/style/useNamingConvention: matches the browser API.
-  responseURL = 'https://example.test/xhr'
+  responseURL = ''
   private listeners = new Map<string, (event: { type: string }) => void>()
 
-  open() {}
+  open(_method?: string, _url?: string) {}
 
   addEventListener(type: string, listener: (event: { type: string }) => void) {
     this.listeners.set(type, listener)
@@ -160,6 +165,7 @@ test('keeps browser execution usable when a page cannot be instrumented', async 
 
 test('the browser script records HTTP failures without duplicate navigation', async () => {
   const context: BrowserScriptContext = {
+    URL,
     console: {
       debug() {},
       info() {},
@@ -170,7 +176,8 @@ test('the browser script records HTTP failures without duplicate navigation', as
     location: { href: 'https://example.test/checkout' },
     addEventListener() {},
     async fetch(url) {
-      return { ok: false, status: 503, url }
+      const ok = url.includes('/success')
+      return { ok, status: ok ? 204 : 503, url }
     },
     // biome-ignore lint/style/useNamingConvention: matches the browser API.
     XMLHttpRequest: FakeXmlHttpRequest,
@@ -178,11 +185,14 @@ test('the browser script records HTTP failures without duplicate navigation', as
   }
   runInNewContext(installWebEvidenceScript, context)
 
-  await context.fetch('https://example.test/pay')
+  await context.fetch(
+    'https://user:password@example.test/pay?token=secret&view=summary',
+  )
   const xhr = new context.XMLHttpRequest()
-  xhr.open()
+  xhr.open('POST', 'https://example.test/xhr?api_key=private')
   xhr.send()
-  const firstEntries = context.__pickleSpecWebEvidenceV1?.splice(0) ?? []
+  const firstEntries =
+    context.__pickleSpecWebEvidenceV1?.entries.splice(0) ?? []
 
   expect(
     firstEntries.filter((entry) => entry.description?.startsWith('Navigate ')),
@@ -191,23 +201,80 @@ test('the browser script records HTTP failures without duplicate navigation', as
     firstEntries.filter((entry) => entry.origin === 'network'),
   ).toMatchObject([
     {
-      message: 'https://example.test/pay failed: 503',
+      message:
+        'GET https://example.test/pay?token=%3Credacted%3E&view=summary failed: 503',
     },
     {
-      message: 'https://example.test/xhr failed: 404',
+      message:
+        'POST https://example.test/xhr?api_key=%3Credacted%3E failed: 404',
     },
   ])
 
   await context.fetch('https://example.test/pay')
   expect(
-    context.__pickleSpecWebEvidenceV1?.filter(
+    context.__pickleSpecWebEvidenceV1?.entries.filter(
       (entry) => entry.origin === 'network',
     ),
   ).toMatchObject([
     {
-      message: 'https://example.test/pay failed: 503',
+      message: 'GET https://example.test/pay failed: 503',
     },
   ])
+
+  await context.fetch('https://example.test/success?session=private')
+  expect(
+    context.__pickleSpecWebEvidenceV1?.entries.find((entry) =>
+      entry.message?.includes('/success'),
+    ),
+  ).toMatchObject({
+    message:
+      'GET https://example.test/success?session=%3Credacted%3E completed: 204',
+  })
+})
+
+test('bounds browser evidence and reports truncation', async () => {
+  const context: BrowserScriptContext = {
+    URL,
+    console: {
+      debug() {},
+      info() {},
+      log() {},
+      warn() {},
+      error() {},
+    },
+    location: { href: 'https://example.test/' },
+    addEventListener() {},
+    async fetch(url) {
+      return { ok: true, status: 200, url }
+    },
+    // biome-ignore lint/style/useNamingConvention: matches the browser API.
+    XMLHttpRequest: FakeXmlHttpRequest,
+    PerformanceObserver: FakePerformanceObserver,
+  }
+  runInNewContext(installWebEvidenceScript, context)
+  const log = context.console.log
+  if (!log) throw new Error('Expected an instrumented console logger')
+  for (let index = 0; index < 501; index++) log(index)
+
+  const collector = createWebEvidenceCollector()
+  const collected = await collector.collect([
+    {
+      async evaluate() {
+        const buffer = context.__pickleSpecWebEvidenceV1
+        return {
+          entries: buffer?.entries.splice(0) ?? [],
+          droppedCount: buffer?.droppedCount ?? 0,
+        }
+      },
+    },
+  ])
+
+  expect(collected.diagnostics).toContainEqual(
+    expect.objectContaining({
+      origin: 'adapter',
+      message: 'Browser evidence truncated; 2 entries were dropped',
+    }),
+  )
 })
 
 test('correlates prior resolved actions without rewriting occurrence time', () => {

@@ -10,12 +10,7 @@ import { ScrollArea } from '../../components/ui/scroll-area'
 import { cn } from '../../lib/utils'
 import { durationLabel } from '../run-format'
 import { relativeTimeLabel, type TimelineEntry } from './result-evidence'
-import {
-  TimelineKindBadge,
-  TimelineKindIcon,
-  timelineEntryKinds,
-  timelineKindSolidClassName,
-} from './timeline-kind'
+import { TimelineKindIcon, timelineKindSolidClassName } from './timeline-kind'
 
 type TimelineWaterfallProps = {
   entries: readonly TimelineEntry[]
@@ -64,21 +59,6 @@ function elapsedMs(timestamp: string, startedAt: string): number {
 
 function percentage(value: number, total: number): number {
   return Math.min(100, Math.max(0, (value / total) * 100))
-}
-
-function TimelineLegend() {
-  return (
-    <ul
-      aria-label="Timeline legend"
-      className="flex flex-wrap items-center gap-1.5 border-b border-border px-4 py-3"
-    >
-      {timelineEntryKinds.map((kind) => (
-        <li key={kind}>
-          <TimelineKindBadge kind={kind} />
-        </li>
-      ))}
-    </ul>
-  )
 }
 
 type TimelineLabelsProps = TimelineWaterfallProps & {
@@ -566,7 +546,6 @@ export function TimelineWaterfall(props: TimelineWaterfallProps) {
 
   return (
     <section aria-label="Execution timeline chart" className="min-w-0">
-      <TimelineLegend />
       <div
         ref={rowsRef}
         className="grid min-w-0 grid-cols-[minmax(12rem,16rem)_minmax(0,1fr)]"

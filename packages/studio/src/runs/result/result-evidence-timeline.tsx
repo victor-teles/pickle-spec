@@ -1,5 +1,6 @@
 import type { TestResultState } from '@pickle-spec/runner'
 import { useState } from 'react'
+import { Button } from '../../components/ui/button'
 import {
   Card,
   CardAction,
@@ -8,16 +9,15 @@ import {
   CardHeader,
   CardTitle,
 } from '../../components/ui/card'
-import { Label } from '../../components/ui/label'
-import { Switch } from '../../components/ui/switch'
 import { durationLabel } from '../run-format'
 import {
   causalTimelineEntry,
-  type TimelineDensity,
   type TimelineEntry,
-  visibleTimelineEntries,
+  type TimelineEntryKind,
+  timelineEntriesOfKinds,
 } from './result-evidence'
 import { TimelineEvidenceDetail } from './timeline-evidence-detail'
+import { TimelineKindFilter, timelineEntryKinds } from './timeline-kind'
 import { TimelineWaterfall } from './timeline-waterfall'
 
 type ResultEvidenceTimelineProps = {
@@ -50,14 +50,27 @@ interface TimelineDisplayProps extends ResultEvidenceTimelineProps {
   followedEntryId?: string
   onSelect: (entryId: string) => void
   onPause: () => void
+  onClearFilters: () => void
 }
 
 function TimelineDisplay(props: TimelineDisplayProps) {
   if (props.visibleEntries.length === 0) {
+    if (props.entries.length === 0) {
+      return (
+        <p className="px-4 py-8 text-center text-sm text-muted-foreground">
+          No Test evidence was recorded for this Scenario attempt.
+        </p>
+      )
+    }
     return (
-      <p className="px-4 py-8 text-center text-sm text-muted-foreground">
-        No Test evidence was recorded for this Scenario attempt.
-      </p>
+      <div className="flex flex-col items-center gap-3 px-4 py-8 text-center">
+        <p className="text-sm text-muted-foreground">
+          No timeline entries match these filters.
+        </p>
+        <Button variant="outline" size="sm" onClick={props.onClearFilters}>
+          Clear filters
+        </Button>
+      </div>
     )
   }
   if (!props.selectedEntry) return null
@@ -83,16 +96,45 @@ function TimelineDisplay(props: TimelineDisplayProps) {
   )
 }
 
-export function ResultEvidenceTimeline(props: ResultEvidenceTimelineProps) {
+const defaultTimelineEntryKinds = [
+  'Step',
+  'Resolved action',
+  'Test artifact',
+] satisfies readonly TimelineEntryKind[]
+
+type TimelineKindFiltersProps = {
+  selectedKinds: readonly TimelineEntryKind[]
+  onKindChange: (kind: TimelineEntryKind, selected: boolean) => void
+}
+
+function TimelineKindFilters(props: TimelineKindFiltersProps) {
+  return (
+    <ul
+      aria-label="Filter timeline by entry type"
+      className="flex flex-wrap items-center gap-1.5 border-b border-border px-4 py-3"
+    >
+      {timelineEntryKinds.map((kind) => (
+        <li key={kind}>
+          <TimelineKindFilter
+            kind={kind}
+            selected={props.selectedKinds.includes(kind)}
+            onPressedChange={(selected) => props.onKindChange(kind, selected)}
+          />
+        </li>
+      ))}
+    </ul>
+  )
+}
+
+function useTimelineView(props: ResultEvidenceTimelineProps) {
   const [selectedEntryId, setSelectedEntryId] = useState<string>()
-  const [density, setDensity] = useState<TimelineDensity>('essential')
-  const visibleEntries = visibleTimelineEntries(props.entries, density)
-  const followEntries = visibleTimelineEntries(props.entries, 'essential')
+  const [selectedKinds, setSelectedKinds] = useState<
+    readonly TimelineEntryKind[]
+  >(defaultTimelineEntryKinds)
+  const visibleEntries = timelineEntriesOfKinds(props.entries, selectedKinds)
   const causalEntry = causalTimelineEntry(visibleEntries)
   const followedEntryId =
-    props.followedEntryId ??
-    causalTimelineEntry(followEntries)?.id ??
-    followEntries.at(-1)?.id
+    props.followedEntryId ?? causalEntry?.id ?? visibleEntries.at(-1)?.id
   const activeEntryId =
     props.follow === true
       ? followedEntryId
@@ -102,25 +144,45 @@ export function ResultEvidenceTimeline(props: ResultEvidenceTimelineProps) {
     activeEntryId,
     causalEntry,
   )
+  return {
+    followedEntryId,
+    selectedEntry,
+    selectedKinds,
+    setSelectedEntryId,
+    setSelectedKinds,
+    visibleEntries,
+  }
+}
+
+export function ResultEvidenceTimeline(props: ResultEvidenceTimelineProps) {
+  const view = useTimelineView(props)
   const causalPointUnavailable =
     !props.entries.some((entry) => entry.causalAt) &&
     (props.state === 'failed' || props.state === 'infrastructure-error')
-  const entryCount = visibleEntries.length
+  const entryCount = view.visibleEntries.length
 
   function handleSelect(entryId: string) {
-    setSelectedEntryId(entryId)
+    view.setSelectedEntryId(entryId)
     props.onPauseFollowing?.()
   }
 
   function handlePauseFollowing() {
-    if (props.follow === true && followedEntryId) {
-      setSelectedEntryId(followedEntryId)
+    if (props.follow === true && view.followedEntryId) {
+      view.setSelectedEntryId(view.followedEntryId)
     }
     props.onPauseFollowing?.()
   }
 
-  function handleVerboseChange(verbose: boolean) {
-    setDensity(verbose ? 'verbose' : 'essential')
+  function handleKindChange(kind: TimelineEntryKind, selected: boolean) {
+    view.setSelectedKinds((current) =>
+      selected
+        ? [...current, kind]
+        : current.filter((currentKind) => currentKind !== kind),
+    )
+  }
+
+  function handleClearFilters() {
+    view.setSelectedKinds(timelineEntryKinds)
   }
 
   return (
@@ -131,23 +193,22 @@ export function ResultEvidenceTimeline(props: ResultEvidenceTimelineProps) {
           Steps span their recorded duration. Actions and evidence mark when
           they were recorded.
         </CardDescription>
-        <CardAction className="flex items-center gap-3">
-          <span className="flex items-center gap-2">
-            <Switch
-              id="verbose-timeline"
-              size="sm"
-              checked={density === 'verbose'}
-              onCheckedChange={handleVerboseChange}
-            />
-            <Label htmlFor="verbose-timeline">Verbose timeline</Label>
-          </span>
-          <span className="font-mono text-[0.6875rem] text-muted-foreground tabular-nums">
+        <CardAction>
+          <span
+            role="status"
+            aria-live="polite"
+            className="font-mono text-[0.6875rem] text-muted-foreground tabular-nums"
+          >
             {durationLabel(props.durationMs)} · {entryCount}{' '}
             {entryCount === 1 ? 'entry' : 'entries'}
           </span>
         </CardAction>
       </CardHeader>
       <CardContent className="px-0">
+        <TimelineKindFilters
+          selectedKinds={view.selectedKinds}
+          onKindChange={handleKindChange}
+        />
         {causalPointUnavailable ? (
           <p
             role="status"
@@ -159,11 +220,12 @@ export function ResultEvidenceTimeline(props: ResultEvidenceTimelineProps) {
         ) : null}
         <TimelineDisplay
           {...props}
-          selectedEntry={selectedEntry}
-          visibleEntries={visibleEntries}
-          followedEntryId={followedEntryId}
+          selectedEntry={view.selectedEntry}
+          visibleEntries={view.visibleEntries}
+          followedEntryId={view.followedEntryId}
           onSelect={handleSelect}
           onPause={handlePauseFollowing}
+          onClearFilters={handleClearFilters}
         />
       </CardContent>
     </Card>
