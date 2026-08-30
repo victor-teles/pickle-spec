@@ -114,10 +114,10 @@ export function TimelineKindFilter(props: TimelineKindFilterProps) {
       aria-pressed={props.selected}
       onClick={() => props.onPressedChange(!props.selected)}
       className={cn(
-        'h-6 rounded-full border normal-case tracking-normal transition-[background-color,border-color,color,opacity]',
+        'h-6 rounded-full border normal-case tracking-normal transition-[background-color,border-color,color]',
         props.selected
           ? timelineKindPresentation[props.kind].badgeClassName
-          : 'border-input bg-background text-muted-foreground opacity-60 hover:opacity-100',
+          : 'border-input bg-background text-foreground hover:bg-accent',
       )}
     >
       <TimelineKindIcon kind={props.kind} className="size-3" />

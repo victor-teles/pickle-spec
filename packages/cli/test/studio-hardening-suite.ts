@@ -298,6 +298,10 @@ Feature: Checkout
       const timeline = page.getByRole('list', {
         name: 'Execution timeline',
       })
+      await page
+        .getByRole('list', { name: 'Filter timeline by entry type' })
+        .getByRole('button', { name: 'Diagnostic entry' })
+        .click()
       expect(await timeline.textContent()).toContain('Payment was declined')
       const timelineResults = await new AxeBuilder({ page })
         .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa'])
