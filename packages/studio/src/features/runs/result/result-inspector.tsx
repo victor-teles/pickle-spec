@@ -25,6 +25,8 @@ import {
   isAttemptInProgress,
   type LiveConnectionStatus,
 } from './live-result-inspection'
+import { projectReplayDivergenceExplanation } from './replay-divergence'
+import { ReplayDivergenceExplainer } from './replay-divergence-explainer'
 import {
   artifactsFor,
   defaultResultInspectorTab,
@@ -295,6 +297,11 @@ function InspectedResultView(props: InspectedResultViewProps) {
     props.location,
     actions,
   )
+  const replayDivergence = projectReplayDivergenceExplanation({
+    events: snapshot.events,
+    result: inspected.result,
+    selectedAttemptNumber: inspected.attempt.attempt,
+  })
   if (props.artifactIndex !== undefined) {
     const artifact = artifacts[props.artifactIndex]
     return (
@@ -314,6 +321,9 @@ function InspectedResultView(props: InspectedResultViewProps) {
       className="min-h-0 flex-1 overflow-auto px-3 py-4 sm:px-5"
     >
       <ResultInspectorHeader {...props} displayState={displayState} />
+      {replayDivergence ? (
+        <ReplayDivergenceExplainer explanation={replayDivergence} />
+      ) : null}
       <ResultInspectorTabs
         {...props}
         activeTab={activeTab}

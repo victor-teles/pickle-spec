@@ -61,7 +61,7 @@ Phase 2 makes concurrent execution understandable during and after a run. The li
 - [x] Live device mirror: stream Android emulator and iOS simulator frames through the existing Node worker protocol. Render the active device beside the step timeline.
 - [x] Web diagnostics: capture redacted traces, recordings, network activity, and console output. Link each artifact to its step and event range.
 - [x] Time-travel inspector: connect each action to target state, diagnostics, source evidence, retries, and before-and-after screenshots. Use the same view for live and completed runs.
-- [ ] Replay divergence explainer: show the divergence step, sealed prefix, and Adaptive fallback. Use the existing `replay-diverged` and `adaptive-fallback-started` events.
+- [x] Replay divergence explainer: show the divergence step, sealed prefix, and Adaptive fallback. Use the existing `replay-diverged` and `adaptive-fallback-started` events.
 - [ ] Operator controls: let an operator pin or cancel a scenario, open its live session, and capture evidence. Add pause-after-step only after the runner defines a safe suspension contract.
 - [ ] Follow mode and picture-in-picture: follow the worst result or a pinned scenario across the matrix. Show a filmstrip of concurrent targets for parallel workers.
 - [ ] Live step timeline: append screenshots, execution mode, cache provenance, retries, and elapsed time as step events arrive.
