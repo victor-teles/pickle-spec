@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "specifications": "features/**/*.feature",
+  "executionTargetProfiles": {
+    "web": {
+      "adapter": "web",
+      "web": {
+        "baseUrl": "https://example.com",
+        "browser": {
+          "environment": "local",
+          "modelName": "anthropic/claude-sonnet-4-6",
+          "headless": true
+        }
+      }
+    }
+  },
+  "applicationRevision": "example-domain"
+}

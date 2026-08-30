@@ -1,0 +1,23 @@
+@import "tailwindcss";
+@import "fumadocs-ui/css/neutral.css";
+@import "fumadocs-ui/css/preset.css";
+
+:root {
+  --color-fd-primary: oklch(0.43 0.14 145);
+  --color-fd-primary-foreground: white;
+  --color-fd-muted-foreground: hsl(0 0% 38%);
+}
+
+.dark {
+  --color-fd-primary: oklch(0.75 0.18 145);
+  --color-fd-primary-foreground: black;
+  --color-fd-muted-foreground: hsl(0 0% 72%);
+}
+
+html {
+  scrollbar-gutter: stable;
+}
+
+body {
+  font-family: Inter, ui-sans-serif, system-ui, sans-serif;
+}
