@@ -28,7 +28,7 @@ export type ScheduledTestResult = {
   executionTargetProfile: TestResult['executionTargetProfile']
 }
 
-export interface ScenarioScheduleInput {
+export interface RunScheduleInput {
   selections: readonly ScenarioSelection[]
   executionTargetProfiles: readonly ExecutionTargetProfile[]
   includeTarget?: (
@@ -42,9 +42,11 @@ type ScheduledScenarioTarget = {
   target: RunTarget
 }
 
-export interface RunScenarioScheduleInput extends ExecutionPolicy {
+export interface RunScenariosInput extends ExecutionPolicy {
   selections: readonly ScenarioSelection[]
-  targets: readonly RunTarget[]
+  targets?: readonly RunTarget[]
+  executionTargetProfile?: ExecutionTargetProfile
+  adapter?: ExecutionTargetAdapter
   executionCache?: ScenarioExecutionCache
   cachePolicy?: ExecutionCachePolicy
   applicationRevision?: string
@@ -86,8 +88,8 @@ function scheduledTestResult(
   }
 }
 
-export function createScenarioSchedule(
-  input: ScenarioScheduleInput,
+export function scheduleScenarios(
+  input: RunScheduleInput,
 ): ScheduledTestResult[] {
   return input.selections.flatMap((selection) =>
     input.executionTargetProfiles
@@ -135,17 +137,31 @@ export function validateTargetSelection(
   }
 }
 
-export async function runScenarioSchedule(
-  input: RunScenarioScheduleInput,
+function resolveTargets(input: RunScenariosInput): readonly RunTarget[] {
+  if (input.targets) return input.targets
+  if (input.executionTargetProfile && input.adapter) {
+    return [
+      {
+        executionTargetProfile: input.executionTargetProfile,
+        adapter: input.adapter,
+      },
+    ]
+  }
+  return []
+}
+
+export async function runScenarios(
+  input: RunScenariosInput,
 ): Promise<ScenarioRun[]> {
   const concurrency = input.concurrency ?? 1
   if (!Number.isInteger(concurrency) || concurrency < 1) {
     throw new Error('concurrency must be an integer greater than or equal to 1')
   }
 
-  validateTargetSelection(input.selections, input.targets)
+  const targets = resolveTargets(input)
+  validateTargetSelection(input.selections, targets)
 
-  const scheduledTargets = scenarioTargets(input.selections, input.targets)
+  const scheduledTargets = scenarioTargets(input.selections, targets)
   const runs = new Array<ScenarioRun>(scheduledTargets.length)
   let nextIndex = 0
   const workerCount = Math.min(concurrency, scheduledTargets.length)

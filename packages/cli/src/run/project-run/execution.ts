@@ -5,10 +5,7 @@ import type {
   ScenarioRun,
   TestResult,
 } from '@pickle-spec/runner'
-import {
-  openLocalExecutionCache,
-  runScenarioSchedule,
-} from '@pickle-spec/runner'
+import { openLocalExecutionCache, runScenarios } from '@pickle-spec/runner'
 import { type PreparedRunSelection, selectionMatchesResult } from './selection'
 import type { ResolvedProjectRunConfiguration } from './targets'
 import type { ProjectRunOptions, StartProjectRunInput } from './types'
@@ -17,7 +14,7 @@ type RunSelectedResultPairsInput = {
   selectedResults: readonly TestResult[]
   selections: PreparedRunSelection['selections']
   targets: ResolvedProjectRunConfiguration['targets']
-} & Omit<Parameters<typeof runScenarioSchedule>[0], 'selections' | 'targets'>
+} & Omit<Parameters<typeof runScenarios>[0], 'selections' | 'targets'>
 
 interface ExecutePreparedRunInput {
   input: StartProjectRunInput
@@ -43,7 +40,7 @@ async function runSelectedResultPairs(
       ),
     )
     if (profileSelections.length === 0) continue
-    const targetRuns = await runScenarioSchedule({
+    const targetRuns = await runScenarios({
       ...input,
       selections: profileSelections,
       targets: [target],
@@ -109,7 +106,7 @@ export async function executePreparedRun(
       ...shared,
     })
   }
-  return runScenarioSchedule({
+  return runScenarios({
     selections: selection.selections,
     ...configuration,
     ...shared,

@@ -87,17 +87,17 @@ export {
   traceActivityKinds,
 } from './src/execution/run-scenario'
 export type {
-  RunScenarioScheduleInput,
+  RunScenariosInput,
+  RunScheduleInput,
   RunTarget,
   ScenarioCompletion,
-  ScenarioScheduleInput,
   ScheduledTestResult,
-} from './src/execution/run-scenario-schedule'
+} from './src/execution/run-scenarios'
 export {
-  createScenarioSchedule,
-  runScenarioSchedule,
+  runScenarios,
+  scheduleScenarios,
   validateTargetSelection,
-} from './src/execution/run-scenario-schedule'
+} from './src/execution/run-scenarios'
 export type {
   CacheOutcome,
   DeserializeExecutionCacheEnvelopeInput,

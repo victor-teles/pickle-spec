@@ -4,8 +4,8 @@ import type {
   TestRunStore,
 } from '@pickle-spec/runner'
 import {
-  createScenarioSchedule,
   openTestRunStore,
+  scheduleScenarios,
   validateTargetSelection,
 } from '@pickle-spec/runner'
 import { resolveApplicationRevision } from '../configuration/application-revision'
@@ -54,7 +54,7 @@ async function publishRunSchedule(
   configuration: ResolvedProjectRunConfiguration,
 ): Promise<void> {
   await input.onSchedule?.(
-    createScenarioSchedule({
+    scheduleScenarios({
       selections: selection.selections,
       executionTargetProfiles: configuration.targets.map(
         ({ executionTargetProfile }) => executionTargetProfile,
