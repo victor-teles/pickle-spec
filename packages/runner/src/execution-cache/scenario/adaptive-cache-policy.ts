@@ -1,7 +1,7 @@
 import type {
   RunScenarioInput,
   ScenarioAttempt,
-} from '../../execution/run-scenario'
+} from '../../execution/run-scenario-types'
 import {
   nonemptyBindings,
   stringContainsBinding,

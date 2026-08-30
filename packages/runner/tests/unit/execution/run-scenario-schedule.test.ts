@@ -1,14 +1,16 @@
 import type { ScenarioSelection } from '@pickle-spec/spec'
 import { expect, test, vi } from 'vitest'
 import {
+  createScenarioSchedule,
   type ExecutionTargetAdapter,
-  runScenarios,
-  scheduleScenarios,
+  runScenarioSchedule,
   type TestResult,
 } from '../../../index'
 import { requiredValue } from '../../../src/required-value'
 
-type TimedRunScenariosInput = Parameters<typeof runScenarios>[0] & {
+type TimedRunScenarioScheduleInput = Parameters<
+  typeof runScenarioSchedule
+>[0] & {
   now: () => Date
 }
 
@@ -55,10 +57,9 @@ test('runs selected Scenarios concurrently while preserving stable test-result o
   })
   const adapter: ExecutionTargetAdapter = { openSession }
 
-  const runs = await runScenarios({
+  const runs = await runScenarioSchedule({
     selections,
-    executionTargetProfile: { id: 'web' },
-    adapter,
+    targets: [{ executionTargetProfile: { id: 'web' }, adapter }],
     concurrency: 2,
   })
 
@@ -74,7 +75,7 @@ test('runs selected Scenarios concurrently while preserving stable test-result o
 })
 
 test('schedules Scenario results in declaration and configured profile order', () => {
-  const schedule = scheduleScenarios({
+  const schedule = createScenarioSchedule({
     selections: [requiredValue(selections[0]), requiredValue(selections[2])],
     executionTargetProfiles: [{ id: 'web' }, { id: 'android' }],
     includeTarget: (selection, executionTargetProfile) =>
@@ -114,7 +115,7 @@ test('keeps Scenario Outline rows unambiguous in the public schedule', () => {
     },
   }))
 
-  const schedule = scheduleScenarios({
+  const schedule = createScenarioSchedule({
     selections: outlineSelections,
     executionTargetProfiles: [{ id: 'web' }],
   })
@@ -152,10 +153,9 @@ test('reports one final completion after retry attempt events', async () => {
     },
   }
 
-  await runScenarios({
+  await runScenarioSchedule({
     selections: [requiredValue(selections[0])],
-    executionTargetProfile: { id: 'web' },
-    adapter,
+    targets: [{ executionTargetProfile: { id: 'web' }, adapter }],
     retry: { infrastructureErrors: 1 },
     onEvent(event) {
       if (event.type === 'scenario-finished') {
@@ -198,27 +198,31 @@ test('aggregates separate Scenario attempts into one final flaky Test result', a
       examplesRowId: 'row-scheduled-first',
     },
   }
-  const input: TimedRunScenariosInput = {
+  const input: TimedRunScenarioScheduleInput = {
     selections: [selection],
-    executionTargetProfile: {
-      id: 'chrome',
-      adapter: 'web',
-      capabilities: ['screenshots'],
-    },
-    adapter: {
-      async openSession() {
-        openedSessionCount++
-        return {
-          async executeStep() {
-            if (openedSessionCount === 1) {
-              throw new Error('Execution target stopped')
+    targets: [
+      {
+        executionTargetProfile: {
+          id: 'chrome',
+          adapter: 'web',
+          capabilities: ['screenshots'],
+        },
+        adapter: {
+          async openSession() {
+            openedSessionCount++
+            return {
+              async executeStep() {
+                if (openedSessionCount === 1) {
+                  throw new Error('Execution target stopped')
+                }
+                return { state: 'passed', resolvedActions: [] }
+              },
+              async close() {},
             }
-            return { state: 'passed', resolvedActions: [] }
           },
-          async close() {},
-        }
+        },
       },
-    },
+    ],
     retry: { infrastructureErrors: 1 },
     now: () => new Date(requiredValue(timestamps[timestampIndex++])),
     onEvent(event) {
@@ -231,7 +235,7 @@ test('aggregates separate Scenario attempts into one final flaky Test result', a
     },
   }
 
-  const runs = await runScenarios(input)
+  const runs = await runScenarioSchedule(input)
   const scope = {
     scenarioId: 'scn-scheduled-first',
     examplesRowId: 'row-scheduled-first',
@@ -326,7 +330,7 @@ test('rejects a target that lacks a Scenario capability requirement before openi
   const selection = requiredValue(selections[0])
 
   await expect(
-    runScenarios({
+    runScenarioSchedule({
       selections: [
         {
           ...selection,
@@ -336,8 +340,12 @@ test('rejects a target that lacks a Scenario capability requirement before openi
           },
         },
       ],
-      executionTargetProfile: { id: 'web' },
-      adapter: { capabilities: ['screenshots'], openSession },
+      targets: [
+        {
+          executionTargetProfile: { id: 'web' },
+          adapter: { capabilities: ['screenshots'], openSession },
+        },
+      ],
     }),
   ).rejects.toThrow(
     'Execution target profile "web" lacks required capabilities for Scenario "First": geolocation',
@@ -423,10 +431,9 @@ test('applies one global concurrency limit across Scenarios from multiple featur
     },
   ]
 
-  const runs = await runScenarios({
+  const runs = await runScenarioSchedule({
     selections: crossFileSelections,
-    executionTargetProfile: { id: 'web' },
-    adapter,
+    targets: [{ executionTargetProfile: { id: 'web' }, adapter }],
     concurrency: 2,
   })
 
@@ -459,7 +466,7 @@ test('produces one test result per Scenario and execution target profile', async
     async close() {},
   }))
 
-  const runs = await runScenarios({
+  const runs = await runScenarioSchedule({
     selections: [requiredValue(selections[0]), requiredValue(selections[2])],
     targets: [
       {
@@ -506,7 +513,7 @@ test('fails validation for an incompatible target instead of skipping the Scenar
   })
 
   await expect(
-    runScenarios({
+    runScenarioSchedule({
       selections: [
         {
           ...requiredValue(selections[0]),

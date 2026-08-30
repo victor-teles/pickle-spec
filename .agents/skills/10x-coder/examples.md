@@ -436,6 +436,40 @@ export function canUserTransfer(user) {
 }
 ```
 
+When several files belong to one domain context, let the folder carry the
+shared context and let filenames describe each unit's role.
+
+```text
+❌ run/project-run-types.ts
+   run/project-run-inputs.ts
+   run/project-run-targets.ts
+
+✅ run/project-run/types.ts
+   run/project-run/inputs.ts
+   run/project-run/targets.ts
+```
+
+This is an ownership boundary, not a filename-shortening trick. Keep a single
+cohesive file in its parent directory until multiple real units share the
+context.
+
+Generic shared folders can be valid when the code has no domain owner and
+several real contexts depend on the exact same mechanics.
+
+```text
+✅ common/path.ts          # project-relative path mechanics used by CLI and Studio
+✅ common/serialization.ts # one wire-format implementation used by several contexts
+
+❌ common/retry-policy.ts  # a runner business rule disguised as shared infrastructure
+❌ utils/maybe-useful.ts   # one caller and hypothetical future reuse
+❌ helpers/user.ts         # unrelated domain operations collected by entity name
+```
+
+Prefer a precise technical role inside `utils`, `helpers`, or `common`. Keep
+business rules with their owning context even when another context contains
+similar-looking code, and do not use a top-level `types` folder to avoid naming
+the contract owner.
+
 ## DRY
 
 DRY is about duplicated knowledge, rules, and logic. Do not extract just

@@ -1,10 +1,10 @@
-import {
-  type RunEvent,
-  type RunScenarioInput,
-  type ScenarioAttempt,
-  type ScenarioRun,
-  withFinalAttempt,
-} from '../../execution/run-scenario'
+import type {
+  RunEvent,
+  RunScenarioInput,
+  ScenarioAttempt,
+  ScenarioRun,
+} from '../../execution/run-scenario-types'
+import { withFinalAttempt } from '../../execution/scenario/scenario-results'
 import { requiredValue } from '../../required-value'
 import { cachedStepPrefixFrom } from '../cached-step-prefix'
 import {

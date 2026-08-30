@@ -1,5 +1,6 @@
 import type { ScenarioSelection } from '@pickle-spec/spec'
 import { requiredValue } from '../required-value'
+import { runScenario } from './run-scenario'
 import type {
   ExecutionCachePolicy,
   ExecutionPolicy,
@@ -9,8 +10,7 @@ import type {
   ScenarioExecutionCache,
   ScenarioRun,
   TestResult,
-} from './run-scenario'
-import { runScenario } from './run-scenario-entry'
+} from './run-scenario-types'
 
 export interface RunTarget {
   executionTargetProfile: ExecutionTargetProfile
@@ -28,7 +28,7 @@ export type ScheduledTestResult = {
   executionTargetProfile: TestResult['executionTargetProfile']
 }
 
-export interface RunScheduleInput {
+export interface ScenarioScheduleInput {
   selections: readonly ScenarioSelection[]
   executionTargetProfiles: readonly ExecutionTargetProfile[]
   includeTarget?: (
@@ -42,11 +42,9 @@ type ScheduledScenarioTarget = {
   target: RunTarget
 }
 
-export interface RunScenariosInput extends ExecutionPolicy {
+export interface RunScenarioScheduleInput extends ExecutionPolicy {
   selections: readonly ScenarioSelection[]
-  targets?: readonly RunTarget[]
-  executionTargetProfile?: ExecutionTargetProfile
-  adapter?: ExecutionTargetAdapter
+  targets: readonly RunTarget[]
   executionCache?: ScenarioExecutionCache
   cachePolicy?: ExecutionCachePolicy
   applicationRevision?: string
@@ -69,30 +67,37 @@ function scenarioTargets(
   )
 }
 
-export function scheduleScenarios(
-  input: RunScheduleInput,
+function scheduledTestResult(
+  selection: ScenarioSelection,
+  executionTargetProfile: ExecutionTargetProfile,
+): ScheduledTestResult {
+  return {
+    specification: {
+      uri: selection.specification.source.uri,
+      name: selection.specification.name,
+    },
+    scenario: {
+      name: selection.scenario.template?.name ?? selection.scenario.name,
+      id: selection.scenario.id,
+      examplesId: selection.scenario.examplesId,
+      examplesRowId: selection.scenario.examplesRowId,
+    },
+    executionTargetProfile,
+  }
+}
+
+export function createScenarioSchedule(
+  input: ScenarioScheduleInput,
 ): ScheduledTestResult[] {
   return input.selections.flatMap((selection) =>
-    input.executionTargetProfiles.flatMap((executionTargetProfile) =>
-      input.includeTarget?.(selection, executionTargetProfile) === false
-        ? []
-        : [
-            {
-              specification: {
-                uri: selection.specification.source.uri,
-                name: selection.specification.name,
-              },
-              scenario: {
-                name:
-                  selection.scenario.template?.name ?? selection.scenario.name,
-                id: selection.scenario.id,
-                examplesId: selection.scenario.examplesId,
-                examplesRowId: selection.scenario.examplesRowId,
-              },
-              executionTargetProfile,
-            },
-          ],
-    ),
+    input.executionTargetProfiles
+      .filter(
+        (executionTargetProfile) =>
+          input.includeTarget?.(selection, executionTargetProfile) !== false,
+      )
+      .map((executionTargetProfile) =>
+        scheduledTestResult(selection, executionTargetProfile),
+      ),
   )
 }
 
@@ -130,34 +135,21 @@ export function validateTargetSelection(
   }
 }
 
-function resolveTargets(input: RunScenariosInput): readonly RunTarget[] {
-  if (input.targets) return input.targets
-  if (input.executionTargetProfile && input.adapter) {
-    return [
-      {
-        executionTargetProfile: input.executionTargetProfile,
-        adapter: input.adapter,
-      },
-    ]
-  }
-  return []
-}
-
-export async function runScenarios(
-  input: RunScenariosInput,
+export async function runScenarioSchedule(
+  input: RunScenarioScheduleInput,
 ): Promise<ScenarioRun[]> {
   const concurrency = input.concurrency ?? 1
   if (!Number.isInteger(concurrency) || concurrency < 1) {
     throw new Error('concurrency must be an integer greater than or equal to 1')
   }
 
-  const targets = resolveTargets(input)
-  validateTargetSelection(input.selections, targets)
+  validateTargetSelection(input.selections, input.targets)
 
-  const scheduledTargets = scenarioTargets(input.selections, targets)
+  const scheduledTargets = scenarioTargets(input.selections, input.targets)
   const runs = new Array<ScenarioRun>(scheduledTargets.length)
   let nextIndex = 0
   const workerCount = Math.min(concurrency, scheduledTargets.length)
+  const onEvent = input.onEvent
 
   async function work(): Promise<void> {
     while (nextIndex < scheduledTargets.length) {
@@ -175,9 +167,9 @@ export async function runScenarios(
         signal: input.signal,
         retry: input.retry,
         timeout: input.timeout,
-        onEvent: input.onEvent
+        onEvent: onEvent
           ? (event) =>
-              input.onEvent?.(
+              onEvent(
                 event.type === 'scenario-finished'
                   ? { ...event, scheduleIndex: index }
                   : event,

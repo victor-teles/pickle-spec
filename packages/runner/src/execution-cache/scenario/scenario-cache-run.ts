@@ -1,21 +1,23 @@
 import { type Scenario, scenarioRevision } from '@pickle-spec/spec'
+import type {
+  AttemptScenarioRun,
+  ExecutionMode,
+  RunEvent,
+  RunEventPayload,
+  RunEventScope,
+  RunScenarioInput,
+  ScenarioAttempt,
+  ScenarioRun,
+  TestResult,
+} from '../../execution/run-scenario-types'
+import { testRunSchemaVersion } from '../../execution/run-scenario-types'
+import { runScenarioAttempt } from '../../execution/scenario/run-scenario-attempt'
 import {
-  type AttemptScenarioRun,
   createSyntheticTestResult,
   createTestResult,
-  type ExecutionMode,
-  type RunEvent,
-  type RunEventPayload,
-  type RunEventScope,
-  type RunScenarioInput,
-  runScenarioAttempt,
-  type ScenarioAttempt,
-  type ScenarioRun,
   scenarioFinishedPayload,
-  type TestResult,
-  testRunSchemaVersion,
   withFinalAttempt,
-} from '../../execution/run-scenario'
+} from '../../execution/scenario/scenario-results'
 import { createScenarioRetryTracker } from '../../execution/scenario/scenario-retry'
 import {
   nonemptyBindings,

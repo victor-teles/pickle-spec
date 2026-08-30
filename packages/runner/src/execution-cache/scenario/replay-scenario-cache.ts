@@ -1,10 +1,10 @@
-import {
-  type ExecutionCachePolicy,
-  type RunEvent,
-  type RunScenarioInput,
-  type ScenarioRun,
-  withFinalAttempt,
-} from '../../execution/run-scenario'
+import type {
+  ExecutionCachePolicy,
+  RunEvent,
+  RunScenarioInput,
+  ScenarioRun,
+} from '../../execution/run-scenario-types'
+import { withFinalAttempt } from '../../execution/scenario/scenario-results'
 import { requiredValue } from '../../required-value'
 import {
   type CachedStepPrefix,

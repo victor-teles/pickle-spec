@@ -128,6 +128,23 @@ final evidence gate before reporting the task complete.
 - Do not design for rare or future cases nobody asked about.
 - Remove code you replace. Keep an old path only when compatibility is an explicit requirement.
 
+## Context-first refactoring
+
+- Understand the current responsibility, callers, and behavior before changing the structure.
+- Refactor from the domain context. Do not preserve an accidental structure because the existing code uses it.
+- Name code for what it does now. Avoid transitional names such as `legacyX`, `newX`, `temporaryX`, or `willChangeLaterX`.
+- Use a transitional name only when two real contracts must coexist during an explicit migration.
+- Do not add wrappers, aliases, flags, or adapters only to avoid completing the refactor.
+- Fix the incorrect abstraction and migrate its callers. Do not stack another abstraction on top of it.
+- Design for current requirements and real callers. Do not add a speculative path for a possible future change.
+- Split code by cohesive responsibility and context, not by line count or arbitrary categories.
+- Keep a helper near its only caller when moving it would make the behavior harder to follow.
+- Remove replaced code and obsolete names in the same change unless compatibility is an explicit requirement.
+- Preserve observable behavior. Change tests only when names or organization must follow the refactor.
+- Inspect more context instead of introducing a placeholder when the correct ownership or name is unclear.
+- Leave the code describing the current system. The reader must not need the refactor history to understand it.
+- Follow **Pause and confirm** before a refactor changes a public API or compatibility contract.
+
 ## Pause and confirm
 
 Read-only discovery is always allowed. If the task has not already authorized it, get approval before:

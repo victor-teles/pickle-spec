@@ -3,7 +3,7 @@ import type {
   RunEvent,
   RunScenarioInput,
   ScenarioRun,
-} from '../execution/run-scenario'
+} from '../execution/run-scenario-types'
 import { requiredValue } from '../required-value'
 import {
   deserializeExecutionCacheEnvelope,

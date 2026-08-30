@@ -9,7 +9,7 @@ import type {
   ExecutionTargetAdapter,
   ExecutionTargetProfile,
 } from '../execution/run-scenario'
-import type { RunTarget } from '../execution/run-scenarios'
+import type { RunTarget } from '../execution/run-scenario-schedule'
 
 export interface ExecutionSettings {
   infrastructureRetries?: number

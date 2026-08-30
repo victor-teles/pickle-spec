@@ -81,23 +81,23 @@ export {
   diagnosticOrigins,
   finalScenarioAttempt,
   isEvidenceState,
+  runScenario,
   sharedEvidenceCacheDecisionTypes,
   sharedEvidenceObservationVersion,
   traceActivityKinds,
 } from './src/execution/run-scenario'
-export { runScenario } from './src/execution/run-scenario-entry'
 export type {
-  RunScenariosInput,
-  RunScheduleInput,
+  RunScenarioScheduleInput,
   RunTarget,
   ScenarioCompletion,
+  ScenarioScheduleInput,
   ScheduledTestResult,
-} from './src/execution/run-scenarios'
+} from './src/execution/run-scenario-schedule'
 export {
-  runScenarios,
-  scheduleScenarios,
+  createScenarioSchedule,
+  runScenarioSchedule,
   validateTargetSelection,
-} from './src/execution/run-scenarios'
+} from './src/execution/run-scenario-schedule'
 export type {
   CacheOutcome,
   DeserializeExecutionCacheEnvelopeInput,

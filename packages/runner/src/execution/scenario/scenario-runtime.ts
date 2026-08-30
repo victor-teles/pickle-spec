@@ -14,7 +14,7 @@ import type {
   StepExecution,
   TestArtifact,
   TraceEntry,
-} from '../run-scenario'
+} from '../run-scenario-types'
 
 const targetSummaryLimit = 2_000
 const targetLocationLimit = 2_048

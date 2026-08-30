@@ -46,6 +46,53 @@
         "The agent does not add context, Redux, or Zustand merely to avoid a shallow prop chain.",
         "The agent pins observable behavior before moving structure and verifies the real page flow afterward."
       ]
+    },
+    {
+      "id": 5,
+      "prompt": "Refactor a TypeScript function that merges CLI overrides into typed web options. It currently uses conditional object spreads for profile and headless, keeps a three-level fallback inside a function call, and declares two anonymous multi-field parameter types. Preserve override precedence and observable behavior, and inspect the rest of the touched file for the same shapes.",
+      "expected_output": "A context-first cleanup that resolves meaningful overrides before object construction, uses stable typed object shapes, reuses an owned domain type for parameters, and audits the complete touched file without extracting trivial one-use aliases.",
+      "expectations": [
+        "The agent removes conditional spreads that only omit undefined while preserving override precedence.",
+        "The agent resolves the three-level fallback before the call and replaces anonymous multi-field parameter types with an owned named type.",
+        "The agent checks the complete touched file for equivalent shapes instead of fixing only the quoted lines.",
+        "The agent does not extract every simple conditional or add speculative helpers and layers.",
+        "The agent runs repository-required checks and focused behavior verification."
+      ]
+    },
+    {
+      "id": 6,
+      "prompt": "A refactor extracted project-run-contracts.ts, project-run-inputs.ts, project-run-selection.ts, project-run-targets.ts, and project-run-diagnostics.ts into a broad run directory. Reorganize the files so their shared domain context and individual responsibilities are obvious. Preserve the established execute-run.ts public import seam and do not add a barrel or compatibility wrappers without a real caller requirement.",
+      "expected_output": "A context-owned project-run folder whose files have short role names, with internal imports updated directly and the established public seam preserved only where compatibility requires it.",
+      "expectations": [
+        "The agent moves the related modules under project-run/ with role names such as types.ts, inputs.ts, selection.ts, targets.ts, and diagnostics.ts.",
+        "The agent recognizes the folder as a real multi-file ownership boundary rather than moving domain-owned code into a generic utils, common, or top-level types bucket.",
+        "The agent updates task-owned internal callers directly and does not retain the old flat files, aliases, or a speculative barrel.",
+        "The agent preserves only the established public execute-run.ts seam and verifies callers and behavior after the move."
+      ]
+    },
+    {
+      "id": 7,
+      "prompt": "Before completing a behavior-preserving TypeScript refactor, audit the entire changed surface. Tests and lint pass, but the diff may still contain scope creep, weak transitional names, duplicated rules, mixed policy and I/O, unnecessary factories or wrappers, broad contracts, hidden TypeScript configuration shapes, stale files, or an ownership-obscuring flat layout. Fix supported findings and report evidence for every 10x-coder principle category.",
+      "expected_output": "A complete evidence-led audit across authority and scope, behavior and contracts, KISS and readability, ownership and separation of concerns, DRY, SOLID without ceremony, applicable TypeScript rules, and verification hygiene—not a tests-passed claim or a syntax-only scan.",
+      "expectations": [
+        "The agent reads every touched unit and the complete final diff instead of checking only quoted lines or search matches.",
+        "The audit explicitly covers scope, behavior and public contracts, KISS and readability, ownership and separation of concerns, DRY, SOLID, language-specific discipline, and verification hygiene.",
+        "The agent distinguishes concrete findings from non-applicable categories and does not infer maintainability from passing tests or line counts.",
+        "The agent removes supported temporary names, duplicate knowledge, dead paths, and unnecessary layers without broadening the requested behavior.",
+        "The agent reruns focused behavior checks and repository-required gates after fixes."
+      ]
+    },
+    {
+      "id": 8,
+      "prompt": "Two real contexts, CLI archives and Studio history, duplicate the same project-relative path normalization and must produce byte-for-byte identical paths. Runner retries and Studio reconnects also contain similar-looking backoff conditions, but they represent different product policies. Organize the shared and duplicated code without creating an ownerless dumping ground.",
+      "expected_output": "A nuanced ownership decision that may place the domain-independent path contract in a precisely named common, helpers, or utils module with both real callers, while keeping the independently evolving retry and reconnect policies in their domain contexts.",
+      "expectations": [
+        "The agent distinguishes duplicated shared knowledge from code that only looks similar.",
+        "The agent allows a generic shared folder for the domain-independent path contract because multiple real contexts depend on the same behavior.",
+        "The shared module and file have a precise technical responsibility rather than becoming a miscellaneous collection.",
+        "The agent keeps runner retry policy and Studio reconnect policy with their respective owners because they can evolve independently.",
+        "The agent does not create shared code for hypothetical callers or move domain types into an ownerless top-level types folder."
+      ]
     }
   ]
 }
