@@ -27,6 +27,7 @@ export type ExecutionMode = 'adaptive' | 'replay'
 
 export const testRunSchemaVersion = 2 as const
 export const sharedEvidenceObservationVersion = 1 as const
+export const actionEvidenceVersion = 1 as const
 
 export interface ExecutionTargetProfile {
   id: string
@@ -37,6 +38,63 @@ export interface ExecutionTargetProfile {
 export interface ResolvedAction {
   description: string
   replay?: Record<string, unknown>
+  evidence?: ActionEvidence
+}
+
+export interface ActionTargetState {
+  format: 'summary'
+  summary: string
+  location?: string
+}
+
+export type ActionScreenshot =
+  | { state: 'available'; artifact: TestArtifact }
+  | {
+      state: Exclude<EvidenceAvailabilityState, 'available'>
+      message?: string
+    }
+
+export interface ActionSourceEvidence {
+  uri: string
+  language: string
+  line?: number
+  column?: number
+  excerpt: string
+}
+
+export interface ActionEvidence {
+  version: typeof actionEvidenceVersion
+  id: string
+  ordinal: number
+  description: string
+  startedAt: string
+  finishedAt: string
+  durationMs: number
+  state: 'passed' | 'failed'
+  message?: string
+  source: ActionSourceEvidence
+  target: {
+    before: ActionTargetState
+    after: ActionTargetState
+  }
+  screenshots: {
+    before: ActionScreenshot
+    after: ActionScreenshot
+  }
+  diagnostics: DiagnosticEntry[]
+  activity: TraceEntry[]
+}
+
+export interface ActionEvidenceInput {
+  description: string
+  startedAt: string
+  finishedAt: string
+  state: 'passed' | 'failed'
+  message?: string
+  target: ActionEvidence['target']
+  screenshots: ActionEvidence['screenshots']
+  diagnostics?: DiagnosticEntry[]
+  activity?: TraceEntry[]
 }
 
 export interface RunEventRange {
@@ -211,6 +269,7 @@ export interface StepExecutionContext {
   templateStep: ScenarioStep
   runtimeBindings: readonly ScenarioVariableBinding[]
   evaluation?: StepEvaluation
+  recordAction?: (input: ActionEvidenceInput) => Promise<ActionEvidence>
 }
 
 export type TargetSessionReplayRepresentation =
@@ -401,6 +460,13 @@ export type RunEventPayload =
   | RunEventWithObservations<{
       type: 'step-finished'
       result: TestStepResult
+      scenario: TestResult['scenario']
+      executionTargetProfile: ExecutionTargetProfile
+      scope: RunEventScope
+    }>
+  | RunEventWithObservations<{
+      type: 'action-finished'
+      action: ActionEvidence
       scenario: TestResult['scenario']
       executionTargetProfile: ExecutionTargetProfile
       scope: RunEventScope

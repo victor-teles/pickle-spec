@@ -150,6 +150,35 @@ function withCapturedEvidence(
   }
 }
 
+function withActionEvidence(execution: StepExecution): StepExecution {
+  const actions = execution.resolvedActions.flatMap((action) =>
+    action.evidence ? [action.evidence] : [],
+  )
+  const artifacts = actions.flatMap((action) =>
+    [action.screenshots.before, action.screenshots.after].flatMap(
+      (screenshot) =>
+        screenshot.state === 'available' ? [screenshot.artifact] : [],
+    ),
+  )
+  const diagnostics = actions.flatMap((action) => action.diagnostics)
+  const activity = actions.flatMap((action) => action.activity)
+  return {
+    ...execution,
+    artifacts:
+      artifacts.length > 0
+        ? [...(execution.artifacts ?? []), ...artifacts]
+        : execution.artifacts,
+    diagnostics:
+      diagnostics.length > 0
+        ? [...(execution.diagnostics ?? []), ...diagnostics]
+        : execution.diagnostics,
+    trace:
+      activity.length > 0
+        ? [...(execution.trace ?? []), ...activity]
+        : execution.trace,
+  }
+}
+
 function evidenceDirectory(state: WebStepFinalizerState): string {
   const defaultOutputDirectory = join(
     resolveLocalProjectStorage(process.cwd()).projectDirectory,
@@ -233,7 +262,9 @@ async function finalizeWebStep(
     stepCount: state.input.scenario.steps.length,
     startFailure,
   })
-  return withCapturedEvidence(projected.execution, screenshot, recording)
+  return withActionEvidence(
+    withCapturedEvidence(projected.execution, screenshot, recording),
+  )
 }
 
 export function createWebStepFinalizer({

@@ -8,7 +8,7 @@ import type {
 import type { ScenarioStep } from '@pickle-spec/spec'
 import type { WebAutomation } from '../adapter/web-automation'
 import type { WebAdapterOptions } from '../adapter/web-options'
-import { resolvedInstructions } from './web-cache-instructions'
+import { captureWebAction } from '../evidence/web-action-evidence'
 import {
   compileObservedOutcomes,
   compileObservedWebAction,
@@ -39,6 +39,7 @@ type WebInstructionRuntime = {
     persist?: boolean,
   ): Promise<StepExecution | undefined>
   markNavigated(): void
+  takePendingActions(): ResolvedAction[]
 }
 
 interface CreateAdaptiveRuntimeInput {
@@ -114,14 +115,30 @@ async function observeActions(
 async function executeObservedActions(
   automation: WebAutomation,
   actions: ObservedActions,
+  context: StepExecutionContext,
+  options: WebAdapterOptions,
   signal: AbortSignal | undefined,
   onInference: () => void,
 ): Promise<StepExecution> {
   const resolvedActions: ResolvedAction[] = []
   for (const action of actions) {
     onInference()
-    const result = await automation.act(action, signal)
-    resolvedActions.push({ description: action.description })
+    const captured = await captureWebAction({
+      automation,
+      context,
+      description: action.description,
+      options,
+      perform: () => automation.act(action, signal),
+      outcome: (outcome) => ({
+        state: outcome.success ? 'passed' : 'failed',
+        message: outcome.message,
+      }),
+    })
+    const result = captured.result
+    resolvedActions.push({
+      description: action.description,
+      evidence: captured.evidence,
+    })
     if (!result.success) {
       return {
         state: 'failed',
@@ -173,7 +190,7 @@ class AdaptiveWebRuntime implements WebAdaptiveRuntime {
     }
     return {
       ...result,
-      resolvedActions: resolvedInstructions(instructions, 'resolved'),
+      resolvedActions: result.resolvedActions,
     }
   }
 
@@ -181,6 +198,7 @@ class AdaptiveWebRuntime implements WebAdaptiveRuntime {
     templateStep: ScenarioStep,
     target: string,
     index: number,
+    context: StepExecutionContext,
     signal: AbortSignal | undefined,
   ): Promise<StepExecution> {
     const url = navigationUrl(this.context.options.baseUrl, target)
@@ -205,11 +223,20 @@ class AdaptiveWebRuntime implements WebAdaptiveRuntime {
       )
     }
     this.context.uncacheable.reason = 'bound-parameter-value'
-    await this.context.automation.navigate(url, signal)
+    const captured = await captureWebAction({
+      automation: this.context.automation,
+      context,
+      description: `Navigate to ${url}`,
+      options: this.context.options,
+      perform: () => this.context.automation.navigate(url, signal),
+      outcome: () => ({ state: 'passed' }),
+    })
     this.context.executor.markNavigated()
     return {
       state: 'passed',
-      resolvedActions: [{ description: `Navigate to ${url}` }],
+      resolvedActions: [
+        { description: `Navigate to ${url}`, evidence: captured.evidence },
+      ],
     }
   }
 
@@ -271,6 +298,7 @@ class AdaptiveWebRuntime implements WebAdaptiveRuntime {
     templateStep: ScenarioStep,
     index: number,
     signal: AbortSignal | undefined,
+    context: StepExecutionContext,
   ): Promise<StepExecution> {
     const instructions: WebInstruction[] = []
     const navigationFailure = await this.context.executor.implicitNavigation(
@@ -298,12 +326,33 @@ class AdaptiveWebRuntime implements WebAdaptiveRuntime {
       this.context.uncacheable.reason = 'non-deterministic-assertion'
     }
     this.context.inference.count++
-    const verification = await this.context.automation.verify(prompt, signal)
-    return verificationExecution(
+    const description = `Verify: ${prompt}`
+    const captured = await captureWebAction({
+      automation: this.context.automation,
+      context,
+      description,
+      options: this.context.options,
+      perform: () => this.context.automation.verify(prompt, signal),
+      outcome: (result) => ({
+        state: result.meetsExpectation ? 'passed' : 'failed',
+        message: result.meetsExpectation ? undefined : result.actualState,
+      }),
+    })
+    const execution = verificationExecution(
       prompt,
-      verification.meetsExpectation,
-      verification.actualState,
+      captured.result.meetsExpectation,
+      captured.result.actualState,
     )
+    return {
+      ...execution,
+      resolvedActions: [
+        ...this.context.executor.takePendingActions(),
+        ...execution.resolvedActions.map((action) => ({
+          ...action,
+          evidence: captured.evidence,
+        })),
+      ],
+    }
   }
 
   private async adaptiveAction(
@@ -311,6 +360,7 @@ class AdaptiveWebRuntime implements WebAdaptiveRuntime {
     templateStep: ScenarioStep,
     index: number,
     signal: AbortSignal | undefined,
+    context: StepExecutionContext,
   ): Promise<StepExecution> {
     const instructions: WebInstruction[] = []
     const navigationFailure = await this.context.executor.implicitNavigation(
@@ -339,12 +389,21 @@ class AdaptiveWebRuntime implements WebAdaptiveRuntime {
       return this.executeCompiledStep(instructions, compiled, index, signal)
     }
     this.context.uncacheable.reason = 'non-deterministic-action'
-    return executeObservedActions(
+    const execution = await executeObservedActions(
       this.context.automation,
       actions,
+      context,
+      this.context.options,
       signal,
       () => this.context.inference.count++,
     )
+    const pendingActions = this.context.executor.takePendingActions()
+    return pendingActions.length > 0
+      ? {
+          ...execution,
+          resolvedActions: [...pendingActions, ...execution.resolvedActions],
+        }
+      : execution
   }
 
   executeStep(
@@ -359,6 +418,7 @@ class AdaptiveWebRuntime implements WebAdaptiveRuntime {
         context.templateStep,
         target,
         context.stepIndex,
+        context,
         signal,
       )
     }
@@ -369,12 +429,14 @@ class AdaptiveWebRuntime implements WebAdaptiveRuntime {
           context.templateStep,
           context.stepIndex,
           signal,
+          context,
         )
       : this.adaptiveAction(
           observeInstruction(step),
           context.templateStep,
           context.stepIndex,
           signal,
+          context,
         )
   }
 }

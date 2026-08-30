@@ -15,6 +15,8 @@ import type { ExecutionCacheEnvelope } from '../execution-cache/execution-cache'
 import { requiredValue } from '../required-value'
 import { withSharedEvidenceObservations } from '../results/shared-evidence-observations'
 import type {
+  ActionEvidence,
+  ActionEvidenceInput,
   DiagnosticEntry,
   EvidenceAvailability,
   ExecutionCachePolicy,
@@ -39,6 +41,7 @@ import type {
 import { evidenceKinds, testRunSchemaVersion } from './run-scenario-types'
 import {
   nonemptyBindings,
+  publicActionEvidence,
   publicStepExecution,
   redactString,
   scenarioDefinitionId,
@@ -693,6 +696,7 @@ async function executeEvaluatedStep(input: {
   templateStep: ScenarioStep
   evaluation: StepEvaluation
   startedAt: string
+  recordAction: (input: ActionEvidenceInput) => Promise<ActionEvidence>
 }): Promise<StepExecution | undefined> {
   const { bindings, progress, recordStep } = input.context
   try {
@@ -707,6 +711,7 @@ async function executeEvaluatedStep(input: {
           templateStep: input.templateStep,
           runtimeBindings: input.context.input.scenario.runtimeBindings ?? [],
           evaluation: input.evaluation,
+          recordAction: input.recordAction,
         }),
       input.context.input.signal,
       deadline.timeoutMs,
@@ -729,6 +734,48 @@ async function executeEvaluatedStep(input: {
       message: progress.message,
     })
     return undefined
+  }
+}
+
+function gherkinSourceEvidence(
+  input: ScenarioAttemptInput,
+  stepIndex: number,
+): ActionEvidence['source'] {
+  const step = templateStepAt(input.scenario, stepIndex)
+  return {
+    uri: input.specification.source.uri,
+    language: input.specification.source.language,
+    line: step.source?.line,
+    column: step.source?.column,
+    excerpt: step.source?.excerpt ?? `${step.keyword} ${step.text}`.trim(),
+  }
+}
+
+function createActionRecorder(
+  context: SessionExecutionContext,
+  stepIndex: number,
+): (input: ActionEvidenceInput) => Promise<ActionEvidence> {
+  let ordinal = 0
+  return async (input) => {
+    const actionOrdinal = ordinal++
+    const action = publicActionEvidence(
+      input,
+      {
+        id: `step-${stepIndex + 1}-action-${actionOrdinal + 1}`,
+        ordinal: actionOrdinal,
+        source: gherkinSourceEvidence(context.input, stepIndex),
+      },
+      context.bindings,
+    )
+    const emitted = await context.emit(
+      {
+        type: 'action-finished',
+        action,
+        ...attemptIdentity(context.input, stepIndex),
+      },
+      action.finishedAt,
+    )
+    return emitted.type === 'action-finished' ? emitted.action : action
   }
 }
 
@@ -764,6 +811,7 @@ async function advanceGapStep(input: {
     step: input.step,
     templateStep,
     startedAt: started.occurredAt,
+    recordAction: createActionRecorder(context, stepIndex),
   }
   let execution = await executeEvaluatedStep({ ...stepInput, evaluation })
   if (!execution) return { cursor: input.cursor, stop: true }

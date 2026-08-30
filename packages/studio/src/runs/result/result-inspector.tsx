@@ -44,6 +44,8 @@ import type {
   ResultInspectorTab,
 } from './result-inspection'
 import { reasonMessage, resultBadgeVariant } from './result-presentation'
+import { timeTravelInspection } from './time-travel-inspection'
+import { TimeTravelInspector } from './time-travel-inspector'
 
 type ResultInspectorProps = {
   api: StudioApi
@@ -193,6 +195,7 @@ function ResultInspectorHeader(
 function ResultInspectorTabs(
   props: InspectedResultViewProps & {
     activeTab: ResultInspectorTab
+    actions: ReturnType<typeof timeTravelInspection>
     artifacts: ReturnType<typeof artifactsFor>
     diagnostics: ReturnType<typeof diagnosticsFor>
     displayState: ReturnType<typeof displayedAttemptState>
@@ -228,7 +231,14 @@ function ResultInspectorTabs(
         <TabsTrigger value="viewport">Viewport</TabsTrigger>
       </TabsList>
       <TabsContent value="overview">
-        <ResultOverview {...inspected} inProgress={props.inProgress} />
+        <div className="space-y-4">
+          <ResultOverview {...inspected} inProgress={props.inProgress} />
+          <TimeTravelInspector
+            actions={props.actions}
+            resultState={props.resultState}
+            scenarioName={inspected.result.scenario.name}
+          />
+        </div>
       </TabsContent>
       <TabsContent value="timeline">
         {props.liveViewport?.kind === 'device-frame' ? (
@@ -288,6 +298,7 @@ function InspectedResultView(props: InspectedResultViewProps) {
     inspected.attempt,
     props.location,
   )
+  const actions = timeTravelInspection(snapshot, props.location)
   if (props.artifactIndex !== undefined) {
     const artifact = artifacts[props.artifactIndex]
     return (
@@ -310,6 +321,7 @@ function InspectedResultView(props: InspectedResultViewProps) {
       <ResultInspectorTabs
         {...props}
         activeTab={activeTab}
+        actions={actions}
         artifacts={artifacts}
         diagnostics={diagnostics}
         displayState={displayState}

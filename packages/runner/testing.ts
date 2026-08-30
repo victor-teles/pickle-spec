@@ -17,6 +17,7 @@ export interface AdapterConformanceSuiteOptions {
   scenario: Scenario
   expectedCapabilities: readonly string[]
   expectedAdaptiveState?: TestResultState
+  expectedActionCount?: number
 }
 
 function expectedEventTypes(stepCount: number): RunEvent['type'][] {
@@ -43,9 +44,14 @@ export function defineAdapterConformanceSuite(
           adapter,
         })
 
-        expect(run.events.map((event) => event.type)).toEqual(
-          expectedEventTypes(options.scenario.steps.length),
-        )
+        expect(
+          run.events
+            .filter((event) => event.type !== 'action-finished')
+            .map((event) => event.type),
+        ).toEqual(expectedEventTypes(options.scenario.steps.length))
+        expect(
+          run.events.filter((event) => event.type === 'action-finished'),
+        ).toHaveLength(options.expectedActionCount ?? 0)
         expect(
           run.events.map((event) => [event.schemaVersion, event.sequence]),
         ).toEqual(run.events.map((_, index) => [2, index + 1]))

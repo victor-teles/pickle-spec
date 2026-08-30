@@ -46,6 +46,13 @@ export type StagehandTimeouts = {
   actTimeoutMs: number
 }
 
+type WebTargetSnapshot = {
+  location: string
+  readyState: 'loading' | 'interactive' | 'complete'
+  activeElementTag?: string
+  activeElementRole?: string
+}
+
 async function activePage(context: BrowserContext) {
   const page = await context.activePage()
   if (!page) throw new Error('No active browser page')
@@ -117,6 +124,32 @@ class StagehandAutomation implements WebAutomation {
         fullPage: options.fullPage,
       }),
     )
+  }
+
+  async summarizeTarget() {
+    const page = await activePage(this.browser.context)
+    const snapshot = (await page.evaluate(`(() => ({
+      location: location.href,
+      readyState: document.readyState,
+      activeElementTag: document.activeElement?.tagName?.toLowerCase(),
+      activeElementRole: document.activeElement?.getAttribute('role') ?? undefined
+    }))()`)) as WebTargetSnapshot
+    const activeElement = [
+      snapshot.activeElementTag,
+      snapshot.activeElementRole ? `role=${snapshot.activeElementRole}` : '',
+    ]
+      .filter(Boolean)
+      .join(' ')
+    return {
+      format: 'summary' as const,
+      summary: [
+        `Ready state: ${snapshot.readyState}`,
+        activeElement ? `Active element: ${activeElement}` : '',
+      ]
+        .filter(Boolean)
+        .join(' · '),
+      location: snapshot.location,
+    }
   }
 
   async navigate(url: string, signal?: AbortSignal): Promise<void> {

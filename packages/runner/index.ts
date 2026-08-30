@@ -18,6 +18,11 @@ export type {
   EnvironmentRemediation,
 } from './src/execution/environment-diagnostic'
 export type {
+  ActionEvidence,
+  ActionEvidenceInput,
+  ActionScreenshot,
+  ActionSourceEvidence,
+  ActionTargetState,
   ApplicationOutputEvidenceAvailability,
   ArtifactEvidenceLink,
   DiagnosticEntry,
@@ -40,6 +45,7 @@ export type {
   RunEvent,
   RunEventPayload,
   RunEventRange,
+  RunEventScope,
   ScenarioAttempt,
   ScenarioExecution,
   ScenarioExecutionCache,
@@ -70,6 +76,7 @@ export type {
   TraceEntry,
 } from './src/execution/run-scenario'
 export {
+  actionEvidenceVersion,
   diagnosticLevels,
   diagnosticOrigins,
   finalScenarioAttempt,
