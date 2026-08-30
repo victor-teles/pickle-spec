@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, realpath, rm, symlink } from 'node:fs/promises'
+import { chmod, mkdir, mkdtemp, realpath, rm, symlink } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve, sep } from 'node:path'
 import {
@@ -19,7 +19,7 @@ describe('public CLI workspace seam', () => {
 
   interface CheckProjectFixture {
     config: unknown
-    extensions?: string
+    extensions?: string | null
     specification?: { path: string; source: string }
   }
 
@@ -31,7 +31,9 @@ describe('public CLI workspace seam', () => {
   const deterministicRunConfig = {
     schemaVersion: 1,
     specifications: 'features/**/*.feature',
-    executionTargetProfile: { id: 'deterministic' },
+    executionTargetProfiles: {
+      deterministic: { adapter: 'custom' },
+    },
   }
   const validSpecification = {
     path: 'features/example.feature',
@@ -57,10 +59,12 @@ Feature: Example
       join(project, 'pickle.config.jsonc'),
       JSON.stringify(fixture.config),
     )
-    await Bun.write(
-      join(project, 'pickle.extensions.ts'),
-      fixture.extensions ?? 'export default {}',
-    )
+    if (fixture.extensions !== null) {
+      await Bun.write(
+        join(project, 'pickle.extensions.ts'),
+        fixture.extensions ?? 'export default {}',
+      )
+    }
     return project
   }
 
@@ -259,6 +263,89 @@ Feature: Example
     expect(checked.exitCode).toBe(0)
     expect(checked.stdout.toString()).toContain('Project is valid')
     expect(checked.stderr.toString()).toBe('')
+  })
+
+  test('checks declarative mobile configuration without an extensions file', async () => {
+    const project = await createCheckProject('mobile-without-extension', {
+      config: {
+        schemaVersion: 1,
+        specifications: 'features/**/*.feature',
+        executionTargetProfiles: {
+          android: {
+            adapter: 'mobile',
+            mobile: { application: { id: 'com.android.settings' } },
+          },
+        },
+      },
+      extensions: null,
+      specification: validSpecification,
+    })
+
+    const checked = runCheck(project)
+    expect(checked.exitCode).toBe(0)
+    expect(checked.stdout.toString()).toContain('Project is valid')
+    expect(checked.stderr.toString()).toBe('')
+  })
+
+  test('lists mobile application IDs through the public CLI without project configuration', async () => {
+    const project = join(workspace, 'application-inventory')
+    const bin = join(project, 'bin')
+    await mkdir(bin, { recursive: true })
+    const node = join(bin, 'node')
+    await Bun.write(
+      node,
+      `#!/usr/bin/env bun
+process.stdout.write(JSON.stringify({ version: 6, type: 'worker-ready', nodeVersion: '22.12.0' }) + '\\n')
+const decoder = new TextDecoder()
+for await (const chunk of Bun.stdin.stream()) {
+  const request = JSON.parse(decoder.decode(chunk).trim())
+  process.stdout.write(JSON.stringify({
+    version: 6,
+    type: 'response',
+    id: request.id,
+    ok: true,
+    payload: {
+      version: 6,
+      type: 'applications-listed',
+      applicationIds: ['com.example.apple', 'com.example.zebra'],
+    },
+  }) + '\\n')
+}
+`,
+    )
+    await chmod(node, 0o755)
+
+    const listed = Bun.spawnSync({
+      cmd: [pickleCommand, 'apps', '--platform', 'ios', '--all'],
+      cwd: project,
+      env: { ...Bun.env, PATH: `${bin}:${Bun.env.PATH ?? ''}` },
+    })
+
+    expect(listed.exitCode).toBe(0)
+    expect(listed.stdout.toString()).toBe(
+      'com.example.apple\ncom.example.zebra\n',
+    )
+    expect(listed.stderr.toString()).toBe('')
+
+    const missingPlatform = Bun.spawnSync({
+      cmd: [pickleCommand, 'apps'],
+      cwd: project,
+      env: { ...Bun.env },
+    })
+    expect(missingPlatform.exitCode).toBe(2)
+    expect(missingPlatform.stderr.toString()).toContain(
+      'Usage: pickle apps --platform android|ios [--all]',
+    )
+
+    const invalidPlatform = Bun.spawnSync({
+      cmd: [pickleCommand, 'apps', '--platform', 'windows'],
+      cwd: project,
+      env: { ...Bun.env },
+    })
+    expect(invalidPlatform.exitCode).toBe(2)
+    expect(invalidPlatform.stderr.toString()).toContain(
+      '--platform requires android or ios',
+    )
   })
 
   test('carries one initialized project through execution and result exports', async () => {

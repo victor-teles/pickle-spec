@@ -29,6 +29,11 @@ type AppOpenOptions = MobileSelection & {
   app: string
 }
 
+interface AppListOptions {
+  platform: MobilePlatform
+  appsFilter: 'user-installed' | 'all'
+}
+
 type WaitOptions = MobileSelection & {
   text: string
 }
@@ -58,6 +63,7 @@ export interface AgentDeviceClientPort {
     capabilities(options: MobileSelection): Promise<unknown>
   }
   apps: {
+    list(options: AppListOptions): Promise<unknown>
     reinstall(options: AppDeployOptions): Promise<unknown>
     open(options: AppOpenOptions): Promise<unknown>
   }
@@ -132,6 +138,7 @@ const mobileDeviceSchema = z.discriminatedUnion('platform', [
 ])
 
 export const mobileDevicesSchema = z.array(mobileDeviceSchema)
+export const mobileApplicationIdsSchema = z.array(z.string().min(1))
 
 export type AgentDeviceDevice = z.infer<typeof mobileDeviceSchema>
 

@@ -212,6 +212,7 @@ export function createGatewaySession(
       replay ??
       compileMobileScenario({
         platform,
+        applicationId: input.application.id,
         scenario: input.scenario,
       }),
     logsStarted: false,
@@ -315,7 +316,7 @@ async function resetApplication(
   const selection = session.selection
   if (!selection) throw new Error('Mobile execution target was not selected')
 
-  if ('binaryPath' in input.application) {
+  if (input.application.binaryPath) {
     await session.client.apps.reinstall({
       ...selection,
       app: input.application.id,

@@ -12,6 +12,7 @@ import {
   agentDeviceReplayPlanStep,
   defaultAgentDeviceClientFactory,
   isAgentDeviceReplayDivergence,
+  mobileApplicationIdsSchema,
   mobileDevicesSchema,
 } from './agent-device-client.ts'
 import {
@@ -120,6 +121,24 @@ export class AgentDeviceGateway {
   ) {
     this.createClient = createClient
     this.publishEvent = publishEvent
+  }
+
+  async listApplications(
+    platform: MobilePlatform,
+    scope: 'user-installed' | 'all',
+  ): Promise<string[]> {
+    const client = this.createClient({
+      session: 'pickle-mobile-app-discovery',
+      lockPolicy: 'reject',
+      lockPlatform: platform,
+    })
+    return [
+      ...new Set(
+        mobileApplicationIdsSchema.parse(
+          await client.apps.list({ platform, appsFilter: scope }),
+        ),
+      ),
+    ].sort()
   }
 
   async discoverTargets(

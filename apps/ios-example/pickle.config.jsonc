@@ -7,9 +7,6 @@
       "states": ["active"]
     }
   },
-  "executionTargetProfile": {
-    "id": "ios"
-  },
   "executionTargetProfiles": {
     "ios": {
       "adapter": "mobile",

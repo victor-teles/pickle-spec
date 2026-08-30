@@ -7,7 +7,10 @@ import {
 } from '@pickle-spec/mobile'
 import type { ExecutionTargetAdapter } from '@pickle-spec/runner'
 import type { StudioMobileTargetDiscovery } from '@pickle-spec/studio'
-import type { PickleConfig } from '../configuration/config'
+import {
+  hasBuiltInExecutionTarget,
+  type PickleConfig,
+} from '../configuration/config'
 
 export type StudioMobileAdapterFactory = (
   options: MobileAdapterOptions,
@@ -67,7 +70,10 @@ export function configuredMobileAdapter(
   behavior?: MobileAdapterBehavior,
 ): MobileExecutionTargetAdapter {
   const profile = config.executionTargetProfiles?.[profileId]
-  if (profile?.adapter !== 'mobile') {
+  if (
+    profile?.adapter !== 'mobile' ||
+    !hasBuiltInExecutionTarget(config, profileId)
+  ) {
     throw new Error(`Unknown mobile execution target profile "${profileId}"`)
   }
   if (!profile.mobile) {

@@ -38,12 +38,14 @@ function conformanceWorker(): MobileWorkerClient {
     subscribe: () => () => {},
     async request(request) {
       switch (request.type) {
+        case 'list-applications':
+          return { version: 6, type: 'applications-listed', applicationIds: [] }
         case 'discover-targets':
-          return { version: 5, type: 'targets-discovered', targets: [] }
+          return { version: 6, type: 'targets-discovered', targets: [] }
         case 'open-session':
           sessions.set(request.sessionId, request)
           return {
-            version: 5,
+            version: 6,
             type: 'session-opened',
             sessionId: request.sessionId,
             targetId:
@@ -53,7 +55,7 @@ function conformanceWorker(): MobileWorkerClient {
           const session = sessions.get(request.sessionId)
           if (!session) throw new Error('Session is not open')
           return {
-            version: 5,
+            version: 6,
             type: 'scenario-executed',
             sessionId: request.sessionId,
             execution: {
@@ -73,7 +75,7 @@ function conformanceWorker(): MobileWorkerClient {
         }
         case 'complete-session':
           return {
-            version: 5,
+            version: 6,
             type: 'session-completed',
             sessionId: request.sessionId,
             completion: { inferenceCount: 0 },
@@ -81,14 +83,14 @@ function conformanceWorker(): MobileWorkerClient {
         case 'close-session':
           sessions.delete(request.sessionId)
           return {
-            version: 5,
+            version: 6,
             type: 'session-closed',
             sessionId: request.sessionId,
           }
         case 'cancel-session':
           sessions.delete(request.sessionId)
           return {
-            version: 5,
+            version: 6,
             type: 'session-cancelled',
             sessionId: request.sessionId,
           }

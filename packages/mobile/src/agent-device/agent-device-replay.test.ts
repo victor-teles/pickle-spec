@@ -48,6 +48,9 @@ function client(
       },
     },
     apps: {
+      async list() {
+        return []
+      },
       async reinstall() {},
       async open() {},
     },

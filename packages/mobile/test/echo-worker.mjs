@@ -2,7 +2,7 @@ import { createInterface } from 'node:readline'
 
 process.stdout.write(
   `${JSON.stringify({
-    version: 5,
+    version: 6,
     type: 'worker-ready',
     nodeVersion: process.versions.node,
   })}\n`,
@@ -13,7 +13,7 @@ for await (const line of lines) {
   const message = JSON.parse(line)
   process.stdout.write(
     `${JSON.stringify({
-      version: 5,
+      version: 6,
       type: 'event',
       payload: {
         type: 'viewport-frame',
@@ -24,12 +24,12 @@ for await (const line of lines) {
   )
   process.stdout.write(
     `${JSON.stringify({
-      version: 5,
+      version: 6,
       type: 'response',
       id: message.id,
       ok: true,
       payload: {
-        version: 5,
+        version: 6,
         type: 'targets-discovered',
         targets: [],
       },

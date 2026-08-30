@@ -27,5 +27,5 @@ Open Studio instead when you want to watch the live device mirror:
 bun run --cwd apps/android-example studio
 ```
 
-When more than one Emulator is booted, add its serial as `targetId` in the
-`createMobileAdapter` options in `pickle.extensions.ts`.
+When more than one Emulator is booted, add its serial as `targetId` under the
+mobile profile in `pickle.config.jsonc`.

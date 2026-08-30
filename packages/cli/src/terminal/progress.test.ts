@@ -1,6 +1,6 @@
 import { Writable } from 'node:stream'
 import { expect, test } from 'vitest'
-import { createDoctorProgress } from './doctor-output'
+import { createTerminalProgress } from './progress'
 
 function outputStream() {
   let output = ''
@@ -15,7 +15,7 @@ function outputStream() {
 
 test('uses Ora for interactive progress', async () => {
   const output = outputStream()
-  const progress = createDoctorProgress({
+  const progress = createTerminalProgress({
     color: true,
     enabled: true,
     stream: output.stream,
@@ -32,7 +32,7 @@ test('uses Ora for interactive progress', async () => {
 
 test('keeps Ora silent when terminal animation is unavailable', () => {
   const output = outputStream()
-  const progress = createDoctorProgress({
+  const progress = createTerminalProgress({
     color: false,
     enabled: false,
     stream: output.stream,

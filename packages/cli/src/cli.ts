@@ -36,6 +36,7 @@ import {
 import { runDoctorCommand } from './doctor/doctor'
 import { diagnoseProjectEnvironment } from './doctor/project-environment'
 import { runCacheCommand } from './execution-cache/cache'
+import { runAppsCommand } from './mobile/apps'
 import { requiredValue } from './required-value'
 import type { ApplicationOutputOptions } from './run/application-output'
 import {
@@ -951,6 +952,7 @@ async function main(argv: string[]): Promise<number> {
 const directCommands: Readonly<
   Record<string, (argv: string[]) => Promise<number>>
 > = {
+  apps: runAppsCommand,
   cache: runCacheCommand,
   doctor: runDoctorCommand,
 }

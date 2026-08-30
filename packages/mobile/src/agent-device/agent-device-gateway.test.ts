@@ -66,6 +66,9 @@ function client(
       },
     },
     apps: {
+      async list() {
+        return []
+      },
       async reinstall() {},
       async open() {},
     },
@@ -154,6 +157,43 @@ test('discovers only booted targets compatible with each mobile platform', async
   ])
 })
 
+test('lists unique sorted application IDs without opening a session', async () => {
+  const list = vi.fn(async () => [
+    'com.example.zebra',
+    'com.example.apple',
+    'com.example.zebra',
+  ])
+  const gateway = new AgentDeviceGateway(() =>
+    client({
+      apps: { list, reinstall: async () => {}, open: async () => {} },
+    }),
+  )
+
+  await expect(gateway.listApplications('ios', 'all')).resolves.toEqual([
+    'com.example.apple',
+    'com.example.zebra',
+  ])
+  expect(list).toHaveBeenCalledWith({ platform: 'ios', appsFilter: 'all' })
+})
+
+test('reports application discovery failures', async () => {
+  const gateway = new AgentDeviceGateway(() =>
+    client({
+      apps: {
+        list: async () => {
+          throw new Error('inventory failed')
+        },
+        reinstall: async () => {},
+        open: async () => {},
+      },
+    }),
+  )
+
+  await expect(
+    gateway.listApplications('android', 'user-installed'),
+  ).rejects.toThrow('inventory failed')
+})
+
 test('resets the selected application before the private Scenario Replay', async () => {
   const reinstall = vi.fn(async () => {})
   const open = vi.fn(async () => {})
@@ -167,7 +207,7 @@ test('resets the selected application before the private Scenario Replay', async
   }))
   const gateway = new AgentDeviceGateway(() =>
     client({
-      apps: { reinstall, open },
+      apps: { list: async () => [], reinstall, open },
       replay: { run: replay },
     }),
   )
@@ -196,18 +236,18 @@ test('resets the selected application before the private Scenario Replay', async
   expect(replay).toHaveBeenCalledTimes(1)
 })
 
-test('opens an explicitly preinstalled application without reinstalling it', async () => {
+test('opens an application by ID without reinstalling it', async () => {
   const reinstall = vi.fn(async () => {})
   const open = vi.fn(async () => {})
   const gateway = new AgentDeviceGateway(() =>
-    client({ apps: { reinstall, open } }),
+    client({ apps: { list: async () => [], reinstall, open } }),
   )
 
   await gateway.openSession({
     sessionId: 'session-1',
     platform: 'android',
     targetId: androidEmulator.id,
-    application: { id: application.id, installed: true },
+    application: { id: application.id },
     mode: 'adaptive',
     scenario,
   })

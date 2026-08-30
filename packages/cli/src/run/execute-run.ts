@@ -49,6 +49,7 @@ import { resolveApplicationRevision } from '../configuration/application-revisio
 import {
   defaultExtensionsFile,
   defaultSpecificationGlob,
+  hasBuiltInExecutionTarget,
   type PickleConfig,
   runConfigurationFrom,
 } from '../configuration/config'
@@ -233,6 +234,7 @@ function configureProfileAdapter(
 ): void {
   const configuredAdapters = adapters
   if (configuredAdapters[profile.id]) return
+  if (!hasBuiltInExecutionTarget(config, profile.id)) return
   if (profile.adapter === 'mobile') {
     if (!configuredAdapters.mobile) {
       configuredAdapters[profile.id] = configuredMobileAdapter(

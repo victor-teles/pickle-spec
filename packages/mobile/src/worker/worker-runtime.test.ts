@@ -16,6 +16,9 @@ function gateway(
   overrides: Partial<MobileDeviceGateway> = {},
 ): MobileDeviceGateway {
   return {
+    async listApplications() {
+      return []
+    },
     async discoverTargets() {
       return []
     },
@@ -35,7 +38,7 @@ function gateway(
 }
 
 const openRequest = {
-  version: 5 as const,
+  version: 6 as const,
   type: 'open-session' as const,
   sessionId: 'session-1',
   platform: 'android' as const,
@@ -43,6 +46,33 @@ const openRequest = {
   mode: 'adaptive' as const,
   scenario,
 }
+
+test('dispatches application inventory through the versioned protocol', async () => {
+  const runtime = new MobileWorkerRuntime(
+    gateway({
+      async listApplications(platform, scope) {
+        expect({ platform, scope }).toEqual({
+          platform: 'android',
+          scope: 'user-installed',
+        })
+        return ['com.example.checkout']
+      },
+    }),
+  )
+
+  await expect(
+    runtime.handle({
+      version: 6,
+      type: 'list-applications',
+      platform: 'android',
+      scope: 'user-installed',
+    }),
+  ).resolves.toEqual({
+    version: 6,
+    type: 'applications-listed',
+    applicationIds: ['com.example.checkout'],
+  })
+})
 
 test('serializes Scenario execution and completion in one logical session', async () => {
   let active = 0
@@ -70,12 +100,12 @@ test('serializes Scenario execution and completion in one logical session', asyn
   await runtime.handle(openRequest)
 
   const execution = runtime.handle({
-    version: 5,
+    version: 6,
     type: 'execute-scenario',
     sessionId: 'session-1',
   })
   const completion = runtime.handle({
-    version: 5,
+    version: 6,
     type: 'complete-session',
     sessionId: 'session-1',
   })
@@ -147,7 +177,7 @@ test('cancellation finishes the active Scenario before allowing reuse', async ()
   )
   await runtime.handle(openRequest)
   const execution = runtime.handle({
-    version: 5,
+    version: 6,
     type: 'execute-scenario',
     sessionId: 'session-1',
   })
@@ -155,7 +185,7 @@ test('cancellation finishes the active Scenario before allowing reuse', async ()
 
   await expect(
     runtime.handle({
-      version: 5,
+      version: 6,
       type: 'cancel-session',
       sessionId: 'session-1',
     }),

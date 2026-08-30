@@ -12,6 +12,7 @@ import {
   defaultConfigFile,
   defaultExtensionsFile,
   defaultSpecificationGlob,
+  hasBuiltInExecutionTarget,
   loadConfig,
   type PickleConfig,
   runConfigurationFrom,
@@ -20,8 +21,7 @@ import {
 const initialConfig = `{
   // Pickle Spec project configuration.
   "schemaVersion": 1,
-  "specifications": "${defaultSpecificationGlob}",
-  "executionTargetProfile": { "id": "custom" }
+  "specifications": "${defaultSpecificationGlob}"
 }
 `
 
@@ -175,23 +175,26 @@ export async function checkProject(
       `Configuration file not found: ${relative(cwd, configPath)}. Run pickle init or pass --config <path>.`,
     )
   }
-  if (!(await Bun.file(extensionsPath).exists())) {
+  const extensionsExists = await Bun.file(extensionsPath).exists()
+  if (options.extensionsPath && !extensionsExists) {
     throw new Error(
       `Extensions file not found: ${relative(cwd, extensionsPath)}. Run pickle init or pass --extensions <path>.`,
     )
   }
 
   const config = await loadConfig(configPath, cwd)
-  const extensions = validateExtensions(extensionsPath)
+  const adapterAvailable = extensionsExists
+    ? validateExtensions(extensionsPath).adapterAvailable
+    : false
   validateProjectRunConfiguration(runConfigurationFrom(config), {
-    ...extensions,
-    fallbackAdapterAvailable: Boolean(config.web),
+    adapterAvailable,
+    fallbackAdapterAvailable: hasBuiltInExecutionTarget(config),
   })
   validateSpecificationMetadata(
     await readSpecificationFiles(config, cwd),
     config.language,
   )
   options.report?.(
-    `Project is valid (${relative(cwd, configPath)}, ${relative(cwd, extensionsPath)})`,
+    `Project is valid (${relative(cwd, configPath)}${extensionsExists ? `, ${relative(cwd, extensionsPath)}` : ''})`,
   )
 }
