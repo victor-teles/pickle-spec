@@ -2,7 +2,7 @@ import type {
   ExecutionCacheEntryMetadata,
   ExecutionCacheKey,
   ExecutionCacheStore,
-} from './execution-cache'
+} from '../execution-cache'
 import type { LocalExecutionCacheDatabase } from './local-execution-cache-database'
 import {
   assertExecutionCacheProjectKey,

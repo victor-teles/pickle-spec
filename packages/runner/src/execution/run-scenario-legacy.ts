@@ -5,7 +5,7 @@ import type {
   ScenarioAttempt,
   ScenarioRun,
 } from './run-scenario-types'
-import { createScenarioRetryTracker } from './scenario-retry'
+import { createScenarioRetryTracker } from './scenario/scenario-retry'
 
 export async function runLegacyScenario(
   input: RunScenarioInput,

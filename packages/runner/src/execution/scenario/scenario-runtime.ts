@@ -5,7 +5,7 @@ import {
   type ScenarioVariableBinding,
   type Specification,
 } from '@pickle-spec/spec'
-import { requiredValue } from '../required-value'
+import { requiredValue } from '../../required-value'
 import type {
   ActionEvidence,
   ActionEvidenceInput,
@@ -14,7 +14,7 @@ import type {
   StepExecution,
   TestArtifact,
   TraceEntry,
-} from './run-scenario'
+} from '../run-scenario'
 
 const targetSummaryLimit = 2_000
 const targetLocationLimit = 2_048

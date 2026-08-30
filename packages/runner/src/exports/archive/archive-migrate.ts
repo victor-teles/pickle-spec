@@ -1,12 +1,15 @@
 import { z } from 'zod'
-import { testRunSchemaVersion } from '../execution/run-scenario'
-import { publicRunEvent, recordableTestResult } from '../results/public-results'
+import { testRunSchemaVersion } from '../../execution/run-scenario'
+import {
+  publicRunEvent,
+  recordableTestResult,
+} from '../../results/public-results'
 import {
   parseRunEvent,
   parseRunSchema,
   parseTestRunManifest,
-} from '../results/test-run-schema'
-import type { RunArchive, RunArchiveArtifact } from './archive'
+} from '../../results/test-run-schema'
+import type { RunArchive, RunArchiveArtifact } from '../archive'
 
 const archiveArtifactSchema: z.ZodType<RunArchiveArtifact> = z.object({
   path: z.string(),

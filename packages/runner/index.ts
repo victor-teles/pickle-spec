@@ -131,6 +131,7 @@ export {
   serializeExecutionCacheTerminalOutcome,
 } from './src/execution-cache/execution-cache'
 export type {
+  ExecutionCacheLeaseTiming,
   LocalExecutionCache,
   LocalExecutionCacheOptions,
 } from './src/execution-cache/local-execution-cache'
@@ -138,7 +139,6 @@ export {
   defaultExecutionCacheMaxBytes,
   openLocalExecutionCache,
 } from './src/execution-cache/local-execution-cache'
-export type { ExecutionCacheLeaseTiming } from './src/execution-cache/local-execution-cache-coordination'
 export type {
   AllureArchiveOptions,
   AllureAttachment,

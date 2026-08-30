@@ -1,4 +1,4 @@
-import type { RetryPolicy, TestResultState } from './run-scenario-types'
+import type { RetryPolicy, TestResultState } from '../run-scenario-types'
 
 export interface ScenarioRetryInput {
   state: TestResultState

@@ -5,7 +5,7 @@ import type {
   ExecutionCacheKey,
   ExecutionCacheWriteMetadata,
   SerializedExecutionCacheEnvelope,
-} from './execution-cache'
+} from '../execution-cache'
 
 interface StoredBytesRow {
   bytes: number
