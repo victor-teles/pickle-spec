@@ -1,0 +1,50 @@
+---
+title: Writing web scenarios
+description: Write browser steps that Pickle Spec can execute and Replay.
+---
+
+Web Specifications do not use step-definition files. The Feature text is the executable input.
+
+## State the user-visible intent
+
+Write each step as one observable action or expectation:
+
+```gherkin
+@pickle:state:active
+Feature: Customer authentication
+
+  Scenario: Customer signs in
+    Given I am on the login page
+    When I fill "Email" with "customer@example.com"
+    And I fill "Password" with "secret"
+    And I click "Sign in"
+    Then the "Account" page should be visible
+```
+
+Use labels, visible text, and outcomes a person can recognize. Do not encode selectors or implementation details unless the application exposes no stable user-facing description.
+
+## Use the keyword that matches the operation
+
+- `Given` establishes context.
+- `When` performs an action.
+- `Then` checks an outcome.
+- `And` and `But` inherit the preceding step type.
+
+The keywords affect execution. They are not decorative Gherkin prose.
+
+## Navigate from the configured base URL
+
+Steps such as `Given I am on the login page`, `I navigate to /checkout`, and `I visit https://example.com/help` use direct navigation when Pickle can resolve the target. Relative paths use the origin from `web.baseUrl`.
+
+## Control inference with the Execution cache
+
+Set `applicationRevision` to identify the application build under test. A successful Adaptive run can store deterministic browser instructions. Later matching runs Replay those instructions without model inference.
+
+Use these commands when cache behavior matters:
+
+```bash
+bunx pickle run --refresh-cache
+bunx pickle run --cache-only
+```
+
+`--refresh-cache` rebuilds the cached instructions. `--cache-only` fails on a miss, a short prefix, or a divergence instead of calling a model.

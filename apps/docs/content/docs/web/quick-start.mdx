@@ -1,0 +1,75 @@
+---
+title: Quick start for web
+description: Run a Gherkin Scenario against local Chrome.
+---
+
+This tutorial runs one Specification against [Example Domain](https://example.com). You need Bun, local Chrome, and an Anthropic API key.
+
+<Steps>
+<Step>
+
+### Install and initialize Pickle Spec
+
+From your application repository, run:
+
+```bash
+bun add --dev @pickle-spec/cli
+bunx pickle init
+mkdir -p features
+```
+
+`pickle init` creates a configuration shell and a custom-adapter example. This tutorial uses the built-in web adapter, so delete the generated `pickle.extensions.ts` file.
+
+</Step>
+<Step>
+
+### Configure the web target
+
+Replace `pickle.config.jsonc` with this file:
+
+<include cwd lang="jsonc" meta='title="pickle.config.jsonc"'>examples/web-quick-start/pickle.config.jsonc</include>
+
+The named `web` profile selects the built-in web adapter. `applicationRevision` lets a later matching run use the Execution cache.
+
+</Step>
+<Step>
+
+### Add the Specification
+
+Create `features/example.feature`:
+
+<include cwd lang="gherkin" meta='title="features/example.feature"'>examples/web-quick-start/features/example.feature</include>
+
+The Feature state is required. Pickle derives durable IDs unless you add explicit `@pickle:id:*` tags.
+
+</Step>
+<Step>
+
+### Add the model key
+
+Create `.env` in your project root:
+
+```dotenv
+ANTHROPIC_API_KEY=your-api-key
+```
+
+Bun loads `.env` automatically. Do not commit API keys.
+
+</Step>
+<Step>
+
+### Check and run the project
+
+```bash
+bunx pickle check
+bunx pickle run --profile web
+```
+
+`pickle check` validates the configuration, Gherkin, Feature state, and identity metadata without opening Chrome. The run opens a clean browser session and reports the Scenario result in the terminal.
+
+</Step>
+</Steps>
+
+## What to read next
+
+Read [Writing web scenarios](./scenarios) to learn how step wording controls browser execution. Read [How Pickle Spec works](../concepts/how-it-works) before configuring Replay or multiple execution targets.

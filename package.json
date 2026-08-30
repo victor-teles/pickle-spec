@@ -28,6 +28,8 @@
     "lint": "biome check .",
     "format": "biome check --write .",
     "benchmark:replay": "bun scripts/replay-performance-gate.ts",
+    "docs": "turbo run dev --filter=@pickle-spec/docs",
+    "docs:build": "turbo run build --filter=@pickle-spec/docs",
     "release:check": "bun scripts/release-packages.ts validate",
     "run:example": "turbo run run:example --filter=@pickle-spec/example",
     "studio": "turbo run studio --filter=@pickle-spec/example"

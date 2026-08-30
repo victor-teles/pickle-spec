@@ -1,0 +1,92 @@
+---
+title: Specification syntax
+description: Gherkin structure, Pickle metadata, and selection tags.
+---
+
+Pickle Spec parses standard Gherkin and adds metadata for lifecycle, identity, and execution-target requirements.
+
+## Feature and Scenario
+
+Each `.feature` file contains one `Feature`. Each `Scenario` is an executable test.
+
+```gherkin
+@pickle:state:active
+Feature: Shopping cart
+
+  @smoke
+  Scenario: Customer adds one product
+    Given the catalog is open
+    When the customer adds "Backpack" to the cart
+    Then the cart should contain 1 item
+```
+
+Every Feature has exactly one lifecycle tag:
+
+- `@pickle:state:draft`
+- `@pickle:state:active`
+- `@pickle:state:deprecated`
+
+Normal selection includes `active` Specifications by default.
+
+## Step keywords
+
+Pickle maps `Given` to context, `When` to action, and `Then` to outcome. Continuation keywords such as `And` inherit the preceding type.
+
+Adapters interpret those types differently. Web resolves natural-language browser operations. Native compiles a closed step vocabulary. Read the target guide before sharing step wording between web and native profiles.
+
+## Background and Rule
+
+A `Background` adds its steps before every Scenario in the same scope. A `Rule` groups Scenarios and can have its own Background.
+
+```gherkin
+@pickle:state:active
+Feature: Accounts
+
+  Background:
+    Given an account exists
+
+  Rule: Locked accounts
+    Background:
+      Given the account is locked
+
+    Scenario: Customer opens a locked account
+      When the customer opens the account
+      Then access should be denied
+```
+
+## Scenario Outline and Examples
+
+A `Scenario Outline` expands into one Scenario for each `Examples` row.
+
+```gherkin
+@pickle:state:active
+Feature: Product search
+
+  Scenario Outline: Customer finds a product
+    When the customer searches for <product>
+    Then the product page should show <product>
+
+    Examples:
+      | product  |
+      | Backpack |
+      | T-shirt  |
+```
+
+Pickle keeps template variables separate from runtime values so cached instructions do not need to store bound values.
+
+## Tags
+
+Use tags to select or control Scenarios:
+
+| Tag | Meaning |
+| --- | --- |
+| `@smoke` | A user-defined tag for suites or `--tag` selection. |
+| `@ignore` | Emit a skipped result for the Scenario. |
+| `@pickle:requires:<capability>` | Require a capability from every selected target. |
+| `@pickle:id:<value>` | Set an explicit durable identity. |
+
+IDs are optional. Pickle otherwise derives them from the file URI and Gherkin names.
+
+## Data tables and doc strings
+
+Steps can carry a data table or a doc string. Pickle preserves the argument with the parsed step. Adapter support and cache behavior depend on the target.
