@@ -1,5 +1,5 @@
 import { Button } from '../components/ui/button'
-import type { StudioRunsIndex } from '../server/server'
+import type { StudioRunsIndex } from '../server/contracts'
 import { bytesLabel } from './run-format'
 
 type RunStorageProps = {

@@ -1,5 +1,5 @@
 import type { ActionEvidence, RunEventScope } from '@pickle-spec/runner'
-import type { StudioRunSnapshot } from '../../server/server'
+import type { StudioRunSnapshot } from '../../server/contracts'
 import { findInspectedResult } from './result-evidence'
 import type { ResultInspectionLocation } from './result-inspection'
 

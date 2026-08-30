@@ -9,7 +9,11 @@ export const studioAreas = ['Specifications', 'Runs', 'Settings'] as const
 
 export type StudioArea = (typeof studioAreas)[number]
 
-const initialStudioRoute = parseStudioRoute(location.href)
+function currentStudioRoute(): StudioRoute {
+  return parseStudioRoute(
+    typeof location === 'undefined' ? 'http://studio.local/' : location.href,
+  )
+}
 
 function areaForRoute(route: StudioRoute): StudioArea {
   return route.kind === 'runs' ||
@@ -21,9 +25,9 @@ function areaForRoute(route: StudioRoute): StudioArea {
 }
 
 export function useStudioNavigation() {
-  const [route, setRoute] = useState(initialStudioRoute)
+  const [route, setRoute] = useState(currentStudioRoute)
   const [area, setArea] = useState<StudioArea>(() =>
-    areaForRoute(initialStudioRoute),
+    areaForRoute(currentStudioRoute()),
   )
 
   const navigate = useCallback((next: StudioRoute, replace = false) => {
@@ -50,6 +54,7 @@ export function useStudioNavigation() {
   )
 
   useEffect(() => {
+    const initialStudioRoute = currentStudioRoute()
     if (
       initialStudioRoute.kind !== 'not-found' &&
       new URLSearchParams(location.search).has('token')

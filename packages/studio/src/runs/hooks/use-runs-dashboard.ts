@@ -3,16 +3,15 @@ import type {
   TestRunManifest,
   TestRunSummary,
 } from '@pickle-spec/runner'
-import { useMemo, useState, type Dispatch, type SetStateAction } from 'react'
+import { type Dispatch, type SetStateAction, useMemo, useState } from 'react'
 import type { StudioApi } from '../../app/studio-api'
 import type { RunsFilters, StudioRoute } from '../../app/studio-route'
 import { toast } from '../../components/ui/toast'
 import type {
   StudioProject,
-  StudioRunRequest,
   StudioRunSnapshot,
   StudioRunsIndex,
-} from '../../server/server'
+} from '../../server/contracts'
 import { defaultRunAttemptLocation } from '../result/live-result-follow'
 import type { LiveResultInspection } from '../result/live-result-inspection'
 import { reasonMessage } from '../result/result-presentation'
@@ -66,8 +65,7 @@ export function useRunsDashboard(
   options: UseRunsDashboardOptions,
 ): RunsDashboardModel {
   const filters = options.route.filters
-  const { activeIds, allItems, specificationNames } =
-    useRunCollections(options)
+  const { activeIds, allItems, specificationNames } = useRunCollections(options)
   const activeItems = useMemo(
     () =>
       (options.index?.activeRunIds ?? []).map((runId) =>

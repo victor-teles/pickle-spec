@@ -1,4 +1,4 @@
-import type { StudioRunSnapshot } from '../../server/server'
+import type { StudioRunSnapshot } from '../../server/contracts'
 import {
   isAttemptInProgress,
   locationFromResult,

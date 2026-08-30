@@ -23,7 +23,7 @@ import type {
   StudioRunRequest,
   StudioRunsIndex,
   StudioSpecification,
-} from '../server/server'
+} from '../server/contracts'
 import {
   type FirstRunOnboardingState,
   firstRunOnboardingState,

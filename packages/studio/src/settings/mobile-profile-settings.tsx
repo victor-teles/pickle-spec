@@ -7,7 +7,7 @@ import { Label } from '../components/ui/label'
 import type {
   StudioMobileProfile,
   StudioMobileTargetDiscovery,
-} from '../server/server'
+} from '../server/contracts'
 
 type MobileProfileSettingsProps = {
   api: StudioApi

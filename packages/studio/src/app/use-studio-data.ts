@@ -1,27 +1,20 @@
 import { useCallback, useEffect, useState } from 'react'
+import { getStudioProject } from '../features/project/project.functions'
+import { getStudioRuns } from '../features/runs/runs.functions'
 import { reasonMessage } from '../runs/result/result-presentation'
-import type { StudioProject, StudioRunsIndex } from '../server/server'
-import type { StudioApi } from './studio-api'
-
-type UseStudioDataOptions = {
-  api: StudioApi
-}
+import type { StudioProject, StudioRunsIndex } from '../server/contracts'
 
 interface InitialStudioDataInput {
-  api: StudioApi
   reportError: (reason: unknown) => void
   setProject: (project: StudioProject) => void
   setRunsIndex: (runs: StudioRunsIndex) => void
 }
 
 function useInitialStudioData(input: InitialStudioDataInput): void {
-  const { api, reportError, setProject, setRunsIndex } = input
+  const { reportError, setProject, setRunsIndex } = input
   useEffect(() => {
     let cancelled = false
-    Promise.all([
-      api<StudioProject>('/api/project'),
-      api<StudioRunsIndex>('/api/runs'),
-    ]).then(
+    Promise.all([getStudioProject(), getStudioRuns()]).then(
       ([projectValue, runsValue]) => {
         if (cancelled) return
         setProject(projectValue)
@@ -34,10 +27,10 @@ function useInitialStudioData(input: InitialStudioDataInput): void {
     return () => {
       cancelled = true
     }
-  }, [api, reportError, setProject, setRunsIndex])
+  }, [reportError, setProject, setRunsIndex])
 }
 
-export function useStudioData({ api }: UseStudioDataOptions) {
+export function useStudioData() {
   const [project, setProject] = useState<StudioProject>()
   const [runsIndex, setRunsIndex] = useState<StudioRunsIndex>()
   const [error, setError] = useState<string>()
@@ -49,18 +42,18 @@ export function useStudioData({ api }: UseStudioDataOptions) {
   }, [])
 
   const reloadProject = useCallback(async () => {
-    const value = await api<StudioProject>('/api/project')
+    const value = await getStudioProject()
     setProject(value)
     return value
-  }, [api])
+  }, [])
 
   const reloadRunsIndex = useCallback(async () => {
-    const value = await api<StudioRunsIndex>('/api/runs')
+    const value = await getStudioRuns()
     setRunsIndex(value)
     return value
-  }, [api])
+  }, [])
 
-  useInitialStudioData({ api, reportError, setProject, setRunsIndex })
+  useInitialStudioData({ reportError, setProject, setRunsIndex })
 
   async function retryProject() {
     setError(undefined)

@@ -8,7 +8,7 @@ import type {
   TestResult,
   TestResultState,
 } from '@pickle-spec/runner'
-import type { StudioRunSnapshot } from '../../server/server'
+import type { StudioRunSnapshot } from '../../server/contracts'
 import type {
   ResultInspectionLocation,
   ResultInspectorTab,

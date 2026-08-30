@@ -272,3 +272,68 @@ test('compiles the Studio UI once for concurrent servers', async () => {
   const [first, second] = await Promise.all([serve(), serve()])
   await Promise.all([compiledScript(first.url), compiledScript(second.url)])
 })
+
+test('replays a completed run to a socket that connects after completion', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'pickle-studio-completed-run-'))
+  directories.push(root)
+  const server = await startStudio({
+    project: {
+      name: 'Completed run replay',
+      root,
+      profiles: [],
+      suites: [],
+      specifications: [],
+    },
+    gateway: {
+      async start(_request, onEvent) {
+        onEvent({
+          schemaVersion: 2,
+          sequence: 1,
+          occurredAt: '2026-08-30T12:00:00.000Z',
+          type: 'run-started',
+          run: {
+            id: 'run-complete',
+            startedAt: '2026-08-30T12:00:00.000Z',
+          },
+        })
+        return { id: 'run-complete', done: Promise.resolve() }
+      },
+      async snapshot(id) {
+        return { id, events: [] }
+      },
+      async cancel() {},
+    },
+    token: 'completed-token',
+  })
+  servers.push(server)
+  const origin = new URL(server.url).origin
+  await fetch(`${origin}/api/runs`, {
+    method: 'POST',
+    headers: {
+      authorization: 'Bearer completed-token',
+      'content-type': 'application/json',
+    },
+    body: '{}',
+  })
+  await Bun.sleep(0)
+
+  const replayedTypes = await new Promise<string[]>((resolve, reject) => {
+    const types: string[] = []
+    const socket = new WebSocket(
+      `${origin.replace(/^http/, 'ws')}/api/runs/run-complete/events?token=completed-token`,
+    )
+    const timeout = setTimeout(() => {
+      socket.close()
+      reject(new Error('Timed out waiting for completed run replay'))
+    }, 2_000)
+    socket.addEventListener('message', (event) => {
+      types.push(JSON.parse(String(event.data)).type)
+      if (!types.includes('run-finished')) return
+      clearTimeout(timeout)
+      socket.close()
+      resolve(types)
+    })
+  })
+
+  expect(replayedTypes).toEqual(['run-started', 'run-finished'])
+})

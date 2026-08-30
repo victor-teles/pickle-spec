@@ -11,7 +11,7 @@ import type {
   StudioRunRequest,
   StudioScenario,
   StudioSpecification,
-} from '../server/server'
+} from '../server/contracts'
 import { AttentionList } from './attention-list'
 import { ScenarioTable } from './scenario-table'
 

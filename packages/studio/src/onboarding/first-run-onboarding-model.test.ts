@@ -5,7 +5,7 @@ import type {
   StudioProject,
   StudioRunReadiness,
   StudioRunsIndex,
-} from '../server/server'
+} from '../server/contracts'
 import {
   firstRunOnboardingState,
   firstRunTarget,

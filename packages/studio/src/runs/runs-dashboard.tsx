@@ -11,7 +11,7 @@ import type {
   StudioProject,
   StudioRunRequest,
   StudioRunsIndex,
-} from '../server/server'
+} from '../server/contracts'
 import type { LiveResultInspection } from './result/live-result-inspection'
 import { RunComparison } from './run-comparison'
 import { type RunFilterOptions, RunHistory } from './run-history'

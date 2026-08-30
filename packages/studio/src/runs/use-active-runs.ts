@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { StudioApi } from '../app/studio-api'
 import { requiredValue } from '../required-value'
-import type { StudioRunSnapshot } from '../server/server'
+import type { StudioRunSnapshot } from '../server/contracts'
 import {
   disconnectLiveInspection,
   hydrateLiveInspection,

@@ -15,7 +15,7 @@ import type {
   StudioRunsIndex,
   StudioScenario,
   StudioSpecification,
-} from '../server/server'
+} from '../server/contracts'
 import {
   buildCommandPaletteItems,
   commandActionAvailability,

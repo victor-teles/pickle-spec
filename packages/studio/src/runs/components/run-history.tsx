@@ -1,4 +1,4 @@
-import type { StudioRunRequest, StudioRunsIndex } from '../../server/server'
+import type { StudioRunRequest, StudioRunsIndex } from '../../server/contracts'
 import type { RunsDashboardModel } from '../hooks/use-runs-dashboard'
 import { RunFilters } from './run-filters'
 import { RunTable } from './run-table'

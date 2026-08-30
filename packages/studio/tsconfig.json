@@ -3,9 +3,10 @@
   "compilerOptions": {
     "lib": ["ESNext", "DOM"],
     "jsx": "react-jsx",
+    "verbatimModuleSyntax": false,
     "paths": {
       "@/*": ["./src/*"]
     }
   },
-  "include": ["src", "index.ts"]
+  "include": ["src", "index.ts", "rsbuild.config.ts"]
 }

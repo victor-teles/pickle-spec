@@ -1,4 +1,4 @@
-import type { StudioRunRequest } from '../server/server'
+import type { StudioRunRequest } from '../server/contracts'
 
 export type RunOrigin =
   | { kind: 'all' }

@@ -8,7 +8,7 @@ import type {
   StudioProject,
   StudioRunRequest,
   StudioRunsIndex,
-} from '../server/server'
+} from '../server/contracts'
 import {
   type LiveResultInspection,
   liveViewportFor,

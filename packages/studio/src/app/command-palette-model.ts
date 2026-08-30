@@ -5,7 +5,7 @@ import type {
   StudioRunsIndex,
   StudioScenario,
   StudioSpecification,
-} from '../server/server'
+} from '../server/contracts'
 
 const idleItemLimit = 20
 const searchedItemLimit = 50

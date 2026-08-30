@@ -26,7 +26,7 @@ import {
   TableRow,
 } from '../components/ui/table'
 import { toast } from '../components/ui/toast'
-import type { StudioExecutionCacheInspection } from '../server/server'
+import type { StudioExecutionCacheInspection } from '../server/contracts'
 
 type ExecutionCacheSettingsProps = {
   api: StudioApi

@@ -4,7 +4,9 @@ export type StudioApi = <Value>(
 ) => Promise<Value>
 
 export const studioToken =
-  new URLSearchParams(location.search).get('token') ?? ''
+  typeof location === 'undefined'
+    ? ''
+    : (new URLSearchParams(location.search).get('token') ?? '')
 
 export const studioApi: StudioApi = async <Value>(
   path: string,

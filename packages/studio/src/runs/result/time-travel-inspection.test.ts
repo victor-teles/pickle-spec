@@ -4,7 +4,7 @@ import type {
   TestRunManifest,
 } from '@pickle-spec/runner'
 import { expect, test } from 'vitest'
-import type { StudioRunSnapshot } from '../../server/server'
+import type { StudioRunSnapshot } from '../../server/contracts'
 import { timelineFor } from './result-evidence'
 import type { ResultInspectionLocation } from './result-inspection'
 import { timeTravelInspection } from './time-travel-inspection'

@@ -3,7 +3,7 @@ import type { Dispatch, SetStateAction } from 'react'
 import type { StudioApi } from '../app/studio-api'
 import type { StudioRoute } from '../app/studio-route'
 import { toast } from '../components/ui/toast'
-import type { StudioRunSnapshot, StudioRunsIndex } from '../server/server'
+import type { StudioRunSnapshot, StudioRunsIndex } from '../server/contracts'
 import { defaultRunAttemptLocation } from './result/live-result-follow'
 import { reasonMessage } from './result/result-presentation'
 

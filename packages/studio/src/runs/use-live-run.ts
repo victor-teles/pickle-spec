@@ -6,7 +6,7 @@ import type {
   StudioRunRequest,
   StudioRunSnapshot,
   StudioRunsIndex,
-} from '../server/server'
+} from '../server/contracts'
 import {
   cellsFromLiveInspection,
   disconnectLiveInspection,

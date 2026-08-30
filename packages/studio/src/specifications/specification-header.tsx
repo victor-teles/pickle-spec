@@ -5,7 +5,7 @@ import { Button } from '../components/ui/button'
 import { cn } from '../lib/utils'
 import { RunControlButton } from '../runs/run-control-button'
 import { isBusyOrigin, type RunOrigin } from '../runs/run-origin'
-import type { StudioRunRequest, StudioSpecification } from '../server/server'
+import type { StudioRunRequest, StudioSpecification } from '../server/contracts'
 
 type SpecificationHeaderProps = {
   api: StudioApi

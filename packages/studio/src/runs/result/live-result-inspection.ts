@@ -11,7 +11,7 @@ import {
 import type {
   StudioLiveDiagnosticEvent,
   StudioRunSnapshot,
-} from '../../server/server'
+} from '../../server/contracts'
 import { nextFollowedEntryId, nextLiveLocation } from './live-result-follow'
 import {
   cellsFromLiveSnapshot,

@@ -7,7 +7,7 @@ import type {
   StudioRunsIndex,
   StudioScenario,
   StudioSpecification,
-} from '../server/server'
+} from '../server/contracts'
 
 export type FirstRunTarget = {
   readiness: StudioRunReadiness

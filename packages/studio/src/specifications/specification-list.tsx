@@ -12,7 +12,7 @@ import { useVirtualWindow } from '../hooks/use-virtual-window'
 import { cn } from '../lib/utils'
 import { RunControlButton } from '../runs/run-control-button'
 import { isBusyOrigin, type RunOrigin } from '../runs/run-origin'
-import type { StudioSpecification } from '../server/server'
+import type { StudioSpecification } from '../server/contracts'
 
 const specificationRowHeight = 36
 

@@ -7,7 +7,7 @@ import {
 } from 'react'
 import type { CurrentScenario } from '../app/command-palette'
 import type { StudioRoute } from '../app/studio-route'
-import type { StudioScenario, StudioSpecification } from '../server/server'
+import type { StudioScenario, StudioSpecification } from '../server/contracts'
 
 type UseSpecificationSelectionOptions = {
   navigate: (route: StudioRoute, replace?: boolean) => void

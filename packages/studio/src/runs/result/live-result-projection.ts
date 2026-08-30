@@ -7,7 +7,7 @@ import type {
   TestResultState,
   TestStepResult,
 } from '@pickle-spec/runner'
-import type { StudioRunSnapshot } from '../../server/server'
+import type { StudioRunSnapshot } from '../../server/contracts'
 import type { ResultInspectionLocation } from './result-inspection'
 import type { MatrixCell } from './run-view'
 

@@ -19,7 +19,7 @@ import {
   TabsTrigger,
 } from '../../components/ui/tabs'
 import type { StudioLiveViewport } from '../../live-viewport'
-import type { StudioRunSnapshot } from '../../server/server'
+import type { StudioRunSnapshot } from '../../server/contracts'
 import {
   displayedAttemptState,
   isAttemptInProgress,

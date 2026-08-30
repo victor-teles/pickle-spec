@@ -10,7 +10,7 @@ import type {
   StudioRunRequest,
   StudioScenario,
   StudioSpecification,
-} from '../server/server'
+} from '../server/contracts'
 import { SpecificationHeader } from './specification-header'
 import { SpecificationList } from './specification-list'
 import { SpecificationResults } from './specification-results'

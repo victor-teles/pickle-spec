@@ -16,7 +16,7 @@ import {
 } from '../runs/result/run-view'
 import { RunControlButton } from '../runs/run-control-button'
 import { isBusyOrigin, type RunOrigin } from '../runs/run-origin'
-import type { StudioScenario } from '../server/server'
+import type { StudioScenario } from '../server/contracts'
 
 type ScenarioTableProps = {
   cells: readonly MatrixCell[]

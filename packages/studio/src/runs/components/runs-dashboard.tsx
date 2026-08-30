@@ -5,11 +5,11 @@ import type {
   StudioProject,
   StudioRunRequest,
   StudioRunsIndex,
-} from '../../server/server'
+} from '../../server/contracts'
+import { useRunsDashboard } from '../hooks/use-runs-dashboard'
 import type { LiveResultInspection } from '../result/live-result-inspection'
 import { RunComparison } from '../run-comparison'
 import { RunStorage } from '../run-storage'
-import { useRunsDashboard } from '../hooks/use-runs-dashboard'
 import { ActiveRuns } from './active-runs'
 import { RunHistory } from './run-history'
 import { RunsHeader } from './runs-header'

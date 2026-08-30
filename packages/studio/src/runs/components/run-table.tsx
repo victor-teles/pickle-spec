@@ -1,8 +1,8 @@
 import type { TestRunSummary } from '@pickle-spec/runner'
 import type { Dispatch, SetStateAction } from 'react'
+import { Badge } from '../../components/ui/badge'
 import { Button, buttonVariants } from '../../components/ui/button'
 import { Checkbox } from '../../components/ui/checkbox'
-import { Badge } from '../../components/ui/badge'
 import { ResultMark } from '../../components/ui/result-mark'
 import { Spinner } from '../../components/ui/spinner'
 import {
@@ -19,10 +19,10 @@ import {
   TooltipTrigger,
 } from '../../components/ui/tooltip'
 import { useVirtualWindow } from '../../hooks/use-virtual-window'
-import type { StudioRunRequest } from '../../server/server'
-import { durationLabel, resultCountLabel } from '../run-format'
-import { type RunListItem } from '../runs-model'
+import type { StudioRunRequest } from '../../server/contracts'
 import { resultBadgeVariant } from '../result/result-presentation'
+import { durationLabel, resultCountLabel } from '../run-format'
+import type { RunListItem } from '../runs-model'
 import { VirtualTableSpacer } from '../virtual-table-spacer'
 
 const runRowHeight = 68

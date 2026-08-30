@@ -6,7 +6,7 @@ import type {
 } from '@pickle-spec/runner'
 import { expect, test } from 'vitest'
 import { parseStudioRoute, studioRouteHref } from '../../app/studio-route'
-import type { StudioRunSnapshot } from '../../server/server'
+import type { StudioRunSnapshot } from '../../server/contracts'
 import {
   artifactLoadFailureGuidance,
   artifactsFor,

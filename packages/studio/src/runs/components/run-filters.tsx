@@ -11,7 +11,10 @@ import {
   DropdownMenuTrigger,
 } from '../../components/ui/dropdown-menu'
 import { Input } from '../../components/ui/input'
-import type { FilterOption, RunFilterOptions } from '../hooks/use-runs-dashboard'
+import type {
+  FilterOption,
+  RunFilterOptions,
+} from '../hooks/use-runs-dashboard'
 
 type RunFiltersProps = {
   filters: RunsFilters

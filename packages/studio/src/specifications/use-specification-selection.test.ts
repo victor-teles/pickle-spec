@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest'
-import type { StudioSpecification } from '../server/server'
+import type { StudioSpecification } from '../server/contracts'
 import { resolveSpecificationSelection } from './use-specification-selection'
 
 const specifications = [

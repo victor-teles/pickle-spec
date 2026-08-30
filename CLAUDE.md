@@ -65,75 +65,21 @@ After you change TypeScript or JSON files, run `bun run lint` before you finish.
 
 ## Frontend
 
-Use HTML imports with `Bun.serve()`. Don't use `vite`. HTML imports fully support React, CSS, Tailwind.
+Studio uses TanStack Start with Rsbuild. Use file routes for pages, typed server
+functions for same-origin application RPC, and server routes for raw HTTP or
+external contracts such as downloads. Keep route and server-function modules
+thin. Put transport-free behavior in focused services.
 
-Server:
+Organize Studio application code by feature under `src/features/<feature>`.
+Colocate each feature's contracts, server functions, HTTP routes, and focused
+server-side behavior. Keep `src/server` limited to transport, security,
+composition, and lifecycle concerns; do not create cross-feature API or
+server-function grab bags.
 
-```ts#index.ts
-import index from "./index.html"
-
-Bun.serve({
-  routes: {
-    "/": index,
-    "/api/users/:id": {
-      GET: (req) => {
-        return new Response(JSON.stringify({ id: req.params.id }));
-      },
-    },
-  },
-  // optional websocket support
-  websocket: {
-    open: (ws) => {
-      ws.send("Hello, world!");
-    },
-    message: (ws, message) => {
-      ws.send(message);
-    },
-    close: (ws) => {
-      // handle close
-    }
-  },
-  development: {
-    hmr: true,
-    console: true,
-  }
-})
-```
-
-HTML files can import .tsx, .jsx or .js files directly and Bun's bundler will transpile & bundle automatically. `<link>` tags can point to stylesheets and Bun's CSS bundler will bundle.
-
-```html#index.html
-<html>
-  <body>
-    <h1>Hello, world!</h1>
-    <script type="module" src="./frontend.tsx"></script>
-  </body>
-</html>
-```
-
-With the following `frontend.tsx`:
-
-```tsx#frontend.tsx
-import React from "react";
-import { createRoot } from "react-dom/client";
-
-// import .css files directly and it works
-import './index.css';
-
-const root = createRoot(document.body);
-
-export default function Frontend() {
-  return <h1>Hello, world!</h1>;
-}
-
-root.render(<Frontend />);
-```
-
-Then, run index.ts
-
-```sh
-bun --hot ./index.ts
-```
+The CLI still owns Studio process lifecycle and injects project gateways. The
+embedded srvx host is limited to binding, security headers, static assets, and
+WebSocket upgrades. Do not add application routing back to a `Bun.serve`
+callback.
 
 ## Studio UI
 
@@ -147,7 +93,7 @@ Before creating a new component or block:
 2. If it exists, add it with `bunx shadcn@latest add <name>` from `packages/studio` so Mira is applied.
 3. Extend the generated file in `packages/studio/src/components/ui` only when the product needs a domain variant (for example result-state chips). Do not fork a parallel component.
 
-Product screens in `frontend.tsx` import from `./components/ui/*`. They do not invent a second button, badge, or control vocabulary.
+Product screens under `src/routes` and their composed page components import from `./components/ui/*`. They do not invent a second button, badge, or control vocabulary.
 
 For more information, read the Bun API docs in `node_modules/bun-types/docs/**.mdx`.
 

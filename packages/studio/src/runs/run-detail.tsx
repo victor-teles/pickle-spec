@@ -28,7 +28,7 @@ import {
   TableRow,
 } from '../components/ui/table'
 import { useVirtualWindow } from '../hooks/use-virtual-window'
-import type { StudioRunRequest, StudioRunSnapshot } from '../server/server'
+import type { StudioRunRequest, StudioRunSnapshot } from '../server/contracts'
 import type { LiveResultInspection } from './result/live-result-inspection'
 import type { ResultInspectionLocation } from './result/result-inspection'
 import { reasonMessage, resultBadgeVariant } from './result/result-presentation'

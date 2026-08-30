@@ -20,7 +20,7 @@ import {
 import { Input } from '../components/ui/input'
 import { Label } from '../components/ui/label'
 import { toast } from '../components/ui/toast'
-import type { StudioMobileProfile } from '../server/server'
+import type { StudioMobileProfile } from '../server/contracts'
 import { ExecutionCacheSettings } from './execution-cache-settings'
 import { MobileProfileSettings } from './mobile-profile-settings'
 

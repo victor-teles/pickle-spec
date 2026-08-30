@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useLiveRun } from '../runs/use-live-run'
-import type { StudioRunRequest, StudioSpecification } from '../server/server'
+import type { StudioRunRequest, StudioSpecification } from '../server/contracts'
 import { useSpecificationSelection } from '../specifications/use-specification-selection'
 import type { CurrentScenario } from './command-palette'
 import { studioApi } from './studio-api'
@@ -46,7 +46,7 @@ function studioActions({
 }
 
 export function useStudioController() {
-  const data = useStudioData({ api: studioApi })
+  const data = useStudioData()
   const navigation = useStudioNavigation()
   const commandPalette = useCommandPalette()
   const [authoring, setAuthoring] = useState(false)

@@ -29,7 +29,7 @@ import {
   TooltipTrigger,
 } from '../components/ui/tooltip'
 import { useVirtualWindow } from '../hooks/use-virtual-window'
-import type { StudioRunRequest } from '../server/server'
+import type { StudioRunRequest } from '../server/contracts'
 import { resultBadgeVariant } from './result/result-presentation'
 import { durationLabel, resultCountLabel } from './run-format'
 import type { RunListItem } from './runs-model'

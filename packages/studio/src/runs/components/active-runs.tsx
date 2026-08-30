@@ -13,7 +13,7 @@ type ActiveRunsProps = {
 
 export function ActiveRuns(props: ActiveRunsProps) {
   if (props.runIds.length === 0) return null
-  
+
   return (
     <section className="space-y-2" aria-labelledby="active-runs-title">
       <h2 id="active-runs-title" className="studio-display text-sm">
