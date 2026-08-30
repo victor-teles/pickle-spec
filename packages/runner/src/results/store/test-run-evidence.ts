@@ -3,10 +3,14 @@ import type {
   RunEvent,
   RunEventPayload,
   ScenarioAttempt,
-  TestArtifact,
   TestResultState,
   TestStepResult,
 } from '../../execution/run-scenario'
+import {
+  type PersistedEventEvidence,
+  persistActionEventArtifacts,
+  withPersistedActionArtifacts,
+} from './persisted-action-evidence'
 import type { PersistedStepEvidence } from './test-run-artifacts'
 import {
   artifactDestination,
@@ -14,7 +18,6 @@ import {
   mapActionEvidenceArtifacts,
   slug,
   withoutAttemptEvidence,
-  withoutProvisionalActionEvidence,
   withoutStepEvidence,
 } from './test-run-artifacts'
 import {
@@ -26,6 +29,70 @@ import {
 export type EvidencePersistencePolicy = 'off' | 'on-failure' | 'always'
 export type ArtifactCapturePolicy = EvidencePersistencePolicy
 
+async function persistScenarioFinishedArtifacts(
+  event: Extract<RunEventPayload, { type: 'scenario-finished' }>,
+  current: readonly RunEvent[],
+  policy: EvidencePersistencePolicy,
+  artifactsDirectory: string,
+  endSequence: number,
+): Promise<PersistedEventEvidence> {
+  const persisted = await persistAttemptArtifacts(
+    event.attempt,
+    event.scope,
+    current,
+    policy,
+    artifactsDirectory,
+  )
+  return {
+    event: {
+      ...event,
+      attempt: {
+        ...persisted.attempt,
+        steps: persisted.attempt.steps.map((step) =>
+          stampArtifactEvidenceLinks(
+            step,
+            { ...event.scope, stepIndex: step.index },
+            current,
+            matchingStepFinishedSequence(current, {
+              ...event.scope,
+              stepIndex: step.index,
+            }) ?? endSequence,
+          ),
+        ),
+      },
+    },
+    publishedPaths: persisted.publishedPaths,
+  }
+}
+
+async function persistStepFinishedArtifacts(
+  event: Extract<RunEventPayload, { type: 'step-finished' }>,
+  current: readonly RunEvent[],
+  policy: EvidencePersistencePolicy,
+  artifactsDirectory: string,
+  endSequence: number,
+): Promise<PersistedEventEvidence> {
+  const step = withPersistedActionArtifacts(event.result, event.scope, current)
+  const persisted = await persistStepArtifacts(
+    step,
+    policy,
+    artifactsDirectory,
+    artifactStepName(event.scope, event.result.index),
+  )
+  return {
+    event: {
+      ...event,
+      result: stampArtifactEvidenceLinks(
+        persisted.step,
+        event.scope,
+        current,
+        endSequence,
+      ),
+    },
+    publishedPaths: persisted.publishedPaths,
+  }
+}
+
 export async function persistEventArtifacts(
   event: RunEventPayload,
   current: readonly RunEvent[],
@@ -34,185 +101,32 @@ export async function persistEventArtifacts(
   endSequence: number,
 ): Promise<PersistedEventEvidence> {
   if (event.type === 'action-finished') {
-    return persistActionEventArtifacts(event, policy, artifactsDirectory)
+    return persistActionEventArtifacts(
+      event,
+      policy,
+      artifactsDirectory,
+      artifactStepName(event.scope, event.scope.stepIndex ?? 0),
+    )
   }
   if (event.type === 'scenario-finished') {
-    const persisted = await persistAttemptArtifacts(
-      event.attempt,
-      event.scope,
+    return persistScenarioFinishedArtifacts(
+      event,
       current,
       policy,
       artifactsDirectory,
+      endSequence,
     )
-    return {
-      event: {
-        ...event,
-        attempt: {
-          ...persisted.attempt,
-          steps: persisted.attempt.steps.map((step) =>
-            stampArtifactEvidenceLinks(
-              step,
-              { ...event.scope, stepIndex: step.index },
-              current,
-              matchingStepFinishedSequence(current, {
-                ...event.scope,
-                stepIndex: step.index,
-              }) ?? endSequence,
-            ),
-          ),
-        },
-      },
-      publishedPaths: persisted.publishedPaths,
-    }
   }
   if (event.type === 'step-finished') {
-    const step = withPersistedActionArtifacts(
-      event.result,
-      event.scope,
+    return persistStepFinishedArtifacts(
+      event,
       current,
-    )
-    const persisted = await persistStepArtifacts(
-      step,
       policy,
       artifactsDirectory,
-      artifactStepName(event.scope, event.result.index),
+      endSequence,
     )
-    return {
-      event: {
-        ...event,
-        result: stampArtifactEvidenceLinks(
-          persisted.step,
-          event.scope,
-          current,
-          endSequence,
-        ),
-      },
-      publishedPaths: persisted.publishedPaths,
-    }
   }
   return { event, publishedPaths: [] }
-}
-
-function withPersistedActionArtifacts(
-  step: TestStepResult,
-  scope: Extract<RunEventPayload, { type: 'step-finished' }>['scope'],
-  current: readonly RunEvent[],
-): TestStepResult {
-  const artifactsBySourcePath = new Map<string, TestArtifact>()
-  const resolvedActions = step.resolvedActions.map((resolvedAction) => {
-    const evidence = resolvedAction.evidence
-    if (!evidence) return resolvedAction
-    const persisted = current.findLast(
-      (event) =>
-        event.type === 'action-finished' &&
-        sameScope(event.scope, scope) &&
-        event.action.id === evidence.id,
-    )
-    if (persisted?.type !== 'action-finished') return resolvedAction
-    const screenshot = (
-      source: typeof evidence.screenshots.before,
-      retained: typeof evidence.screenshots.before,
-    ): typeof evidence.screenshots.before => {
-      if (source.state !== 'available' || retained.state !== 'available') {
-        return retained
-      }
-      artifactsBySourcePath.set(source.artifact.path, retained.artifact)
-      return retained
-    }
-    return {
-      ...resolvedAction,
-      evidence: {
-        ...evidence,
-        screenshots: {
-          before: screenshot(
-            evidence.screenshots.before,
-            persisted.action.screenshots.before,
-          ),
-          after: screenshot(
-            evidence.screenshots.after,
-            persisted.action.screenshots.after,
-          ),
-        },
-      },
-    }
-  })
-  return {
-    ...step,
-    resolvedActions,
-    artifacts: step.artifacts?.map(
-      (artifact) => artifactsBySourcePath.get(artifact.path) ?? artifact,
-    ),
-  }
-}
-
-async function persistActionEventArtifacts(
-  event: Extract<RunEventPayload, { type: 'action-finished' }>,
-  policy: EvidencePersistencePolicy,
-  artifactsDirectory: string,
-): Promise<PersistedEventEvidence> {
-  if (policy !== 'always') {
-    return {
-      event: {
-        ...event,
-        action: withoutProvisionalActionEvidence(event.action),
-      },
-      publishedPaths: [],
-    }
-  }
-  const persisted = await persistActionArtifacts(event, artifactsDirectory)
-  return {
-    event: { ...event, action: persisted.action },
-    publishedPaths: persisted.publishedPaths,
-  }
-}
-
-async function persistActionArtifacts(
-  event: Extract<RunEventPayload, { type: 'action-finished' }>,
-  artifactsDirectory: string,
-): Promise<{
-  action: typeof event.action
-  publishedPaths: string[]
-}> {
-  const artifacts = [
-    event.action.screenshots.before,
-    event.action.screenshots.after,
-  ].flatMap((screenshot) =>
-    screenshot.state === 'available' ? [screenshot.artifact] : [],
-  )
-  const syntheticStep: TestStepResult = {
-    index: event.scope.stepIndex ?? 0,
-    startedAt: event.action.startedAt,
-    finishedAt: event.action.finishedAt,
-    durationMs: event.action.durationMs,
-    step: {
-      keyword: 'When',
-      text: event.action.description,
-      type: 'action',
-    },
-    state: event.action.state,
-    resolvedActions: [
-      { description: event.action.description, evidence: event.action },
-    ],
-    artifacts,
-  }
-  const persisted = await copyStepArtifacts(
-    syntheticStep,
-    artifactsDirectory,
-    join(
-      artifactStepName(event.scope, event.scope.stepIndex ?? 0),
-      `action-${event.action.ordinal}`,
-    ),
-  )
-  const action = persisted.step.resolvedActions[0]?.evidence
-  return {
-    action: action ?? withoutProvisionalActionEvidence(event.action),
-    publishedPaths: persisted.publishedPaths,
-  }
-}
-
-type PersistedEventEvidence = {
-  event: RunEventPayload
-  publishedPaths: string[]
 }
 
 type PersistedAttemptEvidence = {

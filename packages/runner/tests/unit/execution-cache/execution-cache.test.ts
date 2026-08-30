@@ -12,7 +12,7 @@ import {
   serializeExecutionCacheEnvelope,
 } from '../../../index'
 import type { ScenarioAttempt } from '../../../src/execution/run-scenario'
-import { withSharedEvidenceObservations } from '../../../src/results/shared-evidence-observations'
+import { withSharedEvidenceObservations } from '../../../src/results/evidence-observations'
 
 const keyInput = {
   projectKey: 'project-fingerprint',
