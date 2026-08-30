@@ -6,8 +6,7 @@ Studio shows the active device beside the step timeline while the run is live.
 
 ## Configure the app
 
-Edit `pickle.extensions.ts` and the matching `mobile.application` fields in
-`pickle.config.jsonc`, replacing these values in both files:
+Edit the `mobile.application` fields in `pickle.config.jsonc`:
 
 - `application.id` with the app bundle identifier, such as
   `com.acme.checkout`.

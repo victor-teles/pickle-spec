@@ -11,9 +11,9 @@ test('launches the versioned worker protocol explicitly through Node', async () 
 
   try {
     expect(
-      await client.request({ version: 5, type: 'discover-targets' }),
+      await client.request({ version: 6, type: 'discover-targets' }),
     ).toEqual({
-      version: 5,
+      version: 6,
       type: 'targets-discovered',
       targets: [],
     })
@@ -30,7 +30,7 @@ test('delivers unsolicited viewport events without consuming correlated response
   const unsubscribe = client.subscribe((event) => events.push(event))
 
   try {
-    await client.request({ version: 5, type: 'discover-targets' })
+    await client.request({ version: 6, type: 'discover-targets' })
     expect(events).toEqual([
       {
         type: 'viewport-frame',
@@ -56,7 +56,7 @@ test('rejects a request when disposal interrupts worker startup', async () => {
   const client = createNodeWorkerClient({
     workerEntry: new URL('../../test/slow-worker.mjs', import.meta.url),
   })
-  const request = client.request({ version: 5, type: 'discover-targets' })
+  const request = client.request({ version: 6, type: 'discover-targets' })
   const rejection = request.catch((error: unknown) => error)
   await new Promise((resolve) => setTimeout(resolve, 10))
 

@@ -1,7 +1,7 @@
 import { z } from 'zod'
 import { mobileExecutionCachePayloadSchema } from '../execution-cache/mobile-execution-cache.ts'
 
-export const mobileWorkerProtocolVersion = 5 as const
+export const mobileWorkerProtocolVersion = 6 as const
 
 export const androidCapabilities = [
   'android',
@@ -22,6 +22,7 @@ export const iosCapabilities = [
 ] as const
 
 const mobilePlatformSchema = z.enum(['android', 'ios'])
+const mobileApplicationScopeSchema = z.enum(['user-installed', 'all'])
 
 const mobileTargetSchema = z.strictObject({
   id: z.string().min(1),
@@ -30,16 +31,10 @@ const mobileTargetSchema = z.strictObject({
   capabilities: z.array(z.string()),
 })
 
-const mobileApplicationSchema = z.union([
-  z.strictObject({
-    id: z.string().min(1),
-    binaryPath: z.string().min(1),
-  }),
-  z.strictObject({
-    id: z.string().min(1),
-    installed: z.literal(true),
-  }),
-])
+const mobileApplicationSchema = z.strictObject({
+  id: z.string().min(1),
+  binaryPath: z.string().min(1).optional(),
+})
 
 const mobileArtifactKindSchema = z.enum([
   'screenshot',
@@ -170,6 +165,12 @@ const workerReplayCacheSchema = z.strictObject({
 export const mobileWorkerRequestSchema = z.discriminatedUnion('type', [
   z.strictObject({
     version: z.literal(mobileWorkerProtocolVersion),
+    type: z.literal('list-applications'),
+    platform: mobilePlatformSchema,
+    scope: mobileApplicationScopeSchema,
+  }),
+  z.strictObject({
+    version: z.literal(mobileWorkerProtocolVersion),
     type: z.literal('discover-targets'),
     platform: mobilePlatformSchema.optional(),
   }),
@@ -211,6 +212,11 @@ export const mobileWorkerRequestSchema = z.discriminatedUnion('type', [
 ])
 
 export const mobileWorkerResponseSchema = z.discriminatedUnion('type', [
+  z.strictObject({
+    version: z.literal(mobileWorkerProtocolVersion),
+    type: z.literal('applications-listed'),
+    applicationIds: z.array(z.string().min(1)),
+  }),
   z.strictObject({
     version: z.literal(mobileWorkerProtocolVersion),
     type: z.literal('targets-discovered'),
@@ -307,6 +313,9 @@ export const workerRequestMessageSchema = z.strictObject({
 })
 
 export type MobilePlatform = z.infer<typeof mobilePlatformSchema>
+export type MobileApplicationScope = z.infer<
+  typeof mobileApplicationScopeSchema
+>
 export type MobileApplication = z.infer<typeof mobileApplicationSchema>
 export type MobileTarget = z.infer<typeof mobileTargetSchema>
 export type MobileArtifactKind = z.infer<typeof mobileArtifactKindSchema>

@@ -28,6 +28,9 @@ function gateway(
   overrides: Partial<MobileDeviceGateway> = {},
 ): MobileDeviceGateway {
   return {
+    async listApplications() {
+      return []
+    },
     async discoverTargets() {
       return []
     },
@@ -88,7 +91,7 @@ test('routes one complete Scenario through the versioned worker protocol', async
 
   await expect(
     runtime.handle({
-      version: 5,
+      version: 6,
       type: 'open-session',
       sessionId: 'session-1',
       platform: 'android',
@@ -96,26 +99,26 @@ test('routes one complete Scenario through the versioned worker protocol', async
       mode: 'adaptive',
       scenario,
     }),
-  ).resolves.toMatchObject({ version: 5, type: 'session-opened' })
+  ).resolves.toMatchObject({ version: 6, type: 'session-opened' })
   await expect(
     runtime.handle({
-      version: 5,
+      version: 6,
       type: 'execute-scenario',
       sessionId: 'session-1',
     }),
   ).resolves.toMatchObject({
-    version: 5,
+    version: 6,
     type: 'scenario-executed',
     execution: { stepExecutions: [{ state: 'passed' }, { state: 'passed' }] },
   })
   await expect(
     runtime.handle({
-      version: 5,
+      version: 6,
       type: 'complete-session',
       sessionId: 'session-1',
     }),
   ).resolves.toMatchObject({
-    version: 5,
+    version: 6,
     type: 'session-completed',
     completion: {
       inferenceCount: 0,

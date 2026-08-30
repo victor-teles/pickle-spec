@@ -7,17 +7,12 @@
       "states": ["active"]
     }
   },
-  "executionTargetProfile": {
-    "id": "android"
-  },
   "executionTargetProfiles": {
     "android": {
       "adapter": "mobile",
       "mobile": {
-        "executionTarget": "android-emulator",
         "application": {
-          "id": "com.android.settings",
-          "installed": true
+          "id": "com.android.settings"
         },
         "artifactDirectory": ".pickle/artifacts",
         "artifacts": ["screenshot", "device-log"]

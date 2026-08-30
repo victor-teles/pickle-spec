@@ -52,15 +52,14 @@ test('trims mobile application and operational target paths', async () => {
   })
 })
 
-test('accepts an explicitly preinstalled mobile application', async () => {
+test('accepts a mobile application by ID and defaults to Android', async () => {
   const config = await loadMobileConfig({
-    executionTarget: 'android-emulator',
-    application: { id: '  com.android.settings  ', installed: true },
+    application: { id: '  com.android.settings  ' },
   })
 
-  expect(config.executionTargetProfiles?.android?.mobile?.application).toEqual({
-    id: 'com.android.settings',
-    installed: true,
+  expect(config.executionTargetProfiles?.android?.mobile).toMatchObject({
+    executionTarget: 'android-emulator',
+    application: { id: 'com.android.settings' },
   })
 })
 

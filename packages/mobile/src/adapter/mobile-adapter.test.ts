@@ -54,9 +54,11 @@ function successfulWorker(
   return workerClient(async (request) => {
     requestLog.push(request)
     switch (request.type) {
+      case 'list-applications':
+        return { version: 6, type: 'applications-listed', applicationIds: [] }
       case 'discover-targets':
         return {
-          version: 5,
+          version: 6,
           type: 'targets-discovered',
           targets: [
             {
@@ -69,14 +71,14 @@ function successfulWorker(
         }
       case 'open-session':
         return {
-          version: 5,
+          version: 6,
           type: 'session-opened',
           sessionId: request.sessionId,
           targetId: 'emulator-5554',
         }
       case 'execute-scenario':
         return {
-          version: 5,
+          version: 6,
           type: 'scenario-executed',
           sessionId: request.sessionId,
           execution: {
@@ -88,20 +90,20 @@ function successfulWorker(
         }
       case 'complete-session':
         return {
-          version: 5,
+          version: 6,
           type: 'session-completed',
           sessionId: request.sessionId,
           completion: { inferenceCount: 0 },
         }
       case 'close-session':
         return {
-          version: 5,
+          version: 6,
           type: 'session-closed',
           sessionId: request.sessionId,
         }
       case 'cancel-session':
         return {
-          version: 5,
+          version: 6,
           type: 'session-cancelled',
           sessionId: request.sessionId,
         }
@@ -123,7 +125,7 @@ test('exposes mobile targets and deterministic cache identity', async () => {
     adapterCacheSchemaVersion: 'agent-device-ad.1+0.20.10',
   })
   expect(requests[0]).toEqual({
-    version: 5,
+    version: 6,
     type: 'discover-targets',
     platform: 'android',
   })
@@ -158,7 +160,7 @@ test('runs one complete Scenario and completes it through the worker', async () 
     'close-session',
   ])
   expect(requests[0]).toMatchObject({
-    version: 5,
+    version: 6,
     type: 'open-session',
     mode: 'adaptive',
     scenario: {
@@ -308,7 +310,7 @@ test('cancels installation when abort occurs while opening', async () => {
       }
       if (message.type === 'cancel-session') {
         return {
-          version: 5,
+          version: 6,
           type: 'session-cancelled',
           sessionId: message.sessionId,
         }

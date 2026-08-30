@@ -72,6 +72,9 @@ function controlledAgentDeviceClient(
       },
     },
     apps: {
+      async list() {
+        return []
+      },
       async reinstall() {},
       async open() {},
     },

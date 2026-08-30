@@ -30,6 +30,10 @@ export interface OpenMobileGatewaySessionInput {
 }
 
 export interface MobileDeviceGateway {
+  listApplications(
+    platform: MobilePlatform,
+    scope: 'user-installed' | 'all',
+  ): Promise<string[]>
   discoverTargets(platform: MobilePlatform): Promise<MobileTarget[]>
   openSession(
     input: OpenMobileGatewaySessionInput,
@@ -53,6 +57,15 @@ export class MobileWorkerRuntime {
 
   async handle(request: MobileWorkerRequest): Promise<MobileWorkerResponse> {
     switch (request.type) {
+      case 'list-applications':
+        return {
+          version: mobileWorkerProtocolVersion,
+          type: 'applications-listed',
+          applicationIds: await this.gateway.listApplications(
+            request.platform,
+            request.scope,
+          ),
+        }
       case 'discover-targets':
         return this.discoverTargets(request)
       case 'open-session':
