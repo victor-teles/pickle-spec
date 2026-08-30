@@ -262,6 +262,7 @@ Feature: Checkout
     const page = await context.newPage()
     try {
       await page.goto(url)
+      await page.getByRole('button', { name: 'Open Studio commands' }).waitFor()
       await page.keyboard.press('Meta+k')
       const palette = page.getByRole('dialog', { name: 'Studio commands' })
       await palette.waitFor()

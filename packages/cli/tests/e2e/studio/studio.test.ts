@@ -376,9 +376,9 @@ Feature: Search
       await palette
         .getByRole('option', { name: new RegExp(started.id) })
         .click()
-      expect(new URL(page.url()).pathname).toBe(
-        `/runs/${encodeURIComponent(started.id)}`,
-      )
+      const startedRunPath = `/runs/${encodeURIComponent(started.id)}`
+      await page.waitForURL((current) => current.pathname === startedRunPath)
+      expect(new URL(page.url()).pathname).toBe(startedRunPath)
 
       await page.keyboard.press('Meta+k')
       await search.fill('Specification Checkout')
