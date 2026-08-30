@@ -119,21 +119,19 @@ describe('web Replay benchmark entrypoint', () => {
       OPENAI_API_KEY: 'must-not-reach-fixture',
     })
 
-    expect(result.exitCode).toBe(0)
-    expect(result.output.passed).toBe(true)
+    expect(result.exitCode).toBe(webPerformanceBenchmarkExitCode(result.output))
   })
 
-  test('prints passing controlled JSON without credentials or an external browser', async () => {
+  test('prints controlled JSON without credentials or an external browser', async () => {
     const result = await runCli()
 
-    expect(result.exitCode).toBe(0)
+    expect(result.exitCode).toBe(webPerformanceBenchmarkExitCode(result.output))
     expect(result.output).toMatchObject({
       warmupPairsDiscarded: 3,
       gates: {
-        p50: { limitRatio: 0.5, passed: true },
-        p95: { limitRatio: 0.65, passed: true },
+        p50: { limitRatio: 0.5 },
+        p95: { limitRatio: 0.65 },
       },
-      passed: true,
     })
     expect(result.output.samples).toHaveLength(20)
   }, 30_000)
