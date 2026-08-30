@@ -1,0 +1,43 @@
+---
+title: How Pickle Spec works
+description: Follow a Scenario through selection, execution, Replay, and results.
+---
+
+Pickle Spec keeps Specification parsing separate from execution-target automation. The runner applies one lifecycle to web and native sessions without importing Stagehand or Agent Device.
+
+## From file to Test result
+
+1. The CLI loads `pickle.config.jsonc` and optional extensions.
+2. The Specification package parses `.feature` files and expands Backgrounds and Scenario Outlines.
+3. Selection filters Scenarios by path, state, tags, name, suite, shard, or rerun.
+4. The runner schedules every selected Scenario against every selected execution target profile.
+5. An adapter opens one logical target session for each Scenario attempt.
+6. The runner emits lifecycle events and materializes the Test result.
+7. The CLI persists the immutable Test run and prints the report.
+
+## Package ownership
+
+| Package | Owns |
+| --- | --- |
+| `@pickle-spec/spec` | Gherkin parsing, identity, and selection. |
+| `@pickle-spec/runner` | Scheduling, retries, timeouts, cancellation, events, and results. |
+| `@pickle-spec/web` | Stagehand-backed browser sessions and web Replay instructions. |
+| `@pickle-spec/mobile` | Emulator and Simulator sessions through an isolated Node worker. |
+| `@pickle-spec/cli` | Commands, configuration, composition, persistence, and reporting. |
+| `@pickle-spec/studio` | The local UI for authoring and observing runs. |
+
+## Adaptive execution and Replay
+
+Web starts in Adaptive mode when no applicable cache entry exists. The adapter resolves browser operations and compiles a deterministic step prefix as the Scenario runs.
+
+A later matching run can Replay that prefix directly. If the stored prefix is shorter than the Scenario, web Replays the known head and resumes Adaptive execution at the first gap in the same session.
+
+Mobile compiles the full Scenario into one deterministic Agent Device `.ad` script. Mobile Replay accepts only a complete cached Scenario. It does not Replay partial prefixes.
+
+## Cache identity
+
+An entry applies to one project, Scenario revision, execution target profile and configuration fingerprint, application revision, adapter, and adapter cache schema. Without `applicationRevision`, Pickle runs adaptively and does not read or write the Execution cache.
+
+## Local state
+
+Pickle stores Test runs and the shared Execution cache under `~/.pickle`. Evidence stays in the configured local artifact directories. Studio reads the same local project and run history.

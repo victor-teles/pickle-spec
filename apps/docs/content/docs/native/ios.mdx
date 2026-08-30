@@ -1,0 +1,69 @@
+---
+title: iOS Simulator
+description: Configure and run a native Scenario against iOS.
+---
+
+You need macOS, Node 22.12 or newer, Xcode, Xcode Command Line Tools, and a booted iOS Simulator.
+
+<Steps>
+<Step>
+
+### Find the bundle identifier
+
+```bash
+bunx pickle apps --platform ios --all
+```
+
+</Step>
+<Step>
+
+### Configure the iOS profile
+
+iOS must declare the Simulator target explicitly.
+
+```jsonc
+{
+  "schemaVersion": 1,
+  "specifications": "features/**/*.feature",
+  "executionTargetProfiles": {
+    "ios": {
+      "adapter": "mobile",
+      "mobile": {
+        "executionTarget": "ios-simulator",
+        "application": {
+          "id": "com.example.checkout",
+          "binaryPath": "/absolute/path/to/Checkout.app"
+        }
+      }
+    }
+  },
+  "applicationRevision": "checkout-local"
+}
+```
+
+Omit `binaryPath` to open an application that is already installed. Keep it to reinstall and verify the configured bundle before every logical Scenario session.
+
+</Step>
+<Step>
+
+### Write and run the Scenario
+
+```gherkin
+@pickle:state:active
+Feature: iOS onboarding
+
+  Scenario: Customer opens the home screen
+    Given Welcome
+    When Continue
+    Then visible: text="Home"
+```
+
+```bash
+bunx pickle doctor
+bunx pickle run --profile ios
+```
+
+</Step>
+</Steps>
+
+If more than one Simulator is booted, set `executionTargetProfiles.ios.mobile.targetId` to its UDID.
