@@ -14,8 +14,7 @@
     "benchmarking.ts",
     "index.ts",
     "testing.ts",
-    "src/**/*.ts",
-    "!src/**/*.test.ts"
+    "src/**/*.ts"
   ],
   "scripts": {
     "typecheck": "tsc --noEmit",

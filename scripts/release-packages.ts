@@ -266,10 +266,6 @@ function validateSourceManifest(
     sameEntries(manifest.exports, definition.exports),
     `${definition.name} exports must match its documented public entry points`,
   )
-  assertRelease(
-    manifest.files?.includes('!src/**/*.test.ts'),
-    `${definition.name} must exclude tests from its package artifact`,
-  )
   return version
 }
 

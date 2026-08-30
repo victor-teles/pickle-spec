@@ -6,7 +6,7 @@ Chrome at desktop and 390 px widths.
 
 ## Automated checks
 
-- Run `bun run --cwd packages/cli test:integration:main -- src/studio/studio.test.ts` from the repository root.
+- Run `bun run --cwd packages/cli test:e2e -- tests/e2e/studio/studio.test.ts` from the repository root.
 - Confirm the Axe scan reports no WCAG 2 A, 2 AA, 2.1 A, 2.1 AA, or 2.2
   AA violations in Specifications, Runs, and Settings.
 - Confirm the keyboard, reduced-motion, responsive-result, live-update, and

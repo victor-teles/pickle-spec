@@ -1,13 +1,12 @@
 import { defineConfig, mergeConfig } from 'vitest/config'
 import baseConfig from '../../vitest.package.config'
-import { cliIntegrationTests } from './vitest.test-groups'
 
 export default mergeConfig(
   baseConfig,
   defineConfig({
     test: {
-      globalSetup: ['./test/test-environment.ts'],
-      include: [...cliIntegrationTests],
+      globalSetup: ['./tests/support/test-environment.ts'],
+      include: ['tests/integration/**/*.{test,spec}.{ts,tsx}'],
       testTimeout: 30_000,
     },
   }),
