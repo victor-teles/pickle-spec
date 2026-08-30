@@ -81,11 +81,11 @@ export {
   diagnosticOrigins,
   finalScenarioAttempt,
   isEvidenceState,
+  runScenario,
   sharedEvidenceCacheDecisionTypes,
   sharedEvidenceObservationVersion,
   traceActivityKinds,
 } from './src/execution/run-scenario'
-export { runScenario } from './src/execution/run-scenario-entry'
 export type {
   RunScenariosInput,
   RunScheduleInput,
@@ -131,6 +131,7 @@ export {
   serializeExecutionCacheTerminalOutcome,
 } from './src/execution-cache/execution-cache'
 export type {
+  ExecutionCacheLeaseTiming,
   LocalExecutionCache,
   LocalExecutionCacheOptions,
 } from './src/execution-cache/local-execution-cache'
@@ -138,7 +139,6 @@ export {
   defaultExecutionCacheMaxBytes,
   openLocalExecutionCache,
 } from './src/execution-cache/local-execution-cache'
-export type { ExecutionCacheLeaseTiming } from './src/execution-cache/local-execution-cache-coordination'
 export type {
   AllureArchiveOptions,
   AllureAttachment,

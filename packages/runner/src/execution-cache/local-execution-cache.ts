@@ -9,9 +9,11 @@ import type {
 import {
   createLocalExecutionCacheCoordination,
   type ExecutionCacheLeaseTiming,
-} from './local-execution-cache-coordination'
-import { openLocalExecutionCacheDatabase } from './local-execution-cache-database'
-import { createLocalExecutionCacheEntries } from './local-execution-cache-entries'
+} from './local/local-execution-cache-coordination'
+import { openLocalExecutionCacheDatabase } from './local/local-execution-cache-database'
+import { createLocalExecutionCacheEntries } from './local/local-execution-cache-entries'
+
+export type { ExecutionCacheLeaseTiming } from './local/local-execution-cache-coordination'
 
 export interface LocalExecutionCacheOptions {
   projectRoot: string

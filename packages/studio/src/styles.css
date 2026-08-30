@@ -1,7 +1,7 @@
 @import "@fontsource-variable/eb-garamond";
 @import "@fontsource-variable/inter";
 @import "@fontsource-variable/jetbrains-mono";
-@import "tailwindcss";
+@import "tailwindcss" source(".");
 @import "tw-animate-css";
 
 @custom-variant dark (&:is(.dark *));
