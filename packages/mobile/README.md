@@ -21,7 +21,7 @@ PICKLE_ANDROID_SMOKE=1 \
 PICKLE_ANDROID_APP_ID=com.example.checkout \
 PICKLE_ANDROID_APP_PATH=/absolute/path/to/checkout.apk \
 PICKLE_ANDROID_SMOKE_STEP='Checkout' \
-bun run --cwd packages/mobile test -- src/adapter/android-emulator.smoke.test.ts
+bun run --cwd packages/mobile test:e2e -- tests/e2e/adapter/android-emulator.smoke.test.ts
 ```
 
 Set `PICKLE_ANDROID_TARGET_ID=emulator-5554` when more than one emulator is
@@ -46,7 +46,7 @@ PICKLE_IOS_SMOKE=1 \
 PICKLE_IOS_APP_ID=com.example.checkout \
 PICKLE_IOS_APP_PATH=/absolute/path/to/Checkout.app \
 PICKLE_IOS_SMOKE_STEP='Checkout' \
-bun run --cwd packages/mobile test -- src/adapter/ios-simulator.smoke.test.ts
+bun run --cwd packages/mobile test:e2e -- tests/e2e/adapter/ios-simulator.smoke.test.ts
 ```
 
 Set `PICKLE_IOS_TARGET_ID` to a Simulator UDID when more than one compatible

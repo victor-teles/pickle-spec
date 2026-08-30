@@ -13,17 +13,17 @@
   },
   "files": [
     "index.ts",
-    "src/**/*.ts",
-    "!src/**/*.test.ts"
+    "src/**/*.ts"
   ],
   "scripts": {
     "typecheck": "tsc --noEmit",
     "test": "bun run test:unit",
     "test:unit": "bunx --bun vitest run --configLoader runner --experimental.viteModuleRunner=false --experimental.nodeLoader=false --config vitest.config.ts",
     "test:integration": "bun run test:integration:confidentiality && bun run test:integration:main",
-    "test:integration:confidentiality": "bunx --bun vitest run --configLoader runner --experimental.viteModuleRunner=false --experimental.nodeLoader=false --config vitest.integration.config.ts src/execution-cache/execution-cache-confidentiality.test.ts",
+    "test:integration:confidentiality": "bunx --bun vitest run --configLoader runner --experimental.viteModuleRunner=false --experimental.nodeLoader=false --config vitest.integration.config.ts tests/integration/execution-cache/execution-cache-confidentiality.test.ts",
     "test:integration:main": "bunx --bun vitest run --configLoader runner --experimental.viteModuleRunner=false --experimental.nodeLoader=false --config vitest.integration.config.ts --exclude '**/execution-cache-confidentiality.test.ts'",
-    "test:all": "bun run test:unit && bun run test:integration"
+    "test:e2e": "bunx --bun vitest run --configLoader runner --experimental.viteModuleRunner=false --experimental.nodeLoader=false --config vitest.e2e.config.ts",
+    "test:all": "bun run test:unit && bun run test:integration && bun run test:e2e"
   },
   "dependencies": {
     "@pickle-spec/configuration": "workspace:*",
