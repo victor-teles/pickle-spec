@@ -25,7 +25,7 @@ import {
   stringContainsBinding,
 } from '../../execution/scenario/scenario-runtime'
 import { requiredValue } from '../../required-value'
-import { withSharedEvidenceObservations } from '../../results/shared-evidence-observations'
+import { withSharedEvidenceObservations } from '../../results/evidence-observations'
 import type {
   ExecutionCacheEnvelope,
   ExecutionCacheKey,

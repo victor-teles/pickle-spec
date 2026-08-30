@@ -8,15 +8,25 @@ import type {
   TestArtifact,
   TestResultState,
   TraceEntry,
-} from '../execution/run-scenario-types'
+} from '../../execution/run-scenario-types'
 import {
   sharedEvidenceObservationVersion,
   testRunSchemaVersion,
-} from '../execution/run-scenario-types'
+} from '../../execution/run-scenario-types'
 import type {
   ExecutionCacheKey,
   ExecutionCacheUncacheableReason,
-} from '../execution-cache/execution-cache'
+} from '../../execution-cache/execution-cache'
+
+type StepTiming = {
+  startedAt: string
+  finishedAt: string
+  durationMs: number
+}
+
+type ResolvedActionTiming = StepTiming & {
+  occurredAt: string
+}
 
 function contractVersionObservation(): SharedEvidenceVersionObservation {
   return {
@@ -110,11 +120,7 @@ function diagnosticObservation(
 
 function traceObservation(
   entry: TraceEntry,
-  stepTiming: {
-    startedAt: string
-    finishedAt: string
-    durationMs: number
-  },
+  stepTiming: StepTiming,
 ): SharedEvidenceObservation {
   return observation({
     kind: 'activity',
@@ -136,12 +142,7 @@ function traceObservation(
 
 function resolvedActionObservation(
   description: string,
-  stepTiming: {
-    occurredAt: string
-    startedAt: string
-    finishedAt: string
-    durationMs: number
-  },
+  stepTiming: ResolvedActionTiming,
 ): SharedEvidenceObservation {
   return observation({
     kind: 'activity',
@@ -176,7 +177,7 @@ function artifactObservation(
   })
 }
 
-function stepOutcomeObservation(
+export function stepOutcomeObservation(
   event: Extract<RunEvent, { type: 'step-finished' }>,
 ) {
   const stepText = `${event.result.step.keyword.trim()} ${event.result.step.text}`
@@ -197,7 +198,7 @@ function stepOutcomeObservation(
   })
 }
 
-function attemptOutcomeObservation(
+export function attemptOutcomeObservation(
   event: Extract<RunEvent, { type: 'scenario-finished' }>,
 ): SharedEvidenceObservation {
   return observation({
@@ -229,7 +230,7 @@ function attemptOutcomeObservation(
   })
 }
 
-function cacheObservation(
+export function cacheObservation(
   event:
     | Extract<
         RunEvent,
@@ -268,7 +269,7 @@ function cacheObservation(
   })
 }
 
-function inferenceObservation(
+export function inferenceObservation(
   event: Extract<RunEvent, { type: 'inference-count-updated' }>,
 ): SharedEvidenceObservation {
   return observation({
@@ -285,7 +286,7 @@ function inferenceObservation(
   })
 }
 
-function stepActivityObservations(
+export function stepActivityObservations(
   event: Extract<RunEvent, { type: 'step-finished' }>,
 ): SharedEvidenceObservation[] {
   if (event.result.trace?.length) {
@@ -307,7 +308,7 @@ function stepActivityObservations(
   )
 }
 
-function stepArtifactObservations(
+export function stepArtifactObservations(
   artifacts: readonly TestArtifact[] | undefined,
   event: Extract<RunEvent, { type: 'step-finished' }>,
 ): SharedEvidenceObservation[] {
@@ -320,7 +321,7 @@ function stepArtifactObservations(
   )
 }
 
-function attemptDiagnosticObservations(
+export function attemptDiagnosticObservations(
   diagnostics: readonly DiagnosticEntry[] | undefined,
 ): SharedEvidenceObservation[] {
   return (diagnostics ?? []).map((entry) =>
@@ -328,50 +329,10 @@ function attemptDiagnosticObservations(
   )
 }
 
-function stepDiagnosticObservations(
+export function stepDiagnosticObservations(
   diagnostics: readonly DiagnosticEntry[] | undefined,
 ): SharedEvidenceObservation[] {
   return (diagnostics ?? []).map((entry) =>
     diagnosticObservation(entry, 'exact'),
   )
-}
-
-export function sharedEvidenceObservationsForEvent(
-  event: RunEvent,
-): SharedEvidenceObservation[] | undefined {
-  switch (event.type) {
-    case 'step-finished':
-      return [
-        stepOutcomeObservation(event),
-        ...stepActivityObservations(event),
-        ...stepDiagnosticObservations(event.result.diagnostics),
-        ...stepArtifactObservations(event.result.artifacts, event),
-      ]
-    case 'scenario-finished':
-      return [
-        attemptOutcomeObservation(event),
-        ...attemptDiagnosticObservations(event.attempt.diagnostics),
-      ]
-    case 'cache-hit':
-    case 'cache-miss':
-    case 'cache-refresh':
-    case 'replay-diverged':
-    case 'adaptive-fallback-started':
-    case 'cache-written':
-    case 'cache-uncacheable':
-      return [cacheObservation(event)]
-    case 'inference-count-updated':
-      return [inferenceObservation(event)]
-    default:
-      return undefined
-  }
-}
-
-export function withSharedEvidenceObservations(event: RunEvent): RunEvent {
-  const observations = sharedEvidenceObservationsForEvent(event)
-  if (!observations?.length) return event
-  return {
-    ...event,
-    observations,
-  }
 }
