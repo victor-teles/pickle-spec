@@ -202,6 +202,19 @@ function ResultInspectorTabs(
   },
 ) {
   const { inspected } = props
+  const evidenceTimeline = (
+    <ResultEvidenceTimeline
+      entries={props.timeline}
+      startedAt={inspected.attempt.startedAt}
+      durationMs={inspected.attempt.durationMs}
+      state={props.displayState}
+      scenarioName={inspected.result.scenario.name}
+      resultState={props.resultState}
+      follow={props.following}
+      followedEntryId={props.followedEntryId}
+      onPauseFollowing={props.onPauseFollowing}
+    />
+  )
   return (
     <Tabs
       value={props.activeTab}
@@ -218,17 +231,18 @@ function ResultInspectorTabs(
         <ResultOverview {...inspected} inProgress={props.inProgress} />
       </TabsContent>
       <TabsContent value="timeline">
-        <ResultEvidenceTimeline
-          entries={props.timeline}
-          startedAt={inspected.attempt.startedAt}
-          durationMs={inspected.attempt.durationMs}
-          state={props.displayState}
-          scenarioName={inspected.result.scenario.name}
-          resultState={props.resultState}
-          follow={props.following}
-          followedEntryId={props.followedEntryId}
-          onPauseFollowing={props.onPauseFollowing}
-        />
+        {props.liveViewport?.kind === 'device-frame' ? (
+          <div className="grid min-w-0 items-start gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(18rem,24rem)]">
+            {evidenceTimeline}
+            <ResultViewportPanel
+              liveViewport={props.liveViewport}
+              scenarioName={inspected.result.scenario.name}
+              compact
+            />
+          </div>
+        ) : (
+          evidenceTimeline
+        )}
       </TabsContent>
       <TabsContent value="artifacts">
         <ResultArtifacts
@@ -388,6 +402,7 @@ function ConnectionStatus(props: { connection?: LiveConnectionStatus }) {
 export function ResultViewportPanel(props: {
   liveViewport?: StudioLiveViewport
   scenarioName: string
+  compact?: boolean
 }) {
   if (!props.liveViewport) {
     return (
@@ -395,8 +410,7 @@ export function ResultViewportPanel(props: {
         <CardHeader>
           <CardTitle>Live viewport</CardTitle>
           <CardDescription>
-            No live browser viewport is currently available for this Scenario
-            attempt.
+            No live viewport is currently available for this Scenario attempt.
           </CardDescription>
         </CardHeader>
       </Card>
@@ -425,20 +439,24 @@ export function ResultViewportPanel(props: {
       </Card>
     )
   }
+  const deviceFrame = props.liveViewport.kind === 'device-frame'
   return (
     <Card>
       <CardHeader>
         <CardTitle>Live viewport</CardTitle>
         <CardDescription>
-          Latest browser frame streamed for {props.scenarioName}.
+          Latest {deviceFrame ? 'device' : 'browser'} frame streamed for{' '}
+          {props.scenarioName}.
         </CardDescription>
       </CardHeader>
       <CardContent>
         <div className="overflow-hidden rounded-xl border border-border bg-muted">
           <img
-            alt={`Live browser viewport for ${props.scenarioName}`}
+            alt={`Live ${deviceFrame ? 'device' : 'browser'} viewport for ${props.scenarioName}`}
             src={`data:${props.liveViewport.mimeType};base64,${props.liveViewport.data}`}
-            className="w-full"
+            className={
+              props.compact ? 'max-h-[36rem] w-full object-contain' : 'w-full'
+            }
           />
         </div>
       </CardContent>

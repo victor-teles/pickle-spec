@@ -11,13 +11,35 @@ test('launches the versioned worker protocol explicitly through Node', async () 
 
   try {
     expect(
-      await client.request({ version: 3, type: 'discover-targets' }),
+      await client.request({ version: 5, type: 'discover-targets' }),
     ).toEqual({
-      version: 3,
+      version: 5,
       type: 'targets-discovered',
       targets: [],
     })
   } finally {
+    await client.dispose()
+  }
+})
+
+test('delivers unsolicited viewport events without consuming correlated responses', async () => {
+  const client = createNodeWorkerClient({
+    workerEntry: new URL('../../test/echo-worker.mjs', import.meta.url),
+  })
+  const events: unknown[] = []
+  const unsubscribe = client.subscribe((event) => events.push(event))
+
+  try {
+    await client.request({ version: 5, type: 'discover-targets' })
+    expect(events).toEqual([
+      {
+        type: 'viewport-frame',
+        sessionId: 'echo-session',
+        frame: { data: 'cG5n', mimeType: 'image/png' },
+      },
+    ])
+  } finally {
+    unsubscribe()
     await client.dispose()
   }
 })
@@ -34,7 +56,7 @@ test('rejects a request when disposal interrupts worker startup', async () => {
   const client = createNodeWorkerClient({
     workerEntry: new URL('../../test/slow-worker.mjs', import.meta.url),
   })
-  const request = client.request({ version: 3, type: 'discover-targets' })
+  const request = client.request({ version: 5, type: 'discover-targets' })
   const rejection = request.catch((error: unknown) => error)
   await new Promise((resolve) => setTimeout(resolve, 10))
 

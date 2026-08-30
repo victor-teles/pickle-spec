@@ -131,6 +131,7 @@ function controlledRuntimeWorker(
   opened: Array<Extract<MobileWorkerRequest, { type: 'open-session' }>>,
 ): MobileWorkerClient {
   return {
+    subscribe: () => () => {},
     async request(request) {
       const validatedRequest = mobileWorkerRequestSchema.parse(request)
       if (validatedRequest.type === 'open-session')

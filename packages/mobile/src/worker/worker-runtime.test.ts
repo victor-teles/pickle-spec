@@ -35,7 +35,7 @@ function gateway(
 }
 
 const openRequest = {
-  version: 3 as const,
+  version: 5 as const,
   type: 'open-session' as const,
   sessionId: 'session-1',
   platform: 'android' as const,
@@ -70,12 +70,12 @@ test('serializes Scenario execution and completion in one logical session', asyn
   await runtime.handle(openRequest)
 
   const execution = runtime.handle({
-    version: 3,
+    version: 5,
     type: 'execute-scenario',
     sessionId: 'session-1',
   })
   const completion = runtime.handle({
-    version: 3,
+    version: 5,
     type: 'complete-session',
     sessionId: 'session-1',
   })
@@ -147,7 +147,7 @@ test('cancellation finishes the active Scenario before allowing reuse', async ()
   )
   await runtime.handle(openRequest)
   const execution = runtime.handle({
-    version: 3,
+    version: 5,
     type: 'execute-scenario',
     sessionId: 'session-1',
   })
@@ -155,7 +155,7 @@ test('cancellation finishes the active Scenario before allowing reuse', async ()
 
   await expect(
     runtime.handle({
-      version: 3,
+      version: 5,
       type: 'cancel-session',
       sessionId: 'session-1',
     }),

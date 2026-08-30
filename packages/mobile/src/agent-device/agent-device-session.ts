@@ -2,7 +2,7 @@ import {
   createMobileExecutionCache,
   type MobileExecutionCachePayload,
   mobileReplayVariableName,
-} from '../execution-cache/mobile-execution-cache'
+} from '../execution-cache/mobile-execution-cache.ts'
 import type {
   MobileApplication,
   MobileArtifactKind,
@@ -10,7 +10,7 @@ import type {
   MobileTextRedaction,
   MobileWorkerScenario,
   WorkerScenarioExecution,
-} from '../worker/worker-protocol'
+} from '../worker/worker-protocol.ts'
 import {
   type AgentDeviceClientFactory,
   type AgentDeviceClientPort,
@@ -20,12 +20,13 @@ import {
   type MobileSelection,
   mobileAppStateSchema,
   mobileDevicesSchema,
-} from './agent-device-client'
-import type { MobileEvidenceAvailability } from './agent-device-evidence'
+} from './agent-device-client.ts'
+import type { MobileEvidenceAvailability } from './agent-device-evidence.ts'
+import type { MobileViewportController } from './agent-device-viewport.ts'
 import {
   type CompiledMobileScenario,
   compileMobileScenario,
-} from './mobile-ad-script'
+} from './mobile-ad-script.ts'
 
 export interface OpenGatewaySessionInput {
   sessionId: string
@@ -57,6 +58,7 @@ export interface GatewaySession {
   redactions: readonly MobileTextRedaction[]
   requestedArtifacts: readonly MobileArtifactKind[]
   selection?: MobileSelection
+  viewport?: MobileViewportController
 }
 
 export interface MobilePlatformPolicy {
@@ -210,7 +212,6 @@ export function createGatewaySession(
       replay ??
       compileMobileScenario({
         platform,
-        applicationId: input.application.id,
         scenario: input.scenario,
       }),
     logsStarted: false,
@@ -314,12 +315,14 @@ async function resetApplication(
   const selection = session.selection
   if (!selection) throw new Error('Mobile execution target was not selected')
 
-  await session.client.apps.reinstall({
-    ...selection,
-    app: input.application.id,
-    appPath: input.application.binaryPath,
-  })
-  assertOwned()
+  if ('binaryPath' in input.application) {
+    await session.client.apps.reinstall({
+      ...selection,
+      app: input.application.id,
+      appPath: input.application.binaryPath,
+    })
+    assertOwned()
+  }
   await session.client.apps.open({ ...selection, app: input.application.id })
   assertOwned()
   const state = mobileAppStateSchema.parse(

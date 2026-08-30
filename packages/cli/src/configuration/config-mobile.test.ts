@@ -52,6 +52,18 @@ test('trims mobile application and operational target paths', async () => {
   })
 })
 
+test('accepts an explicitly preinstalled mobile application', async () => {
+  const config = await loadMobileConfig({
+    executionTarget: 'android-emulator',
+    application: { id: '  com.android.settings  ', installed: true },
+  })
+
+  expect(config.executionTargetProfiles?.android?.mobile?.application).toEqual({
+    id: 'com.android.settings',
+    installed: true,
+  })
+})
+
 test.each([
   ['application.id', { id: '   ', binaryPath: '/apps/checkout.apk' }],
   ['application.binaryPath', { id: 'com.example.checkout', binaryPath: '  ' }],

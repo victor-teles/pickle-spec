@@ -5,7 +5,7 @@ import { z } from 'zod'
 import type {
   AgentDeviceClientPort,
   MobileSelection,
-} from './agent-device-client'
+} from './agent-device-client.ts'
 
 const replayResultSchema = z.strictObject({
   replayed: z.number().int().nonnegative(),

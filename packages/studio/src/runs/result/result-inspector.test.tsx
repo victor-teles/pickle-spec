@@ -18,6 +18,24 @@ test('renders local screencast frames in the viewport panel', () => {
   expect(markup).toContain('Live browser viewport for Pay for the order')
 })
 
+test('renders compact PNG device frames without browser-specific copy', () => {
+  const markup = renderToStaticMarkup(
+    <ResultViewportPanel
+      compact
+      scenarioName="Open the app"
+      liveViewport={{
+        kind: 'device-frame',
+        data: 'png-frame',
+        mimeType: 'image/png',
+      }}
+    />,
+  )
+
+  expect(markup).toContain('data:image/png;base64,png-frame')
+  expect(markup).toContain('max-h-[36rem]')
+  expect(markup).toContain('Latest device frame')
+})
+
 test('renders Browserbase live sessions with constrained iframe permissions', () => {
   const markup = renderToStaticMarkup(
     <ResultViewportPanel

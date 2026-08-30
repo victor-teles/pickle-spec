@@ -1,0 +1,33 @@
+{
+  "schemaVersion": 1,
+  "specifications": "features/**/*.feature",
+  "suites": {
+    "smoke": {
+      "tagExpression": "@smoke",
+      "states": ["active"]
+    }
+  },
+  "executionTargetProfile": {
+    "id": "android"
+  },
+  "executionTargetProfiles": {
+    "android": {
+      "adapter": "mobile",
+      "mobile": {
+        "executionTarget": "android-emulator",
+        "application": {
+          "id": "com.android.settings",
+          "installed": true
+        },
+        "artifactDirectory": ".pickle/artifacts",
+        "artifacts": ["screenshot", "device-log"]
+      }
+    }
+  },
+  "execution": {
+    "scenarioTimeoutMs": 120000,
+    "stepTimeoutMs": 30000
+  },
+  "applicationRevision": "android-settings-system",
+  "concurrency": 1
+}

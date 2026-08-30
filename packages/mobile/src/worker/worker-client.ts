@@ -1,12 +1,13 @@
 import { fileURLToPath } from 'node:url'
 import type {
+  MobileWorkerEvent,
   MobileWorkerRequest,
   MobileWorkerResponse,
 } from './worker-protocol'
 import {
   mobileWorkerProtocolVersion,
+  workerOutputMessageSchema,
   workerReadyMessageSchema,
-  workerResponseMessageSchema,
 } from './worker-protocol'
 
 export interface MobileWorkerClient {
@@ -14,6 +15,7 @@ export interface MobileWorkerClient {
     request: MobileWorkerRequest,
     signal?: AbortSignal,
   ): Promise<MobileWorkerResponse>
+  subscribe(listener: (event: MobileWorkerEvent) => void): () => void
   dispose(): Promise<void>
 }
 
@@ -70,6 +72,7 @@ class NodeWorkerClient implements MobileWorkerClient {
   private readonly nodePath: string
   private readonly workerEntry: URL
   private readonly pending = new Map<number, PendingRequest>()
+  private readonly listeners = new Set<(event: MobileWorkerEvent) => void>()
   private child?: WorkerProcess
   private startPromise?: Promise<void>
   private rejectStart?: (error: Error) => void
@@ -145,6 +148,7 @@ class NodeWorkerClient implements MobileWorkerClient {
     this.rejectStart = undefined
     for (const pending of this.pending.values()) pending.reject(error)
     this.pending.clear()
+    this.listeners.clear()
 
     const child = this.child
     this.child = undefined
@@ -153,6 +157,12 @@ class NodeWorkerClient implements MobileWorkerClient {
     const forceKill = setTimeout(() => child.kill(9), workerShutdownTimeoutMs)
     await child.exited
     clearTimeout(forceKill)
+  }
+
+  subscribe(listener: (event: MobileWorkerEvent) => void): () => void {
+    if (this.disposed) throw new Error('The mobile worker is disposed')
+    this.listeners.add(listener)
+    return () => this.listeners.delete(listener)
   }
 
   private start(): Promise<void> {
@@ -225,7 +235,11 @@ class NodeWorkerClient implements MobileWorkerClient {
   }
 
   private handleResponse(line: string): void {
-    const message = workerResponseMessageSchema.parse(JSON.parse(line))
+    const message = workerOutputMessageSchema.parse(JSON.parse(line))
+    if (message.type === 'event') {
+      for (const listener of [...this.listeners]) listener(message.payload)
+      return
+    }
     const pending = this.pending.get(message.id)
     if (!pending) return
     this.pending.delete(message.id)

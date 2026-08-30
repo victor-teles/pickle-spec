@@ -13,6 +13,13 @@ export type StudioLiveViewport =
       width?: number
       height?: number
     }
+  | {
+      kind: 'device-frame'
+      data: string
+      mimeType: 'image/png'
+      width?: number
+      height?: number
+    }
   | { kind: 'browserbase'; sessionId: string; url: string }
 
 export type StudioLiveViewportEvent =

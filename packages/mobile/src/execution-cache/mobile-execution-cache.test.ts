@@ -24,6 +24,7 @@ function adapter(binaryPath = '/tmp/checkout.apk') {
       targetId: 'emulator-5554',
     },
     () => ({
+      subscribe: () => () => {},
       async request() {
         throw new Error('Unexpected worker request')
       },
@@ -145,6 +146,7 @@ test('fingerprints deterministic mobile configuration rather than local paths', 
       targetId: 'simulator-1',
     },
     () => ({
+      subscribe: () => () => {},
       async request() {
         throw new Error('Unexpected worker request')
       },

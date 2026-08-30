@@ -196,6 +196,30 @@ test('resets the selected application before the private Scenario Replay', async
   expect(replay).toHaveBeenCalledTimes(1)
 })
 
+test('opens an explicitly preinstalled application without reinstalling it', async () => {
+  const reinstall = vi.fn(async () => {})
+  const open = vi.fn(async () => {})
+  const gateway = new AgentDeviceGateway(() =>
+    client({ apps: { reinstall, open } }),
+  )
+
+  await gateway.openSession({
+    sessionId: 'session-1',
+    platform: 'android',
+    targetId: androidEmulator.id,
+    application: { id: application.id, installed: true },
+    mode: 'adaptive',
+    scenario,
+  })
+
+  expect(reinstall).not.toHaveBeenCalled()
+  expect(open).toHaveBeenCalledWith({
+    platform: 'android',
+    serial: androidEmulator.android.serial,
+    app: application.id,
+  })
+})
+
 test('classifies native Replay divergence at the matching Scenario step', async () => {
   const replayError = new AppError(
     'REPLAY_DIVERGENCE',
@@ -341,7 +365,10 @@ test('captures Scenario-wide evidence around the exact Replay', async () => {
       'start',
       'stop',
     ])
-    expect(screenshot).toHaveBeenCalledTimes(1)
+    expect(screenshot).toHaveBeenCalledTimes(2)
+    expect(screenshot).toHaveBeenCalledWith(
+      expect.objectContaining({ scale: 0.5, stabilize: false }),
+    )
   } finally {
     await gateway.dispose()
     await rm(artifactDirectory, { recursive: true, force: true })

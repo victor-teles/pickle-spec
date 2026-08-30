@@ -1,5 +1,6 @@
 import { relative, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
+import type { MobileLiveViewportUpdate } from '@pickle-spec/mobile'
 import type {
   EvidencePersistencePolicy,
   ExecutionCachePolicy,
@@ -39,6 +40,11 @@ import {
   type WebAdapterOptions,
   type WebLiveViewportUpdate,
 } from '@pickle-spec/web'
+
+export type ProjectLiveViewportUpdate =
+  | WebLiveViewportUpdate
+  | MobileLiveViewportUpdate
+
 import { resolveApplicationRevision } from '../configuration/application-revision'
 import {
   defaultExtensionsFile,
@@ -105,7 +111,7 @@ type StartProjectRunInput = {
   signal?: AbortSignal
   onEvent?: (event: RunEvent) => void | Promise<void>
   onApplicationDiagnostic?: (event: LiveApplicationDiagnostic) => void
-  onLiveViewport?: (update: WebLiveViewportUpdate) => void
+  onLiveViewport?: (update: ProjectLiveViewportUpdate) => void
   onSchedule?: (
     schedule: readonly ScheduledTestResult[],
   ) => void | Promise<void>
@@ -205,7 +211,7 @@ function configuredWebOptions(
 function configuredAdapter(
   extensions: Extensions,
   web: WebAdapterOptions | undefined,
-  onLiveViewport?: (update: WebLiveViewportUpdate) => void,
+  onLiveViewport?: (update: ProjectLiveViewportUpdate) => void,
 ): ExecutionTargetAdapter {
   if (extensions.adapter) return extensions.adapter
   if (!web)
@@ -223,7 +229,7 @@ function configureProfileAdapter(
   config: PickleConfig,
   args: ProjectRunOptions,
   profile: ExecutionTargetProfile,
-  onLiveViewport?: (update: WebLiveViewportUpdate) => void,
+  onLiveViewport?: (update: ProjectLiveViewportUpdate) => void,
 ): void {
   const configuredAdapters = adapters
   if (configuredAdapters[profile.id]) return
@@ -232,6 +238,8 @@ function configureProfileAdapter(
       configuredAdapters[profile.id] = configuredMobileAdapter(
         config,
         profile.id,
+        undefined,
+        { onLiveViewport },
       )
     }
     return
@@ -259,7 +267,7 @@ function configuredRunExtensions(
   config: PickleConfig,
   args: ProjectRunOptions,
   profiles: readonly ExecutionTargetProfile[],
-  onLiveViewport?: (update: WebLiveViewportUpdate) => void,
+  onLiveViewport?: (update: ProjectLiveViewportUpdate) => void,
 ): RunExtensions {
   const adapters: Record<string, ExecutionTargetAdapter> = {
     ...extensions.adapters,
@@ -502,7 +510,7 @@ async function resolveProjectRunConfiguration(
   applicationRevision: string | undefined,
   profileIds: string[] | undefined,
   root: string,
-  onLiveViewport?: (update: WebLiveViewportUpdate) => void,
+  onLiveViewport?: (update: ProjectLiveViewportUpdate) => void,
 ): Promise<ResolvedProjectRunConfiguration> {
   const extensions = await loadExtensions(args.extensionsPath, root)
   const runConfiguration = {
