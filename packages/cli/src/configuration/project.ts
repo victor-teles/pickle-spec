@@ -7,6 +7,7 @@ import {
   type SpecificationSourceFile,
   validateSpecificationMetadata,
 } from '@pickle-spec/spec'
+import prompts from 'prompts'
 import { validateExtensions } from '../extensions/extension-validation'
 import {
   defaultConfigFile,
@@ -108,10 +109,10 @@ async function readSpecificationFiles(
   return files
 }
 
-function migrationConfirmed(
+async function migrationConfirmed(
   options: ProjectCommandOptions,
   report: (message: string) => void,
-): boolean {
+): Promise<boolean> {
   if (options.yes) return true
   if (!process.stdin.isTTY) {
     report(
@@ -119,9 +120,13 @@ function migrationConfirmed(
     )
     return false
   }
-  if (/^[yY]/.test((prompt('Apply these changes? [y/N]') ?? '').trim())) {
-    return true
-  }
+  const answer = await prompts({
+    type: 'confirm',
+    name: 'confirmed',
+    message: 'Apply these changes?',
+    initial: false,
+  })
+  if (answer.confirmed === true) return true
   report('No files were changed')
   return false
 }
@@ -156,7 +161,7 @@ export async function migrateProject(
   const plan = planSpecificationMigration(files, config.language)
   report(formatMigrationPreview(plan))
   if (plan.changes.length === 0) return
-  if (!migrationConfirmed(options, report)) return
+  if (!(await migrationConfirmed(options, report))) return
   const updated = await writeMigration(cwd, plan.files)
   report(`Updated ${updated} Specification file(s)`)
 }

@@ -109,14 +109,14 @@ function checkPackageScripts(file: string, manifest: JsonObject): Violation[] {
   )
 
   if (file === 'packages/cli/package.json') {
-    return scripts['test:remaining']?.includes(expectedCliConfig)
+    return scripts['test:unit']?.includes(expectedCliConfig)
       ? violations
       : [
           ...violations,
           {
             file,
             detail:
-              'test:remaining must keep the dedicated CLI Vitest config for isolated PICKLE_HOME setup',
+              'test:unit must keep the dedicated CLI Vitest config for isolated PICKLE_HOME setup',
           },
         ]
   }

@@ -24,6 +24,7 @@
   "scripts": {
     "typecheck": "turbo run typecheck",
     "test": "bun scripts/verify-vitest-migration.ts && bunx --bun vitest run --configLoader runner --experimental.viteModuleRunner=false --experimental.nodeLoader=false --config vitest.scripts.config.ts && turbo run test",
+    "test:integration": "bun run --cwd packages/cli test:integration",
     "lint": "biome check .",
     "format": "biome check --write .",
     "benchmark:replay": "bun scripts/replay-performance-gate.ts",

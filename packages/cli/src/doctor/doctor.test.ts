@@ -1,10 +1,6 @@
 import { expect, test } from 'vitest'
 import type { PickleConfig } from '../configuration/config'
-import {
-  formatDoctorReport,
-  parseDoctorArguments,
-  runDoctorCommand,
-} from './doctor'
+import { formatDoctorReport, runDoctorCommand } from './doctor'
 
 const customConfig: PickleConfig = {
   schemaVersion: 1,
@@ -19,64 +15,45 @@ const silentProgress = {
   stop() {},
 }
 
-test('parses only Doctor project options', () => {
-  expect(
-    parseDoctorArguments([
-      'doctor',
-      '--config',
-      'custom.jsonc',
-      '--extensions',
-      'extensions.ts',
-    ]),
-  ).toEqual({
-    configPath: 'custom.jsonc',
-    extensionsPath: 'extensions.ts',
-    verbose: false,
-  })
-  expect(parseDoctorArguments(['doctor', '--verbose'])).toEqual({
-    verbose: true,
-  })
-  expect(() => parseDoctorArguments(['doctor', '--profile', 'chrome'])).toThrow(
-    'Usage: pickle doctor [--config <path>] [--extensions <path>] [--verbose]',
-  )
-})
-
 test('validates statically before diagnosing and reports unchecked custom adapters', async () => {
   const calls: string[] = []
   const output: string[] = []
-  const exitCode = await runDoctorCommand(['doctor'], {
-    cwd: '/project',
-    async check() {
-      calls.push('check')
-    },
-    async load() {
-      calls.push('load')
-      return customConfig
-    },
-    async diagnose() {
-      calls.push('diagnose')
-      return {
-        ready: true,
-        diagnostics: [],
-        uncheckedProfileIds: ['custom'],
-      }
-    },
-    color: false,
-    progress: {
-      start() {
-        calls.push('progress:start')
+  const exitCode = await runDoctorCommand(
+    { verbose: false },
+    {
+      cwd: '/project',
+      async check() {
+        calls.push('check')
       },
-      update() {
-        calls.push('progress:update')
+      async load() {
+        calls.push('load')
+        return customConfig
       },
-      stop() {
-        calls.push('progress:stop')
+      async diagnose() {
+        calls.push('diagnose')
+        return {
+          ready: true,
+          diagnostics: [],
+          uncheckedProfileIds: ['custom'],
+        }
+      },
+      color: false,
+      progress: {
+        start() {
+          calls.push('progress:start')
+        },
+        update() {
+          calls.push('progress:update')
+        },
+        stop() {
+          calls.push('progress:stop')
+        },
+      },
+      report(message) {
+        output.push(message)
       },
     },
-    report(message) {
-      output.push(message)
-    },
-  })
+  )
 
   expect(exitCode).toBe(0)
   expect(calls).toEqual([
@@ -114,21 +91,24 @@ test('renders remediation and returns 2 for blocked environments', async () => {
     uncheckedProfileIds: [],
   }
   const output: string[] = []
-  const exitCode = await runDoctorCommand(['doctor'], {
-    cwd: '/project',
-    async check() {},
-    async load() {
-      return customConfig
+  const exitCode = await runDoctorCommand(
+    { verbose: false },
+    {
+      cwd: '/project',
+      async check() {},
+      async load() {
+        return customConfig
+      },
+      async diagnose() {
+        return report
+      },
+      color: false,
+      progress: silentProgress,
+      report(message) {
+        output.push(message)
+      },
     },
-    async diagnose() {
-      return report
-    },
-    color: false,
-    progress: silentProgress,
-    report(message) {
-      output.push(message)
-    },
-  })
+  )
 
   expect(exitCode).toBe(2)
   expect(output).toEqual(formatDoctorReport(report))
@@ -166,27 +146,30 @@ test('stops terminal progress when project validation fails', async () => {
   let stopped = false
 
   await expect(
-    runDoctorCommand(['doctor'], {
-      cwd: '/project',
-      async check() {
-        throw new Error('Invalid project')
-      },
-      async load() {
-        return customConfig
-      },
-      async diagnose() {
-        throw new Error('Environment checks must not run')
-      },
-      color: false,
-      progress: {
-        start() {},
-        update() {},
-        stop() {
-          stopped = true
+    runDoctorCommand(
+      { verbose: false },
+      {
+        cwd: '/project',
+        async check() {
+          throw new Error('Invalid project')
         },
+        async load() {
+          return customConfig
+        },
+        async diagnose() {
+          throw new Error('Environment checks must not run')
+        },
+        color: false,
+        progress: {
+          start() {},
+          update() {},
+          stop() {
+            stopped = true
+          },
+        },
+        report() {},
       },
-      report() {},
-    }),
+    ),
   ).rejects.toThrow('Invalid project')
   expect(stopped).toBe(true)
 })

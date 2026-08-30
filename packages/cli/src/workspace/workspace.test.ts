@@ -334,7 +334,7 @@ for await (const chunk of Bun.stdin.stream()) {
     })
     expect(missingPlatform.exitCode).toBe(2)
     expect(missingPlatform.stderr.toString()).toContain(
-      'Usage: pickle apps --platform android|ios [--all]',
+      "required option '--platform <platform>' not specified",
     )
 
     const invalidPlatform = Bun.spawnSync({
@@ -344,7 +344,7 @@ for await (const chunk of Bun.stdin.stream()) {
     })
     expect(invalidPlatform.exitCode).toBe(2)
     expect(invalidPlatform.stderr.toString()).toContain(
-      '--platform requires android or ios',
+      '--platform requires android, ios',
     )
   })
 
@@ -2139,7 +2139,7 @@ export default {
     expect(fallback.exitCode).toBe(0)
     expect(uncacheable.exitCode).toBe(0)
     expect(conflicting.stderr.toString()).toContain(
-      '--refresh-cache cannot be combined with --cache-only',
+      "option '--refresh-cache' cannot be used with option '--cache-only'",
     )
     expect(await Bun.file(marker).text()).toBe(
       'adaptive\nreplay\nadaptive\nreplay\nadaptive\n',
@@ -2188,7 +2188,7 @@ export default {
     })
 
     expect(run.exitCode).toBe(2)
-    expect(run.stderr.toString()).toContain('Unknown option: --adaptations')
+    expect(run.stderr.toString()).toContain("unknown option '--adaptations'")
   })
 
   test('pickle run persists an immutable test run and writes stable CI outputs', async () => {
