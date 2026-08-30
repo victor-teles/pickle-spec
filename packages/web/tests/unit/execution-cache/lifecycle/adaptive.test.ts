@@ -1,14 +1,14 @@
-import { describe, expect, mock, test } from 'bun:test'
 import { finalScenarioAttempt, runScenario } from '@pickle-spec/runner'
 import { parseSpecification } from '@pickle-spec/spec'
+import { describe, expect, test, vi } from 'vitest'
 import {
   createWebAdapter,
   type WebAutomation,
   type WebExecutionCachePayload,
   type WebInstruction,
-} from '../../index'
-import { requiredValue } from '../required-value'
-import { factoryFor, memoryStore } from './web-execution-cache.fixtures.test'
+} from '../../../../index'
+import { requiredValue } from '../../../../src/required-value'
+import { factoryFor, memoryStore } from './fixtures'
 
 describe('web Execution cache lifecycle', () => {
   test('persists exactly the deterministic setup and assertion executed by Adaptive', async () => {
@@ -21,13 +21,13 @@ Feature: Status
 `,
     })
     const scenario = requiredValue(specification.scenarios[0])
-    const observe = mock(async () => [
+    const observe = vi.fn(async () => [
       {
         description: 'Ready indicator',
         handle: { selector: '#ready', method: 'click' },
       },
     ])
-    const executeInstruction = mock(async (_instruction: WebInstruction) => ({
+    const executeInstruction = vi.fn(async (_instruction: WebInstruction) => ({
       success: true,
     }))
     const automation: WebAutomation = {
@@ -103,13 +103,13 @@ Feature: Shopping cart
 `,
     })
     const scenario = requiredValue(specification.scenarios[0])
-    const compileAssertion = mock(async () => {
+    const compileAssertion = vi.fn(async () => {
       throw new Error('compound Then must not extract')
     })
-    const verify = mock(async () => {
+    const verify = vi.fn(async () => {
       throw new Error('compound Then must not verify')
     })
-    const executeInstruction = mock(async () => ({ success: true }))
+    const executeInstruction = vi.fn(async () => ({ success: true }))
     const automation: WebAutomation = {
       async navigate() {},
       async observe() {
@@ -192,7 +192,7 @@ Feature: Sign in
 `,
     })
     const scenario = requiredValue(specification.scenarios[0])
-    const observe = mock(async () => [
+    const observe = vi.fn(async () => [
       {
         description: 'Fill the email field',
         handle: {
@@ -202,12 +202,12 @@ Feature: Sign in
         },
       },
     ])
-    const compileAssertion = mock(async () => ({
+    const compileAssertion = vi.fn(async () => ({
       kind: 'value-equals' as const,
       selector: '#email',
       expected: 'alice@example.com',
     }))
-    const executeInstruction = mock(async () => ({ success: true }))
+    const executeInstruction = vi.fn(async () => ({ success: true }))
     const automation: WebAutomation = {
       async navigate() {},
       observe,

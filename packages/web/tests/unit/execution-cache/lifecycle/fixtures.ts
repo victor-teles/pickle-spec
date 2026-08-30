@@ -5,7 +5,7 @@ import type {
 import type {
   WebAutomation,
   WebAutomationFactory,
-} from '../adapter/automation/web-automation'
+} from '../../../../src/adapter/automation/web-automation'
 
 export function memoryStore() {
   const entries = new Map<string, string>()

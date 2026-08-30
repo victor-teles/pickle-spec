@@ -1,7 +1,7 @@
-import { describe, expect, mock, test } from 'bun:test'
 import type { Scenario, Specification } from '@pickle-spec/spec'
-import { createWebAdapter, validateWebAdapterOptions } from '../../../index'
-import { requiredValue } from '../../required-value'
+import { describe, expect, test, vi } from 'vitest'
+import { createWebAdapter, validateWebAdapterOptions } from '../../../../index'
+import { requiredValue } from '../../../../src/required-value'
 import {
   clearedGoogleApiKeys,
   factoryFor,
@@ -9,7 +9,7 @@ import {
   specification,
   stubAutomation,
   withEnv,
-} from './web-adapter.fixtures.test'
+} from './fixtures'
 
 describe('createWebAdapter options', () => {
   test('records every enabled fast profile trade-off on the adapter', () => {
@@ -136,10 +136,10 @@ describe('createWebAdapter options', () => {
   })
 
   test('forwards GOOGLE_API_KEY to the automation factory for a Google model', async () => {
-    const openContext = mock(async () => stubAutomation())
-    const launch = mock(async () => ({
+    const openContext = vi.fn(async () => stubAutomation())
+    const launch = vi.fn(async () => ({
       openContext,
-      close: mock(async () => {}),
+      close: vi.fn(async () => {}),
     }))
     await withEnv(
       { ...clearedGoogleApiKeys, GOOGLE_API_KEY: 'test-google-key' },
@@ -213,9 +213,9 @@ describe('createWebAdapter options', () => {
         return { success: true }
       },
     })
-    const launch = mock(async () => ({
-      openContext: mock(async () => automation),
-      close: mock(async () => {}),
+    const launch = vi.fn(async () => ({
+      openContext: vi.fn(async () => automation),
+      close: vi.fn(async () => {}),
     }))
     const replayScenario: Scenario = {
       name: 'Open account',

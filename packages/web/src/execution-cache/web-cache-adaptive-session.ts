@@ -8,11 +8,13 @@ import type {
 import type { ScenarioStep } from '@pickle-spec/spec'
 import type { WebAutomation } from '../adapter/automation/web-automation'
 import type { WebAdapterOptions } from '../adapter/configuration/web-options'
+import { captureWebAction } from '../evidence/web-action-evidence'
 import {
   compileAssertionDrafts,
   definedInstructions,
   executeObservedActions,
   observeActions,
+  observeOnce,
   verificationExecution,
 } from './web-adaptive-operations'
 import {
@@ -23,7 +25,6 @@ import {
   instructionCoversStepVariables,
   parseObservedActionPayload,
   stepVariableNames,
-  type WebAssertionDraft,
   type WebExecutionCachePayload,
   type WebInstruction,
 } from './web-execution-cache'

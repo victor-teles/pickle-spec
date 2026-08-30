@@ -1,17 +1,12 @@
-import { describe, expect, mock, test } from 'bun:test'
-import { createWebAdapter } from '../../../index'
-import { requiredValue } from '../../required-value'
-import {
-  factoryFor,
-  scenario,
-  specification,
-  stubAutomation,
-} from './web-adapter.fixtures.test'
+import { describe, expect, test, vi } from 'vitest'
+import { createWebAdapter } from '../../../../index'
+import { requiredValue } from '../../../../src/required-value'
+import { factoryFor, scenario, specification, stubAutomation } from './fixtures'
 
 describe('createWebAdapter navigation', () => {
   test('gives explicit navigation precedence for an action step', async () => {
-    const navigate = mock(async () => {})
-    const observe = mock(async () => [])
+    const navigate = vi.fn(async () => {})
+    const observe = vi.fn(async () => [])
     const adapter = createWebAdapter(
       { baseUrl: 'https://example.test' },
       factoryFor(stubAutomation({ navigate, observe })),
@@ -44,7 +39,7 @@ describe('createWebAdapter navigation', () => {
   })
 
   test('does not navigate when opening a logical session', async () => {
-    const navigate = mock(async () => {})
+    const navigate = vi.fn(async () => {})
     const adapter = createWebAdapter(
       { baseUrl: 'https://example.test' },
       factoryFor(stubAutomation({ navigate })),
@@ -60,11 +55,11 @@ describe('createWebAdapter navigation', () => {
   })
 
   test('navigates to baseUrl only before the first action that requires a page', async () => {
-    const navigate = mock(async () => {})
-    const observe = mock(async () => [
+    const navigate = vi.fn(async () => {})
+    const observe = vi.fn(async () => [
       { description: 'Fill the search field', handle: { selector: '#search' } },
     ])
-    const act = mock(async () => ({ success: true }))
+    const act = vi.fn(async () => ({ success: true }))
     const adapter = createWebAdapter(
       { baseUrl: 'https://example.test' },
       factoryFor(stubAutomation({ navigate, observe, act })),
@@ -104,8 +99,8 @@ describe('createWebAdapter navigation', () => {
   })
 
   test('navigates to baseUrl before the first outcome when no explicit navigation exists', async () => {
-    const navigate = mock(async () => {})
-    const verify = mock(async () => ({
+    const navigate = vi.fn(async () => {})
+    const verify = vi.fn(async () => ({
       meetsExpectation: true,
       actualState: 'Ready',
     }))
@@ -141,11 +136,11 @@ describe('createWebAdapter navigation', () => {
   })
 
   test('does not navigate to baseUrl again after explicit navigation', async () => {
-    const navigate = mock(async () => {})
-    const observe = mock(async () => [
+    const navigate = vi.fn(async () => {})
+    const observe = vi.fn(async () => [
       { description: 'Fill the search field', handle: { selector: '#search' } },
     ])
-    const act = mock(async () => ({ success: true }))
+    const act = vi.fn(async () => ({ success: true }))
     const adapter = createWebAdapter(
       { baseUrl: 'https://example.test' },
       factoryFor(stubAutomation({ navigate, observe, act })),

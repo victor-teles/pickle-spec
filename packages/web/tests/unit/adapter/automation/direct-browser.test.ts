@@ -1,12 +1,7 @@
 import type { BrowserContext, Locator, Page } from '@browserbasehq/stagehand'
-<<<<<<<< HEAD:packages/web/src/adapter/automation/direct-browser.test.ts
-import type { WebInstruction } from '../../execution-cache/web-execution-cache'
-import { createDirectBrowser } from './direct-browser'
-========
 import { describe, expect, test, vi } from 'vitest'
-import { createDirectBrowser } from '../../../src/adapter/direct-browser'
-import type { WebInstruction } from '../../../src/execution-cache/web-execution-cache'
->>>>>>>> origin/main:packages/web/tests/unit/adapter/direct-browser.test.ts
+import { createDirectBrowser } from '../../../../src/adapter/automation/direct-browser'
+import type { WebInstruction } from '../../../../src/execution-cache/web-execution-cache'
 
 const literal = (value: string) => ({ segments: [{ literal: value }] })
 const target = { selector: literal('#target') }

@@ -9,7 +9,7 @@ import type { ScenarioStep } from '@pickle-spec/spec'
 import {
   capturedActionFromError,
   captureWebAction,
-} from '../evidence/web-action-evidence'
+} from '../../evidence/web-action-evidence'
 import {
   errorMessage,
   navigationTarget,

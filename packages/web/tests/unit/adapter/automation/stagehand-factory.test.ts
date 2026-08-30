@@ -3,14 +3,9 @@ import type { Scenario, Specification } from '@pickle-spec/spec'
 import { afterEach, describe, expect, test, vi } from 'vitest'
 import { mock } from 'vitest-mock-extended'
 import { z } from 'zod'
-import { createWebAdapter } from '../../../index'
-<<<<<<<< HEAD:packages/web/src/adapter/automation/stagehand-factory.test.ts
-import { requiredValue } from '../../required-value'
-import { stagehandFactory } from './stagehand-factory'
-========
-import { stagehandFactory } from '../../../src/adapter/stagehand-factory'
-import { requiredValue } from '../../../src/required-value'
->>>>>>>> origin/main:packages/web/tests/unit/adapter/stagehand-factory.test.ts
+import { createWebAdapter } from '../../../../index'
+import { stagehandFactory } from '../../../../src/adapter/automation/stagehand-factory'
+import { requiredValue } from '../../../../src/required-value'
 
 type LaunchedBrowser = Awaited<ReturnType<typeof localBrowser.launch>>
 

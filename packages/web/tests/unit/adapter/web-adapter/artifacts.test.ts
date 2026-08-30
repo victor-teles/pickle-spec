@@ -1,15 +1,11 @@
-import { afterAll, describe, expect, mock, test } from 'bun:test'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { createWebAdapter } from '../../../index'
-import { requiredValue } from '../../required-value'
-import {
-  factoryFor,
-  scenario,
-  specification,
-  stubAutomation,
-} from './web-adapter.fixtures.test'
+import { runScenario } from '@pickle-spec/runner'
+import { afterAll, describe, expect, test, vi } from 'vitest'
+import { createWebAdapter } from '../../../../index'
+import { requiredValue } from '../../../../src/required-value'
+import { factoryFor, scenario, specification, stubAutomation } from './fixtures'
 
 describe('createWebAdapter', () => {
   const artifactDirectories: string[] = []
@@ -27,16 +23,16 @@ describe('createWebAdapter', () => {
       join(tmpdir(), 'pickle-web-artifacts-'),
     )
     artifactDirectories.push(artifactDirectory)
-    const navigate = mock(async () => {})
-    const observe = mock(async () => [
+    const navigate = vi.fn(async () => {})
+    const observe = vi.fn(async () => [
       { description: 'Fill the search field', handle: { selector: '#search' } },
     ])
-    const act = mock(async () => ({ success: true }))
-    const verify = mock(async () => ({
+    const act = vi.fn(async () => ({ success: true }))
+    const verify = vi.fn(async () => ({
       meetsExpectation: false,
       actualState: 'No results were shown',
     }))
-    const close = mock(async () => {})
+    const close = vi.fn(async () => {})
     const adapter = createWebAdapter(
       {
         baseUrl: 'https://example.test',
@@ -93,6 +89,65 @@ describe('createWebAdapter', () => {
     expect(act).toHaveBeenCalledTimes(1)
     expect(verify).toHaveBeenCalledTimes(1)
     expect(close).toHaveBeenCalledTimes(1)
+  })
+
+  test('reuses the final action screenshot at step completion', async () => {
+    const artifactDirectory = await mkdtemp(
+      join(tmpdir(), 'pickle-web-action-artifacts-'),
+    )
+    artifactDirectories.push(artifactDirectory)
+    const screenshot = vi.fn(async () => new Uint8Array([137, 80, 78, 71]))
+    const adapter = createWebAdapter(
+      {
+        baseUrl: 'https://example.test',
+        screenshots: { mode: 'on-step', outputDir: artifactDirectory },
+      },
+      factoryFor(
+        stubAutomation({
+          async observe() {
+            return [
+              {
+                description: 'Fill the search field',
+                handle: { selector: '#search' },
+              },
+            ]
+          },
+          screenshot,
+        }),
+      ),
+    )
+
+    const run = await runScenario({
+      adapter,
+      executionTargetProfile: { id: 'web' },
+      specification,
+      scenario,
+    })
+    await adapter.dispose?.()
+    const finished = run.events.findLast(
+      (event) => event.type === 'scenario-finished',
+    )
+    if (finished?.type !== 'scenario-finished') {
+      throw new Error('Expected completed Scenario evidence')
+    }
+    const actionStep = requiredValue(finished.attempt.steps[1])
+    const resolvedAction = requiredValue(actionStep.resolvedActions[0])
+    const action = requiredValue(resolvedAction.evidence)
+    const after = action.screenshots.after
+    const before = action.screenshots.before
+    if (before.state !== 'available' || after.state !== 'available') {
+      throw new Error('Expected before-and-after action screenshots')
+    }
+
+    expect(screenshot).toHaveBeenCalledTimes(6)
+    expect(actionStep.artifacts).toHaveLength(2)
+    expect(actionStep.artifacts?.[0]?.path).toBe(after.artifact.path)
+    expect(actionStep.artifacts?.map((artifact) => artifact.path)).toEqual(
+      expect.arrayContaining([before.artifact.path, after.artifact.path]),
+    )
+    expect(
+      new Set(actionStep.artifacts?.map((artifact) => artifact.path)).size,
+    ).toBe(2)
   })
 
   test('attaches screenshots to each step and the recording to the failing step', async () => {
@@ -232,6 +287,46 @@ describe('createWebAdapter', () => {
       'screenshot',
       'recording',
     ])
+  })
+
+  test('reports a recording start failure once', async () => {
+    const adapter = createWebAdapter(
+      {
+        baseUrl: 'https://example.test',
+        screenshots: { mode: 'on-step' },
+      },
+      factoryFor(
+        stubAutomation({
+          async startRecording() {
+            throw new Error('encoder unavailable')
+          },
+        }),
+      ),
+    )
+    const session = await adapter.openSession({
+      executionTargetProfile: { id: 'web' },
+      specification,
+      scenario,
+    })
+
+    const results = []
+    for (const step of scenario.steps) {
+      results.push(await session.executeStep(step))
+    }
+    await session.close()
+
+    expect(
+      results.flatMap((result) => result.evidenceAvailability ?? []),
+    ).toContainEqual({
+      kind: 'recording',
+      state: 'capture-failed',
+      message: 'encoder unavailable',
+    })
+    expect(
+      results
+        .flatMap((result) => result.evidenceAvailability ?? [])
+        .filter((availability) => availability.kind === 'recording'),
+    ).toHaveLength(1)
   })
 
   test('reports a requested screenshot that could not be captured', async () => {

@@ -1,16 +1,11 @@
-import { afterAll, describe, expect, test } from 'bun:test'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { Scenario } from '@pickle-spec/spec'
-import { createWebAdapter } from '../../../index'
-import { requiredValue } from '../../required-value'
-import {
-  factoryFor,
-  scenario,
-  specification,
-  stubAutomation,
-} from './web-adapter.fixtures.test'
+import { afterAll, describe, expect, test } from 'vitest'
+import { createWebAdapter } from '../../../../index'
+import { requiredValue } from '../../../../src/required-value'
+import { factoryFor, scenario, specification, stubAutomation } from './fixtures'
 
 describe('createWebAdapter evidence', () => {
   const artifactDirectories: string[] = []

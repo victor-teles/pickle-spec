@@ -18,13 +18,14 @@ import {
   type WebInstruction,
   webAssertionCompileSchema,
 } from '../../execution-cache/web-execution-cache'
-import { withAbort } from './abort'
-import { createDirectBrowser } from './direct-browser'
+import type { BrowserOptions } from '../configuration/web-options'
 import {
   startStagehandLiveViewport,
   type WebLiveViewport,
   type WebLiveViewportController,
 } from '../live-viewport'
+import { withAbort } from './abort'
+import { createDirectBrowser } from './direct-browser'
 import { stabilizeSelector } from './stable-selector'
 import type {
   WebAutomation,
@@ -32,7 +33,6 @@ import type {
   WebObservedAction,
   WebScreenshotCapture,
 } from './web-automation'
-import type { BrowserOptions } from '../configuration/web-options'
 
 const verificationSchema = z.object({
   meetsExpectation: z

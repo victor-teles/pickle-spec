@@ -1,9 +1,9 @@
-import { mock } from 'bun:test'
 import type { Scenario, Specification } from '@pickle-spec/spec'
+import { vi } from 'vitest'
 import type {
   WebAutomation,
   WebAutomationFactory,
-} from '../automation/web-automation'
+} from '../../../../src/adapter/automation/web-automation'
 
 export function stubAutomation(
   overrides: Partial<WebAutomation> = {},
@@ -32,9 +32,9 @@ export function stubAutomation(
 
 export function factoryFor(automation: WebAutomation): WebAutomationFactory {
   return {
-    launch: mock(async () => ({
-      openContext: mock(async () => automation),
-      close: mock(async () => {}),
+    launch: vi.fn(async () => ({
+      openContext: vi.fn(async () => automation),
+      close: vi.fn(async () => {}),
     })),
   }
 }

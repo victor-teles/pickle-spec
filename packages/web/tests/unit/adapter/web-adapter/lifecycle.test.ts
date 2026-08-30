@@ -1,19 +1,20 @@
-import { describe, expect, mock, test } from 'bun:test'
 import { runScenario } from '@pickle-spec/runner'
-import { createWebAdapter } from '../../../index'
-import { requiredValue } from '../../required-value'
+import { resolveScenarioId } from '@pickle-spec/spec'
+import { describe, expect, test, vi } from 'vitest'
 import {
-  factoryFor,
-  scenario,
-  specification,
-  stubAutomation,
-} from './web-adapter.fixtures.test'
+  createWebAdapter,
+  type WebAutomationFactory,
+  type WebLiveViewportUpdate,
+} from '../../../../index'
+import type { WebClientContext } from '../../../../src/adapter/automation/web-automation'
+import { requiredValue } from '../../../../src/required-value'
+import { factoryFor, scenario, specification, stubAutomation } from './fixtures'
 
 describe('createWebAdapter lifecycle', () => {
   test('pools browser processes across consecutive logical sessions', async () => {
-    const launch = mock(async () => ({
-      openContext: mock(async () => stubAutomation()),
-      close: mock(async () => {}),
+    const launch = vi.fn(async () => ({
+      openContext: vi.fn(async () => stubAutomation()),
+      close: vi.fn(async () => {}),
     }))
     const adapter = createWebAdapter(
       { baseUrl: 'https://example.test' },
@@ -35,6 +36,58 @@ describe('createWebAdapter lifecycle', () => {
     await adapter.dispose?.()
 
     expect(launch).toHaveBeenCalledTimes(1)
+  })
+
+  test('forwards live viewport updates with canonical Scenario target identity', async () => {
+    const updates: WebLiveViewportUpdate[] = []
+    const launch: WebAutomationFactory['launch'] = vi.fn(async () => ({
+      async openContext(context: WebClientContext) {
+        context.onLiveViewport?.({
+          kind: 'frame',
+          data: 'latest-frame',
+          mimeType: 'image/jpeg',
+        })
+        return stubAutomation({
+          async close() {
+            context.onLiveViewport?.({ kind: 'closed' })
+          },
+        })
+      },
+      async close() {},
+    }))
+    const adapter = createWebAdapter(
+      { baseUrl: 'https://example.test' },
+      { launch },
+      { onLiveViewport: (update) => updates.push(update) },
+    )
+
+    const session = await adapter.openSession({
+      executionTargetProfile: { id: 'attached-chrome' },
+      specification,
+      scenario: { ...scenario, examplesRowId: 'row-card' },
+    })
+    await session.close()
+    await adapter.dispose?.()
+
+    const target = {
+      scenarioId: resolveScenarioId(
+        specification.source.uri,
+        specification.name,
+        scenario.name,
+        scenario.tags,
+      ),
+      examplesRowId: 'row-card',
+      profileId: 'attached-chrome',
+    }
+    expect(updates).toEqual([
+      {
+        kind: 'frame',
+        data: 'latest-frame',
+        mimeType: 'image/jpeg',
+        target,
+      },
+      { kind: 'closed', target },
+    ])
   })
 
   test('surfaces isolation verification failure when opening a logical session', async () => {
@@ -62,8 +115,8 @@ describe('createWebAdapter lifecycle', () => {
     let closeStarted = false
     let closeFinished = false
     const browserClosed = Promise.withResolvers<void>()
-    const launch = mock(async () => ({
-      openContext: mock(async () =>
+    const launch = vi.fn(async () => ({
+      openContext: vi.fn(async () =>
         stubAutomation({
           async navigate(_url, signal) {
             await new Promise((_resolve, reject) => {
@@ -82,7 +135,7 @@ describe('createWebAdapter lifecycle', () => {
           },
         }),
       ),
-      close: mock(async () => browserClosed.resolve()),
+      close: vi.fn(async () => browserClosed.resolve()),
     }))
     const adapter = createWebAdapter(
       { baseUrl: 'https://example.test' },
@@ -124,12 +177,12 @@ describe('createWebAdapter lifecycle', () => {
   test('finishes a cancelled runner scenario when browser shutdown unblocks automation cleanup', async () => {
     const stepStarted = Promise.withResolvers<void>()
     const browserClosed = Promise.withResolvers<void>()
-    const closeBrowser = mock(async () => browserClosed.resolve())
+    const closeBrowser = vi.fn(async () => browserClosed.resolve())
     const adapter = createWebAdapter(
       { baseUrl: 'https://example.test' },
       {
-        launch: mock(async () => ({
-          openContext: mock(async () =>
+        launch: vi.fn(async () => ({
+          openContext: vi.fn(async () =>
             stubAutomation({
               async navigate(_url, signal) {
                 stepStarted.resolve()

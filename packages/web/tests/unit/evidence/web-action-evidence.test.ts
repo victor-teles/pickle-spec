@@ -1,6 +1,6 @@
 import type { ActionEvidence, StepExecutionContext } from '@pickle-spec/runner'
 import { expect, test, vi } from 'vitest'
-import type { WebAutomation } from '../../../src/adapter/web-automation'
+import type { WebAutomation } from '../../../src/adapter/automation/web-automation'
 import {
   CapturedWebActionError,
   captureWebAction,

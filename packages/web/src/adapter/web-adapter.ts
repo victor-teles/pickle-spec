@@ -28,10 +28,6 @@ export type {
   WebVerificationResult,
 } from './automation/web-automation'
 export type {
-  WebLiveViewportTarget,
-  WebLiveViewportUpdate,
-} from './live-viewport'
-export type {
   BrowserOptions,
   ScreenshotOptions,
   WebAdapterOptions,
@@ -41,6 +37,10 @@ export {
   validateWebAdapterOptions,
   webAdapterOptionsSchema,
 } from './configuration/web-options'
+export type {
+  WebLiveViewportTarget,
+  WebLiveViewportUpdate,
+} from './live-viewport'
 
 export type { WebAdapterBehavior } from './session/web-session'
 

@@ -1,12 +1,12 @@
-import { describe, expect, mock, test } from 'bun:test'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { finalScenarioAttempt, runScenario } from '@pickle-spec/runner'
 import { parseSpecification } from '@pickle-spec/spec'
-import { createWebAdapter, type WebAutomation } from '../../index'
-import { requiredValue } from '../required-value'
-import { factoryFor, memoryStore } from './web-execution-cache.fixtures.test'
+import { describe, expect, test, vi } from 'vitest'
+import { createWebAdapter, type WebAutomation } from '../../../../index'
+import { requiredValue } from '../../../../src/required-value'
+import { factoryFor, memoryStore } from './fixtures'
 
 describe('web Execution cache replay lifecycle', () => {
   test('uses value-free screenshot paths across parameterized Adaptive and Replay runs', async () => {
@@ -27,7 +27,7 @@ Feature: Account
 `,
       })
       const scenario = requiredValue(specification.scenarios[0])
-      const executeInstruction = mock(async () => ({ success: true }))
+      const executeInstruction = vi.fn(async () => ({ success: true }))
       const automation: WebAutomation = {
         async navigate() {},
         async observe() {
@@ -114,7 +114,7 @@ Feature: Unsafe operation
 `,
     })
     const scenario = requiredValue(specification.scenarios[0])
-    const observe = mock(async () => [
+    const observe = vi.fn(async () => [
       {
         description: 'Run custom code',
         handle: {
@@ -124,7 +124,7 @@ Feature: Unsafe operation
         },
       },
     ])
-    const act = mock(async () => ({ success: true }))
+    const act = vi.fn(async () => ({ success: true }))
     const automation: WebAutomation = {
       async navigate() {},
       observe,
@@ -182,7 +182,7 @@ Feature: Submit
 `,
     })
     const scenario = requiredValue(specification.scenarios[0])
-    const observe = mock(async () => [
+    const observe = vi.fn(async () => [
       {
         description: 'Click submit',
         handle: { selector: '#submit', method: 'click' },
