@@ -1357,6 +1357,125 @@ function resultWithArtifact(
   }
 }
 
+test('links persisted artifacts to canonical non-adjacent event ranges', async () => {
+  const root = await tempRoot()
+  const screenshot = join(root, 'terminal.png')
+  const recording = join(root, 'scenario.mp4')
+  await Bun.write(screenshot, 'image')
+  await Bun.write(recording, 'video')
+  const run = await openTestRunStore({
+    root,
+    createId: () => 'run-artifact-links',
+  }).create()
+  const result = resultWithArtifact('Linked evidence', 'failed', screenshot)
+  const attempt = requiredValue(result.attempts[0])
+  const terminal = {
+    ...requiredValue(attempt.steps[0]),
+    index: 1,
+    artifacts: [
+      { kind: 'screenshot' as const, path: screenshot },
+      { kind: 'recording' as const, path: recording },
+    ],
+  }
+  const scope = {
+    scenarioId: requiredValue(result.scenario.id),
+    executionTargetProfileId: result.executionTargetProfile.id,
+    attempt: attempt.attempt,
+  }
+  const stepStarted = (stepIndex: number) => ({
+    type: 'step-started' as const,
+    step: terminal.step,
+    scenario: result.scenario,
+    executionTargetProfile: result.executionTargetProfile,
+    scope: { ...scope, stepIndex },
+  })
+
+  await run.append(stepStarted(0))
+  await run.append({
+    type: 'step-finished',
+    result: { ...terminal, index: 0, artifacts: undefined },
+    scenario: result.scenario,
+    executionTargetProfile: result.executionTargetProfile,
+    scope: { ...scope, stepIndex: 0 },
+  })
+  await run.append(stepStarted(1))
+  await run.append({
+    type: 'cache-uncacheable',
+    reason: 'non-deterministic-action',
+    scope: { ...scope, stepIndex: 1 },
+  })
+  const finished = await run.append({
+    type: 'step-finished',
+    result: terminal,
+    scenario: result.scenario,
+    executionTargetProfile: result.executionTargetProfile,
+    scope: { ...scope, stepIndex: 1 },
+  })
+
+  expect(finished).toMatchObject({
+    sequence: 6,
+    result: {
+      artifacts: [
+        {
+          kind: 'screenshot',
+          evidenceLink: {
+            stepIndex: 1,
+            eventRange: { startSequence: 4, endSequence: 6 },
+          },
+        },
+        {
+          kind: 'recording',
+          evidenceLink: {
+            stepIndex: 1,
+            eventRange: { startSequence: 2, endSequence: 6 },
+          },
+        },
+      ],
+    },
+  })
+  await run.append(
+    scenarioFinished({
+      ...result,
+      attempts: [
+        {
+          ...attempt,
+          steps: [{ ...terminal, index: 0, artifacts: undefined }, terminal],
+          evidenceAvailability: attempt.evidenceAvailability.map(
+            (availability) =>
+              availability.kind === 'recording'
+                ? { ...availability, state: 'available' as const }
+                : availability,
+          ),
+        },
+      ],
+    }),
+  )
+  const scenarioFinish = (await run.events()).at(-1)
+  expect(scenarioFinish).toMatchObject({
+    type: 'scenario-finished',
+    sequence: 7,
+    attempt: {
+      steps: [
+        {},
+        {
+          artifacts: [
+            {
+              evidenceLink: {
+                eventRange: { startSequence: 4, endSequence: 6 },
+              },
+            },
+            {
+              evidenceLink: {
+                eventRange: { startSequence: 2, endSequence: 6 },
+              },
+            },
+          ],
+        },
+      ],
+    },
+  })
+})
+
 function withDiagnosticEvidence(result: TestResult): TestResult {
   const attempt = requiredValue(result.attempts[0])
   const diagnostic = {

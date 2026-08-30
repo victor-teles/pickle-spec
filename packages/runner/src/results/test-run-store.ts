@@ -14,6 +14,7 @@ import type {
   ExecutionMode,
   RunEvent,
   RunEventPayload,
+  RunEventScope,
   ScenarioAttempt,
   TestArtifact,
   TestResult,
@@ -538,6 +539,7 @@ async function appendPersistedEvent(
     current,
     policy,
     state.artifactsDirectory,
+    envelope.sequence,
   )
   const versioned = { ...persisted.event, ...envelope } as RunEvent
   try {
@@ -984,6 +986,7 @@ async function persistEventArtifacts(
   current: readonly RunEvent[],
   policy: EvidencePersistencePolicy,
   artifactsDirectory: string,
+  endSequence: number,
 ): Promise<PersistedEventEvidence> {
   if (event.type === 'scenario-finished') {
     const persisted = await persistAttemptArtifacts(
@@ -994,7 +997,23 @@ async function persistEventArtifacts(
       artifactsDirectory,
     )
     return {
-      event: { ...event, attempt: persisted.attempt },
+      event: {
+        ...event,
+        attempt: {
+          ...persisted.attempt,
+          steps: persisted.attempt.steps.map((step) =>
+            stampArtifactEvidenceLinks(
+              step,
+              { ...event.scope, stepIndex: step.index },
+              current,
+              matchingStepFinishedSequence(current, {
+                ...event.scope,
+                stepIndex: step.index,
+              }) ?? endSequence,
+            ),
+          ),
+        },
+      },
       publishedPaths: persisted.publishedPaths,
     }
   }
@@ -1006,11 +1025,83 @@ async function persistEventArtifacts(
       artifactStepName(event.scope, event.result.index),
     )
     return {
-      event: { ...event, result: persisted.step },
+      event: {
+        ...event,
+        result: stampArtifactEvidenceLinks(
+          persisted.step,
+          event.scope,
+          current,
+          endSequence,
+        ),
+      },
       publishedPaths: persisted.publishedPaths,
     }
   }
   return { event, publishedPaths: [] }
+}
+
+function sameAttemptScope(
+  left: RunEventScope,
+  right: Extract<RunEventPayload, { type: 'step-finished' }>['scope'],
+): boolean {
+  return (
+    left.scenarioId === right.scenarioId &&
+    left.examplesRowId === right.examplesRowId &&
+    left.executionTargetProfileId === right.executionTargetProfileId &&
+    left.attempt === right.attempt
+  )
+}
+
+function artifactStartSequence(
+  artifact: TestArtifact,
+  stepIndex: number,
+  scope: Extract<RunEventPayload, { type: 'step-finished' }>['scope'],
+  current: readonly RunEvent[],
+): number | undefined {
+  const started = current.filter(
+    (event): event is Extract<RunEvent, { type: 'step-started' }> =>
+      event.type === 'step-started' && sameAttemptScope(event.scope, scope),
+  )
+  if (artifact.kind === 'recording') return started[0]?.sequence
+  return started.findLast((event) => event.scope.stepIndex === stepIndex)
+    ?.sequence
+}
+
+function stampArtifactEvidenceLinks(
+  step: TestStepResult,
+  scope: Extract<RunEventPayload, { type: 'step-finished' }>['scope'],
+  current: readonly RunEvent[],
+  endSequence: number,
+): TestStepResult {
+  if (!step.artifacts?.length) return step
+  return {
+    ...step,
+    artifacts: step.artifacts.map((artifact) => {
+      const startSequence = artifactStartSequence(
+        artifact,
+        step.index,
+        scope,
+        current,
+      )
+      if (startSequence === undefined) return artifact
+      return {
+        ...artifact,
+        evidenceLink: {
+          stepIndex: step.index,
+          eventRange: { startSequence, endSequence },
+        },
+      }
+    }),
+  }
+}
+
+function matchingStepFinishedSequence(
+  current: readonly RunEvent[],
+  scope: Extract<RunEventPayload, { type: 'step-finished' }>['scope'],
+): number | undefined {
+  return current.findLast(
+    (event) => event.type === 'step-finished' && sameScope(event.scope, scope),
+  )?.sequence
 }
 
 type EvidenceCaptureFailure = {

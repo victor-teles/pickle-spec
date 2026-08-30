@@ -65,6 +65,12 @@ function publicArtifact(artifact: TestArtifact): TestArtifact {
     name: artifact.name,
     capturedAt: artifact.capturedAt,
     sizeBytes: artifact.sizeBytes,
+    evidenceLink: artifact.evidenceLink
+      ? {
+          stepIndex: artifact.evidenceLink.stepIndex,
+          eventRange: { ...artifact.evidenceLink.eventRange },
+        }
+      : undefined,
   }
 }
 

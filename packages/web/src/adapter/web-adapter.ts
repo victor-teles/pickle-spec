@@ -346,6 +346,7 @@ async function openWebSession(
     automation,
     stepNumber: () => stepIndex,
   })
+  await finish.start()
   const runtime = await createWebSessionRuntime({
     automation,
     cacheReplay,

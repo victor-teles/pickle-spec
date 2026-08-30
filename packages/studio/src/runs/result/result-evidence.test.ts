@@ -18,6 +18,7 @@ import {
   findInspectedResult,
   recoveryGuidance,
   type TimelineEntry,
+  timelineEntriesOfKinds,
   timelineFor,
   visibleTimelineEntries,
 } from './result-evidence'
@@ -326,7 +327,7 @@ test('projects exact spans and points without replacing occurrence time with cau
   ])
 })
 
-test('puts captured media on timeline entries and links the session recording to every step', () => {
+test('puts captured media on the explicitly linked timeline step', () => {
   const screenshot = {
     kind: 'screenshot' as const,
     path: '/tmp/step-01-passed.png',
@@ -338,6 +339,10 @@ test('puts captured media on timeline entries and links the session recording to
     path: '/tmp/scenario.mp4',
     mediaType: 'video/mp4',
     name: 'scenario.mp4',
+    evidenceLink: {
+      stepIndex: 1,
+      eventRange: { startSequence: 4, endSequence: 5 },
+    },
   }
   const inspectedAttempt: ScenarioAttempt = {
     ...attempt(1, 'failed'),
@@ -390,7 +395,6 @@ test('puts captured media on timeline entries and links the session recording to
 
   expect(firstStep?.artifacts?.map((artifact) => artifact.kind)).toEqual([
     'screenshot',
-    'recording',
   ])
   expect(failedStep?.artifacts?.map((artifact) => artifact.kind)).toEqual([
     'recording',
@@ -446,6 +450,21 @@ test('essential timeline keeps Step, Diagnostic, artifact, and causal Resolved a
     { kind: 'Test artifact', title: 'screenshot' },
   ])
   expect(visibleTimelineEntries(entries, 'verbose')).toBe(entries)
+})
+
+test('filters timeline entries by selected kinds without changing their order', () => {
+  const entries = [
+    timelineEntry('Step', 'Then payment is captured'),
+    timelineEntry('Run event', 'Scenario Started'),
+    timelineEntry('Diagnostic entry', 'Payment was declined'),
+  ]
+
+  expect(
+    timelineEntriesOfKinds(entries, ['Step', 'Diagnostic entry']).map(
+      (entry) => entry.kind,
+    ),
+  ).toEqual(['Step', 'Diagnostic entry'])
+  expect(timelineEntriesOfKinds(entries, [])).toEqual([])
 })
 
 test('marks action timestamps inherited from step completion without downgrading exact artifacts', () => {

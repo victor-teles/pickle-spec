@@ -774,12 +774,17 @@ export default {
           .getAttribute('aria-selected'),
       ).toBe('true')
       const timeline = page.getByRole('list', { name: 'Execution timeline' })
+      const timelineFilters = page.getByRole('list', {
+        name: 'Filter timeline by entry type',
+      })
       expect(await timeline.textContent()).toContain('Then payment is captured')
+      expect(await timeline.textContent()).not.toContain('Payment was declined')
+      await timelineFilters
+        .getByRole('button', { name: 'Diagnostic entry' })
+        .click()
       expect(await timeline.textContent()).toContain('Payment was declined')
       expect(await timeline.textContent()).not.toContain('Run event')
-      expect(
-        await page.getByRole('list', { name: 'Timeline legend' }).count(),
-      ).toBe(1)
+      expect(await timelineFilters.count()).toBe(1)
       expect(
         await page.getByRole('img', { name: 'Execution time ruler' }).count(),
       ).toBe(1)
@@ -790,9 +795,11 @@ export default {
         name: /Step Then payment is captured/,
       })
       await page.getByRole('tab', { name: 'Timeline' }).focus()
-      await page.keyboard.press('Tab')
-      await page.keyboard.press('Tab')
-      await page.keyboard.press('Tab')
+      for (let attempt = 0; attempt < 12; attempt += 1) {
+        if (await selectedStep.evaluate((element) => element.matches(':focus')))
+          break
+        await page.keyboard.press('Tab')
+      }
       expect(
         await selectedStep.evaluate((element) =>
           element.matches(':focus-visible'),
@@ -926,66 +933,7 @@ export default {
       expect(
         await page.getByRole('button', { name: 'Resume following' }).count(),
       ).toBe(1)
-      const verboseTimelineSwitch = page.getByRole('switch', {
-        name: 'Verbose timeline',
-      })
-      const switchState = verboseTimelineSwitch.locator(
-        '[data-slot="switch-state"]',
-      )
-      const switchThumb = verboseTimelineSwitch.locator(
-        '[data-slot="switch-thumb"]',
-      )
-      const stateMotion = await switchState.evaluate((element) => {
-        const style =
-          element.ownerDocument.defaultView?.getComputedStyle(element)
-        return {
-          duration: style?.transitionDuration,
-          property: style?.transitionProperty,
-          timing: style?.transitionTimingFunction,
-        }
-      })
-      const thumbMotion = await switchThumb.evaluate((element) => {
-        const style =
-          element.ownerDocument.defaultView?.getComputedStyle(element)
-        return {
-          duration: style?.transitionDuration,
-          property: style?.transitionProperty,
-          timing: style?.transitionTimingFunction,
-        }
-      })
-      expect(stateMotion).toEqual({
-        duration: '0.12s',
-        property: 'opacity',
-        timing: 'cubic-bezier(0.23, 1, 0.32, 1)',
-      })
-      expect(thumbMotion).toEqual({
-        duration: '0.12s',
-        property: 'transform, translate, scale, rotate',
-        timing: 'cubic-bezier(0.23, 1, 0.32, 1)',
-      })
-      expect(
-        await switchState.evaluate(
-          (element) =>
-            element.ownerDocument.defaultView?.getComputedStyle(element)
-              .opacity,
-        ),
-      ).toBe('0')
-      await verboseTimelineSwitch.click()
-      await page.waitForTimeout(150)
-      expect(
-        await switchState.evaluate(
-          (element) =>
-            element.ownerDocument.defaultView?.getComputedStyle(element)
-              .opacity,
-        ),
-      ).toBe('1')
-      expect(
-        await switchThumb.evaluate(
-          (element) =>
-            element.ownerDocument.defaultView?.getComputedStyle(element)
-              .translate,
-        ),
-      ).not.toBe('none')
+      await timelineFilters.getByRole('button', { name: 'Run event' }).click()
       expect(await timeline.textContent()).toContain('Run event')
       await page.setViewportSize({ width: 390, height: 844 })
       const timelineChart = page.getByRole('region', {
@@ -1082,6 +1030,10 @@ export default {
         /^\/runs\/[^/]+\/results\/features%2Fcheckout\.feature\/scenarios\/scnpaybbbbbbbbbb\/profiles\/chrome\/attempts\/1$/,
       )
       expect(await timeline.textContent()).toContain('Then payment is captured')
+      expect(await timeline.textContent()).not.toContain('Payment was declined')
+      await timelineFilters
+        .getByRole('button', { name: 'Diagnostic entry' })
+        .click()
       expect(await timeline.textContent()).toContain('Payment was declined')
       await page.getByRole('tab', { name: 'Artifacts' }).click()
       expect(await page.getByRole('img', { name: /screenshot/ }).count()).toBe(
@@ -1446,13 +1398,23 @@ Feature: Search
       const evidenceTimeline = page.getByRole('list', {
         name: 'Execution timeline',
       })
-      const timelineText = await evidenceTimeline.textContent()
-      expect(timelineText).toContain('Step')
-      expect(timelineText).not.toContain('Run event')
-      expect(timelineText).toContain('Diagnostic entry')
-      expect(timelineText).toContain('Test artifact')
-      expect(timelineText).toContain('Failure context')
-      await page.getByRole('switch', { name: 'Verbose timeline' }).click()
+      const evidenceTimelineFilters = page.getByRole('list', {
+        name: 'Filter timeline by entry type',
+      })
+      expect(await evidenceTimeline.textContent()).toContain('Step')
+      expect(await evidenceTimeline.textContent()).not.toContain('Run event')
+      expect(await evidenceTimeline.textContent()).not.toContain(
+        'Diagnostic entry',
+      )
+      expect(await evidenceTimeline.textContent()).toContain('Test artifact')
+      await evidenceTimelineFilters
+        .getByRole('button', { name: 'Diagnostic entry' })
+        .click()
+      expect(await evidenceTimeline.textContent()).toContain('Diagnostic entry')
+      expect(await evidenceTimeline.textContent()).toContain('Failure context')
+      await evidenceTimelineFilters
+        .getByRole('button', { name: 'Run event' })
+        .click()
       expect(await evidenceTimeline.textContent()).toContain('Run event')
       await page.getByRole('tab', { name: 'Artifacts' }).click()
       expect(

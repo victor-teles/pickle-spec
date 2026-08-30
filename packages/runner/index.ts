@@ -19,6 +19,7 @@ export type {
 } from './src/execution/environment-diagnostic'
 export type {
   ApplicationOutputEvidenceAvailability,
+  ArtifactEvidenceLink,
   DiagnosticEntry,
   DiagnosticLevel,
   DiagnosticOrigin,
@@ -38,6 +39,7 @@ export type {
   RetryPolicy,
   RunEvent,
   RunEventPayload,
+  RunEventRange,
   ScenarioAttempt,
   ScenarioExecution,
   ScenarioExecutionCache,
