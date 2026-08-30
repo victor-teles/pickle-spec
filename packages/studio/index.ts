@@ -25,6 +25,8 @@ export type {
   StudioRunReadiness,
   StudioRunReadinessCheck,
   StudioRunReadinessCheckId,
+  StudioRunReport,
+  StudioRunReportRequest,
   StudioRunRequest,
   StudioRunSnapshot,
   StudioRunsIndex,

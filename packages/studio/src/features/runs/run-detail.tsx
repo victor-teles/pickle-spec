@@ -1,22 +1,23 @@
 import type {
   ScenarioAttempt,
   TestResult,
+  TestRunExportFormat,
   TestRunManifest,
 } from '@pickle-spec/runner'
 import { useEffect, useMemo, useState } from 'react'
 import { LedgerLoadingSkeleton } from '../../components/loading-skeletons'
 import { Badge } from '../../components/ui/badge'
 import { Button, buttonVariants } from '../../components/ui/button'
-import { Checkbox } from '../../components/ui/checkbox'
 import {
   DropdownMenu,
+  DropdownMenuCheckboxItem,
   DropdownMenuContent,
   DropdownMenuGroup,
   DropdownMenuItem,
   DropdownMenuLabel,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '../../components/ui/dropdown-menu'
-import { Label } from '../../components/ui/label'
 import { ResultMark } from '../../components/ui/result-mark'
 import {
   Table,
@@ -32,6 +33,7 @@ import type {
   StudioRunRequest,
   StudioRunSnapshot,
 } from '../../server/contracts'
+import { studioRunReportDescriptors } from '../history/history.contracts'
 import type { LiveResultInspection } from './result/live-result-inspection'
 import type { ResultInspectionLocation } from './result/result-inspection'
 import { reasonMessage, resultBadgeVariant } from './result/result-presentation'
@@ -111,7 +113,6 @@ function RunDetailHeader(
   props: RunDetailProps & {
     manifest: TestRunManifest
     running: boolean
-    artifactMode: 'all' | 'failures'
     includeAllArtifacts: boolean
     onIncludeAllArtifacts: (include: boolean) => void
   },
@@ -167,7 +168,6 @@ function RunDetailHeader(
         ) : (
           <ExportMenu
             runId={props.manifest.id}
-            artifactMode={props.artifactMode}
             includeAllArtifacts={props.includeAllArtifacts}
             onIncludeAllArtifacts={props.onIncludeAllArtifacts}
           />
@@ -193,7 +193,6 @@ function LoadedRunDetail(
   },
 ) {
   const manifest = props.manifest
-  const includeAllArtifacts = props.includeAllArtifacts
   const attempts = useMemo(
     () =>
       manifest.results.flatMap((result) =>
@@ -206,17 +205,11 @@ function LoadedRunDetail(
     itemSize: resultRowHeight,
   })
   const running = props.live?.phase === 'running'
-  const artifactMode = includeAllArtifacts ? 'all' : 'failures'
   const visibleAttempts = attempts.slice(resultWindow.start, resultWindow.end)
 
   return (
     <section className="min-h-0 flex-1 space-y-5 overflow-auto px-3 py-4 sm:px-5">
-      <RunDetailHeader
-        {...props}
-        manifest={manifest}
-        running={running}
-        artifactMode={artifactMode}
-      />
+      <RunDetailHeader {...props} manifest={manifest} running={running} />
 
       <RunMetadata manifest={manifest} />
 
@@ -492,62 +485,61 @@ function Metadata(props: { label: string; value: string; mono?: boolean }) {
 
 function ExportMenu(props: {
   runId: string
-  artifactMode: 'all' | 'failures'
   includeAllArtifacts: boolean
   onIncludeAllArtifacts: (checked: boolean) => void
 }) {
   return (
-    <>
-      <DropdownMenu>
-        <DropdownMenuTrigger
-          type="button"
-          className={buttonVariants({ variant: 'outline' })}
-        >
-          Export
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="end">
-          <DropdownMenuGroup>
-            <DropdownMenuLabel>Test run export</DropdownMenuLabel>
+    <DropdownMenu>
+      <DropdownMenuTrigger
+        type="button"
+        className={buttonVariants({ variant: 'outline' })}
+      >
+        Download report
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end">
+        <DropdownMenuGroup>
+          <DropdownMenuLabel>Report format</DropdownMenuLabel>
+          {studioRunReportDescriptors.map((descriptor) => (
             <ExportItem
-              runId={props.runId}
-              kind="archive"
-              label="Run archive"
+              key={descriptor.format}
+              href={reportDownloadHref(
+                props.runId,
+                descriptor.format,
+                props.includeAllArtifacts,
+              )}
+              label={descriptor.label}
             />
-            <ExportItem
-              runId={props.runId}
-              kind={`html?artifacts=${props.artifactMode}`}
-              label="HTML report"
-            />
-            <ExportItem
-              runId={props.runId}
-              kind="allure"
-              label="Allure results"
-            />
-          </DropdownMenuGroup>
-        </DropdownMenuContent>
-      </DropdownMenu>
-      <span className="flex items-center gap-2">
-        <Checkbox
-          id="complete-artifacts"
-          checked={props.includeAllArtifacts}
-          onCheckedChange={props.onIncludeAllArtifacts}
-        />
-        <Label htmlFor="complete-artifacts">Include all artifacts</Label>
-      </span>
-    </>
+          ))}
+          <DropdownMenuSeparator />
+          <DropdownMenuLabel>HTML options</DropdownMenuLabel>
+          <DropdownMenuCheckboxItem
+            checked={props.includeAllArtifacts}
+            closeOnClick={false}
+            onCheckedChange={props.onIncludeAllArtifacts}
+          >
+            Include all artifacts in HTML report
+          </DropdownMenuCheckboxItem>
+        </DropdownMenuGroup>
+      </DropdownMenuContent>
+    </DropdownMenu>
   )
 }
 
-function ExportItem(props: { runId: string; kind: string; label: string }) {
+function reportDownloadHref(
+  runId: string,
+  format: TestRunExportFormat,
+  includeAllArtifacts: boolean,
+): string {
+  const artifacts =
+    format === 'html' && includeAllArtifacts ? '?artifacts=all' : ''
+  return `/api/history/${encodeURIComponent(runId)}/${format}${artifacts}`
+}
+
+function ExportItem(props: { href: string; label: string }) {
   return (
     <DropdownMenuItem
       nativeButton={false}
-      render={
-        <a
-          href={`/api/history/${encodeURIComponent(props.runId)}/${props.kind}`}
-          download
-        />
-      }
+      render={<a href={props.href} download />}
     >
       {props.label}
     </DropdownMenuItem>

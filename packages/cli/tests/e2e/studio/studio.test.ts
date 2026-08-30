@@ -22,6 +22,12 @@ type HistoryIndexPayload = {
   activeRunIds: string[]
 }
 
+type TextReportResponse = {
+  body: string
+  contentDisposition: string | null
+  contentType: string | null
+}
+
 type RunRequestPayload = {
   paths?: string[]
   profiles?: string[]
@@ -1497,73 +1503,148 @@ Feature: Search
         page,
         history.getByRole('row').filter({ hasText: '6 results' }).first(),
       )
-      const exportButton = page.locator('[data-slot="dropdown-menu-trigger"]')
+      const exportButton = page.getByRole('button', {
+        name: 'Download report',
+      })
       await exportButton.click()
-      await Bun.sleep(100)
       expect(pageErrors).toEqual([])
       const exportMenu = page.locator('[data-slot="dropdown-menu-content"]')
       await exportMenu.waitFor()
       expect(await exportMenu.getAttribute('role')).toBe('menu')
-      const defaultHtmlHref = await exportMenu
-        .getByRole('menuitem', { name: 'HTML report' })
-        .getAttribute('href')
-      const allureHref = await page
-        .getByRole('menuitem', { name: 'Allure results' })
-        .getAttribute('href')
-      const archiveHref = await page
-        .getByRole('menuitem', { name: 'Run archive' })
-        .getAttribute('href')
+      const reportHrefs = Object.fromEntries(
+        await Promise.all(
+          [
+            'JSON report',
+            'NDJSON events',
+            'JUnit report',
+            'HTML report',
+            'Run archive',
+            'Allure results',
+          ].map(async (label) => [
+            label,
+            await exportMenu
+              .getByRole('menuitem', { name: label })
+              .getAttribute('href'),
+          ]),
+        ),
+      )
       await page.keyboard.press('Home')
       expect(
         await exportMenu
-          .getByRole('menuitem', { name: 'Run archive' })
+          .getByRole('menuitem', { name: 'JSON report' })
           .getAttribute('data-highlighted'),
       ).not.toBeNull()
       await page.keyboard.press('ArrowDown')
       expect(
         await exportMenu
-          .getByRole('menuitem', { name: 'HTML report' })
+          .getByRole('menuitem', { name: 'NDJSON events' })
           .getAttribute('data-highlighted'),
       ).not.toBeNull()
+      const runId = decodeURIComponent(
+        requiredValue(reportHrefs['JSON report']).split('/').at(-2),
+      )
+      const textReports = await page.evaluate(
+        async (hrefs) => {
+          const reports: Record<string, TextReportResponse> = {}
+          for (const [label, href] of Object.entries(hrefs)) {
+            if (!href) throw new Error(`Missing ${label} export URL`)
+            const response = await fetch(href)
+            reports[label] = {
+              body: await response.text(),
+              contentDisposition: response.headers.get('content-disposition'),
+              contentType: response.headers.get('content-type'),
+            }
+          }
+          return reports
+        },
+        {
+          json: reportHrefs['JSON report'],
+          ndjson: reportHrefs['NDJSON events'],
+          junit: reportHrefs['JUnit report'],
+          html: reportHrefs['HTML report'],
+          archive: reportHrefs['Run archive'],
+        },
+      )
+      const jsonReport = requiredValue(textReports.json)
+      const ndjsonReport = requiredValue(textReports.ndjson)
+      const junitReport = requiredValue(textReports.junit)
+      const htmlReport = requiredValue(textReports.html)
+      const archiveReport = requiredValue(textReports.archive)
+      expect(JSON.parse(jsonReport.body).id).toBe(runId)
+      expect(
+        ndjsonReport.body
+          .trim()
+          .split('\n')
+          .every((line) => typeof JSON.parse(line).type === 'string'),
+      ).toBe(true)
+      expect(junitReport.body).toContain('<testsuites')
+      expect(htmlReport.body).toContain('<!DOCTYPE html>')
+      expect(htmlReport.body.match(/data:image\/png;base64,/g)?.length).toBe(1)
+      expect(JSON.parse(archiveReport.body).manifest.id).toBe(runId)
+      expect(jsonReport).toMatchObject({
+        contentType: 'application/json; charset=utf-8',
+        contentDisposition: `attachment; filename="${runId}.json"`,
+      })
+      expect(ndjsonReport).toMatchObject({
+        contentType: 'application/x-ndjson; charset=utf-8',
+        contentDisposition: `attachment; filename="${runId}.ndjson"`,
+      })
+      expect(junitReport).toMatchObject({
+        contentType: 'application/xml; charset=utf-8',
+        contentDisposition: `attachment; filename="${runId}.xml"`,
+      })
+      expect(htmlReport).toMatchObject({
+        contentType: 'text/html; charset=utf-8',
+        contentDisposition: `attachment; filename="${runId}.html"`,
+      })
+      expect(archiveReport).toMatchObject({
+        contentType: 'application/json; charset=utf-8',
+        contentDisposition: `attachment; filename="${runId}.pickle-run.json"`,
+      })
       const allureResponse = await page.evaluate(async (href) => {
         if (!href) throw new Error('Missing Allure export URL')
         const response = await fetch(href)
         return {
+          contentDisposition: response.headers.get('content-disposition'),
           contentType: response.headers.get('content-type'),
           signature: [
             ...new Uint8Array(await response.arrayBuffer()).slice(0, 4),
           ],
         }
-      }, allureHref)
+      }, reportHrefs['Allure results'])
       expect(allureResponse).toEqual({
+        contentDisposition: `attachment; filename="${runId}-allure-results.zip"`,
         contentType: 'application/zip',
         signature: [0x50, 0x4b, 0x03, 0x04],
       })
-      const defaultHtml = await page.evaluate(async (href) => {
+      await page
+        .getByRole('menuitemcheckbox', {
+          name: 'Include all artifacts in HTML report',
+        })
+        .click()
+      const allArtifactsHtmlHref = await page
+        .getByRole('menuitem', { name: 'HTML report' })
+        .getAttribute('href')
+      expect(allArtifactsHtmlHref).toContain('artifacts=all')
+      const allArtifactsHtml = await page.evaluate(async (href) => {
         if (!href) throw new Error('Missing HTML export URL')
         return (await fetch(href)).text()
-      }, defaultHtmlHref)
-      expect(defaultHtml).toContain('<!DOCTYPE html>')
-      expect(defaultHtml).toContain('data:image/png;base64,')
+      }, allArtifactsHtmlHref)
+      expect(allArtifactsHtml.match(/data:image\/png;base64,/g)?.length).toBe(2)
       await page.keyboard.press('Escape')
-      await page
-        .getByRole('checkbox', { name: 'Include all artifacts' })
-        .click()
+
       await exportButton.click()
       expect(
         await page
-          .getByRole('menuitem', { name: 'HTML report' })
-          .getAttribute('href'),
-      ).toContain('artifacts=all')
+          .getByRole('menuitemcheckbox', {
+            name: 'Include all artifacts in HTML report',
+          })
+          .getAttribute('aria-checked'),
+      ).toBe('true')
       await page.keyboard.press('Escape')
 
       const archivePath = join(project, 'importable-run.json')
-      const archive = JSON.parse(
-        await page.evaluate(async (href) => {
-          if (!href) throw new Error('Missing archive export URL')
-          return (await fetch(href)).text()
-        }, archiveHref),
-      )
+      const archive = JSON.parse(archiveReport.body)
       archive.manifest.id = 'run-imported'
       for (const event of archive.events) {
         if (event.type === 'run-started') event.run.id = 'run-imported'

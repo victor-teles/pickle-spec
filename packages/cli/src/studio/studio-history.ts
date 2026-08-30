@@ -6,6 +6,9 @@ import {
   compareTestRuns,
   createAllureResultsZip,
   formatHtml,
+  formatJson,
+  formatJunit,
+  formatNdjson,
   importRunArchive,
   openTestRunStore,
   resolveLocalProjectStorage,
@@ -42,29 +45,7 @@ export function createStudioHistoryGateway(
         return (await importRunArchive({ root, archivePath })).manifest
       })
     },
-    async exportArchive(runId) {
-      return withTemporaryFile(`${runId}.json`, async (outputPath) => {
-        await writeRunArchive({ root, runId, outputPath })
-        return Bun.file(outputPath).text()
-      })
-    },
-    async exportHtml(runId, artifacts) {
-      const { manifest } = await loadPersistedRun(root, runId)
-      return formatHtml(manifest, { artifacts })
-    },
-    async exportAllure(runId) {
-      const { manifest } = await loadPersistedRun(root, runId)
-      if (!manifest.finishedAt) {
-        throw new Error(`Test run "${runId}" must be finalized before export`)
-      }
-      return createAllureResultsZip(manifest, {
-        artifactsDirectory: join(
-          resolveLocalProjectStorage(root).runsDirectory,
-          runId,
-          'artifacts',
-        ),
-      })
-    },
+    exportReport: createReportExporter(root),
     async deleteEligible() {
       return store.applyRetention(await retention())
     },
@@ -74,6 +55,45 @@ export function createStudioHistoryGateway(
     unpin(runId) {
       return store.unpin(runId)
     },
+  }
+}
+
+function createReportExporter(
+  root: string,
+): StudioHistoryGateway['exportReport'] {
+  return async (request) => {
+    const { manifest, events } = await loadPersistedRun(root, request.runId)
+    if (!manifest.finishedAt) {
+      throw new Error(
+        `Test run "${request.runId}" must be finalized before export`,
+      )
+    }
+    switch (request.format) {
+      case 'json':
+        return formatJson(manifest)
+      case 'ndjson':
+        return formatNdjson(events)
+      case 'junit':
+        return formatJunit(manifest)
+      case 'html':
+        return formatHtml(manifest, { artifacts: request.htmlArtifacts })
+      case 'archive':
+        return withTemporaryFile(
+          `${request.runId}.json`,
+          async (outputPath) => {
+            await writeRunArchive({ root, runId: request.runId, outputPath })
+            return Bun.file(outputPath).text()
+          },
+        )
+      case 'allure':
+        return createAllureResultsZip(manifest, {
+          artifactsDirectory: join(
+            resolveLocalProjectStorage(root).runsDirectory,
+            request.runId,
+            'artifacts',
+          ),
+        })
+    }
   }
 }
 
