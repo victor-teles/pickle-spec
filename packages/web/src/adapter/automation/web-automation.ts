@@ -1,4 +1,4 @@
-import type { TestArtifact } from '@pickle-spec/runner'
+import type { ActionTargetState, TestArtifact } from '@pickle-spec/runner'
 import type { ScenarioVariableBinding } from '@pickle-spec/spec'
 import type { CollectedWebEvidence } from '../../evidence/web-evidence'
 import type {
@@ -7,6 +7,7 @@ import type {
 } from '../../execution-cache/web-execution-cache'
 import type { ResolvedFidelity } from '../configuration/fidelity'
 import type { BrowserOptions } from '../configuration/web-options'
+import type { WebLiveViewport } from '../live-viewport'
 
 export interface WebObservedAction {
   description: string
@@ -38,6 +39,7 @@ export interface WebClientContext {
   mode?: 'adaptive' | 'replay'
   fidelity?: ResolvedFidelity
   signal?: AbortSignal
+  onLiveViewport?: (viewport: WebLiveViewport) => void
 }
 
 export interface WebDirectExecutionResult {
@@ -61,6 +63,7 @@ export interface WebAutomation {
     signal?: AbortSignal,
   ): Promise<WebDirectExecutionResult>
   screenshot(options: WebScreenshotCapture): Promise<Uint8Array>
+  summarizeTarget?(): Promise<ActionTargetState>
   startRecording?(path: string): Promise<void>
   stopRecording?(): Promise<TestArtifact>
   readIsolationState(): Promise<WebIsolationState>

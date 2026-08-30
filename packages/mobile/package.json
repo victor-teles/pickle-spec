@@ -10,21 +10,25 @@
   },
   "files": [
     "index.ts",
-    "src/**/*.ts",
-    "!src/**/*.test.ts"
+    "src/**/*.ts"
   ],
   "scripts": {
     "benchmark:replay": "bun src/benchmarking/mobile-benchmark-cli.ts",
     "typecheck": "tsc --noEmit",
-    "test": "bun test"
+    "test": "bun run test:unit",
+    "test:unit": "bunx --bun vitest run --configLoader runner --experimental.viteModuleRunner=false --experimental.nodeLoader=false --config ../../vitest.package.config.ts",
+    "test:integration": "bunx --bun vitest run --configLoader runner --experimental.viteModuleRunner=false --experimental.nodeLoader=false --config ../../vitest.integration.config.ts",
+    "test:e2e": "bunx --bun vitest run --configLoader runner --experimental.viteModuleRunner=false --experimental.nodeLoader=false --config ../../vitest.e2e.config.ts"
   },
   "dependencies": {
     "@pickle-spec/runner": "workspace:*",
+    "@pickle-spec/spec": "workspace:*",
     "agent-device": "catalog:",
     "zod": "catalog:"
   },
   "devDependencies": {
     "@types/bun": "catalog:",
-    "typescript": "catalog:"
+    "typescript": "catalog:",
+    "vitest": "catalog:"
   }
 }

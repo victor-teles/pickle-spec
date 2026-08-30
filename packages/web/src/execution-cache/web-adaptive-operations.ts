@@ -1,5 +1,11 @@
-import type { ResolvedAction, StepExecution } from '@pickle-spec/runner'
+import type {
+  ResolvedAction,
+  StepExecution,
+  StepExecutionContext,
+} from '@pickle-spec/runner'
 import type { WebAutomation } from '../adapter/automation/web-automation'
+import type { WebAdapterOptions } from '../adapter/configuration/web-options'
+import { captureWebAction } from '../evidence/web-action-evidence'
 import type { WebAssertionDraft, WebInstruction } from './web-execution-cache'
 
 export function definedInstructions(
@@ -65,14 +71,30 @@ export async function observeActions(
 export async function executeObservedActions(
   automation: WebAutomation,
   actions: ObservedActions,
+  context: StepExecutionContext,
+  options: WebAdapterOptions,
   signal: AbortSignal | undefined,
   onInference: () => void,
 ): Promise<StepExecution> {
   const resolvedActions: ResolvedAction[] = []
   for (const action of actions) {
     onInference()
-    const result = await automation.act(action, signal)
-    resolvedActions.push({ description: action.description })
+    const captured = await captureWebAction({
+      automation,
+      context,
+      description: action.description,
+      options,
+      perform: () => automation.act(action, signal),
+      outcome: (outcome) => ({
+        state: outcome.success ? 'passed' : 'failed',
+        message: outcome.message,
+      }),
+    })
+    const result = captured.result
+    resolvedActions.push({
+      description: action.description,
+      evidence: captured.evidence,
+    })
     if (!result.success) {
       return {
         state: 'failed',

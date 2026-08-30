@@ -1,7 +1,7 @@
 import { z } from 'zod'
-import { mobileExecutionCachePayloadSchema } from '../execution-cache/mobile-execution-cache'
+import { mobileExecutionCachePayloadSchema } from '../execution-cache/mobile-execution-cache.ts'
 
-export const mobileWorkerProtocolVersion = 3 as const
+export const mobileWorkerProtocolVersion = 6 as const
 
 export const androidCapabilities = [
   'android',
@@ -22,6 +22,7 @@ export const iosCapabilities = [
 ] as const
 
 const mobilePlatformSchema = z.enum(['android', 'ios'])
+const mobileApplicationScopeSchema = z.enum(['user-installed', 'all'])
 
 const mobileTargetSchema = z.strictObject({
   id: z.string().min(1),
@@ -32,7 +33,7 @@ const mobileTargetSchema = z.strictObject({
 
 const mobileApplicationSchema = z.strictObject({
   id: z.string().min(1),
-  binaryPath: z.string().min(1),
+  binaryPath: z.string().min(1).optional(),
 })
 
 const mobileArtifactKindSchema = z.enum([
@@ -164,6 +165,12 @@ const workerReplayCacheSchema = z.strictObject({
 export const mobileWorkerRequestSchema = z.discriminatedUnion('type', [
   z.strictObject({
     version: z.literal(mobileWorkerProtocolVersion),
+    type: z.literal('list-applications'),
+    platform: mobilePlatformSchema,
+    scope: mobileApplicationScopeSchema,
+  }),
+  z.strictObject({
+    version: z.literal(mobileWorkerProtocolVersion),
     type: z.literal('discover-targets'),
     platform: mobilePlatformSchema.optional(),
   }),
@@ -205,6 +212,11 @@ export const mobileWorkerRequestSchema = z.discriminatedUnion('type', [
 ])
 
 export const mobileWorkerResponseSchema = z.discriminatedUnion('type', [
+  z.strictObject({
+    version: z.literal(mobileWorkerProtocolVersion),
+    type: z.literal('applications-listed'),
+    applicationIds: z.array(z.string().min(1)),
+  }),
   z.strictObject({
     version: z.literal(mobileWorkerProtocolVersion),
     type: z.literal('targets-discovered'),
@@ -263,6 +275,36 @@ export const workerResponseMessageSchema = z.discriminatedUnion('ok', [
   }),
 ])
 
+const mobileWorkerViewportFrameSchema = z.strictObject({
+  data: z.string().min(1),
+  mimeType: z.literal('image/png'),
+  width: z.number().int().positive().optional(),
+  height: z.number().int().positive().optional(),
+})
+
+export const mobileWorkerEventSchema = z.discriminatedUnion('type', [
+  z.strictObject({
+    type: z.literal('viewport-frame'),
+    sessionId: z.string().min(1),
+    frame: mobileWorkerViewportFrameSchema,
+  }),
+  z.strictObject({
+    type: z.literal('viewport-closed'),
+    sessionId: z.string().min(1),
+  }),
+])
+
+export const workerEventMessageSchema = z.strictObject({
+  version: z.literal(mobileWorkerProtocolVersion),
+  type: z.literal('event'),
+  payload: mobileWorkerEventSchema,
+})
+
+export const workerOutputMessageSchema = z.discriminatedUnion('type', [
+  workerResponseMessageSchema,
+  workerEventMessageSchema,
+])
+
 export const workerRequestMessageSchema = z.strictObject({
   version: z.literal(mobileWorkerProtocolVersion),
   type: z.literal('request'),
@@ -271,6 +313,9 @@ export const workerRequestMessageSchema = z.strictObject({
 })
 
 export type MobilePlatform = z.infer<typeof mobilePlatformSchema>
+export type MobileApplicationScope = z.infer<
+  typeof mobileApplicationScopeSchema
+>
 export type MobileApplication = z.infer<typeof mobileApplicationSchema>
 export type MobileTarget = z.infer<typeof mobileTargetSchema>
 export type MobileArtifactKind = z.infer<typeof mobileArtifactKindSchema>
@@ -291,3 +336,5 @@ export type WorkerSessionCompletion = z.infer<
 >
 export type MobileWorkerRequest = z.infer<typeof mobileWorkerRequestSchema>
 export type MobileWorkerResponse = z.infer<typeof mobileWorkerResponseSchema>
+export type MobileWorkerEvent = z.infer<typeof mobileWorkerEventSchema>
+export type WorkerOutputMessage = z.infer<typeof workerOutputMessageSchema>

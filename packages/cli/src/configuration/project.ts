@@ -7,11 +7,13 @@ import {
   type SpecificationSourceFile,
   validateSpecificationMetadata,
 } from '@pickle-spec/spec'
+import prompts from 'prompts'
 import { validateExtensions } from '../extensions/extension-validation'
 import {
   defaultConfigFile,
   defaultExtensionsFile,
   defaultSpecificationGlob,
+  hasBuiltInExecutionTarget,
   loadConfig,
   type PickleConfig,
   runConfigurationFrom,
@@ -20,8 +22,7 @@ import {
 const initialConfig = `{
   // Pickle Spec project configuration.
   "schemaVersion": 1,
-  "specifications": "${defaultSpecificationGlob}",
-  "executionTargetProfile": { "id": "custom" }
+  "specifications": "${defaultSpecificationGlob}"
 }
 `
 
@@ -108,10 +109,10 @@ async function readSpecificationFiles(
   return files
 }
 
-function migrationConfirmed(
+async function migrationConfirmed(
   options: ProjectCommandOptions,
   report: (message: string) => void,
-): boolean {
+): Promise<boolean> {
   if (options.yes) return true
   if (!process.stdin.isTTY) {
     report(
@@ -119,9 +120,13 @@ function migrationConfirmed(
     )
     return false
   }
-  if (/^[yY]/.test((prompt('Apply these changes? [y/N]') ?? '').trim())) {
-    return true
-  }
+  const answer = await prompts({
+    type: 'confirm',
+    name: 'confirmed',
+    message: 'Apply these changes?',
+    initial: false,
+  })
+  if (answer.confirmed === true) return true
   report('No files were changed')
   return false
 }
@@ -156,7 +161,7 @@ export async function migrateProject(
   const plan = planSpecificationMigration(files, config.language)
   report(formatMigrationPreview(plan))
   if (plan.changes.length === 0) return
-  if (!migrationConfirmed(options, report)) return
+  if (!(await migrationConfirmed(options, report))) return
   const updated = await writeMigration(cwd, plan.files)
   report(`Updated ${updated} Specification file(s)`)
 }
@@ -175,23 +180,26 @@ export async function checkProject(
       `Configuration file not found: ${relative(cwd, configPath)}. Run pickle init or pass --config <path>.`,
     )
   }
-  if (!(await Bun.file(extensionsPath).exists())) {
+  const extensionsExists = await Bun.file(extensionsPath).exists()
+  if (options.extensionsPath && !extensionsExists) {
     throw new Error(
       `Extensions file not found: ${relative(cwd, extensionsPath)}. Run pickle init or pass --extensions <path>.`,
     )
   }
 
   const config = await loadConfig(configPath, cwd)
-  const extensions = validateExtensions(extensionsPath)
+  const adapterAvailable = extensionsExists
+    ? validateExtensions(extensionsPath).adapterAvailable
+    : false
   validateProjectRunConfiguration(runConfigurationFrom(config), {
-    ...extensions,
-    fallbackAdapterAvailable: Boolean(config.web),
+    adapterAvailable,
+    fallbackAdapterAvailable: hasBuiltInExecutionTarget(config),
   })
   validateSpecificationMetadata(
     await readSpecificationFiles(config, cwd),
     config.language,
   )
   options.report?.(
-    `Project is valid (${relative(cwd, configPath)}, ${relative(cwd, extensionsPath)})`,
+    `Project is valid (${relative(cwd, configPath)}${extensionsExists ? `, ${relative(cwd, extensionsPath)}` : ''})`,
   )
 }

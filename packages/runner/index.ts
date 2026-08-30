@@ -18,7 +18,13 @@ export type {
   EnvironmentRemediation,
 } from './src/execution/environment-diagnostic'
 export type {
+  ActionEvidence,
+  ActionEvidenceInput,
+  ActionScreenshot,
+  ActionSourceEvidence,
+  ActionTargetState,
   ApplicationOutputEvidenceAvailability,
+  ArtifactEvidenceLink,
   DiagnosticEntry,
   DiagnosticLevel,
   DiagnosticOrigin,
@@ -38,12 +44,22 @@ export type {
   RetryPolicy,
   RunEvent,
   RunEventPayload,
+  RunEventRange,
+  RunEventScope,
   ScenarioAttempt,
   ScenarioExecution,
   ScenarioExecutionCache,
   ScenarioIdentity,
   ScenarioRun,
   ScenarioTargetSession,
+  SharedEvidenceActivity,
+  SharedEvidenceCacheDecisionType,
+  SharedEvidenceCost,
+  SharedEvidenceExecution,
+  SharedEvidenceObservation,
+  SharedEvidenceOutcome,
+  SharedEvidenceTiming,
+  SharedEvidenceVersionObservation,
   StepEvaluation,
   StepExecution,
   StepExecutionContext,
@@ -60,13 +76,16 @@ export type {
   TraceEntry,
 } from './src/execution/run-scenario'
 export {
+  actionEvidenceVersion,
   diagnosticLevels,
   diagnosticOrigins,
   finalScenarioAttempt,
   isEvidenceState,
+  runScenario,
+  sharedEvidenceCacheDecisionTypes,
+  sharedEvidenceObservationVersion,
   traceActivityKinds,
 } from './src/execution/run-scenario'
-export { runScenario } from './src/execution/run-scenario-entry'
 export type {
   RunScenariosInput,
   RunScheduleInput,
@@ -112,6 +131,7 @@ export {
   serializeExecutionCacheTerminalOutcome,
 } from './src/execution-cache/execution-cache'
 export type {
+  ExecutionCacheLeaseTiming,
   LocalExecutionCache,
   LocalExecutionCacheOptions,
 } from './src/execution-cache/local-execution-cache'
@@ -119,7 +139,6 @@ export {
   defaultExecutionCacheMaxBytes,
   openLocalExecutionCache,
 } from './src/execution-cache/local-execution-cache'
-export type { ExecutionCacheLeaseTiming } from './src/execution-cache/local-execution-cache-coordination'
 export type {
   AllureArchiveOptions,
   AllureAttachment,

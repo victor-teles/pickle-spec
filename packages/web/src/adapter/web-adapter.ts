@@ -28,6 +28,10 @@ export type {
   WebVerificationResult,
 } from './automation/web-automation'
 export type {
+  WebLiveViewportTarget,
+  WebLiveViewportUpdate,
+} from './live-viewport'
+export type {
   BrowserOptions,
   ScreenshotOptions,
   WebAdapterOptions,

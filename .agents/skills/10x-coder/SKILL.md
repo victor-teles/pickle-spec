@@ -7,6 +7,10 @@ description: >-
   design, and enforce repository-specific TypeScript and React conventions.
   Also use when code is repetitive, overlong, difficult to scan, or gaining
   helpers, layers, state, effects, configuration, or validation logic.
+  Before completion, audit the complete changed surface across scope,
+  contracts, KISS, Clean Code, DRY, separation of concerns, SOLID, and the
+  applicable language or framework rules instead of checking only tests or
+  isolated code shapes.
 ---
 
 # 10x coder
@@ -69,8 +73,8 @@ supported by the evidence.
    once, dependencies explicit, and the happy path visible.
 5. Remove task-created dead code, stale comments, debug logging, unused
    branches, accidental exports, repeated guards, and temporary workarounds.
-6. Re-read the final diff for behavioral drift, hidden compatibility changes,
-   needless churn, duplicated knowledge, weak names, and avoidable growth.
+6. Audit the complete final diff with the full changed-surface audit below.
+   Do not stop after checking the originally reported lines or one category.
 7. Run the required and risk-appropriate checks. Never claim a check ran when
    it did not, and separate unrelated pre-existing failures from task failures.
 8. Report the material result, verification, and any unresolved risk. Do not
@@ -112,12 +116,62 @@ solutions are equally correct.
 - Split a file when the touched code contains distinct responsibilities with
   different reasons to change. Keep cohesive data and straight-line workflows
   together even when they are long.
+- When several files implement one domain context, put them in a folder named
+  for that context and use short role names inside it, such as
+  `project-run/types.ts`, `project-run/inputs.ts`, and
+  `project-run/targets.ts`. Repeating `project-run-` across a flat parent
+  directory makes ownership harder to see and names harder to scan.
+- Do not create a context folder for one file, a speculative future family, or
+  merely to shorten filenames. The folder must own multiple cohesive units.
+- A `utils`, `helpers`, or `common` folder is acceptable only when its contents
+  are domain-independent, serve multiple real contexts, and express one stable
+  shared contract. Similar syntax, one caller, or possible future reuse is not
+  enough. Prefer precise technical roles such as `path`, `serialization`, or
+  `collections` within that shared area, and keep business rules in their
+  owning domain context even when another rule looks similar.
+- Do not use a top-level `types` folder as an ownership substitute. Put a type
+  with the context that defines its meaning, or with the genuinely shared
+  contract when several contexts depend on that exact meaning.
 - Treat roughly 40 lines per function and 200 lines per TypeScript module as
   review prompts, not pass/fail limits. Do not game them with dense expressions,
   passthrough helpers, or one-function files.
 - Preserve established import paths and exports when compatibility requires
   it. Do not re-export a newly internal detail merely to avoid updating
   task-owned callers.
+
+## Audit the full changed surface
+
+Passing tests and formatters prove only part of code quality. Before declaring
+implementation or cleanup complete, read every touched unit and the complete
+final diff, then make one explicit pass through each category:
+
+1. **Authority and scope** — the change matches the request, preserves
+   user-owned work, and contains no unrelated cleanup or unauthorized action.
+2. **Behavior and contracts** — observable behavior, public seams, defaults,
+   errors, side effects, and compatibility are preserved unless intentionally
+   changed and verified.
+3. **KISS and readability** — the happy path is visible; names express current
+   domain meaning; control flow, helpers, options, and comments reduce reader
+   work instead of moving or disguising it.
+4. **Ownership and separation of concerns** — each rule and state value has one
+   owner; functions and files have cohesive reasons to change; multiple files
+   in one context use an owning folder rather than repeated flat prefixes; any
+   generic shared folder contains only proven cross-context mechanics.
+5. **DRY** — knowledge that must change together is defined once, while merely
+   similar operations remain separate when they represent different rules.
+6. **SOLID without ceremony** — contracts are small and substitutable,
+   dependencies point toward policy, and real variants use existing extension
+   seams without speculative interfaces, factories, wrappers, or switches.
+7. **Language and framework discipline** — apply the TypeScript shape audit and
+   any required boundary or React guide to the complete touched surface.
+8. **Verification and hygiene** — focused behavior checks and repository gates
+   pass; no dead paths, stale names, debug artifacts, or replaced code remain.
+
+For each category, identify concrete evidence, a finding to fix, or why it does
+not apply. Search results can locate risks but do not replace reading the code.
+After fixing a finding, repeat the audit over the resulting diff. Keep this
+evidence concise in normal reporting, but never infer broad compliance from a
+green test suite or from the absence of one syntax pattern.
 
 ## Apply TypeScript discipline
 
@@ -131,6 +185,23 @@ solutions are equally correct.
   schema when practical, and let typed internal functions trust that type.
 - Reuse the repository's schema library, glob matcher, sanitizer, and
   required-value conventions instead of introducing parallel mechanisms.
+
+### Audit changed TypeScript shapes
+
+After implementation, inspect the changed TypeScript instead of relying on
+formatters and tests to reveal readability problems. Search the diff for:
+
+- conditional object spreads that only omit an `undefined` property;
+- fallback chains inside object literals or function calls;
+- anonymous multi-field parameter, return, or cast shapes;
+- repeated fallback expressions paired with a non-null assertion; and
+- nested conditionals that hide the constructed object's stable shape.
+
+Treat each match as a review prompt, not an automatic rewrite. A conditional
+spread is valid when property presence changes behavior. A fallback can stay
+inline when it is short, single-use, and keeps the surrounding operation clear.
+Otherwise, use a named type, resolve the value before construction, and pass a
+plain typed object with optional values directly.
 
 When the task touches configuration, CLI arguments, archives, persisted JSON,
 plans, or other untrusted input, read and apply
@@ -152,10 +223,19 @@ Inspect every touched unit and answer:
   closest reliable boundary?
 - Can a caller understand the contract without knowing private mechanics?
 - Is each rule, fallback, transformation, and state value owned once?
+- Did the TypeScript shape audit find an inline multi-field type, hidden
+  fallback chain, or omit-if-undefined spread that still obscures the code?
 - Did any helper, type, prop, effect, file, or layer add more structure than
   the behavior needs?
 - Does each function, component, hook, and file have one coherent reason to
   change?
+- When one context owns several files, does the directory structure communicate
+  that ownership without repeated filename prefixes or generic buckets?
+- Does every `utils`, `helpers`, or `common` module have multiple real
+  cross-context callers and domain-independent behavior, or should it live
+  with a domain owner?
+- Did the full changed-surface audit cover scope, contracts, KISS, readability,
+  ownership, DRY, SOLID, applicable language or framework rules, and hygiene?
 - Did cleanup alter behavior, broaden scope, or disturb user-owned work?
 - Were repository-required checks run, with failures reported honestly?
 

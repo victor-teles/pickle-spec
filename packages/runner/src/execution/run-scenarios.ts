@@ -1,5 +1,6 @@
 import type { ScenarioSelection } from '@pickle-spec/spec'
 import { requiredValue } from '../required-value'
+import { runScenario } from './run-scenario'
 import type {
   ExecutionCachePolicy,
   ExecutionPolicy,
@@ -9,8 +10,7 @@ import type {
   ScenarioExecutionCache,
   ScenarioRun,
   TestResult,
-} from './run-scenario'
-import { runScenario } from './run-scenario-entry'
+} from './run-scenario-types'
 
 export interface RunTarget {
   executionTargetProfile: ExecutionTargetProfile
@@ -69,30 +69,37 @@ function scenarioTargets(
   )
 }
 
+function scheduledTestResult(
+  selection: ScenarioSelection,
+  executionTargetProfile: ExecutionTargetProfile,
+): ScheduledTestResult {
+  return {
+    specification: {
+      uri: selection.specification.source.uri,
+      name: selection.specification.name,
+    },
+    scenario: {
+      name: selection.scenario.template?.name ?? selection.scenario.name,
+      id: selection.scenario.id,
+      examplesId: selection.scenario.examplesId,
+      examplesRowId: selection.scenario.examplesRowId,
+    },
+    executionTargetProfile,
+  }
+}
+
 export function scheduleScenarios(
   input: RunScheduleInput,
 ): ScheduledTestResult[] {
   return input.selections.flatMap((selection) =>
-    input.executionTargetProfiles.flatMap((executionTargetProfile) =>
-      input.includeTarget?.(selection, executionTargetProfile) === false
-        ? []
-        : [
-            {
-              specification: {
-                uri: selection.specification.source.uri,
-                name: selection.specification.name,
-              },
-              scenario: {
-                name:
-                  selection.scenario.template?.name ?? selection.scenario.name,
-                id: selection.scenario.id,
-                examplesId: selection.scenario.examplesId,
-                examplesRowId: selection.scenario.examplesRowId,
-              },
-              executionTargetProfile,
-            },
-          ],
-    ),
+    input.executionTargetProfiles
+      .filter(
+        (executionTargetProfile) =>
+          input.includeTarget?.(selection, executionTargetProfile) !== false,
+      )
+      .map((executionTargetProfile) =>
+        scheduledTestResult(selection, executionTargetProfile),
+      ),
   )
 }
 
@@ -158,6 +165,7 @@ export async function runScenarios(
   const runs = new Array<ScenarioRun>(scheduledTargets.length)
   let nextIndex = 0
   const workerCount = Math.min(concurrency, scheduledTargets.length)
+  const onEvent = input.onEvent
 
   async function work(): Promise<void> {
     while (nextIndex < scheduledTargets.length) {
@@ -175,9 +183,9 @@ export async function runScenarios(
         signal: input.signal,
         retry: input.retry,
         timeout: input.timeout,
-        onEvent: input.onEvent
+        onEvent: onEvent
           ? (event) =>
-              input.onEvent?.(
+              onEvent(
                 event.type === 'scenario-finished'
                   ? { ...event, scheduleIndex: index }
                   : event,

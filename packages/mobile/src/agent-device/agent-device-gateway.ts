@@ -1,23 +1,25 @@
-import type { MobileExecutionCachePayload } from '../execution-cache/mobile-execution-cache'
+import type { MobileExecutionCachePayload } from '../execution-cache/mobile-execution-cache.ts'
 import type {
   MobilePlatform,
   MobileTarget,
+  MobileWorkerEvent,
   WorkerScenarioExecution,
   WorkerSessionCompletion,
-} from '../worker/worker-protocol'
+} from '../worker/worker-protocol.ts'
 import {
   type AgentDeviceClientFactory,
   agentDeviceCapabilitiesSchema,
   agentDeviceReplayPlanStep,
   defaultAgentDeviceClientFactory,
   isAgentDeviceReplayDivergence,
+  mobileApplicationIdsSchema,
   mobileDevicesSchema,
-} from './agent-device-client'
+} from './agent-device-client.ts'
 import {
   finishScenarioEvidence,
   startScenarioEvidence,
-} from './agent-device-evidence'
-import { executePrivateAgentDeviceReplay } from './agent-device-replay'
+} from './agent-device-evidence.ts'
+import { executePrivateAgentDeviceReplay } from './agent-device-replay.ts'
 import {
   createGatewaySession,
   deviceSelection,
@@ -26,13 +28,14 @@ import {
   mobilePlatformPolicies,
   normalizedCapabilities,
   type OpenGatewaySessionInput,
-} from './agent-device-session'
+} from './agent-device-session.ts'
+import { startAgentDeviceViewport } from './agent-device-viewport.ts'
 
 export type {
   AgentDeviceClientFactory,
   AgentDeviceClientPort,
-} from './agent-device-client'
-export type { OpenGatewaySessionInput } from './agent-device-session'
+} from './agent-device-client.ts'
+export type { OpenGatewaySessionInput } from './agent-device-session.ts'
 
 function replayScenarioStepIndex(
   error: unknown,
@@ -109,12 +112,33 @@ function attachFinishedEvidence(
 
 export class AgentDeviceGateway {
   private readonly createClient: AgentDeviceClientFactory
+  private readonly publishEvent: (event: MobileWorkerEvent) => void
   private readonly sessions = new Map<string, GatewaySession>()
 
   constructor(
     createClient: AgentDeviceClientFactory = defaultAgentDeviceClientFactory,
+    publishEvent: (event: MobileWorkerEvent) => void = () => {},
   ) {
     this.createClient = createClient
+    this.publishEvent = publishEvent
+  }
+
+  async listApplications(
+    platform: MobilePlatform,
+    scope: 'user-installed' | 'all',
+  ): Promise<string[]> {
+    const client = this.createClient({
+      session: 'pickle-mobile-app-discovery',
+      lockPolicy: 'reject',
+      lockPlatform: platform,
+    })
+    return [
+      ...new Set(
+        mobileApplicationIdsSchema.parse(
+          await client.apps.list({ platform, appsFilter: scope }),
+        ),
+      ),
+    ].sort()
   }
 
   async discoverTargets(
@@ -175,6 +199,11 @@ export class AgentDeviceGateway {
         session,
         assertOwned,
       )
+      session.viewport = startAgentDeviceViewport({
+        sessionId: input.sessionId,
+        client: session.client,
+        publish: this.publishEvent,
+      })
       return { targetId }
     } catch (error) {
       await this.closeSession(input.sessionId).catch(() => {})
@@ -257,6 +286,7 @@ export class AgentDeviceGateway {
     const session = this.sessions.get(sessionId)
     if (!session) return
     let logError: unknown
+    await session.viewport?.close()
     if (session.logsStarted) {
       try {
         await session.client.observability.logs({ action: 'stop' })

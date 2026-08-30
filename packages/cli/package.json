@@ -13,14 +13,17 @@
   },
   "files": [
     "index.ts",
-    "src/**/*.ts",
-    "!src/**/*.test.ts"
+    "src/**/*.ts"
   ],
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "test": "bun run test:confidentiality && bun run test:remaining",
-    "test:confidentiality": "bun test --preload ./test/test-environment.ts --max-concurrency 1 --timeout 30000 src/execution-cache/execution-cache-confidentiality.test.ts",
-    "test:remaining": "bun test --preload ./test/test-environment.ts --max-concurrency 1 --timeout 30000 --path-ignore-patterns '**/execution-cache-confidentiality.test.ts'"
+    "test": "bun run test:unit",
+    "test:unit": "bunx --bun vitest run --configLoader runner --experimental.viteModuleRunner=false --experimental.nodeLoader=false --config vitest.config.ts",
+    "test:integration": "bun run test:integration:confidentiality && bun run test:integration:main",
+    "test:integration:confidentiality": "bunx --bun vitest run --configLoader runner --experimental.viteModuleRunner=false --experimental.nodeLoader=false --config vitest.integration.config.ts tests/integration/execution-cache/execution-cache-confidentiality.test.ts",
+    "test:integration:main": "bunx --bun vitest run --configLoader runner --experimental.viteModuleRunner=false --experimental.nodeLoader=false --config vitest.integration.config.ts --exclude '**/execution-cache-confidentiality.test.ts'",
+    "test:e2e": "bunx --bun vitest run --configLoader runner --experimental.viteModuleRunner=false --experimental.nodeLoader=false --config vitest.e2e.config.ts",
+    "test:all": "bun run test:unit && bun run test:integration && bun run test:e2e"
   },
   "dependencies": {
     "@pickle-spec/configuration": "workspace:*",
@@ -31,13 +34,17 @@
     "@pickle-spec/web": "workspace:*",
     "@types/bun": "catalog:",
     "@typescript/typescript6": "catalog:",
-    "chalk": "5",
+    "commander": "^15.0.0",
     "ora": "8",
+    "picocolors": "^1.1.1",
+    "prompts": "^2.4.2",
     "zod": "catalog:"
   },
   "devDependencies": {
     "@axe-core/playwright": "^4.13.0",
+    "@types/prompts": "^2.4.9",
     "playwright": "^1.55.0",
-    "typescript": "catalog:"
+    "typescript": "catalog:",
+    "vitest": "catalog:"
   }
 }

@@ -2,18 +2,41 @@ const evidenceBufferKey = '__pickleSpecWebEvidenceV1'
 
 export const installWebEvidenceScript = `(() => {
   const key = '${evidenceBufferKey}'
-  if (Array.isArray(globalThis[key])) return
-  const entries = []
+  if (globalThis[key]?.entries) return
+  const buffer = { entries: [], droppedCount: 0 }
+  const maxEntries = 500
   Object.defineProperty(globalThis, key, {
     configurable: true,
-    value: entries,
+    value: buffer,
   })
-  const record = (entry) => entries.push({
-    occurredAt: new Date().toISOString(),
-    ...entry,
-  })
-  const recordNetworkFailure = (url, detail, level = 'error') => {
-    const message = String(url) + ' failed: ' + String(detail)
+  const record = (entry) => {
+    if (buffer.entries.length >= maxEntries) {
+      buffer.droppedCount++
+      return
+    }
+    buffer.entries.push({ occurredAt: new Date().toISOString(), ...entry })
+  }
+  const sanitizeUrl = (value) => {
+    try {
+      const url = new URL(String(value), location.href)
+      url.username = ''
+      url.password = ''
+      for (const name of url.searchParams.keys()) {
+        if (/token|secret|password|passwd|authorization|api[-_]?key|session|cookie/i.test(name)) {
+          url.searchParams.set(name, '<redacted>')
+        }
+      }
+      return url.toString()
+    } catch {
+      return '<invalid-url>'
+    }
+  }
+  const recordNetwork = (method, url, status, failure) => {
+    const message = String(method).toUpperCase() + ' ' + sanitizeUrl(url) +
+      (failure ? ' failed: ' : ' completed: ') + String(status)
+    const level = failure
+      ? (Number(status) >= 500 ? 'error' : 'warning')
+      : 'info'
     record({ kind: 'diagnostic', level, origin: 'network', message })
   }
   const display = (value) => {
@@ -46,14 +69,14 @@ export const installWebEvidenceScript = `(() => {
       return Reflect.apply(original, this, args)
     }
   }
-  record({ kind: 'activity', description: 'Navigate ' + location.href })
+  record({ kind: 'activity', description: 'Navigate ' + sanitizeUrl(location.href) })
   addEventListener('error', (event) => {
     const target = event.target
     const resourceUrl = target && (
       target.currentSrc || target.src || target.href
     )
     if (resourceUrl) {
-      recordNetworkFailure(resourceUrl, 'load error')
+      recordNetwork('RESOURCE', resourceUrl, 'load error', true)
       return
     }
     record({
@@ -76,18 +99,13 @@ export const installWebEvidenceScript = `(() => {
       const requestUrl = typeof request === 'string'
         ? request
         : String(request?.url ?? request)
+      const method = String(args[1]?.method ?? request?.method ?? 'GET')
       try {
         const response = await Reflect.apply(originalFetch, this, args)
-        if (!response.ok) {
-          recordNetworkFailure(
-            response.url || requestUrl,
-            response.status,
-            response.status >= 500 ? 'error' : 'warning',
-          )
-        }
+        recordNetwork(method, response.url || requestUrl, response.status, !response.ok)
         return response
       } catch (error) {
-        recordNetworkFailure(requestUrl, display(error))
+        recordNetwork(method, requestUrl, display(error), true)
         throw error
       }
     }
@@ -102,18 +120,24 @@ export const installWebEvidenceScript = `(() => {
     }
     XMLHttpRequest.prototype.send = function (...args) {
       const request = this[requestKey] || { method: 'XHR', url: 'request' }
-      const failed = (event) => recordNetworkFailure(request.url, event.type)
+      let recorded = false
+      const failed = (event) => {
+        if (recorded) return
+        recorded = true
+        recordNetwork(request.method, request.url, event.type, true)
+      }
       this.addEventListener('error', failed, { once: true })
       this.addEventListener('abort', failed, { once: true })
       this.addEventListener('timeout', failed, { once: true })
       this.addEventListener('loadend', () => {
-        if (this.status >= 400) {
-          recordNetworkFailure(
-            this.responseURL || request.url,
-            this.status,
-            this.status >= 500 ? 'error' : 'warning',
-          )
-        }
+        if (recorded) return
+        recorded = true
+        recordNetwork(
+          request.method,
+          this.responseURL || request.url,
+          this.status,
+          this.status >= 400,
+        )
       }, { once: true })
       return Reflect.apply(originalSend, this, args)
     }
@@ -121,7 +145,7 @@ export const installWebEvidenceScript = `(() => {
   if (typeof PerformanceObserver !== 'function') return
   const observe = (entry) => {
     const activity = 'Resource ' +
-      (entry.initiatorType || 'request') + ' ' + entry.name
+      (entry.initiatorType || 'request') + ' ' + sanitizeUrl(entry.name)
     record({ kind: 'activity', description: activity })
   }
   const observer = new PerformanceObserver((list) => {
@@ -135,6 +159,12 @@ export const installWebEvidenceScript = `(() => {
 })()`
 
 export const consumeWebEvidenceScript = `(() => {
-  const entries = globalThis['${evidenceBufferKey}']
-  return Array.isArray(entries) ? entries.splice(0) : []
+  const buffer = globalThis['${evidenceBufferKey}']
+  if (!buffer?.entries) return { entries: [], droppedCount: 0 }
+  const result = {
+    entries: buffer.entries.splice(0),
+    droppedCount: buffer.droppedCount,
+  }
+  buffer.droppedCount = 0
+  return result
 })()`

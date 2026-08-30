@@ -20,6 +20,10 @@ repository's framework, design system, and server/client conventions first.
 
 ## Keep components focused
 
+- Keep page and route modules focused on route decisions, layout, and
+  composition. Move a region out when it owns a distinct interaction, data
+  projection, or reason to change, then let the page read as the product
+  outline.
 - A component should represent one coherent product concept. Split a component
   when it owns unrelated workflow state, data access, and several UI regions
   that change independently.
@@ -36,8 +40,24 @@ repository's framework, design system, and server/client conventions first.
   values before `return`; move reusable stateful behavior into a focused hook.
   Do not use a hook as a drawer for unrelated logic.
 
+## Organize by ownership
+
+- Colocate page-specific components and hooks with their page. Promote them to
+  shared `components` or `hooks` directories only when another page consumes
+  them or they represent a cross-page product concept.
+- Split by reason to change, not by element count. Keep a cohesive table, form,
+  or workflow together when separating it would create pass-through files.
+- Name hooks after one stateful capability. A hook may coordinate related
+  state and side effects, but it should not hide an entire page merely to make
+  the component shorter.
+- Keep route state, server state, shared live state, and transient UI state with
+  their existing owners. File extraction alone does not justify moving state.
+
 ## Design small composable APIs
 
+- Define a named `type` or `interface` for non-trivial component props. Keep the
+  shape near the component that owns it and use intent-level callbacks instead
+  of passing state setters, route unions, or transport clients through the tree.
 - Prefer `children`, named slots, and focused subcomponents over a growing set
   of boolean props such as `compact`, `withFooter`, `showIcon`, and
   `isDismissible`.
@@ -74,6 +94,11 @@ repository's framework, design system, and server/client conventions first.
 
 ## Keep state minimal and owned once
 
+- Start with React's local hooks. Use `useState` for independent local values
+  and `useReducer` when several transitions protect one workflow invariant.
+  Add a state library only when state has a demonstrated lifetime or sharing
+  requirement beyond the mounted React tree and the repository does not
+  already provide an owner.
 - Store only information the UI must remember. Derive filtered collections,
   counts, labels, validation state, and other pure projections during render.
 - Do not copy props into state to keep them "in sync." If the parent controls a
@@ -87,6 +112,18 @@ repository's framework, design system, and server/client conventions first.
   another.
 - Update objects and arrays immutably. Never mutate props or state during
   render.
+
+## Keep dependencies visible
+
+- Prefer explicit props through a shallow component tree. Two or three levels
+  of props are often easier to trace than context.
+- Use context for a stable cross-cutting capability consumed by several distant
+  descendants, not to avoid writing a prop type. Keep frequently changing page
+  workflow state with the nearest common owner.
+- Before adding Redux, Zustand, or another store, name the state lifetime,
+  writers, readers, and synchronization boundary that local state or existing
+  server state cannot represent. Do not add a store during a structural
+  refactor unless the current ownership is the behavior being fixed.
 
 ```tsx
 // ❌ duplicated source of truth and synchronization effect
@@ -145,6 +182,11 @@ const visibleItems = items.filter(item => item.name.includes(query))
   tree?
 - Is every state value necessary, owned once, and impossible to derive?
 - Is every Effect synchronizing with something outside React?
+- Does the page read as route and layout composition, with page-specific pieces
+  colocated until they have a real second consumer?
+- Do non-trivial components have named, intent-level prop types?
+- Is context or a store solving real cross-tree ownership rather than hiding a
+  shallow prop chain?
 - Could composition replace boolean modes or an oversized prop object?
 - Are meaningful regions split without creating wrapper-only fragments?
 - Are semantics, focus, keyboard behavior, labels, keys, and async states

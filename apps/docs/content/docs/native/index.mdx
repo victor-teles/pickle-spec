@@ -1,0 +1,41 @@
+---
+title: Native testing
+description: Run Specifications against Android Emulators and iOS Simulators.
+---
+
+The Pickle CLI already includes native support. It runs Android and iOS Scenarios through `@pickle-spec/mobile` and Agent Device.
+
+<Callout type="warn" title="Emulators and Simulators only">
+Physical-device provisioning is outside the current release.
+</Callout>
+
+## Native execution model
+
+Native steps use a closed vocabulary. Pickle compiles the complete Scenario into an Agent Device `.ad` script. The mobile adapter sends that script from Bun to an isolated Node worker through a versioned protocol.
+
+| Gherkin step | Native operation |
+| --- | --- |
+| `Given Welcome` | Wait for visible text `Welcome`. |
+| `When Continue` | Find `Continue` and click it. |
+| `Then Home` | Assert that text `Home` is visible. |
+| `Then visible: id="home"` | Assert that the selector is visible. |
+| `Then hidden: id="spinner"` | Assert that the selector is hidden. |
+| `Then text: id="greeting" = Hello` | Assert the selector text equals `Hello`. |
+
+Explicit outcomes support `text`, `visible`, `hidden`, `exists`, `editable`, `selected`, and `focused`.
+
+## Pick a target
+
+<Cards>
+  <Card title="Android Emulator" href="/docs/native/android" description="Run against an installed Android app or reinstall a binary for every Scenario." />
+  <Card title="iOS Simulator" href="/docs/native/ios" description="Run against a booted Simulator with an installed app or app binary." />
+</Cards>
+
+## Check the environment
+
+`pickle check` validates the project files. `pickle doctor` checks Node, target discovery, and the configured device capabilities.
+
+```bash
+bunx pickle check
+bunx pickle doctor
+```

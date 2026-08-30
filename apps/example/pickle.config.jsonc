@@ -11,9 +11,6 @@
       "states": ["active"]
     }
   },
-  "executionTargetProfile": {
-    "id": "web"
-  },
   "web": {
     "baseUrl": "https://www.saucedemo.com",
     "browser": {

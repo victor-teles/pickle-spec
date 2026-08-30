@@ -1,0 +1,14 @@
+{
+  "name": "@pickle-spec/ios-example",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "check": "pickle check",
+    "run:ios": "pickle run --profile ios --suite smoke",
+    "studio": "pickle studio"
+  },
+  "dependencies": {
+    "@pickle-spec/cli": "workspace:*",
+    "@pickle-spec/mobile": "workspace:*"
+  }
+}

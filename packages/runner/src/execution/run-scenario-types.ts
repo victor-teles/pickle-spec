@@ -1,364 +1,21 @@
+import type { Scenario, Specification } from '@pickle-spec/spec'
 import type {
-  Scenario,
-  ScenarioStep,
-  ScenarioTemplate,
-  ScenarioVariableBinding,
-  Specification,
-} from '@pickle-spec/spec'
-import type {
-  CacheOutcome,
-  ExecutionCacheAdapter,
-  ExecutionCacheKey,
+  ExecutionCacheEnvelope,
   ExecutionCacheStore,
-  ExecutionCacheUncacheableReason,
 } from '../execution-cache/execution-cache'
-export type TestResultState =
-  | 'passed'
-  | 'failed'
-  | 'skipped'
-  | 'cancelled'
-  | 'infrastructure-error'
+import type {
+  ExecutionTargetAdapter,
+  ExecutionTargetProfile,
+  TargetSessionCompletion,
+} from './contracts/execution-target-types'
+import type { RunEvent } from './contracts/run-event-types'
+import type { ExecutionMode } from './contracts/run-evidence-types'
+import type { ScenarioAttempt, TestResult } from './contracts/test-result-types'
 
-export function isEvidenceState(state: TestResultState): boolean {
-  return state === 'failed' || state === 'infrastructure-error'
-}
-
-export type ExecutionMode = 'adaptive' | 'replay'
-
-export const testRunSchemaVersion = 2 as const
-
-export interface ExecutionTargetProfile {
-  id: string
-  adapter?: string
-  capabilities?: readonly string[]
-}
-
-export interface ResolvedAction {
-  description: string
-  replay?: Record<string, unknown>
-}
-
-export interface TestArtifact {
-  kind: 'screenshot' | 'trace' | 'recording' | 'device-log'
-  path: string
-  mediaType?: string
-  name?: string
-  capturedAt?: string
-  sizeBytes?: number
-}
-
-export const evidenceKinds = [
-  'screenshot',
-  'trace',
-  'recording',
-  'device-log',
-  'diagnostics',
-] as const
-
-export type EvidenceKind = (typeof evidenceKinds)[number]
-
-export type EvidenceAvailabilityState =
-  | 'available'
-  | 'not-requested'
-  | 'not-supported'
-  | 'not-retained'
-  | 'capture-failed'
-  | 'missing'
-
-export interface EvidenceAvailability {
-  kind: EvidenceKind
-  state: EvidenceAvailabilityState
-  message?: string
-}
-
-export interface ApplicationOutputEvidenceAvailability {
-  stream: 'stdout' | 'stderr'
-  state: EvidenceAvailabilityState
-  message?: string
-}
-
-export const diagnosticLevels = ['debug', 'info', 'warning', 'error'] as const
-export type DiagnosticLevel = (typeof diagnosticLevels)[number]
-
-export const diagnosticOrigins = [
-  'console',
-  'network',
-  'runner',
-  'adapter',
-  'application',
-] as const
-export type DiagnosticOrigin = (typeof diagnosticOrigins)[number]
-
-export interface DiagnosticEntry {
-  occurredAt: string
-  causalAt?: string
-  level: DiagnosticLevel
-  origin: DiagnosticOrigin
-  stream?: 'stdout' | 'stderr'
-  message: string
-  scenarioId?: string
-  scenarioName?: string
-  stepIndex?: number
-  stepText?: string
-  executionTargetProfileId?: string
-}
-
-export const traceActivityKinds = [
-  'resolved-action',
-  'browser-activity',
-] as const
-export type TraceActivityKind = (typeof traceActivityKinds)[number]
-
-export interface TraceEntry {
-  occurredAt: string
-  causalAt?: string
-  kind: TraceActivityKind
-  description: string
-}
-
-export interface StepExecution {
-  state: TestResultState
-  resolvedActions: ResolvedAction[]
-  replayDiverged?: boolean
-  message?: string
-  artifacts?: TestArtifact[]
-  evidenceAvailability?: EvidenceAvailability[]
-  diagnostics?: DiagnosticEntry[]
-  trace?: TraceEntry[]
-}
-
-export type StepEvaluation = 'replay' | 'adaptive'
-
-export interface StepExecutionContext {
-  stepIndex: number
-  templateStep: ScenarioStep
-  runtimeBindings: readonly ScenarioVariableBinding[]
-  evaluation?: StepEvaluation
-}
-
-export type TargetSessionReplayRepresentation =
-  | {
-      cacheable: true
-      adapterPayload: unknown
-      requiredVariables: readonly string[]
-    }
-  | {
-      cacheable: false
-      reason: ExecutionCacheUncacheableReason
-    }
-
-export interface TargetSessionCompletion {
-  inferenceCount: number
-  evaluationModel?: string
-  replayRepresentation?: TargetSessionReplayRepresentation
-}
-
-export interface ScenarioExecution {
-  stepExecutions: StepExecution[]
-  replayDiverged?: boolean
-}
-
-interface TargetSessionLifecycle {
-  complete?(): Promise<TargetSessionCompletion>
-  close(): Promise<void>
-}
-
-export interface StepTargetSession extends TargetSessionLifecycle {
-  executeStep(
-    step: ScenarioStep,
-    signal?: AbortSignal,
-    context?: StepExecutionContext,
-  ): Promise<StepExecution>
-  executeScenario?: never
-}
-
-export interface ScenarioTargetSession extends TargetSessionLifecycle {
-  executeStep?: never
-  executeScenario(signal?: AbortSignal): Promise<ScenarioExecution>
-}
-
-export type TargetSession = StepTargetSession | ScenarioTargetSession
-
-export interface ReplayCacheInput {
-  adapterPayload: unknown
-  requiredVariables: readonly string[]
-}
-
-export interface OpenSessionInput {
-  executionTargetProfile: ExecutionTargetProfile
-  specification: Specification
-  scenario: Scenario
-  mode?: ExecutionMode
-  executionCache?: ReplayCacheInput
-  scenarioTemplate?: ScenarioTemplate
-  runtimeBindings?: readonly ScenarioVariableBinding[]
-  signal?: AbortSignal
-}
-
-export interface FidelityPolicy {
-  profile: 'default' | 'fast'
-  tradeOffs: readonly string[]
-}
-
-export interface ExecutionTargetAdapter<
-  Session extends TargetSession = TargetSession,
-> {
-  capabilities?: readonly string[]
-  executionCache?: ExecutionCacheAdapter
-  fidelityPolicy?: FidelityPolicy
-  openSession(input: OpenSessionInput): Promise<Session>
-  dispose?(): Promise<void>
-}
-
-export type StepExecutionTargetAdapter =
-  ExecutionTargetAdapter<StepTargetSession>
-
-export interface ScenarioIdentity {
-  name: string
-  id?: string
-  examplesId?: string
-  examplesRowId?: string
-}
-
-export interface TestStepResult {
-  index: number
-  startedAt: string
-  finishedAt: string
-  durationMs: number
-  step: ScenarioStep
-  state: TestResultState
-  resolvedActions: ResolvedAction[]
-  message?: string
-  artifacts?: TestArtifact[]
-  diagnostics?: DiagnosticEntry[]
-  trace?: TraceEntry[]
-}
-
-export interface ScenarioAttempt {
-  attempt: number
-  startedAt: string
-  finishedAt: string
-  durationMs: number
-  state: TestResultState
-  steps: TestStepResult[]
-  executionMode?: ExecutionMode
-  cacheOutcome?: CacheOutcome
-  inferenceCount?: number
-  prefixStepCount?: number
-  cacheUncacheableReason?: ExecutionCacheUncacheableReason
-  failureKind?: 'cache-miss'
-  message?: string
-  fidelityPolicy?: FidelityPolicy
-  evidenceAvailability: EvidenceAvailability[]
-  applicationOutputAvailability?: ApplicationOutputEvidenceAvailability[]
-  diagnostics?: DiagnosticEntry[]
-}
-
-export interface TestResult {
-  schemaVersion: typeof testRunSchemaVersion
-  specification: {
-    name: string
-    uri: string
-  }
-  scenario: ScenarioIdentity
-  executionTargetProfile: ExecutionTargetProfile
-  state: TestResultState
-  startedAt: string
-  finishedAt: string
-  durationMs: number
-  attempts: ScenarioAttempt[]
-  flaky?: boolean
-}
-
-export function finalScenarioAttempt(result: TestResult): ScenarioAttempt {
-  const attempt = result.attempts.at(-1)
-  if (!attempt) {
-    throw new Error('A Test result requires at least one Scenario attempt')
-  }
-  return attempt
-}
-
-interface RunEventEnvelope {
-  schemaVersion: typeof testRunSchemaVersion
-  sequence: number
-  occurredAt: string
-}
-
-export interface RunEventScope {
-  scenarioId: string
-  examplesRowId?: string
-  executionTargetProfileId: string
-  attempt: number
-  stepIndex?: number
-}
-
-export type RunEventPayload =
-  | {
-      type: 'run-started'
-      run: {
-        id: string
-        startedAt: string
-        sourceRunId?: string
-        suite?: string
-        applicationRevision?: string
-        evidencePersistence?: 'off' | 'on-failure' | 'always'
-      }
-    }
-  | {
-      type: 'scenario-started'
-      scenario: TestResult['scenario']
-      executionTargetProfile: ExecutionTargetProfile
-      scope: RunEventScope
-    }
-  | {
-      type: 'step-started'
-      step: ScenarioStep
-      scenario: TestResult['scenario']
-      executionTargetProfile: ExecutionTargetProfile
-      scope: RunEventScope
-    }
-  | {
-      type: 'step-finished'
-      result: TestStepResult
-      scenario: TestResult['scenario']
-      executionTargetProfile: ExecutionTargetProfile
-      scope: RunEventScope
-    }
-  | { type: 'cache-hit'; cacheKey: ExecutionCacheKey; scope: RunEventScope }
-  | { type: 'cache-miss'; cacheKey: ExecutionCacheKey; scope: RunEventScope }
-  | { type: 'cache-refresh'; cacheKey: ExecutionCacheKey; scope: RunEventScope }
-  | {
-      type: 'replay-diverged'
-      cacheKey: ExecutionCacheKey
-      scope: RunEventScope
-    }
-  | {
-      type: 'adaptive-fallback-started'
-      cacheKey: ExecutionCacheKey
-      scope: RunEventScope
-    }
-  | { type: 'cache-written'; cacheKey: ExecutionCacheKey; scope: RunEventScope }
-  | {
-      type: 'cache-uncacheable'
-      reason: ExecutionCacheUncacheableReason
-      scope: RunEventScope
-    }
-  | {
-      type: 'inference-count-updated'
-      inferenceCount: number
-      scope: RunEventScope
-    }
-  | {
-      type: 'scenario-finished'
-      specification: TestResult['specification']
-      scenario: TestResult['scenario']
-      executionTargetProfile: ExecutionTargetProfile
-      scope: RunEventScope
-      attempt: ScenarioAttempt
-      scheduleIndex?: number
-    }
-
-export type RunEvent = RunEventEnvelope & RunEventPayload
+export * from './contracts/execution-target-types'
+export * from './contracts/run-event-types'
+export * from './contracts/run-evidence-types'
+export * from './contracts/test-result-types'
 
 export interface ScenarioRun {
   events: RunEvent[]
@@ -399,4 +56,19 @@ export interface RunScenarioInput extends ExecutionPolicy {
   now?: () => Date
   signal?: AbortSignal
   onEvent?: (event: RunEvent) => void | Promise<void>
+}
+
+export interface ScenarioAttemptInput extends RunScenarioInput {
+  mode: ExecutionMode
+  attempt: number
+  cacheEntry?: ExecutionCacheEnvelope
+}
+
+export interface AttemptScenarioRun extends ScenarioRun {
+  attempt: ScenarioAttempt
+  completion?: TargetSessionCompletion
+  replayDiverged: boolean
+  runtimeValueExposed: boolean
+  replayedStepCount: number
+  adaptiveEvaluated: boolean
 }

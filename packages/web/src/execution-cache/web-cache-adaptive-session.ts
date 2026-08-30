@@ -1,6 +1,7 @@
 import type {
   ExecutionCacheUncacheableReason,
   OpenSessionInput,
+  ResolvedAction,
   StepExecution,
   StepExecutionContext,
 } from '@pickle-spec/runner'
@@ -12,10 +13,8 @@ import {
   definedInstructions,
   executeObservedActions,
   observeActions,
-  observeOnce,
   verificationExecution,
 } from './web-adaptive-operations'
-import { resolvedInstructions } from './web-cache-instructions'
 import {
   compileObservedOutcomes,
   compileObservedWebAction,
@@ -24,6 +23,7 @@ import {
   instructionCoversStepVariables,
   parseObservedActionPayload,
   stepVariableNames,
+  type WebAssertionDraft,
   type WebExecutionCachePayload,
   type WebInstruction,
 } from './web-execution-cache'
@@ -45,6 +45,7 @@ type WebInstructionRuntime = {
     persist?: boolean,
   ): Promise<StepExecution | undefined>
   markNavigated(): void
+  takePendingActions(): ResolvedAction[]
 }
 
 interface CreateAdaptiveRuntimeInput {
@@ -91,7 +92,7 @@ class AdaptiveWebRuntime implements WebAdaptiveRuntime {
     }
     return {
       ...result,
-      resolvedActions: resolvedInstructions(instructions, 'resolved'),
+      resolvedActions: result.resolvedActions,
     }
   }
 
@@ -99,6 +100,7 @@ class AdaptiveWebRuntime implements WebAdaptiveRuntime {
     templateStep: ScenarioStep,
     target: string,
     index: number,
+    context: StepExecutionContext,
     signal: AbortSignal | undefined,
   ): Promise<StepExecution> {
     const url = navigationUrl(this.context.options.baseUrl, target)
@@ -123,11 +125,20 @@ class AdaptiveWebRuntime implements WebAdaptiveRuntime {
       )
     }
     this.context.uncacheable.reason = 'bound-parameter-value'
-    await this.context.automation.navigate(url, signal)
+    const captured = await captureWebAction({
+      automation: this.context.automation,
+      context,
+      description: `Navigate to ${url}`,
+      options: this.context.options,
+      perform: () => this.context.automation.navigate(url, signal),
+      outcome: () => ({ state: 'passed' }),
+    })
     this.context.executor.markNavigated()
     return {
       state: 'passed',
-      resolvedActions: [{ description: `Navigate to ${url}` }],
+      resolvedActions: [
+        { description: `Navigate to ${url}`, evidence: captured.evidence },
+      ],
     }
   }
 
@@ -189,6 +200,7 @@ class AdaptiveWebRuntime implements WebAdaptiveRuntime {
     templateStep: ScenarioStep,
     index: number,
     signal: AbortSignal | undefined,
+    context: StepExecutionContext,
   ): Promise<StepExecution> {
     const instructions: WebInstruction[] = []
     const navigationFailure = await this.context.executor.implicitNavigation(
@@ -216,12 +228,33 @@ class AdaptiveWebRuntime implements WebAdaptiveRuntime {
       this.context.uncacheable.reason = 'non-deterministic-assertion'
     }
     this.context.inference.count++
-    const verification = await this.context.automation.verify(prompt, signal)
-    return verificationExecution(
+    const description = `Verify: ${prompt}`
+    const captured = await captureWebAction({
+      automation: this.context.automation,
+      context,
+      description,
+      options: this.context.options,
+      perform: () => this.context.automation.verify(prompt, signal),
+      outcome: (result) => ({
+        state: result.meetsExpectation ? 'passed' : 'failed',
+        message: result.meetsExpectation ? undefined : result.actualState,
+      }),
+    })
+    const execution = verificationExecution(
       prompt,
-      verification.meetsExpectation,
-      verification.actualState,
+      captured.result.meetsExpectation,
+      captured.result.actualState,
     )
+    return {
+      ...execution,
+      resolvedActions: [
+        ...this.context.executor.takePendingActions(),
+        ...execution.resolvedActions.map((action) => ({
+          ...action,
+          evidence: captured.evidence,
+        })),
+      ],
+    }
   }
 
   private async adaptiveAction(
@@ -229,6 +262,7 @@ class AdaptiveWebRuntime implements WebAdaptiveRuntime {
     templateStep: ScenarioStep,
     index: number,
     signal: AbortSignal | undefined,
+    context: StepExecutionContext,
   ): Promise<StepExecution> {
     const instructions: WebInstruction[] = []
     const navigationFailure = await this.context.executor.implicitNavigation(
@@ -257,12 +291,21 @@ class AdaptiveWebRuntime implements WebAdaptiveRuntime {
       return this.executeCompiledStep(instructions, compiled, index, signal)
     }
     this.context.uncacheable.reason = 'non-deterministic-action'
-    return executeObservedActions(
+    const execution = await executeObservedActions(
       this.context.automation,
       actions,
+      context,
+      this.context.options,
       signal,
       () => this.context.inference.count++,
     )
+    const pendingActions = this.context.executor.takePendingActions()
+    return pendingActions.length > 0
+      ? {
+          ...execution,
+          resolvedActions: [...pendingActions, ...execution.resolvedActions],
+        }
+      : execution
   }
 
   executeStep(
@@ -277,6 +320,7 @@ class AdaptiveWebRuntime implements WebAdaptiveRuntime {
         context.templateStep,
         target,
         context.stepIndex,
+        context,
         signal,
       )
     }
@@ -287,12 +331,14 @@ class AdaptiveWebRuntime implements WebAdaptiveRuntime {
           context.templateStep,
           context.stepIndex,
           signal,
+          context,
         )
       : this.adaptiveAction(
           observeInstruction(step),
           context.templateStep,
           context.stepIndex,
           signal,
+          context,
         )
   }
 }

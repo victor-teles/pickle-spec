@@ -3,6 +3,7 @@ import type {
   WebAutomation,
   WebAutomationFactory,
   WebBrowserProcess,
+  WebClientContext,
   WebIsolationState,
 } from '../automation/web-automation'
 import type { ResolvedFidelity } from '../configuration/fidelity'
@@ -67,6 +68,7 @@ export class WebProcessPool {
     signal?: AbortSignal,
     fidelity?: ResolvedFidelity,
     mode?: 'adaptive' | 'replay',
+    onLiveViewport?: WebClientContext['onLiveViewport'],
   ): Promise<WebLogicalSession> {
     if (this.disposed) {
       throw new Error('Web process pool is disposed')
@@ -85,6 +87,7 @@ export class WebProcessPool {
             mode,
             fidelity,
             signal,
+            onLiveViewport,
           }),
         signal,
         (lateAutomation) => lateAutomation.close(),

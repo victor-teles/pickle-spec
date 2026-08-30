@@ -14,20 +14,23 @@
     "benchmarking.ts",
     "index.ts",
     "testing.ts",
-    "src/**/*.ts",
-    "!src/**/*.test.ts"
+    "src/**/*.ts"
   ],
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "test": "bun test"
+    "test": "bunx --bun vitest run --configLoader runner --experimental.viteModuleRunner=false --experimental.nodeLoader=false --config ../../vitest.package.config.ts"
   },
   "dependencies": {
     "@pickle-spec/configuration": "workspace:*",
     "@pickle-spec/spec": "workspace:*",
     "zod": "catalog:"
   },
+  "peerDependencies": {
+    "vitest": "^4.1.11"
+  },
   "devDependencies": {
     "@types/bun": "catalog:",
-    "typescript": "catalog:"
+    "typescript": "catalog:",
+    "vitest": "catalog:"
   }
 }

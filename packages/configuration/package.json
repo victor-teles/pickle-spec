@@ -10,18 +10,18 @@
   },
   "files": [
     "index.ts",
-    "src/**/*.ts",
-    "!src/**/*.test.ts"
+    "src/**/*.ts"
   ],
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "test": "bun test"
+    "test": "bunx --bun vitest run --configLoader runner --experimental.viteModuleRunner=false --experimental.nodeLoader=false --config ../../vitest.package.config.ts"
   },
   "dependencies": {
     "zod": "catalog:"
   },
   "devDependencies": {
     "@types/bun": "catalog:",
-    "typescript": "catalog:"
+    "typescript": "catalog:",
+    "vitest": "catalog:"
   }
 }

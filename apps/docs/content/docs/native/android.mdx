@@ -1,0 +1,71 @@
+---
+title: Android Emulator
+description: Configure and run a native Scenario against Android.
+---
+
+You need Node 22.12 or newer, the Android SDK, `adb`, and a booted Android Emulator.
+
+<Steps>
+<Step>
+
+### Find the application ID
+
+List user-installed applications:
+
+```bash
+bunx pickle apps --platform android
+```
+
+Add `--all` to include system applications.
+
+</Step>
+<Step>
+
+### Configure the Android profile
+
+Android Emulator is the default mobile execution target.
+
+```jsonc
+{
+  "schemaVersion": 1,
+  "specifications": "features/**/*.feature",
+  "executionTargetProfiles": {
+    "android": {
+      "adapter": "mobile",
+      "mobile": {
+        "application": {
+          "id": "com.example.checkout"
+        }
+      }
+    }
+  },
+  "applicationRevision": "checkout-local"
+}
+```
+
+Add `application.binaryPath` only when every logical Scenario session should reinstall the application. Reinstalling removes the existing Android application data.
+
+</Step>
+<Step>
+
+### Write and run the Scenario
+
+```gherkin
+@pickle:state:active
+Feature: Android checkout
+
+  Scenario: Customer opens checkout
+    Given Checkout
+    When Continue
+    Then visible: text="Payment"
+```
+
+```bash
+bunx pickle doctor
+bunx pickle run --profile android
+```
+
+</Step>
+</Steps>
+
+If more than one Emulator is booted, set `executionTargetProfiles.android.mobile.targetId` to the target ID.

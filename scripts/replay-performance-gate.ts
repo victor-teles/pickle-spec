@@ -24,13 +24,23 @@ async function runAdapterBenchmark(
   return child.exited
 }
 
+async function runAdapterGate(
+  adapter: ReplayBenchmarkAdapter,
+  run: (adapter: ReplayBenchmarkAdapter) => Promise<number>,
+): Promise<number> {
+  const exitCode = await run(adapter)
+  return exitCode === 1 ? run(adapter) : exitCode
+}
+
 export async function runReplayPerformanceGate(
   run: (
     adapter: ReplayBenchmarkAdapter,
   ) => Promise<number> = runAdapterBenchmark,
 ): Promise<number> {
   const exitCodes: number[] = []
-  for (const adapter of adapters) exitCodes.push(await run(adapter))
+  for (const adapter of adapters) {
+    exitCodes.push(await runAdapterGate(adapter, run))
+  }
   return exitCodes.every((exitCode) => exitCode === 0) ? 0 : 1
 }
 

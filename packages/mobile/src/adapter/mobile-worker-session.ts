@@ -36,6 +36,7 @@ export class MobileWorkerSession implements ScenarioTargetSession {
     private readonly worker: MobileWorkerClient,
     private readonly sessionId: string,
     private readonly signal?: AbortSignal,
+    private readonly unsubscribe: () => void = () => {},
   ) {
     if (signal?.aborted) this.onAbort()
     else signal?.addEventListener('abort', this.onAbort, { once: true })
@@ -51,6 +52,7 @@ export class MobileWorkerSession implements ScenarioTargetSession {
 
   async handleOpenFailure(): Promise<void> {
     this.removeAbortListener()
+    this.unsubscribe()
     if (this.cancelled) await this.cancellationPromise?.catch(() => {})
   }
 
@@ -98,12 +100,16 @@ export class MobileWorkerSession implements ScenarioTargetSession {
   }
 
   private async cancelOnce(): Promise<void> {
-    const response = await this.worker.request({
-      version: mobileWorkerProtocolVersion,
-      type: 'cancel-session',
-      sessionId: this.sessionId,
-    })
-    expectWorkerResponse(response, 'session-cancelled')
+    try {
+      const response = await this.worker.request({
+        version: mobileWorkerProtocolVersion,
+        type: 'cancel-session',
+        sessionId: this.sessionId,
+      })
+      expectWorkerResponse(response, 'session-cancelled')
+    } finally {
+      this.unsubscribe()
+    }
   }
 
   private async closeOnce(): Promise<void> {
@@ -112,12 +118,16 @@ export class MobileWorkerSession implements ScenarioTargetSession {
       await this.cancellationPromise
       return
     }
-    const response = await this.worker.request({
-      version: mobileWorkerProtocolVersion,
-      type: 'close-session',
-      sessionId: this.sessionId,
-    })
-    expectWorkerResponse(response, 'session-closed')
+    try {
+      const response = await this.worker.request({
+        version: mobileWorkerProtocolVersion,
+        type: 'close-session',
+        sessionId: this.sessionId,
+      })
+      expectWorkerResponse(response, 'session-closed')
+    } finally {
+      this.unsubscribe()
+    }
   }
 
   private removeAbortListener(): void {

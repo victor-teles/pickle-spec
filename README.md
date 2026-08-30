@@ -110,6 +110,33 @@ Create `pickle.config.jsonc` in the project root:
 }
 ```
 
+## Configure mobile execution
+
+List application IDs from connected Android Emulators or iOS Simulators:
+
+```sh
+pickle apps --platform android
+pickle apps --platform ios --all
+```
+
+Configure a mobile application by ID. Pickle Spec uses an Android Emulator when
+`executionTarget` is omitted. Add `binaryPath` only when each run should
+reinstall the application before launch.
+
+```jsonc
+{
+  "schemaVersion": 1,
+  "executionTargetProfiles": {
+    "android": {
+      "adapter": "mobile",
+      "mobile": {
+        "application": { "id": "com.example.checkout" }
+      }
+    }
+  }
+}
+```
+
 Adaptive execution and Cache refresh require the API key for the configured model provider. Bun loads environment variables from `.env`. For local Chrome, set `web.browser.modelApiKey` or the provider environment variable (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GOOGLE_API_KEY`, `GEMINI_API_KEY`, or `GOOGLE_GENERATIVE_AI_API_KEY`). `web.browser.modelName` must be a Stagehand-supported `provider/model` value; Pickle Spec rejects unknown names before Adaptive execution starts. Replay and `--cache-only` execute browser primitives without model credentials.
 
 To attach to an existing browser, set `web.browser.cdpUrl` to an absolute HTTP, HTTPS, WS, or WSS URL:

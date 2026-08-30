@@ -124,6 +124,25 @@ async function closeQuietly(close: () => Promise<void>): Promise<void> {
   } catch {}
 }
 
+function stagehandViewport(context: WebClientContext) {
+  if (!context.onLiveViewport) return
+  return {
+    options: context.browser,
+    onViewport: context.onLiveViewport,
+    signal: context.signal,
+  }
+}
+
+async function closeStagehandClient(
+  browser: StagehandBrowser,
+  stagehand: Stagehand | undefined,
+): Promise<void> {
+  await Promise.all([
+    stagehand ? closeQuietly(() => stagehand.close()) : Promise.resolve(),
+    closeQuietly(() => browser.close()),
+  ])
+}
+
 function stagehandClient(
   browser: StagehandBrowser,
   options: BrowserOptions,
@@ -172,6 +191,7 @@ function stagehandClient(
       activeStagehand,
       stagehandTimeouts(context, options),
       evidence,
+      stagehandViewport(context),
     )
   }
 
@@ -179,12 +199,7 @@ function stagehandClient(
     closed = true
     const activeStagehand = stagehand
     stagehand = undefined
-    await Promise.all([
-      activeStagehand
-        ? closeQuietly(() => activeStagehand.close())
-        : Promise.resolve(),
-      closeQuietly(() => browser.close()),
-    ])
+    await closeStagehandClient(browser, activeStagehand)
   }
 
   return { openContext, close }

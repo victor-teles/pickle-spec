@@ -21,22 +21,25 @@ type ObservablePage = {
   evaluate(expression: string): Promise<unknown>
 }
 
-const bufferedEvidenceSchema = z.array(
-  z.discriminatedUnion('kind', [
-    z.object({
-      kind: z.literal('diagnostic'),
-      occurredAt: z.iso.datetime(),
-      level: z.enum(diagnosticLevels),
-      origin: z.enum(['console', 'network']),
-      message: z.string(),
-    }),
-    z.object({
-      kind: z.literal('activity'),
-      occurredAt: z.iso.datetime(),
-      description: z.string(),
-    }),
-  ]),
-)
+const bufferedEvidenceEntrySchema = z.discriminatedUnion('kind', [
+  z.object({
+    kind: z.literal('diagnostic'),
+    occurredAt: z.iso.datetime(),
+    level: z.enum(diagnosticLevels),
+    origin: z.enum(['console', 'network']),
+    message: z.string(),
+  }),
+  z.object({
+    kind: z.literal('activity'),
+    occurredAt: z.iso.datetime(),
+    description: z.string(),
+  }),
+])
+
+const bufferedEvidenceSchema = z.object({
+  entries: z.array(bufferedEvidenceEntrySchema),
+  droppedCount: z.number().int().nonnegative(),
+})
 
 function isObservablePage(value: unknown): value is ObservablePage {
   return Boolean(
@@ -78,7 +81,7 @@ export function createWebEvidenceCollector(
   }
 
   function recordBufferedEntry(
-    entry: z.infer<typeof bufferedEvidenceSchema>[number],
+    entry: z.infer<typeof bufferedEvidenceEntrySchema>,
   ): void {
     if (entry.kind === 'diagnostic') {
       const { kind: _kind, ...diagnostic } = entry
@@ -102,7 +105,13 @@ export function createWebEvidenceCollector(
         )
         return
       }
-      for (const entry of parsed.data) recordBufferedEntry(entry)
+      for (const entry of parsed.data.entries) recordBufferedEntry(entry)
+      if (parsed.data.droppedCount > 0) {
+        recordDiagnostic(
+          'adapter',
+          `Browser evidence truncated; ${parsed.data.droppedCount} entries were dropped`,
+        )
+      }
     } catch (error) {
       recordAdapterFailure('Browser evidence collection failed', error)
     }

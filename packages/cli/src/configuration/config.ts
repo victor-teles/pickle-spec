@@ -82,6 +82,7 @@ export interface PickleConfig {
   specifications?: string | string[]
   suites?: Record<string, SelectionOptions>
   executionTargetProfiles?: Record<string, ProjectExecutionTargetProfile>
+  /** Legacy schema-version 1 input. New configuration uses executionTargetProfiles. */
   executionTargetProfile?: ExecutionTargetProfile
   applicationRevision?: string
   web?: WebAdapterOptions
@@ -135,6 +136,25 @@ function selectedExecutionTargetProfiles(
       config.executionTargetProfile ?? {},
     ),
   ]
+}
+
+export function hasBuiltInExecutionTarget(
+  config: PickleConfig,
+  profileId?: string,
+): boolean {
+  if (!profileId) {
+    return (
+      Boolean(config.web) ||
+      Object.keys(config.executionTargetProfiles ?? {}).some((id) =>
+        hasBuiltInExecutionTarget(config, id),
+      )
+    )
+  }
+  const profile = config.executionTargetProfiles?.[profileId]
+  if (!profile) return false
+  if (profile.adapter === 'mobile') return Boolean(profile.mobile)
+  if (profile.adapter === 'web') return Boolean(profile.web ?? config.web)
+  return false
 }
 
 export function runConfigurationFrom(
@@ -216,12 +236,14 @@ const projectProfileSchema = strictObject('executionTargetProfiles', {
   }).optional(),
   web: webAdapterOptionsSchema.optional(),
   mobile: strictObject('executionTargetProfiles.mobile', {
-    executionTarget: z.enum(['android-emulator', 'ios-simulator']).optional(),
+    executionTarget: z
+      .enum(['android-emulator', 'ios-simulator'])
+      .default('android-emulator'),
     application: strictObject('executionTargetProfiles.mobile.application', {
       id: nonemptyTrimmedString(
         'executionTargetProfiles.mobile.application.id',
       ),
-      binaryPath: nonemptyTrimmedString(
+      binaryPath: optionalNonemptyTrimmedString(
         'executionTargetProfiles.mobile.application.binaryPath',
       ),
     }),

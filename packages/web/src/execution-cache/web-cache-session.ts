@@ -13,6 +13,7 @@ import {
   defaultModelName,
   type WebAdapterOptions,
 } from '../adapter/configuration/web-options'
+import { capturedActionFromError } from '../evidence/web-action-evidence'
 import { createWebAdaptiveRuntime } from './web-cache-adaptive-session'
 import {
   createWebInstructionExecutor,
@@ -71,6 +72,7 @@ class WebCacheTargetSession implements Omit<StepTargetSession, 'close'> {
       baseUrl: options.baseUrl,
       bindings: this.runtimeBindings,
       replay: false,
+      options,
     })
     this.adaptive = createWebAdaptiveRuntime({
       input,
@@ -130,6 +132,7 @@ class WebCacheTargetSession implements Omit<StepTargetSession, 'close'> {
     context: StepExecutionContext,
     signal: AbortSignal | undefined,
   ): Promise<StepExecution> {
+    this.executor.setStepContext(context)
     if (context.evaluation !== 'adaptive') {
       return this.executeReplayStep(step, context, signal)
     }
@@ -156,10 +159,11 @@ class WebCacheTargetSession implements Omit<StepTargetSession, 'close'> {
       )
     } catch (error) {
       if (isAbortError(error, operationSignal)) throw abortError()
+      const capturedAction = capturedActionFromError(error)
       return this.context.finish(
         {
           state: 'infrastructure-error',
-          resolvedActions: [],
+          resolvedActions: capturedAction ? [capturedAction] : [],
           message: errorMessage(error),
         },
         step,

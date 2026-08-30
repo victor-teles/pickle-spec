@@ -1,4 +1,5 @@
 import type { OpenSessionInput, StepTargetSession } from '@pickle-spec/runner'
+import { resolveScenarioId } from '@pickle-spec/spec'
 import { createWebStepFinalizer } from '../../evidence/web-step-finalizer'
 import { createWebCacheSession } from '../../execution-cache/web-cache-session'
 import { requiredValue } from '../../required-value'
@@ -6,12 +7,18 @@ import { abortError, isAbortError, withAbort } from '../automation/abort'
 import type { WebAutomation } from '../automation/web-automation'
 import type { ResolvedFidelity } from '../configuration/fidelity'
 import type { WebAdapterOptions } from '../configuration/web-options'
+import type {
+  WebLiveViewport,
+  WebLiveViewportTarget,
+  WebLiveViewportUpdate,
+} from '../live-viewport'
 import { browserOptionsForSession } from './web-browser-options'
 import { createWebLiveSession } from './web-live-session'
 import type { WebProcessPool } from './web-pool'
 
 export interface WebAdapterBehavior {
   navigationPolicy?: 'delayed' | 'eager'
+  onLiveViewport?: (update: WebLiveViewportUpdate) => void
 }
 
 type LogicalWebSession = Awaited<
@@ -31,6 +38,30 @@ interface CloseWebSessionInput {
   interrupted: () => boolean
   logicalSession: LogicalWebSession
   signal?: AbortSignal
+}
+
+function liveViewportTarget(input: OpenSessionInput): WebLiveViewportTarget {
+  return {
+    scenarioId:
+      input.scenario.id ??
+      resolveScenarioId(
+        input.specification.source.uri,
+        input.specification.name,
+        input.scenario.template?.name ?? input.scenario.name,
+        input.scenario.tags,
+      ),
+    examplesRowId: input.scenario.examplesRowId,
+    profileId: input.executionTargetProfile.id,
+  }
+}
+
+function liveViewportSink(
+  behavior: WebAdapterBehavior,
+  input: OpenSessionInput,
+): ((viewport: WebLiveViewport) => void) | undefined {
+  if (!behavior.onLiveViewport) return undefined
+  const target = liveViewportTarget(input)
+  return (viewport) => behavior.onLiveViewport?.({ ...viewport, target })
 }
 
 async function closeWebSession(input: CloseWebSessionInput): Promise<void> {
@@ -157,6 +188,7 @@ export async function openWebSession(
     input.signal,
     context.fidelity,
     executionMode,
+    liveViewportSink(context.behavior, input),
   )
   const automation = logicalSession.automation
   const { close, markInterrupted } = sessionCloser(
@@ -169,17 +201,19 @@ export async function openWebSession(
     throw abortError()
   }
   let stepIndex = 0
+  const finish = createWebStepFinalizer({
+    input,
+    options: context.options,
+    automation,
+    stepNumber: () => stepIndex,
+  })
+  await finish.start()
   const runtime = await createRuntime({
     automation,
     cacheReplay,
     context,
     executionMode,
-    finish: createWebStepFinalizer({
-      input,
-      options: context.options,
-      automation,
-      stepNumber: () => stepIndex,
-    }),
+    finish,
     input,
   })
   return {

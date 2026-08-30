@@ -7,8 +7,43 @@ on:
     branches: [main]
 
 jobs:
-  check:
-    name: Lint, Type Check & Test
+  quality-and-unit:
+    name: Quality and unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.11
+
+      - name: Restore Turbo cache
+        uses: actions/cache@v4
+        with:
+          path: .turbo
+          key: ${{ runner.os }}-turbo-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-turbo-
+
+      - run: bun install --frozen-lockfile
+
+      - name: Lint and format
+        run: bunx biome ci .
+
+      - name: Type check
+        run: bun run typecheck
+
+      - name: Unit tests
+        run: bun run test
+
+      - name: Release package acceptance
+        run: bun run release:check
+
+      - name: Replay performance gate
+        run: bun run benchmark:replay
+
+  cli-integration:
+    name: CLI integration and e2e tests
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -19,17 +54,8 @@ jobs:
 
       - run: bun install --frozen-lockfile
 
-      - name: Lint and format
-        run: bunx biome ci .
+      - name: Integration tests
+        run: bun run test:integration
 
-      - name: Type check
-        run: bun run typecheck
-
-      - name: Test
-        run: bun run test
-
-      - name: Release package acceptance
-        run: bun run release:check
-
-      - name: Replay performance gate
-        run: bun run benchmark:replay
+      - name: End-to-end tests
+        run: bun run test:e2e

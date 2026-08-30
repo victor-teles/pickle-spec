@@ -1,6 +1,6 @@
 import { createAgentDeviceClient, isAgentDeviceError } from 'agent-device'
 import { z } from 'zod'
-import type { MobilePlatform } from '../worker/worker-protocol'
+import type { MobilePlatform } from '../worker/worker-protocol.ts'
 
 export interface AgentDeviceClientConfig {
   session: string
@@ -27,6 +27,11 @@ type AppDeployOptions = MobileSelection & {
 
 type AppOpenOptions = MobileSelection & {
   app: string
+}
+
+interface AppListOptions {
+  platform: MobilePlatform
+  appsFilter: 'user-installed' | 'all'
 }
 
 type WaitOptions = MobileSelection & {
@@ -58,6 +63,7 @@ export interface AgentDeviceClientPort {
     capabilities(options: MobileSelection): Promise<unknown>
   }
   apps: {
+    list(options: AppListOptions): Promise<unknown>
     reinstall(options: AppDeployOptions): Promise<unknown>
     open(options: AppOpenOptions): Promise<unknown>
   }
@@ -72,7 +78,11 @@ export interface AgentDeviceClientPort {
     run(options: ReplayRunOptions): Promise<unknown>
   }
   capture: {
-    screenshot(options: { path?: string }): Promise<unknown>
+    screenshot(options: {
+      path?: string
+      scale?: number
+      stabilize?: boolean
+    }): Promise<unknown>
   }
   observability: {
     logs(options: LogsOptions): Promise<unknown>
@@ -128,6 +138,7 @@ const mobileDeviceSchema = z.discriminatedUnion('platform', [
 ])
 
 export const mobileDevicesSchema = z.array(mobileDeviceSchema)
+export const mobileApplicationIdsSchema = z.array(z.string().min(1))
 
 export type AgentDeviceDevice = z.infer<typeof mobileDeviceSchema>
 

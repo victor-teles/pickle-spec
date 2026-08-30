@@ -1,18 +1,7 @@
-import { Chalk, type ChalkInstance } from 'chalk'
-import ora from 'ora'
+import { createColors } from 'picocolors'
 import type { ProjectEnvironmentReport } from './project-environment'
 
-export interface DoctorProgress {
-  start(label: string): void
-  update(label: string): void
-  stop(): void
-}
-
-interface DoctorProgressOptions {
-  color: boolean
-  enabled: boolean
-  stream?: NodeJS.WritableStream
-}
+type Colors = ReturnType<typeof createColors>
 
 export interface DoctorReportOptions {
   color: boolean
@@ -129,7 +118,7 @@ function summaryLines(
 function checkLines(
   check: DoctorCheck,
   options: DoctorReportOptions,
-  chalk: ChalkInstance,
+  colors: Colors,
 ): string[] {
   if (check.kind === 'passed') {
     if (!options.verbose) return []
@@ -137,17 +126,17 @@ function checkLines(
       ? ` ${profileLabel(check.profileIds)}`
       : ''
     return [
-      `${chalk.green('✔')} ${check.title}${profiles}`,
+      `${colors.green('✔')} ${check.title}${profiles}`,
       `  ${check.detail}`,
     ]
   }
   if (check.kind === 'skipped') {
-    return [`${chalk.yellow('○')} ${check.title}`, `  ${check.detail}`]
+    return [`${colors.yellow('○')} ${check.title}`, `  ${check.detail}`]
   }
   const lines = [
-    `${chalk.red('✖')} ${check.title} ${profileLabel(check.profileIds)}`,
+    `${colors.red('✖')} ${check.title} ${profileLabel(check.profileIds)}`,
     `  ${check.detail}`,
-    chalk.yellow('Advice:'),
+    colors.yellow('Advice:'),
   ]
   for (const advice of check.advice) lines.push(`  ${advice}`)
   return lines
@@ -158,34 +147,10 @@ export function formatDoctorReport(
   options: DoctorReportOptions = { color: false, verbose: false },
 ): string[] {
   const checks = doctorChecks(report)
-  const chalk = new Chalk({ level: options.color ? 1 : 0 })
-  const details = checks.flatMap((check) => checkLines(check, options, chalk))
+  const colors = createColors(options.color)
+  const details = checks.flatMap((check) => checkLines(check, options, colors))
   return [
     ...summaryLines(checks, options),
     ...(details.length ? ['', ...details] : []),
   ]
-}
-
-export function createDoctorProgress(
-  options: DoctorProgressOptions,
-): DoctorProgress {
-  const spinner = ora({
-    color: options.color ? 'cyan' : false,
-    discardStdin: false,
-    isEnabled: options.enabled,
-    isSilent: !options.enabled,
-    stream: options.stream ?? process.stderr,
-  })
-
-  return {
-    start(label) {
-      spinner.start(label)
-    },
-    update(label) {
-      spinner.text = label
-    },
-    stop() {
-      spinner.stop()
-    },
-  }
 }

@@ -1,24 +1,16 @@
+import type { DoctorCommandInput } from '../command-inputs'
 import { loadConfig, type PickleConfig } from '../configuration/config'
 import { checkProject } from '../configuration/project'
 import { terminalReporterCapabilities } from '../run/run-reporter'
 import {
-  createDoctorProgress,
-  type DoctorProgress,
-  formatDoctorReport,
-} from './doctor-output'
+  createTerminalProgress,
+  type TerminalProgress,
+} from '../terminal/progress'
+import { formatDoctorReport } from './doctor-output'
 import {
   diagnoseProjectEnvironment,
   type ProjectEnvironmentReport,
 } from './project-environment'
-
-const usage =
-  'Usage: pickle doctor [--config <path>] [--extensions <path>] [--verbose]'
-
-interface DoctorArguments {
-  configPath?: string
-  extensionsPath?: string
-  verbose: boolean
-}
 
 interface DoctorDependencies {
   cwd: string
@@ -30,7 +22,7 @@ interface DoctorDependencies {
   load(configPath: string | undefined, cwd: string): Promise<PickleConfig>
   diagnose(config: PickleConfig): Promise<ProjectEnvironmentReport>
   color: boolean
-  progress: DoctorProgress
+  progress: TerminalProgress
   report(message: string): void
 }
 
@@ -53,7 +45,7 @@ const defaultDependencies: DoctorDependencies = {
   load: loadConfig,
   diagnose: diagnoseProjectEnvironment,
   color: terminalCapabilities.color ?? false,
-  progress: createDoctorProgress({
+  progress: createTerminalProgress({
     color: progressTerminalCapabilities.color ?? false,
     enabled:
       (progressTerminalCapabilities.interactive ?? false) &&
@@ -62,44 +54,19 @@ const defaultDependencies: DoctorDependencies = {
   report: console.log,
 }
 
-function optionValue(argv: readonly string[], index: number): string {
-  const value = argv[index + 1]
-  if (!value || value.startsWith('--')) throw new Error(usage)
-  return value
-}
-
-export function parseDoctorArguments(argv: readonly string[]): DoctorArguments {
-  if (argv[0] !== 'doctor') throw new Error(usage)
-  const args: DoctorArguments = { verbose: false }
-  for (let index = 1; index < argv.length; index++) {
-    const option = argv[index]
-    if (option === '--config') {
-      args.configPath = optionValue(argv, index++)
-    } else if (option === '--extensions') {
-      args.extensionsPath = optionValue(argv, index++)
-    } else if (option === '--verbose') {
-      args.verbose = true
-    } else {
-      throw new Error(usage)
-    }
-  }
-  return args
-}
-
 export async function runDoctorCommand(
-  argv: readonly string[],
+  input: DoctorCommandInput,
   dependencies: DoctorDependencies = defaultDependencies,
 ): Promise<number> {
-  const args = parseDoctorArguments(argv)
   let report: ProjectEnvironmentReport
   dependencies.progress.start('Checking project files')
   try {
     await dependencies.check({
       cwd: dependencies.cwd,
-      configPath: args.configPath,
-      extensionsPath: args.extensionsPath,
+      configPath: input.configPath,
+      extensionsPath: input.extensionsPath,
     })
-    const config = await dependencies.load(args.configPath, dependencies.cwd)
+    const config = await dependencies.load(input.configPath, dependencies.cwd)
     dependencies.progress.update('Checking configured environments')
     report = await dependencies.diagnose(config)
   } finally {
@@ -107,7 +74,7 @@ export async function runDoctorCommand(
   }
   for (const line of formatDoctorReport(report, {
     color: dependencies.color,
-    verbose: args.verbose,
+    verbose: input.verbose,
   })) {
     dependencies.report(line)
   }
