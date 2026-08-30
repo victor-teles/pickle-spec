@@ -2,10 +2,10 @@ import { loadConfig, type PickleConfig } from '../configuration/config'
 import { checkProject } from '../configuration/project'
 import { terminalReporterCapabilities } from '../run/run-reporter'
 import {
-  createDoctorProgress,
-  type DoctorProgress,
-  formatDoctorReport,
-} from './doctor-output'
+  createTerminalProgress,
+  type TerminalProgress,
+} from '../terminal/progress'
+import { formatDoctorReport } from './doctor-output'
 import {
   diagnoseProjectEnvironment,
   type ProjectEnvironmentReport,
@@ -30,7 +30,7 @@ interface DoctorDependencies {
   load(configPath: string | undefined, cwd: string): Promise<PickleConfig>
   diagnose(config: PickleConfig): Promise<ProjectEnvironmentReport>
   color: boolean
-  progress: DoctorProgress
+  progress: TerminalProgress
   report(message: string): void
 }
 
@@ -53,7 +53,7 @@ const defaultDependencies: DoctorDependencies = {
   load: loadConfig,
   diagnose: diagnoseProjectEnvironment,
   color: terminalCapabilities.color ?? false,
-  progress: createDoctorProgress({
+  progress: createTerminalProgress({
     color: progressTerminalCapabilities.color ?? false,
     enabled:
       (progressTerminalCapabilities.interactive ?? false) &&

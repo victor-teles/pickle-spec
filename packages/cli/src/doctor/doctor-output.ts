@@ -1,18 +1,5 @@
 import { Chalk, type ChalkInstance } from 'chalk'
-import ora from 'ora'
 import type { ProjectEnvironmentReport } from './project-environment'
-
-export interface DoctorProgress {
-  start(label: string): void
-  update(label: string): void
-  stop(): void
-}
-
-interface DoctorProgressOptions {
-  color: boolean
-  enabled: boolean
-  stream?: NodeJS.WritableStream
-}
 
 export interface DoctorReportOptions {
   color: boolean
@@ -164,28 +151,4 @@ export function formatDoctorReport(
     ...summaryLines(checks, options),
     ...(details.length ? ['', ...details] : []),
   ]
-}
-
-export function createDoctorProgress(
-  options: DoctorProgressOptions,
-): DoctorProgress {
-  const spinner = ora({
-    color: options.color ? 'cyan' : false,
-    discardStdin: false,
-    isEnabled: options.enabled,
-    isSilent: !options.enabled,
-    stream: options.stream ?? process.stderr,
-  })
-
-  return {
-    start(label) {
-      spinner.start(label)
-    },
-    update(label) {
-      spinner.text = label
-    },
-    stop() {
-      spinner.stop()
-    },
-  }
 }
