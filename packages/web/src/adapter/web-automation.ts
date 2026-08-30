@@ -1,4 +1,4 @@
-import type { TestArtifact } from '@pickle-spec/runner'
+import type { ActionTargetState, TestArtifact } from '@pickle-spec/runner'
 import type { ScenarioVariableBinding } from '@pickle-spec/spec'
 import type { CollectedWebEvidence } from '../evidence/web-evidence'
 import type {
@@ -63,6 +63,7 @@ export interface WebAutomation {
     signal?: AbortSignal,
   ): Promise<WebDirectExecutionResult>
   screenshot(options: WebScreenshotCapture): Promise<Uint8Array>
+  summarizeTarget?(): Promise<ActionTargetState>
   startRecording?(path: string): Promise<void>
   stopRecording?(): Promise<TestArtifact>
   readIsolationState(): Promise<WebIsolationState>

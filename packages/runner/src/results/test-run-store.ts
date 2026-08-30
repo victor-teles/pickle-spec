@@ -8,7 +8,15 @@ import {
   rmdir,
   stat,
 } from 'node:fs/promises'
-import { basename, dirname, extname, join } from 'node:path'
+import {
+  basename,
+  dirname,
+  extname,
+  isAbsolute,
+  join,
+  sep as pathSeparator,
+  relative,
+} from 'node:path'
 import type {
   EvidenceKind,
   ExecutionMode,
@@ -988,6 +996,9 @@ async function persistEventArtifacts(
   artifactsDirectory: string,
   endSequence: number,
 ): Promise<PersistedEventEvidence> {
+  if (event.type === 'action-finished') {
+    return persistActionEventArtifacts(event, policy, artifactsDirectory)
+  }
   if (event.type === 'scenario-finished') {
     const persisted = await persistAttemptArtifacts(
       event.attempt,
@@ -1018,8 +1029,13 @@ async function persistEventArtifacts(
     }
   }
   if (event.type === 'step-finished') {
-    const persisted = await persistStepArtifacts(
+    const step = withPersistedActionArtifacts(
       event.result,
+      event.scope,
+      current,
+    )
+    const persisted = await persistStepArtifacts(
+      step,
       policy,
       artifactsDirectory,
       artifactStepName(event.scope, event.result.index),
@@ -1038,6 +1054,141 @@ async function persistEventArtifacts(
     }
   }
   return { event, publishedPaths: [] }
+}
+
+function withPersistedActionArtifacts(
+  step: TestStepResult,
+  scope: Extract<RunEventPayload, { type: 'step-finished' }>['scope'],
+  current: readonly RunEvent[],
+): TestStepResult {
+  const artifactsBySourcePath = new Map<string, TestArtifact>()
+  const resolvedActions = step.resolvedActions.map((resolvedAction) => {
+    const evidence = resolvedAction.evidence
+    if (!evidence) return resolvedAction
+    const persisted = current.findLast(
+      (event) =>
+        event.type === 'action-finished' &&
+        sameScope(event.scope, scope) &&
+        event.action.id === evidence.id,
+    )
+    if (persisted?.type !== 'action-finished') return resolvedAction
+    const screenshot = (
+      source: typeof evidence.screenshots.before,
+      retained: typeof evidence.screenshots.before,
+    ): typeof evidence.screenshots.before => {
+      if (source.state !== 'available' || retained.state !== 'available') {
+        return retained
+      }
+      artifactsBySourcePath.set(source.artifact.path, retained.artifact)
+      return retained
+    }
+    return {
+      ...resolvedAction,
+      evidence: {
+        ...evidence,
+        screenshots: {
+          before: screenshot(
+            evidence.screenshots.before,
+            persisted.action.screenshots.before,
+          ),
+          after: screenshot(
+            evidence.screenshots.after,
+            persisted.action.screenshots.after,
+          ),
+        },
+      },
+    }
+  })
+  return {
+    ...step,
+    resolvedActions,
+    artifacts: step.artifacts?.map(
+      (artifact) => artifactsBySourcePath.get(artifact.path) ?? artifact,
+    ),
+  }
+}
+
+async function persistActionEventArtifacts(
+  event: Extract<RunEventPayload, { type: 'action-finished' }>,
+  policy: EvidencePersistencePolicy,
+  artifactsDirectory: string,
+): Promise<PersistedEventEvidence> {
+  if (policy !== 'always') {
+    return {
+      event: {
+        ...event,
+        action: withoutProvisionalActionEvidence(event.action),
+      },
+      publishedPaths: [],
+    }
+  }
+  const persisted = await persistActionArtifacts(event, artifactsDirectory)
+  return {
+    event: { ...event, action: persisted.action },
+    publishedPaths: persisted.publishedPaths,
+  }
+}
+
+function withoutProvisionalActionEvidence(
+  action: Extract<RunEventPayload, { type: 'action-finished' }>['action'],
+): Extract<RunEventPayload, { type: 'action-finished' }>['action'] {
+  const withoutFile = (
+    screenshot: typeof action.screenshots.before,
+  ): typeof action.screenshots.before =>
+    screenshot.state === 'available' ? { state: 'not-retained' } : screenshot
+  return {
+    ...action,
+    screenshots: {
+      before: withoutFile(action.screenshots.before),
+      after: withoutFile(action.screenshots.after),
+    },
+    diagnostics: [],
+    activity: [],
+  }
+}
+
+async function persistActionArtifacts(
+  event: Extract<RunEventPayload, { type: 'action-finished' }>,
+  artifactsDirectory: string,
+): Promise<{
+  action: typeof event.action
+  publishedPaths: string[]
+}> {
+  const artifacts = [
+    event.action.screenshots.before,
+    event.action.screenshots.after,
+  ].flatMap((screenshot) =>
+    screenshot.state === 'available' ? [screenshot.artifact] : [],
+  )
+  const syntheticStep: TestStepResult = {
+    index: event.scope.stepIndex ?? 0,
+    startedAt: event.action.startedAt,
+    finishedAt: event.action.finishedAt,
+    durationMs: event.action.durationMs,
+    step: {
+      keyword: 'When',
+      text: event.action.description,
+      type: 'action',
+    },
+    state: event.action.state,
+    resolvedActions: [
+      { description: event.action.description, evidence: event.action },
+    ],
+    artifacts,
+  }
+  const persisted = await copyStepArtifacts(
+    syntheticStep,
+    artifactsDirectory,
+    join(
+      artifactStepName(event.scope, event.scope.stepIndex ?? 0),
+      `action-${event.action.ordinal}`,
+    ),
+  )
+  const action = persisted.step.resolvedActions[0]?.evidence
+  return {
+    action: action ?? withoutProvisionalActionEvidence(event.action),
+    publishedPaths: persisted.publishedPaths,
+  }
 }
 
 function sameAttemptScope(
@@ -1131,23 +1282,33 @@ async function persistAttemptStep(
   current: readonly RunEvent[],
   artifactsDirectory: string,
 ): Promise<PersistedStepEvidence> {
+  const stepScope = { ...scope, stepIndex: step.index }
+  const currentStep = withPersistedActionArtifacts(step, stepScope, current)
   const persisted = current.findLast(
     (event) =>
-      event.type === 'step-finished' &&
-      sameScope(event.scope, { ...scope, stepIndex: step.index }),
+      event.type === 'step-finished' && sameScope(event.scope, stepScope),
   )
   const stepName = artifactStepName(scope, step.index)
   if (persisted?.type !== 'step-finished' || !persisted.result.artifacts) {
-    return copyStepArtifacts(step, artifactsDirectory, stepName)
+    return copyStepArtifacts(currentStep, artifactsDirectory, stepName)
   }
-  if (persisted.result.artifacts.length === step.artifacts?.length) {
+  if (persisted.result.artifacts.length === currentStep.artifacts?.length) {
+    const copiedBySourcePath = new Map(
+      (currentStep.artifacts ?? []).flatMap((artifact, index) => {
+        const persistedArtifact = persisted.result.artifacts?.[index]
+        return persistedArtifact ? [[artifact.path, persistedArtifact]] : []
+      }),
+    )
     return {
-      step: { ...step, artifacts: persisted.result.artifacts },
+      step: {
+        ...mapActionEvidenceArtifacts(currentStep, copiedBySourcePath),
+        artifacts: persisted.result.artifacts,
+      },
       publishedPaths: [],
       captureFailures: [],
     }
   }
-  const artifacts = step.artifacts?.map((artifact, index) => {
+  const artifacts = currentStep.artifacts?.map((artifact, index) => {
     const path = artifactDestination(
       artifact,
       index,
@@ -1160,7 +1321,11 @@ async function persistAttemptStep(
       ) ?? artifact
     )
   })
-  return copyStepArtifacts({ ...step, artifacts }, artifactsDirectory, stepName)
+  return copyStepArtifacts(
+    { ...currentStep, artifacts },
+    artifactsDirectory,
+    stepName,
+  )
 }
 
 async function persistAttemptArtifacts(
@@ -1247,6 +1412,29 @@ async function persistStepArtifacts(
   return copyStepArtifacts(step, artifactsDirectory, name)
 }
 
+function withoutActionEvidenceFiles(step: TestStepResult): TestStepResult {
+  return {
+    ...step,
+    resolvedActions: step.resolvedActions.map((action) => {
+      if (!action.evidence) return action
+      const unavailable = (state: typeof action.evidence.screenshots.before) =>
+        state.state === 'available' ? { state: 'not-retained' as const } : state
+      return {
+        ...action,
+        evidence: {
+          ...action.evidence,
+          screenshots: {
+            before: unavailable(action.evidence.screenshots.before),
+            after: unavailable(action.evidence.screenshots.after),
+          },
+          diagnostics: [],
+          activity: [],
+        },
+      }
+    }),
+  }
+}
+
 function withoutStepEvidence(step: TestStepResult): TestStepResult {
   const {
     artifacts: _artifacts,
@@ -1254,7 +1442,7 @@ function withoutStepEvidence(step: TestStepResult): TestStepResult {
     trace: _trace,
     ...rest
   } = step
-  return rest
+  return withoutActionEvidenceFiles(rest)
 }
 
 function withoutAttemptEvidence(attempt: ScenarioAttempt): ScenarioAttempt {
@@ -1308,6 +1496,7 @@ async function copyStepArtifacts(
   const publishedPaths: string[] = []
   const captureFailures: EvidenceCaptureFailure[] = []
   const artifacts: TestArtifact[] = []
+  const copiedBySourcePath = new Map<string, TestArtifact>()
   try {
     for (const [index, artifact] of step.artifacts.entries()) {
       const copied = await copyStepArtifact(
@@ -1323,6 +1512,9 @@ async function copyStepArtifacts(
         publishedPaths,
         captureFailures,
       )
+      if (copied.artifact) {
+        copiedBySourcePath.set(artifact.path, copied.artifact)
+      }
     }
   } finally {
     await rm(stagingDirectory, { recursive: true, force: true })
@@ -1330,11 +1522,45 @@ async function copyStepArtifacts(
   }
   return {
     step: {
-      ...step,
+      ...mapActionEvidenceArtifacts(step, copiedBySourcePath),
       artifacts: artifacts.length > 0 ? artifacts : undefined,
     },
     publishedPaths,
     captureFailures,
+  }
+}
+
+function mapActionEvidenceArtifacts(
+  step: TestStepResult,
+  copiedBySourcePath: ReadonlyMap<string, TestArtifact>,
+): TestStepResult {
+  const screenshot = (
+    value: NonNullable<
+      TestStepResult['resolvedActions'][number]['evidence']
+    >['screenshots']['before'],
+  ) => {
+    if (value.state !== 'available') return value
+    const artifact = copiedBySourcePath.get(value.artifact.path)
+    return artifact
+      ? { state: 'available' as const, artifact }
+      : { state: 'capture-failed' as const, message: 'Screenshot copy failed' }
+  }
+  return {
+    ...step,
+    resolvedActions: step.resolvedActions.map((action) =>
+      action.evidence
+        ? {
+            ...action,
+            evidence: {
+              ...action.evidence,
+              screenshots: {
+                before: screenshot(action.evidence.screenshots.before),
+                after: screenshot(action.evidence.screenshots.after),
+              },
+            },
+          }
+        : action,
+    ),
   }
 }
 
@@ -1362,6 +1588,15 @@ async function copyStepArtifact(
   stagingDirectory: string,
   name: string,
 ): Promise<CopiedStepArtifact> {
+  const managedPath = relative(artifactsDirectory, artifact.path)
+  if (
+    managedPath !== '' &&
+    managedPath !== '..' &&
+    !managedPath.startsWith(`..${pathSeparator}`) &&
+    !isAbsolute(managedPath)
+  ) {
+    return { artifact }
+  }
   const path = artifactDestination(artifact, index, artifactsDirectory, name)
   if (artifact.path === path) return { artifact }
   const stagedPath = join(stagingDirectory, basename(path))
@@ -1424,6 +1659,7 @@ function shouldPersistEventEvidence(
   event: RunEventPayload,
   policy: EvidencePersistencePolicy,
 ): boolean {
+  if (event.type === 'action-finished') return policy === 'always'
   if (event.type === 'step-finished') {
     return shouldPersistEvidence(policy, event.result.state)
   }

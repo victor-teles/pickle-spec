@@ -12,6 +12,7 @@ import {
 } from './result-evidence'
 import type { ResultInspectionLocation } from './result-inspection'
 import { resultPriority } from './run-view'
+import { timeTravelInspection } from './time-travel-inspection'
 
 type LiveFollowState = {
   pinned: boolean
@@ -67,7 +68,12 @@ export function nextFollowedEntryId(
   const inspected = findInspectedResult(snapshot, location)
   if (!inspected) return state.followedEntryId
   const entries = visibleTimelineEntries(
-    timelineFor(snapshot.events, inspected.attempt, location),
+    timelineFor(
+      snapshot.events,
+      inspected.attempt,
+      location,
+      timeTravelInspection(snapshot, location),
+    ),
     'essential',
   )
   const causal = causalTimelineEntry(entries)

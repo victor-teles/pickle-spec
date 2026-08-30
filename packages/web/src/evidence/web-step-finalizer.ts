@@ -20,6 +20,7 @@ import {
   shouldFinishRecording,
 } from './web-artifact'
 import { projectWebStepEvidence } from './web-step-evidence'
+import { reuseActionCompletionScreenshot } from './web-step-screenshot'
 
 interface CaptureResult {
   artifact?: TestArtifact
@@ -150,6 +151,36 @@ function withCapturedEvidence(
   }
 }
 
+function withActionEvidence(execution: StepExecution): StepExecution {
+  const actions = execution.resolvedActions.flatMap((action) =>
+    action.evidence ? [action.evidence] : [],
+  )
+  const actionArtifacts = actions.flatMap((action) =>
+    [action.screenshots.before, action.screenshots.after].flatMap(
+      (screenshot) =>
+        screenshot.state === 'available' ? [screenshot.artifact] : [],
+    ),
+  )
+  const diagnostics = actions.flatMap((action) => action.diagnostics)
+  const activity = actions.flatMap((action) => action.activity)
+  const artifacts = [...(execution.artifacts ?? []), ...actionArtifacts].filter(
+    (artifact, index, all) =>
+      all.findIndex((candidate) => candidate.path === artifact.path) === index,
+  )
+  return {
+    ...execution,
+    artifacts: artifacts.length > 0 ? artifacts : execution.artifacts,
+    diagnostics:
+      diagnostics.length > 0
+        ? [...(execution.diagnostics ?? []), ...diagnostics]
+        : execution.diagnostics,
+    trace:
+      activity.length > 0
+        ? [...(execution.trace ?? []), ...activity]
+        : execution.trace,
+  }
+}
+
 function evidenceDirectory(state: WebStepFinalizerState): string {
   const defaultOutputDirectory = join(
     resolveLocalProjectStorage(process.cwd()).projectDirectory,
@@ -163,6 +194,17 @@ function evidenceDirectory(state: WebStepFinalizerState): string {
   )
 }
 
+function stepScreenshotPath(
+  state: WebStepFinalizerState,
+  stepState: StepExecution['state'],
+): string {
+  const format = state.options.screenshots?.format ?? 'png'
+  return join(
+    evidenceDirectory(state),
+    `step-${String(state.stepNumber()).padStart(2, '0')}-${stepState}.${format}`,
+  )
+}
+
 async function captureScreenshot(
   state: WebStepFinalizerState,
   stepState: StepExecution['state'],
@@ -172,13 +214,10 @@ async function captureScreenshot(
     return { availability: { kind: 'screenshot', state: 'not-requested' } }
   }
   try {
-    const format = screenshotOptions?.format ?? 'png'
     const directory = evidenceDirectory(state)
     await mkdir(directory, { recursive: true })
-    const path = join(
-      directory,
-      `step-${String(state.stepNumber()).padStart(2, '0')}-${stepState}.${format}`,
-    )
+    const format = screenshotOptions?.format ?? 'png'
+    const path = stepScreenshotPath(state, stepState)
     await Bun.write(
       path,
       await state.automation.screenshot({
@@ -222,7 +261,19 @@ async function finalizeWebStep(
       finalizerState.previousResolvedActionTrace ?? [],
   })
   finalizerState.previousResolvedActionTrace = projected.nextResolvedActionTrace
-  const screenshot = await captureScreenshot(state, execution.state)
+  const reused = shouldCaptureScreenshot(
+    state.capture.screenshots,
+    projected.execution.state,
+  )
+    ? await reuseActionCompletionScreenshot(
+        projected.execution,
+        stepScreenshotPath(state, projected.execution.state),
+      )
+    : undefined
+  const finalizedExecution = reused?.execution ?? projected.execution
+  const screenshot =
+    reused?.screenshot ??
+    (await captureScreenshot(state, finalizedExecution.state))
   const startFailure = finalizerState.recordingStartFailure
   finalizerState.recordingStartFailure = undefined
   const recording = await finishWebStepRecording({
@@ -233,7 +284,9 @@ async function finalizeWebStep(
     stepCount: state.input.scenario.steps.length,
     startFailure,
   })
-  return withCapturedEvidence(projected.execution, screenshot, recording)
+  return withActionEvidence(
+    withCapturedEvidence(finalizedExecution, screenshot, recording),
+  )
 }
 
 export function createWebStepFinalizer({

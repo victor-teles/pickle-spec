@@ -1,5 +1,6 @@
 import type { ScenarioStep } from '@pickle-spec/spec'
 import {
+  type ActionEvidence,
   type EvidenceAvailability,
   type ExecutionTargetProfile,
   type FidelityPolicy,
@@ -48,12 +49,36 @@ function publicScenarioStep(step: ScenarioStep): ScenarioStep {
     keyword: step.keyword,
     text: step.text,
     type: step.type,
+    source: step.source ? { ...step.source } : undefined,
     argument: step.argument
       ? {
           dataTable: step.argument.dataTable?.map((row) => [...row]),
           docString: step.argument.docString,
         }
       : undefined,
+  }
+}
+
+function publicActionEvidence(action: ActionEvidence): ActionEvidence {
+  const screenshot = (
+    value: ActionEvidence['screenshots']['before'],
+  ): ActionEvidence['screenshots']['before'] =>
+    value.state === 'available'
+      ? { state: 'available', artifact: publicArtifact(value.artifact) }
+      : { ...value }
+  return {
+    ...action,
+    source: { ...action.source },
+    target: {
+      before: { ...action.target.before },
+      after: { ...action.target.after },
+    },
+    screenshots: {
+      before: screenshot(action.screenshots.before),
+      after: screenshot(action.screenshots.after),
+    },
+    diagnostics: action.diagnostics.map((entry) => ({ ...entry })),
+    activity: action.activity.map((entry) => ({ ...entry })),
   }
 }
 
@@ -183,8 +208,11 @@ export function withoutPrivateStepResultData(
     durationMs: result.durationMs,
     step: publicScenarioStep(result.step),
     state: result.state,
-    resolvedActions: result.resolvedActions.map(({ description }) => ({
-      description,
+    resolvedActions: result.resolvedActions.map((action) => ({
+      description: action.description,
+      evidence: action.evidence
+        ? publicActionEvidence(action.evidence)
+        : undefined,
     })),
     message: result.message,
     artifacts: result.artifacts?.map(publicArtifact),
@@ -350,6 +378,20 @@ function publicStepFinishedEvent(
   }
 }
 
+function publicActionFinishedEvent(
+  event: Extract<RunEventPayload, { type: 'action-finished' }>,
+): RunEventPayload {
+  return {
+    type: 'action-finished',
+    action: publicActionEvidence(event.action),
+    scenario: publicScenarioIdentity(event.scenario),
+    executionTargetProfile: publicExecutionTargetProfile(
+      event.executionTargetProfile,
+    ),
+    scope: publicEventScope(event.scope),
+  }
+}
+
 function publicCacheEvent(
   event: Extract<
     RunEventPayload,
@@ -406,6 +448,8 @@ function publicEventPayload(
       return withObservations(event, publicStepStartedEvent(event))
     case 'step-finished':
       return withObservations(event, publicStepFinishedEvent(event, mappers))
+    case 'action-finished':
+      return withObservations(event, publicActionFinishedEvent(event))
     case 'cache-hit':
     case 'cache-miss':
     case 'cache-refresh':

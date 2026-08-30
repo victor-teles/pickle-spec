@@ -178,6 +178,65 @@ describe('createWebAdapter', () => {
     expect(close).toHaveBeenCalledTimes(1)
   })
 
+  test('reuses the final action screenshot at step completion', async () => {
+    const artifactDirectory = await mkdtemp(
+      join(tmpdir(), 'pickle-web-action-artifacts-'),
+    )
+    artifactDirectories.push(artifactDirectory)
+    const screenshot = vi.fn(async () => new Uint8Array([137, 80, 78, 71]))
+    const adapter = createWebAdapter(
+      {
+        baseUrl: 'https://example.test',
+        screenshots: { mode: 'on-step', outputDir: artifactDirectory },
+      },
+      factoryFor(
+        stubAutomation({
+          async observe() {
+            return [
+              {
+                description: 'Fill the search field',
+                handle: { selector: '#search' },
+              },
+            ]
+          },
+          screenshot,
+        }),
+      ),
+    )
+
+    const run = await runScenario({
+      adapter,
+      executionTargetProfile: { id: 'web' },
+      specification,
+      scenario,
+    })
+    await adapter.dispose?.()
+    const finished = run.events.findLast(
+      (event) => event.type === 'scenario-finished',
+    )
+    if (finished?.type !== 'scenario-finished') {
+      throw new Error('Expected completed Scenario evidence')
+    }
+    const actionStep = requiredValue(finished.attempt.steps[1])
+    const resolvedAction = requiredValue(actionStep.resolvedActions[0])
+    const action = requiredValue(resolvedAction.evidence)
+    const after = action.screenshots.after
+    const before = action.screenshots.before
+    if (before.state !== 'available' || after.state !== 'available') {
+      throw new Error('Expected before-and-after action screenshots')
+    }
+
+    expect(screenshot).toHaveBeenCalledTimes(6)
+    expect(actionStep.artifacts).toHaveLength(2)
+    expect(actionStep.artifacts?.[0]?.path).toBe(after.artifact.path)
+    expect(actionStep.artifacts?.map((artifact) => artifact.path)).toEqual(
+      expect.arrayContaining([before.artifact.path, after.artifact.path]),
+    )
+    expect(
+      new Set(actionStep.artifacts?.map((artifact) => artifact.path)).size,
+    ).toBe(2)
+  })
+
   test('attaches screenshots to each step and the recording to the failing step', async () => {
     const artifactDirectory = await mkdtemp(
       join(tmpdir(), 'pickle-web-recording-'),

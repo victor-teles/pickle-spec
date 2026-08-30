@@ -1,6 +1,7 @@
 import type { TestResultState } from '@pickle-spec/runner'
 import { Badge } from '../../components/ui/badge'
 import { durationLabel } from '../run-format'
+import { ActionEvidenceDetail } from './action-evidence-detail'
 import { ArtifactViewer } from './artifact-viewer'
 import { relativeTimeLabel, type TimelineEntry } from './result-evidence'
 import { TimelineKindBadge } from './timeline-kind'
@@ -53,9 +54,52 @@ function entryMedia(entry: TimelineEntry) {
   return entry.artifacts ?? []
 }
 
+function TimelineEntryMetadata(props: {
+  attemptStartedAt: string
+  entry: TimelineEntry
+}) {
+  const durationMs = entryDurationMs(props.entry)
+  return (
+    <dl className="mt-5 grid gap-4 sm:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2">
+      <DetailItem
+        label="Elapsed"
+        value={relativeTimeLabel(props.entry.startedAt, props.attemptStartedAt)}
+        mono
+      />
+      <DetailItem
+        label="Recorded"
+        value={new Date(props.entry.startedAt).toLocaleString()}
+      />
+      {durationMs === undefined ? null : (
+        <DetailItem label="Duration" value={durationLabel(durationMs)} mono />
+      )}
+      <DetailItem label="Timing" value={timingPrecisionLabel(props.entry)} />
+      {props.entry.state ? (
+        <DetailItem label="State" value={props.entry.state} />
+      ) : null}
+      {props.entry.causalAt ? (
+        <DetailItem
+          label="Causal time"
+          value={relativeTimeLabel(
+            props.entry.causalAt,
+            props.attemptStartedAt,
+          )}
+          mono
+        />
+      ) : null}
+      {props.entry.attributes.map((attribute) => (
+        <DetailItem
+          key={attribute.label}
+          label={attribute.label}
+          value={attribute.value}
+        />
+      ))}
+    </dl>
+  )
+}
+
 export function TimelineEvidenceDetail(props: TimelineEvidenceDetailProps) {
   const { entry } = props
-  const durationMs = entryDurationMs(entry)
   const media = entryMedia(entry)
   const stepText = entry.context ?? entry.title
   return (
@@ -79,6 +123,13 @@ export function TimelineEvidenceDetail(props: TimelineEvidenceDetailProps) {
           {entry.context}
         </p>
       ) : null}
+      {entry.action ? (
+        <ActionEvidenceDetail
+          action={entry.action}
+          resultState={props.resultState}
+          scenarioName={props.scenarioName}
+        />
+      ) : null}
       {media.length > 0 ? (
         <div className="mt-4 space-y-4">
           {media.map((artifact) => (
@@ -92,36 +143,10 @@ export function TimelineEvidenceDetail(props: TimelineEvidenceDetailProps) {
           ))}
         </div>
       ) : null}
-      <dl className="mt-5 grid gap-4 sm:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2">
-        <DetailItem
-          label="Elapsed"
-          value={relativeTimeLabel(entry.startedAt, props.attemptStartedAt)}
-          mono
-        />
-        <DetailItem
-          label="Recorded"
-          value={new Date(entry.startedAt).toLocaleString()}
-        />
-        {durationMs === undefined ? null : (
-          <DetailItem label="Duration" value={durationLabel(durationMs)} mono />
-        )}
-        <DetailItem label="Timing" value={timingPrecisionLabel(entry)} />
-        {entry.state ? <DetailItem label="State" value={entry.state} /> : null}
-        {entry.causalAt ? (
-          <DetailItem
-            label="Causal time"
-            value={relativeTimeLabel(entry.causalAt, props.attemptStartedAt)}
-            mono
-          />
-        ) : null}
-        {entry.attributes.map((attribute) => (
-          <DetailItem
-            key={attribute.label}
-            label={attribute.label}
-            value={attribute.value}
-          />
-        ))}
-      </dl>
+      <TimelineEntryMetadata
+        entry={entry}
+        attemptStartedAt={props.attemptStartedAt}
+      />
     </section>
   )
 }

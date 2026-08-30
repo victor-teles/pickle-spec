@@ -44,6 +44,7 @@ import type {
   ResultInspectorTab,
 } from './result-inspection'
 import { reasonMessage, resultBadgeVariant } from './result-presentation'
+import { timeTravelInspection } from './time-travel-inspection'
 
 type ResultInspectorProps = {
   api: StudioApi
@@ -220,7 +221,11 @@ function ResultInspectorTabs(
       value={props.activeTab}
       onValueChange={(value) => props.onTabChange(value as ResultInspectorTab)}
     >
-      <TabsList variant="line" aria-label="Test result evidence">
+      <TabsList
+        variant="line"
+        aria-label="Test result evidence"
+        className="h-auto max-w-full flex-wrap justify-start"
+      >
         <TabsTrigger value="overview">Overview</TabsTrigger>
         <TabsTrigger value="timeline">Timeline</TabsTrigger>
         <TabsTrigger value="artifacts">Artifacts</TabsTrigger>
@@ -283,10 +288,12 @@ function InspectedResultView(props: InspectedResultViewProps) {
     props.location.tab ?? defaultResultInspectorTab(inspected.attempt.state)
   const artifacts = artifactsFor(inspected.attempt)
   const diagnostics = diagnosticsFor(inspected.attempt)
+  const actions = timeTravelInspection(snapshot, props.location)
   const timeline = timelineFor(
     snapshot.events,
     inspected.attempt,
     props.location,
+    actions,
   )
   if (props.artifactIndex !== undefined) {
     const artifact = artifacts[props.artifactIndex]

@@ -105,10 +105,23 @@ function artifactReferences(
     for (const attempt of result.attempts) collectSteps(attempt.steps)
   }
   for (const event of events) {
-    if (event.type === 'scenario-finished') collectSteps(event.attempt.steps)
-    if (event.type === 'step-finished') collectSteps([event.result])
+    artifacts.push(...eventArtifactReferences(event))
   }
   return artifacts
+}
+
+function eventArtifactReferences(event: RunEvent): TestArtifact[] {
+  if (event.type === 'scenario-finished') {
+    return event.attempt.steps.flatMap((step) => step.artifacts ?? [])
+  }
+  if (event.type === 'step-finished') return event.result.artifacts ?? []
+  if (event.type !== 'action-finished') return []
+  return [
+    event.action.screenshots.before,
+    event.action.screenshots.after,
+  ].flatMap((screenshot) =>
+    screenshot.state === 'available' ? [screenshot.artifact] : [],
+  )
 }
 
 function mapAttemptArtifacts(
@@ -126,10 +139,34 @@ function mapStepArtifacts(
   mapPath: MapArtifactPath,
 ): TestStepResult {
   const publicStep = withoutPrivateStepResultData(step)
-  if (!publicStep.artifacts) return publicStep
   return {
     ...publicStep,
-    artifacts: publicStep.artifacts.map((artifact) => ({
+    resolvedActions: publicStep.resolvedActions.map((action) => {
+      if (!action.evidence) return action
+      const screenshot = (
+        value: typeof action.evidence.screenshots.before,
+      ): typeof action.evidence.screenshots.before =>
+        value.state === 'available'
+          ? {
+              state: 'available',
+              artifact: {
+                ...value.artifact,
+                path: mapPath(value.artifact.path),
+              },
+            }
+          : value
+      return {
+        ...action,
+        evidence: {
+          ...action.evidence,
+          screenshots: {
+            before: screenshot(action.evidence.screenshots.before),
+            after: screenshot(action.evidence.screenshots.after),
+          },
+        },
+      }
+    }),
+    artifacts: publicStep.artifacts?.map((artifact) => ({
       ...artifact,
       path: mapPath(artifact.path),
     })),
@@ -163,6 +200,30 @@ function mapEventArtifacts(
     return publicRunEvent({
       ...event,
       result: mapStepArtifacts(event.result, mapPath),
+    })
+  }
+  if (event.type === 'action-finished') {
+    const screenshot = (
+      value: typeof event.action.screenshots.before,
+    ): typeof event.action.screenshots.before =>
+      value.state === 'available'
+        ? {
+            state: 'available',
+            artifact: {
+              ...value.artifact,
+              path: mapPath(value.artifact.path),
+            },
+          }
+        : value
+    return publicRunEvent({
+      ...event,
+      action: {
+        ...event.action,
+        screenshots: {
+          before: screenshot(event.action.screenshots.before),
+          after: screenshot(event.action.screenshots.after),
+        },
+      },
     })
   }
   return publicRunEvent(event)

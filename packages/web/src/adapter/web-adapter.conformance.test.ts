@@ -71,4 +71,5 @@ defineAdapterConformanceSuite({
     'diagnostics',
     'recordings',
   ],
+  expectedActionCount: 2,
 })

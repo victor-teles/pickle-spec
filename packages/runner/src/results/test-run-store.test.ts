@@ -9,7 +9,7 @@ import {
   runScenario,
   type TestRunStoreOptions,
 } from '../../index'
-import type { TestResult } from '../execution/run-scenario'
+import type { ActionEvidence, TestResult } from '../execution/run-scenario'
 import { requiredValue } from '../required-value'
 import { withSharedEvidenceObservations } from './shared-evidence-observations'
 
@@ -115,6 +115,60 @@ function scenarioStarted(result: TestResult) {
       examplesRowId: result.scenario.examplesRowId,
       executionTargetProfileId: result.executionTargetProfile.id,
       attempt: attempt.attempt,
+    },
+  }
+}
+
+function actionFinished(screenshotPath: string, profileId = 'deterministic') {
+  const occurredAt = '2026-08-15T12:00:00.006Z'
+  const action: ActionEvidence = {
+    version: 1,
+    id: 'step-1-action-1',
+    ordinal: 1,
+    description: 'Click Pay',
+    startedAt: '2026-08-15T12:00:00.004Z',
+    finishedAt: occurredAt,
+    durationMs: 2,
+    state: 'passed',
+    source: {
+      uri: 'features/checkout.feature',
+      language: 'en',
+      line: 7,
+      column: 5,
+      excerpt: 'When I pay',
+    },
+    target: {
+      before: { format: 'summary', summary: 'Ready state: complete' },
+      after: { format: 'summary', summary: 'Ready state: complete' },
+    },
+    screenshots: {
+      before: {
+        state: 'available',
+        artifact: { kind: 'screenshot', path: screenshotPath },
+      },
+      after: { state: 'not-requested' },
+    },
+    diagnostics: [
+      {
+        occurredAt,
+        level: 'warning',
+        origin: 'console',
+        message: 'provisional diagnostic',
+        executionTargetProfileId: profileId,
+      },
+    ],
+    activity: [],
+  }
+  return {
+    type: 'action-finished' as const,
+    action,
+    scenario: { id: 'scenario-checkout', name: 'Checkout' },
+    executionTargetProfile: { id: profileId },
+    scope: {
+      scenarioId: 'scenario-checkout',
+      executionTargetProfileId: profileId,
+      attempt: 1,
+      stepIndex: 0,
     },
   }
 }
@@ -1503,6 +1557,148 @@ function withDiagnosticEvidence(result: TestResult): TestResult {
     ],
   }
 }
+
+test.each(['off', 'on-failure'] as const)(
+  'persists stripped provisional action evidence under %s while returning the full live record',
+  async (evidencePersistence) => {
+    const root = await tempRoot()
+    const screenshotPath = join(root, `${evidencePersistence}-action.png`)
+    await Bun.write(screenshotPath, new Uint8Array([137, 80, 78, 71]))
+    const run = await openTestRunStore({
+      root,
+      createId: () => `run-action-${evidencePersistence}`,
+      evidencePersistence,
+    }).create()
+
+    const live = await run.append(actionFinished(screenshotPath))
+
+    expect(live).toMatchObject({
+      type: 'action-finished',
+      action: {
+        screenshots: { before: { state: 'available' } },
+        diagnostics: [{ message: 'provisional diagnostic' }],
+      },
+    })
+    const persisted = requiredValue(
+      (await run.events()).find((event) => event.type === 'action-finished'),
+    )
+    expect(persisted).toMatchObject({
+      type: 'action-finished',
+      action: {
+        screenshots: { before: { state: 'not-retained' } },
+        diagnostics: [],
+      },
+    })
+    expect(JSON.stringify(persisted)).not.toContain(screenshotPath)
+    expect(JSON.stringify(persisted)).not.toContain('provisional diagnostic')
+  },
+)
+
+test('reuses always-retained action screenshots through scenario completion', async () => {
+  const root = await tempRoot()
+  const screenshotPath = join(root, 'always-action.png')
+  await Bun.write(screenshotPath, new Uint8Array([137, 80, 78, 71]))
+  const run = await openTestRunStore({
+    root,
+    createId: () => 'run-action-always',
+    evidencePersistence: 'always',
+  }).create()
+
+  const published = await run.append(actionFinished(screenshotPath))
+
+  expect(published.type).toBe('action-finished')
+  if (published.type !== 'action-finished') {
+    throw new Error('Expected published Action evidence')
+  }
+  const before = published.action.screenshots.before
+  expect(before.state).toBe('available')
+  if (before.state !== 'available') {
+    throw new Error('Expected persisted before screenshot')
+  }
+  expect(before.artifact.path).not.toBe(screenshotPath)
+  expect(before.artifact.path).toContain('/artifacts/')
+  expect(await Bun.file(before.artifact.path).exists()).toBe(true)
+  const originalAction = actionFinished(screenshotPath).action
+  const stepResult = {
+    index: 0,
+    startedAt: published.action.startedAt,
+    finishedAt: published.action.finishedAt,
+    durationMs: published.action.durationMs,
+    step: { keyword: 'When', text: 'I pay', type: 'action' as const },
+    state: 'passed' as const,
+    resolvedActions: [
+      { description: published.action.description, evidence: originalAction },
+    ],
+  }
+  const step = await run.append({
+    type: 'step-finished',
+    result: stepResult,
+    scenario: published.scenario,
+    executionTargetProfile: published.executionTargetProfile,
+    scope: published.scope,
+  })
+  expect(step).toMatchObject({
+    type: 'step-finished',
+    result: {
+      resolvedActions: [
+        {
+          evidence: {
+            screenshots: {
+              before: { artifact: { path: before.artifact.path } },
+            },
+          },
+        },
+      ],
+    },
+  })
+  const finished = await run.append({
+    type: 'scenario-finished',
+    specification: { name: 'Checkout', uri: 'features/checkout.feature' },
+    scenario: published.scenario,
+    executionTargetProfile: published.executionTargetProfile,
+    scope: {
+      scenarioId: published.scope.scenarioId,
+      executionTargetProfileId: published.scope.executionTargetProfileId,
+      attempt: published.scope.attempt,
+    },
+    attempt: {
+      attempt: 1,
+      startedAt: published.action.startedAt,
+      finishedAt: published.action.finishedAt,
+      durationMs: published.action.durationMs,
+      state: 'passed',
+      steps: [stepResult],
+      evidenceAvailability: [
+        { kind: 'screenshot', state: 'not-requested' },
+        { kind: 'trace', state: 'not-requested' },
+        { kind: 'recording', state: 'not-requested' },
+        { kind: 'device-log', state: 'not-requested' },
+        { kind: 'diagnostics', state: 'not-requested' },
+      ],
+    },
+  })
+  expect(finished).toMatchObject({
+    type: 'scenario-finished',
+    attempt: {
+      steps: [
+        {
+          resolvedActions: [
+            {
+              evidence: {
+                screenshots: {
+                  before: { artifact: { path: before.artifact.path } },
+                },
+              },
+            },
+          ],
+        },
+      ],
+    },
+  })
+  expect(
+    (await run.events()).find((event) => event.type === 'action-finished'),
+  ).toEqual(published)
+})
 
 test('issue 83: resolves Evidence persistence per profile with a run-wide default', async () => {
   const root = await tempRoot()

@@ -33,6 +33,11 @@ export interface ScenarioStep {
   keyword: string
   text: string
   type: 'context' | 'action' | 'outcome'
+  source?: {
+    line: number
+    column: number
+    excerpt: string
+  }
   argument?: {
     dataTable?: string[][]
     docString?: string
@@ -132,15 +137,23 @@ function mapSourceArgument(step: Step): ScenarioStep['argument'] {
 function addStepInfo(
   result: Map<string, ScenarioStep>,
   steps: readonly Step[],
+  sourceLines: readonly string[],
 ): void {
   let previous: ScenarioStepType = 'context'
   for (const step of steps) {
+    const line = step.location.line ?? 1
     previous = stepType(step.keywordType, previous)
     const argument = mapSourceArgument(step)
     result.set(step.id, {
       keyword: step.keyword.trim(),
       text: step.text,
       type: previous,
+      source: {
+        line,
+        column: step.location.column ?? 1,
+        excerpt:
+          sourceLines[line - 1]?.trimEnd() ?? `${step.keyword}${step.text}`,
+      },
       argument,
     })
   }
@@ -149,20 +162,25 @@ function addStepInfo(
 function addChildStepInfo(
   result: Map<string, ScenarioStep>,
   child: FeatureChild | RuleChild,
+  sourceLines: readonly string[],
 ): void {
-  if (child.background) addStepInfo(result, child.background.steps)
-  if (child.scenario) addStepInfo(result, child.scenario.steps)
+  if (child.background) addStepInfo(result, child.background.steps, sourceLines)
+  if (child.scenario) addStepInfo(result, child.scenario.steps, sourceLines)
   if ('rule' in child && child.rule) {
     for (const ruleChild of child.rule.children) {
-      addChildStepInfo(result, ruleChild)
+      addChildStepInfo(result, ruleChild, sourceLines)
     }
   }
 }
 
-function collectStepInfo(document: GherkinDocument): Map<string, ScenarioStep> {
+function collectStepInfo(
+  document: GherkinDocument,
+  source: string,
+): Map<string, ScenarioStep> {
   const result = new Map<string, ScenarioStep>()
+  const sourceLines = source.split(/\r?\n/)
   for (const child of document.feature?.children ?? []) {
-    addChildStepInfo(result, child)
+    addChildStepInfo(result, child, sourceLines)
   }
   return result
 }
@@ -191,6 +209,7 @@ function mapStep(
     keyword: info?.keyword ?? '',
     text: step.text,
     type: info?.type ?? 'context',
+    ...(info?.source ? { source: { ...info.source } } : {}),
     ...(argument ? { argument } : {}),
   }
 }
@@ -250,7 +269,7 @@ export function parseSpecification(
     throw new Error(`Specification "${input.uri}" does not contain a Feature`)
   }
 
-  const infoByAstNodeId = collectStepInfo(document)
+  const infoByAstNodeId = collectStepInfo(document, input.source)
   const scenariosById = new Map<string, { tags: string[]; name: string }>()
   const rowsById = new Map<string, OutlineRow>()
   collectIdentityNodes(document, scenariosById, rowsById)

@@ -1,7 +1,16 @@
-import type { ResolvedAction, StepExecution } from '@pickle-spec/runner'
+import type {
+  ResolvedAction,
+  StepExecution,
+  StepExecutionContext,
+} from '@pickle-spec/runner'
 import type { ScenarioStep, ScenarioVariableBinding } from '@pickle-spec/spec'
 import { abortError, isAbortError } from '../adapter/abort'
 import type { WebAutomation } from '../adapter/web-automation'
+import type { WebAdapterOptions } from '../adapter/web-options'
+import {
+  capturedActionFromError,
+  captureWebAction,
+} from '../evidence/web-action-evidence'
 import {
   parameterizeWebValue,
   type WebInstruction,
@@ -73,6 +82,7 @@ interface CreateInstructionExecutorInput {
   baseUrl: string
   bindings: readonly ScenarioVariableBinding[]
   replay: boolean
+  options: WebAdapterOptions
 }
 
 export interface WebInstructionExecutor {
@@ -87,11 +97,20 @@ export interface WebInstructionExecutor {
   ): Promise<StepExecution | undefined>
   markNavigated(): void
   setOrigin(origin: InstructionOrigin): void
+  setStepContext(context: StepExecutionContext): void
+  takePendingActions(): ResolvedAction[]
+}
+
+type DirectInstructionResult = {
+  action?: ResolvedAction
+  failure?: StepExecution
 }
 
 class DirectWebInstructionExecutor implements WebInstructionExecutor {
   private navigated = false
   private instructionOrigin: InstructionOrigin
+  private stepContext: StepExecutionContext | undefined
+  private readonly pendingActions: ResolvedAction[] = []
 
   constructor(private readonly input: CreateInstructionExecutorInput) {
     this.instructionOrigin = input.replay ? 'cached' : 'resolved'
@@ -128,33 +147,78 @@ class DirectWebInstructionExecutor implements WebInstructionExecutor {
     )
   }
 
+  private unavailableInstruction(
+    instruction: WebInstruction,
+  ): DirectInstructionResult {
+    return {
+      failure: this.failure(
+        instruction,
+        `${this.failurePrefix()}: direct browser execution is unavailable`,
+      ),
+    }
+  }
+
   private async executeDirect(
     instruction: WebInstruction,
     signal: AbortSignal | undefined,
-  ): Promise<StepExecution | undefined> {
+  ): Promise<DirectInstructionResult> {
     if (!this.input.automation.executeInstruction) {
-      return this.failure(
-        instruction,
-        `${this.failurePrefix()}: direct browser execution is unavailable`,
-      )
+      return this.unavailableInstruction(instruction)
     }
+    const executeInstruction = this.input.automation.executeInstruction.bind(
+      this.input.automation,
+    )
     try {
-      const result = await this.input.automation.executeInstruction(
+      const description = instructionDescription(
         instruction,
-        this.input.bindings,
-        signal,
+        this.instructionOrigin,
       )
-      if (result.success) return undefined
-      return this.failure(
-        instruction,
-        this.failedResultMessage(instruction, result),
-      )
+      const stepContext = this.stepContext
+      const captured = stepContext
+        ? await captureWebAction({
+            automation: this.input.automation,
+            context: stepContext,
+            description,
+            options: this.input.options,
+            perform: () =>
+              executeInstruction(instruction, this.input.bindings, signal),
+            outcome: (result) => ({
+              state: result.success ? 'passed' : 'failed',
+              message: result.message ?? result.actualState,
+            }),
+          })
+        : {
+            result: await executeInstruction(
+              instruction,
+              this.input.bindings,
+              signal,
+            ),
+          }
+      const action = { description, evidence: captured.evidence }
+      if (captured.result.success) return { action }
+      return {
+        action,
+        failure: {
+          ...this.failure(
+            instruction,
+            this.failedResultMessage(instruction, captured.result),
+          ),
+          resolvedActions: [action],
+        },
+      }
     } catch (error) {
       if (isAbortError(error, signal)) throw abortError()
-      return this.failure(
-        instruction,
-        `${this.failurePrefix()}: ${errorMessage(error)}`,
-      )
+      const action = capturedActionFromError(error)
+      return {
+        action,
+        failure: {
+          ...this.failure(
+            instruction,
+            `${this.failurePrefix()}: ${errorMessage(error)}`,
+          ),
+          resolvedActions: action ? [action] : [],
+        },
+      }
     }
   }
 
@@ -162,13 +226,11 @@ class DirectWebInstructionExecutor implements WebInstructionExecutor {
     instructions: readonly WebInstruction[],
     signal: AbortSignal | undefined,
   ): Promise<StepExecution> {
-    const resolvedActions = resolvedInstructions(
-      instructions,
-      this.instructionOrigin,
-    )
+    const resolvedActions = this.pendingActions.splice(0)
     for (const instruction of instructions) {
-      const failed = await this.executeDirect(instruction, signal)
-      if (failed) return { ...failed, resolvedActions }
+      const executed = await this.executeDirect(instruction, signal)
+      if (executed.action) resolvedActions.push(executed.action)
+      if (executed.failure) return { ...executed.failure, resolvedActions }
       if (instruction.kind === 'navigate') this.navigated = true
     }
     return { state: 'passed', resolvedActions }
@@ -193,8 +255,9 @@ class DirectWebInstructionExecutor implements WebInstructionExecutor {
       )
     }
     const navigation: WebInstruction = { kind: 'navigate', url }
-    const failed = await this.executeDirect(navigation, signal)
-    if (failed) return failed
+    const executed = await this.executeDirect(navigation, signal)
+    if (executed.failure) return executed.failure
+    if (executed.action) this.pendingActions.push(executed.action)
     if (persist) instructions.push(navigation)
     this.navigated = true
   }
@@ -206,6 +269,14 @@ class DirectWebInstructionExecutor implements WebInstructionExecutor {
   setOrigin(origin: InstructionOrigin): void {
     this.instructionOrigin = origin
   }
+
+  setStepContext(context: StepExecutionContext): void {
+    this.stepContext = context
+  }
+
+  takePendingActions(): ResolvedAction[] {
+    return this.pendingActions.splice(0)
+  }
 }
 
 export function createWebInstructionExecutor({
@@ -213,11 +284,13 @@ export function createWebInstructionExecutor({
   baseUrl,
   bindings,
   replay,
+  options,
 }: CreateInstructionExecutorInput): WebInstructionExecutor {
   return new DirectWebInstructionExecutor({
     automation,
     baseUrl,
     bindings,
     replay,
+    options,
   })
 }

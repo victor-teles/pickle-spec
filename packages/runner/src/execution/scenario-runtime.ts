@@ -7,12 +7,19 @@ import {
 } from '@pickle-spec/spec'
 import { requiredValue } from '../required-value'
 import type {
+  ActionEvidence,
+  ActionEvidenceInput,
   DiagnosticEntry,
   ScenarioIdentity,
   StepExecution,
   TestArtifact,
   TraceEntry,
 } from './run-scenario'
+
+const targetSummaryLimit = 2_000
+const targetLocationLimit = 2_048
+const sensitiveLocationParameter =
+  /(?:token|key|secret|password|credential|session|auth)/i
 
 export interface PublicStepExecution {
   execution: StepExecution
@@ -131,6 +138,106 @@ function publicArtifacts(
   }))
 }
 
+function bounded(value: string, limit: number): string {
+  return value.length <= limit ? value : `${value.slice(0, limit - 1)}…`
+}
+
+function publicLocation(
+  value: string | undefined,
+  bindings: readonly ScenarioVariableBinding[],
+): string | undefined {
+  if (!value) return undefined
+  const redacted = redactString(value, bindings)
+  try {
+    const url = new URL(redacted)
+    url.username = ''
+    url.password = ''
+    for (const name of url.searchParams.keys()) {
+      if (sensitiveLocationParameter.test(name)) {
+        url.searchParams.set(name, '<redacted>')
+      }
+    }
+    return bounded(url.toString(), targetLocationLimit)
+  } catch {
+    return bounded(redacted, targetLocationLimit)
+  }
+}
+
+function publicScreenshot(
+  screenshot: ActionEvidence['screenshots']['before'],
+  bindings: readonly ScenarioVariableBinding[],
+): ActionEvidence['screenshots']['before'] {
+  if (screenshot.state !== 'available') {
+    return {
+      ...screenshot,
+      message: screenshot.message
+        ? redactString(screenshot.message, bindings)
+        : undefined,
+    }
+  }
+  const artifact = publicArtifacts([screenshot.artifact], bindings)?.[0]
+  return artifact
+    ? { state: 'available', artifact }
+    : { state: 'missing', message: 'Screenshot artifact is missing' }
+}
+
+export function publicActionEvidence(
+  input: ActionEvidenceInput,
+  identity: {
+    id: string
+    ordinal: number
+    source: ActionEvidence['source']
+  },
+  bindings: readonly ScenarioVariableBinding[],
+): ActionEvidence {
+  return {
+    version: 1,
+    id: identity.id,
+    ordinal: identity.ordinal,
+    description: redactString(input.description, bindings),
+    startedAt: input.startedAt,
+    finishedAt: input.finishedAt,
+    durationMs: Math.max(
+      0,
+      Date.parse(input.finishedAt) - Date.parse(input.startedAt),
+    ),
+    state: input.state,
+    message: input.message ? redactString(input.message, bindings) : undefined,
+    source: {
+      ...identity.source,
+      excerpt: redactString(identity.source.excerpt, bindings),
+    },
+    target: {
+      before: {
+        format: 'summary',
+        summary: bounded(
+          redactString(input.target.before.summary, bindings),
+          targetSummaryLimit,
+        ),
+        location: publicLocation(input.target.before.location, bindings),
+      },
+      after: {
+        format: 'summary',
+        summary: bounded(
+          redactString(input.target.after.summary, bindings),
+          targetSummaryLimit,
+        ),
+        location: publicLocation(input.target.after.location, bindings),
+      },
+    },
+    screenshots: {
+      before: publicScreenshot(input.screenshots.before, bindings),
+      after: publicScreenshot(input.screenshots.after, bindings),
+    },
+    diagnostics: (input.diagnostics ?? []).map((diagnostic) =>
+      publicDiagnostic(diagnostic, bindings),
+    ),
+    activity: (input.activity ?? []).map((entry) =>
+      publicTrace(entry, bindings),
+    ),
+  }
+}
+
 export function publicStepExecution(
   execution: StepExecution,
   bindings: readonly ScenarioVariableBinding[],
@@ -152,6 +259,17 @@ export function publicStepExecution(
       ...execution,
       resolvedActions: execution.resolvedActions.map((action) => ({
         description: redactString(action.description, bindings),
+        evidence: action.evidence
+          ? publicActionEvidence(
+              action.evidence,
+              {
+                id: action.evidence.id,
+                ordinal: action.evidence.ordinal,
+                source: action.evidence.source,
+              },
+              bindings,
+            )
+          : undefined,
         replay: action.replay
           ? (redactReplayValue(action.replay, bindings) as Record<
               string,

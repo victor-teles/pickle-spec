@@ -7,6 +7,7 @@ import type {
   TestStepResult,
 } from '../execution/run-scenario'
 import {
+  actionEvidenceVersion,
   diagnosticLevels,
   diagnosticOrigins,
   evidenceKinds,
@@ -55,17 +56,19 @@ const scenarioStepSchema = z.object({
   keyword: z.string(),
   text: z.string(),
   type: z.enum(['context', 'action', 'outcome']),
+  source: z
+    .object({
+      line: positiveIntegerSchema,
+      column: positiveIntegerSchema,
+      excerpt: z.string(),
+    })
+    .optional(),
   argument: z
     .object({
       dataTable: z.array(z.array(z.string())).optional(),
       docString: z.string().optional(),
     })
     .optional(),
-})
-
-const resolvedActionSchema = z.object({
-  description: z.string(),
-  replay: z.record(z.string(), z.unknown()).optional(),
 })
 
 const artifactSchema = z.object({
@@ -105,6 +108,63 @@ const traceEntrySchema = z.object({
   causalAt: timestampSchema.optional(),
   kind: z.enum(traceActivityKinds),
   description: z.string(),
+})
+
+const actionTargetStateSchema = z.object({
+  format: z.literal('summary'),
+  summary: z.string().max(2_000),
+  location: z.string().max(2_048).optional(),
+})
+
+const actionScreenshotSchema = z.discriminatedUnion('state', [
+  z.object({ state: z.literal('available'), artifact: artifactSchema }),
+  z.object({
+    state: z.enum([
+      'not-requested',
+      'not-supported',
+      'not-retained',
+      'capture-failed',
+      'missing',
+    ]),
+    message: z.string().optional(),
+  }),
+])
+
+const actionEvidenceSchema = z
+  .object({
+    version: z.literal(actionEvidenceVersion),
+    id: z.string().min(1),
+    ordinal: nonNegativeIntegerSchema,
+    description: z.string(),
+    startedAt: timestampSchema,
+    finishedAt: timestampSchema,
+    durationMs: nonNegativeIntegerSchema,
+    state: z.enum(['passed', 'failed']),
+    message: z.string().optional(),
+    source: z.object({
+      uri: z.string(),
+      language: z.string(),
+      line: positiveIntegerSchema.optional(),
+      column: positiveIntegerSchema.optional(),
+      excerpt: z.string(),
+    }),
+    target: z.object({
+      before: actionTargetStateSchema,
+      after: actionTargetStateSchema,
+    }),
+    screenshots: z.object({
+      before: actionScreenshotSchema,
+      after: actionScreenshotSchema,
+    }),
+    diagnostics: z.array(diagnosticEntrySchema),
+    activity: z.array(traceEntrySchema),
+  })
+  .superRefine(validateTiming)
+
+const resolvedActionSchema = z.object({
+  description: z.string(),
+  replay: z.record(z.string(), z.unknown()).optional(),
+  evidence: actionEvidenceSchema.optional(),
 })
 
 const executionCacheKeySchema = z.object({
@@ -525,6 +585,12 @@ const runEventSchema: z.ZodType<RunEvent> = z.discriminatedUnion('type', [
     ...scopedEvent,
     type: z.literal('step-finished'),
     result: testStepResultSchema,
+  }),
+  z.object({
+    ...eventEnvelope,
+    ...scopedEvent,
+    type: z.literal('action-finished'),
+    action: actionEvidenceSchema,
   }),
   ...cacheEventSchemas,
   z.object({

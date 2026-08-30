@@ -13,7 +13,7 @@ Feature: Checkout
     Then the purchase succeeds`,
     })
 
-    expect(specification).toEqual({
+    expect(specification).toMatchObject({
       name: 'Checkout',
       id: expect.any(String),
       source: {
@@ -67,7 +67,7 @@ Feature: Search
 
     expect(specification.id).toBe('specaaaaaaaaaaaa')
     expect(specification.state).toBe('draft')
-    expect(specification.scenarios).toEqual([
+    expect(specification.scenarios).toMatchObject([
       {
         name: 'Find a product',
         id: 'scnbbbbbbbbbbbb',
@@ -181,7 +181,7 @@ Feature: Search
       Then access is denied`,
     })
 
-    expect(specification.scenarios).toEqual([
+    expect(specification.scenarios).toMatchObject([
       {
         name: 'View the account',
         id: expect.any(String),
@@ -254,7 +254,7 @@ Feature: Search
       | Olives  |`,
     })
 
-    expect(specification.scenarios).toEqual([
+    expect(specification.scenarios).toMatchObject([
       {
         name: 'Find a product',
         id: expect.any(String),
@@ -352,6 +352,30 @@ Feature: Search
         runtimeBindings: [{ name: 'product', value: 'Olives' }],
       },
     ])
+  })
+
+  test('retains Gherkin source locations on Scenario Outline templates', () => {
+    const specification = parseSpecification({
+      uri: 'features/search.feature',
+      source: `Feature: Search
+  Scenario Outline: Find a product
+    When the customer searches for <product>
+
+    Examples:
+      | product |
+      | Pickles |`,
+    })
+
+    expect(specification.scenarios[0]?.template?.steps[0]?.source).toEqual({
+      line: 3,
+      column: 5,
+      excerpt: '    When the customer searches for <product>',
+    })
+    expect(specification.scenarios[0]?.steps[0]?.source).toEqual({
+      line: 3,
+      column: 5,
+      excerpt: '    When the customer searches for <product>',
+    })
   })
 
   test('separates Scenario Outline templates from ordered runtime bindings', () => {

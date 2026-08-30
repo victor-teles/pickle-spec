@@ -203,6 +203,69 @@ test('retains adapter-neutral Test artifact capture metadata', () => {
   })
 })
 
+test('keeps action evidence optional for legacy schema-v2 manifests', () => {
+  const input = manifest()
+
+  const parsed = parseTestRunManifest(input, incompatibleSchema)
+
+  expect(parsed.schemaVersion).toBe(2)
+  expect(parsed.results[0]?.attempts[0]?.steps).toEqual([])
+})
+
+test('parses the public action-finished evidence contract', () => {
+  const occurredAt = '2026-08-22T12:00:00.010Z'
+  const parsed = parseRunEvent(
+    {
+      schemaVersion: 2,
+      sequence: 3,
+      occurredAt,
+      type: 'action-finished',
+      action: {
+        version: 1,
+        id: 'step-1-action-1',
+        ordinal: 1,
+        description: 'Submit the form',
+        startedAt: '2026-08-22T12:00:00.005Z',
+        finishedAt: occurredAt,
+        durationMs: 5,
+        state: 'passed',
+        source: {
+          uri: 'features/checkout.feature',
+          language: 'en',
+          line: 7,
+          column: 5,
+          excerpt: 'When I submit the form',
+        },
+        target: {
+          before: { format: 'summary', summary: 'Ready state: complete' },
+          after: { format: 'summary', summary: 'Ready state: complete' },
+        },
+        screenshots: {
+          before: { state: 'not-retained' },
+          after: { state: 'not-requested' },
+        },
+        diagnostics: [],
+        activity: [],
+      },
+      scenario: { id: 'scenario-checkout', name: 'Checkout' },
+      executionTargetProfile: { id: 'web' },
+      scope: {
+        scenarioId: 'scenario-checkout',
+        executionTargetProfileId: 'web',
+        attempt: 2,
+        stepIndex: 0,
+      },
+    },
+    incompatibleSchema,
+  )
+
+  expect(parsed).toMatchObject({
+    type: 'action-finished',
+    action: { id: 'step-1-action-1', ordinal: 1 },
+    scope: { attempt: 2, stepIndex: 0 },
+  })
+})
+
 test('parses run events with shared evidence observations', () => {
   const occurredAt = '2026-08-22T12:00:00.000Z'
   const parsed = parseRunEvent(
