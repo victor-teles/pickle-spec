@@ -13,6 +13,7 @@ import type {
   ResultInspectionLocation,
   ResultInspectorTab,
 } from './result-inspection'
+import type { TimeTravelAction } from './time-travel-inspection'
 
 export type InspectedResult = {
   result: TestResult
@@ -116,6 +117,7 @@ export type TimelineEntry = {
   attributes: readonly TimelineEntryAttribute[]
   artifact?: TestArtifact
   artifacts?: readonly TestArtifact[]
+  action?: TimeTravelAction
 }
 
 export type TimelineDensity = 'essential' | 'verbose'
@@ -560,48 +562,115 @@ function stepTimelineEntries(
   })
 }
 
+function traceTimelineEntry(
+  step: ScenarioAttempt['steps'][number],
+  entry: NonNullable<ScenarioAttempt['steps'][number]['trace']>[number],
+  index: number,
+  context: TimelineContext,
+): TimelineEntry {
+  return {
+    id: context.entryId(`trace-${step.index}-${index}`),
+    startedAt: entry.occurredAt,
+    timingPrecision: 'exact',
+    kind:
+      entry.kind === 'resolved-action' ? 'Resolved action' : 'Browser activity',
+    title: entry.description,
+    context: `${step.step.keyword.trim()} ${step.step.text}`,
+    causalAt: entry.causalAt,
+    causal: Boolean(context.causalAt && entry.causalAt === context.causalAt),
+    attributes: [{ label: 'Step index', value: String(step.index) }],
+  }
+}
+
+function legacyActionEntries(
+  step: ScenarioAttempt['steps'][number],
+  context: TimelineContext,
+): TimelineEntry[] {
+  const stepId = context.entryId(`step-${step.index}`)
+  return step.resolvedActions.map((action, index) => ({
+    id: context.entryId(`trace-${step.index}-${index}`),
+    startedAt: step.finishedAt,
+    timingPrecision: 'step-finish',
+    kind: 'Resolved action',
+    title: action.description,
+    context: `${step.step.keyword.trim()} ${step.step.text}`,
+    causalAt: context.causalStepId === stepId ? context.causalAt : undefined,
+    causal: context.causalStepId === stepId && !context.causalAt,
+    attributes: [{ label: 'Step index', value: String(step.index) }],
+  }))
+}
+
+function actionTimelineEntries(
+  step: ScenarioAttempt['steps'][number],
+  actions: readonly TimeTravelAction[],
+  context: TimelineContext,
+): TimelineEntry[] {
+  const stepId = context.entryId(`step-${step.index}`)
+  const resolvedTrace = (step.trace ?? []).filter(
+    (entry) => entry.kind === 'resolved-action',
+  )
+  return actions.map((action) => {
+    const evidence = action.evidence
+    const causalAt = resolvedTrace[action.ordinal]?.causalAt
+    return {
+      id: context.entryId(`trace-${step.index}-${action.ordinal}`),
+      startedAt: evidence?.startedAt ?? step.finishedAt,
+      finishedAt: evidence?.finishedAt,
+      timingPrecision: evidence ? 'exact' : 'step-finish',
+      kind: 'Resolved action',
+      title: action.description,
+      context: `${step.step.keyword.trim()} ${step.step.text}`,
+      state: evidence?.state,
+      causalAt,
+      causal: causalAt
+        ? Boolean(context.causalAt && causalAt === context.causalAt)
+        : context.causalStepId === stepId && !context.causalAt,
+      attributes: [{ label: 'Step index', value: String(step.index) }],
+      action,
+    }
+  })
+}
+
+function stepTraceTimelineEntries(
+  step: ScenarioAttempt['steps'][number],
+  actions: readonly TimeTravelAction[],
+  context: TimelineContext,
+): TimelineEntry[] {
+  if (!step.trace && actions.length === 0) {
+    return legacyActionEntries(step, context)
+  }
+  if (actions.length === 0) {
+    return (step.trace ?? []).map((entry, index) =>
+      traceTimelineEntry(step, entry, index, context),
+    )
+  }
+  const browserEntries = (step.trace ?? []).flatMap((entry, index) =>
+    entry.kind === 'resolved-action'
+      ? []
+      : [traceTimelineEntry(step, entry, index, context)],
+  )
+  return [...actionTimelineEntries(step, actions, context), ...browserEntries]
+}
+
 function traceTimelineEntries(
   attempt: ScenarioAttempt,
   context: TimelineContext,
+  actions: readonly TimeTravelAction[],
 ): TimelineEntry[] {
-  return attempt.steps.flatMap<TimelineEntry>((step) => {
-    const stepText = `${step.step.keyword.trim()} ${step.step.text}`
-    const stepId = context.entryId(`step-${step.index}`)
-    if (!step.trace) {
-      return step.resolvedActions.map((action, index) => ({
-        id: context.entryId(`trace-${step.index}-${index}`),
-        startedAt: step.finishedAt,
-        timingPrecision: 'step-finish' as const,
-        kind: 'Resolved action' as const,
-        title: action.description,
-        context: stepText,
-        causalAt:
-          context.causalStepId === stepId ? context.causalAt : undefined,
-        causal: context.causalStepId === stepId && !context.causalAt,
-        attributes: [{ label: 'Step index', value: String(step.index) }],
-      }))
-    }
-    return step.trace.map((entry, index) => ({
-      id: context.entryId(`trace-${step.index}-${index}`),
-      startedAt: entry.occurredAt,
-      timingPrecision: 'exact' as const,
-      kind:
-        entry.kind === 'resolved-action'
-          ? 'Resolved action'
-          : 'Browser activity',
-      title: entry.description,
-      context: stepText,
-      causalAt: entry.causalAt,
-      causal: Boolean(context.causalAt && entry.causalAt === context.causalAt),
-      attributes: [{ label: 'Step index', value: String(step.index) }],
-    }))
-  })
+  return attempt.steps.flatMap((step) =>
+    stepTraceTimelineEntries(
+      step,
+      actions.filter((action) => action.scope.stepIndex === step.index),
+      context,
+    ),
+  )
 }
 
 export function timelineFor(
   events: readonly RunEvent[],
   attempt: ScenarioAttempt,
   location: ResultInspectionLocation,
+  actions: readonly TimeTravelAction[] = [],
 ): TimelineEntry[] {
   const context = timelineContext(attempt, location)
   const stepEntries = stepTimelineEntries(attempt, context)
@@ -615,7 +684,7 @@ export function timelineFor(
       attributes: [{ label: 'Sequence', value: String(event.sequence) }],
     }),
   )
-  const traceEntries = traceTimelineEntries(attempt, context)
+  const traceEntries = traceTimelineEntries(attempt, context, actions)
   const diagnosticEntries: TimelineEntry[] = diagnosticsFor(attempt).map(
     (diagnostic) =>
       diagnosticTimelineEntry(diagnostic, context.causalAt, context.entryId),

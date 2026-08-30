@@ -18,7 +18,7 @@ function entry(
   }
 }
 
-test('default Execution timeline shows Steps, Resolved actions, and Test artifacts', () => {
+test('default Execution timeline focuses on Steps and Resolved actions', () => {
   const markup = renderToStaticMarkup(
     <ResultEvidenceTimeline
       entries={[
@@ -39,14 +39,15 @@ test('default Execution timeline shows Steps, Resolved actions, and Test artifac
 
   expect(markup).toContain('Then payment is captured')
   expect(markup).toContain('Click Pay now')
-  expect(markup).toContain('Checkout screenshot')
+  expect(markup).not.toContain('Checkout screenshot')
   expect(markup).not.toContain('Verbose timeline')
   expect(markup).toContain('Filter timeline by entry type')
-  expect(markup.match(/aria-pressed="true"/g)).toHaveLength(4)
+  expect(markup.match(/aria-pressed="true"/g)).toHaveLength(3)
+  expect(markup).toMatch(/aria-pressed="false"[^>]*>.*Test artifact/s)
   expect(markup).toMatch(/aria-pressed="false"[^>]*>.*Browser activity/s)
   expect(markup).toMatch(/aria-pressed="false"[^>]*>.*Diagnostic entry/s)
   expect(markup).toMatch(/aria-pressed="false"[^>]*>.*Run event/s)
-  expect(markup).toContain('3 entries')
+  expect(markup).toContain('2 entries')
   expect(markup).not.toContain('POST /checkout')
   expect(markup).not.toContain('Console warning')
   expect(markup).not.toContain('Scenario Started')

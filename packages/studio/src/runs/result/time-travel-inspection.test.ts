@@ -5,6 +5,7 @@ import type {
 } from '@pickle-spec/runner'
 import { expect, test } from 'vitest'
 import type { StudioRunSnapshot } from '../../server/server'
+import { timelineFor } from './result-evidence'
 import type { ResultInspectionLocation } from './result-inspection'
 import { timeTravelInspection } from './time-travel-inspection'
 
@@ -132,6 +133,27 @@ test('projects equivalent live and hydrated action details', () => {
   expect(timeTravelInspection(live, location)).toEqual(
     timeTravelInspection(hydrated, location),
   )
+})
+
+test('connects exact action evidence to its Timeline entry', () => {
+  const snapshot: StudioRunSnapshot = {
+    id: location.runId,
+    events: [actionEvent()],
+    manifest: manifest({ description: action.description, evidence: action }),
+  }
+  const attempt = snapshot.manifest?.results[0]?.attempts[0]
+  if (!attempt) throw new Error('Expected a completed attempt')
+  const actions = timeTravelInspection(snapshot, location)
+  const entry = timelineFor(snapshot.events, attempt, location, actions).find(
+    (candidate) => candidate.kind === 'Resolved action',
+  )
+
+  expect(entry).toMatchObject({
+    startedAt: action.startedAt,
+    finishedAt: action.finishedAt,
+    timingPrecision: 'exact',
+    action: { evidence: { id: action.id } },
+  })
 })
 
 test('labels legacy schema-v2 actions without inventing missing evidence', () => {

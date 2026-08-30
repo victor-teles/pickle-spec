@@ -1,8 +1,8 @@
 import type { ActionEvidence } from '@pickle-spec/runner'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { expect, test } from 'vitest'
+import { ActionEvidenceDetail } from './action-evidence-detail'
 import type { TimeTravelAction } from './time-travel-inspection'
-import { TimeTravelInspector } from './time-travel-inspector'
 
 const evidence: ActionEvidence = {
   version: 1,
@@ -58,16 +58,15 @@ const action: TimeTravelAction = {
   ],
 }
 
-test('renders one selectable action with retry and before-after evidence', () => {
+test('renders retry and before-after evidence for one action', () => {
   const markup = renderToStaticMarkup(
-    <TimeTravelInspector
-      actions={[action]}
+    <ActionEvidenceDetail
+      action={action}
       resultState="passed"
       scenarioName="Checkout"
     />,
   )
 
-  expect(markup).toContain('Action time travel')
   expect(markup).toContain('Before target state')
   expect(markup).toContain('After target state')
   expect(markup).toContain('Attempt 1 failed')

@@ -99,7 +99,6 @@ function TimelineDisplay(props: TimelineDisplayProps) {
 const defaultTimelineEntryKinds = [
   'Step',
   'Resolved action',
-  'Test artifact',
 ] satisfies readonly TimelineEntryKind[]
 
 type TimelineKindFiltersProps = {

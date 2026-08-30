@@ -45,7 +45,6 @@ import type {
 } from './result-inspection'
 import { reasonMessage, resultBadgeVariant } from './result-presentation'
 import { timeTravelInspection } from './time-travel-inspection'
-import { TimeTravelInspector } from './time-travel-inspector'
 
 type ResultInspectorProps = {
   api: StudioApi
@@ -195,7 +194,6 @@ function ResultInspectorHeader(
 function ResultInspectorTabs(
   props: InspectedResultViewProps & {
     activeTab: ResultInspectorTab
-    actions: ReturnType<typeof timeTravelInspection>
     artifacts: ReturnType<typeof artifactsFor>
     diagnostics: ReturnType<typeof diagnosticsFor>
     displayState: ReturnType<typeof displayedAttemptState>
@@ -223,7 +221,11 @@ function ResultInspectorTabs(
       value={props.activeTab}
       onValueChange={(value) => props.onTabChange(value as ResultInspectorTab)}
     >
-      <TabsList variant="line" aria-label="Test result evidence">
+      <TabsList
+        variant="line"
+        aria-label="Test result evidence"
+        className="h-auto max-w-full flex-wrap justify-start"
+      >
         <TabsTrigger value="overview">Overview</TabsTrigger>
         <TabsTrigger value="timeline">Timeline</TabsTrigger>
         <TabsTrigger value="artifacts">Artifacts</TabsTrigger>
@@ -231,14 +233,7 @@ function ResultInspectorTabs(
         <TabsTrigger value="viewport">Viewport</TabsTrigger>
       </TabsList>
       <TabsContent value="overview">
-        <div className="space-y-4">
-          <ResultOverview {...inspected} inProgress={props.inProgress} />
-          <TimeTravelInspector
-            actions={props.actions}
-            resultState={props.resultState}
-            scenarioName={inspected.result.scenario.name}
-          />
-        </div>
+        <ResultOverview {...inspected} inProgress={props.inProgress} />
       </TabsContent>
       <TabsContent value="timeline">
         {props.liveViewport?.kind === 'device-frame' ? (
@@ -293,12 +288,13 @@ function InspectedResultView(props: InspectedResultViewProps) {
     props.location.tab ?? defaultResultInspectorTab(inspected.attempt.state)
   const artifacts = artifactsFor(inspected.attempt)
   const diagnostics = diagnosticsFor(inspected.attempt)
+  const actions = timeTravelInspection(snapshot, props.location)
   const timeline = timelineFor(
     snapshot.events,
     inspected.attempt,
     props.location,
+    actions,
   )
-  const actions = timeTravelInspection(snapshot, props.location)
   if (props.artifactIndex !== undefined) {
     const artifact = artifacts[props.artifactIndex]
     return (
@@ -321,7 +317,6 @@ function InspectedResultView(props: InspectedResultViewProps) {
       <ResultInspectorTabs
         {...props}
         activeTab={activeTab}
-        actions={actions}
         artifacts={artifacts}
         diagnostics={diagnostics}
         displayState={displayState}
