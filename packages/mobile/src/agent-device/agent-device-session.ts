@@ -212,6 +212,7 @@ export function createGatewaySession(
       replay ??
       compileMobileScenario({
         platform,
+        applicationId: input.application.id,
         scenario: input.scenario,
       }),
     logsStarted: false,

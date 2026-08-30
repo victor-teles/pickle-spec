@@ -44,6 +44,7 @@ export interface CompiledMobileScenario {
 
 interface CompileMobileScenarioInput {
   platform: MobilePlatform
+  applicationId: string
   scenario: MobileWorkerScenario
 }
 
@@ -225,6 +226,7 @@ export function compileMobileScenario(
   const operations = mobileOperations(input)
   const lines = [
     `context platform=${input.platform}`,
+    `open ${quote(input.applicationId)} --relaunch`,
     ...operations.map(operationLine),
   ]
   const script = `${lines.join('\n')}\n`

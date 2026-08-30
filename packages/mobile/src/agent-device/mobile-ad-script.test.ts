@@ -25,6 +25,7 @@ test('renders the closed native assertion vocabulary into one full .ad Scenario'
 
   const compiled = compileMobileScenario({
     platform: 'ios',
+    applicationId: 'com.example.checkout',
     scenario: {
       steps: runtimeSteps,
       templateSteps,
@@ -34,6 +35,7 @@ test('renders the closed native assertion vocabulary into one full .ad Scenario'
 
   expect(compiled.payload.script).toBe(
     'context platform=ios\n' +
+      'open "com.example.checkout" --relaunch\n' +
       `is text "id=\\"greeting\\"" "Hello ${namePlaceholder}"\n` +
       'is visible "id=\\"receipt\\""\n' +
       'is hidden "id=\\"spinner\\""\n' +
@@ -50,6 +52,7 @@ test('renders the closed native assertion vocabulary into one full .ad Scenario'
 test('marks data arguments and malformed text assertions as uncacheable', () => {
   const argument = compileMobileScenario({
     platform: 'android',
+    applicationId: 'com.example.checkout',
     scenario: {
       steps: [
         {
@@ -70,6 +73,7 @@ test('marks data arguments and malformed text assertions as uncacheable', () => 
   })
   const assertion = compileMobileScenario({
     platform: 'android',
+    applicationId: 'com.example.checkout',
     scenario: {
       steps: [{ type: 'outcome', text: 'text: id="greeting"' }],
       templateSteps: [{ type: 'outcome', text: 'text: id="greeting"' }],

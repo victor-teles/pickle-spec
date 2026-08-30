@@ -114,6 +114,7 @@ function controlledScenarioExecution(
     session.mode === 'adaptive'
       ? compileMobileScenario({
           platform: 'android',
+          applicationId: session.application.id,
           scenario: session.scenario,
         })
       : undefined
