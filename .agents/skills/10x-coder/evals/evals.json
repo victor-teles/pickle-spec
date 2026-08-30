@@ -33,6 +33,19 @@
         "The agent removes conditional object-spread noise without changing optional-property semantics.",
         "The agent replaces hidden process working-directory state with an explicit root while preserving the public export and errors."
       ]
+    },
+    {
+      "id": 4,
+      "prompt": "Refactor a 900-line React route page that owns URL filters, local comparison state, a live subscription, and a virtualized history table. Preserve behavior. The component tree is three levels deep, the extracted pieces are page-specific, and the repository has no Redux or Zustand dependency.",
+      "expected_output": "A behavior-pinned, page-local split that keeps existing state owners, gives non-trivial components named intent-level props, and avoids context or a new store for a shallow tree.",
+      "files": [],
+      "expectations": [
+        "The agent keeps the route page focused on route decisions, layout, and composition.",
+        "The agent colocates page-specific components and hooks instead of promoting them to generic shared directories without a second consumer.",
+        "The agent defines named prop types with intent-level callbacks rather than spreading route, transport, or state-setter details through presentation components.",
+        "The agent does not add context, Redux, or Zustand merely to avoid a shallow prop chain.",
+        "The agent pins observable behavior before moving structure and verifies the real page flow afterward."
+      ]
     }
   ]
 }
