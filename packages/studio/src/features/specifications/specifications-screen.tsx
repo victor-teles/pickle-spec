@@ -7,6 +7,7 @@ import type {
   StudioScenario,
   StudioSpecification,
 } from '../../server/contracts'
+import type { StudioRunsIndex } from '../history/history.contracts'
 import type { LiveResultInspection } from '../runs/result/live-result-inspection'
 import type { ResultInspectorTab } from '../runs/result/result-inspection'
 import type { MatrixCell } from '../runs/result/run-view'
@@ -14,6 +15,12 @@ import type { RunOrigin } from '../runs/run-origin'
 import { SpecificationHeader } from './specification-header'
 import { SpecificationList } from './specification-list'
 import { SpecificationResults } from './specification-results'
+import {
+  allSpecificationsReportHref,
+  type SpecificationRunReport,
+  specificationReportHref,
+  specificationRunReport,
+} from './specification-run-report'
 import type { MissingSpecificationSelection } from './use-specification-selection'
 
 type SpecificationSelection = {
@@ -54,12 +61,22 @@ type SpecificationsScreenProps = {
   onError: (message: string | undefined) => void
   onReloadProject: () => Promise<StudioProject>
   project: StudioProject
+  runsIndex?: StudioRunsIndex
   run: SpecificationRun
   selection: SpecificationSelection
 }
 
 export function SpecificationsScreen(props: SpecificationsScreenProps) {
   const canRunAll = props.project.readiness?.ready ?? true
+  const report = props.run.running
+    ? undefined
+    : specificationRunReport({
+        projectSpecificationUris: props.project.specifications.map(
+          (specification) => specification.uri,
+        ),
+        runId: props.run.runId,
+        runsIndex: props.runsIndex,
+      })
 
   function handleRunAll() {
     props.run.onRun({})
@@ -81,17 +98,19 @@ export function SpecificationsScreen(props: SpecificationsScreenProps) {
           origin={props.run.origin}
           running={props.run.running}
           canRun={canRunAll}
+          reportHref={allSpecificationsReportHref(report)}
           onSelect={props.selection.onSelect}
           onRunAll={handleRunAll}
         />
       )}
-      <SpecificationDetail {...props} canRunAll={canRunAll} />
+      <SpecificationDetail {...props} canRunAll={canRunAll} report={report} />
     </div>
   )
 }
 
 type SpecificationDetailProps = SpecificationsScreenProps & {
   canRunAll: boolean
+  report?: SpecificationRunReport
 }
 
 function MissingSpecification(props: {
@@ -144,13 +163,11 @@ function specificationRunReasons(
 }
 
 function SpecificationDetail(props: SpecificationDetailProps) {
-  const { selected } = props.selection
+  const specification = props.selection.selected
   if (props.selection.missing) {
     return <MissingSpecification missing={props.selection.missing} />
   }
-  if (!selected) return <EmptySpecificationSelection />
-
-  const specification = selected
+  if (!specification) return <EmptySpecificationSelection />
   const canRun = specification.canRun ?? props.canRunAll
   const runReasons = specificationRunReasons(specification, props)
 
@@ -178,6 +195,7 @@ function SpecificationDetail(props: SpecificationDetailProps) {
         runId={props.run.runId}
         running={props.run.running}
         runReasons={runReasons}
+        reportHref={specificationReportHref(props.report, specification.uri)}
         specification={specification}
       />
       {props.authoring ? null : (
