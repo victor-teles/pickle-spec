@@ -1,10 +1,5 @@
-import type {
-  ScenarioAttempt,
-  TestResult,
-  TestRunExportFormat,
-  TestRunManifest,
-} from '@pickle-spec/runner'
-import { useEffect, useMemo, useState } from 'react'
+import type { TestRunExportFormat, TestRunManifest } from '@pickle-spec/runner'
+import { useEffect, useState } from 'react'
 import { LedgerLoadingSkeleton } from '../../components/loading-skeletons'
 import { Badge } from '../../components/ui/badge'
 import { Button, buttonVariants } from '../../components/ui/button'
@@ -19,15 +14,6 @@ import {
   DropdownMenuTrigger,
 } from '../../components/ui/dropdown-menu'
 import { ResultMark } from '../../components/ui/result-mark'
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '../../components/ui/table'
-import { useVirtualWindow } from '../../hooks/use-virtual-window'
 import type { StudioApi } from '../../lib/studio-api'
 import type {
   StudioRunRequest,
@@ -37,21 +23,24 @@ import { studioRunReportDescriptors } from '../history/history.contracts'
 import type { LiveResultInspection } from './result/live-result-inspection'
 import type { ResultInspectionLocation } from './result/result-inspection'
 import { reasonMessage, resultBadgeVariant } from './result/result-presentation'
+import { RunAttempts } from './run-attempts'
 import { durationLabel, inferenceCountLabel } from './run-format'
-import { VirtualTableSpacer } from './virtual-table-spacer'
 
 type RunDetailProps = {
   api: StudioApi
   runId: string
+  location?: ResultInspectionLocation
   live?: LiveResultInspection
   runsBlocked: boolean
   onBack: () => void
   onCancel: (runId: string) => void
-  onInspectResult: (location: ResultInspectionLocation) => void
+  onOpenArtifact: (
+    location: ResultInspectionLocation,
+    artifactIndex: number,
+  ) => void
+  onSelectLocation: (location: ResultInspectionLocation) => void
   onRerun: (request: StudioRunRequest) => Promise<void>
 }
-
-const resultRowHeight = 56
 
 function useFetchedRunSnapshot(props: RunDetailProps) {
   const [snapshot, setSnapshot] = useState<StudioRunSnapshot>()
@@ -103,6 +92,8 @@ export function RunDetail(props: RunDetailProps) {
     <LoadedRunDetail
       {...props}
       manifest={snapshot.manifest}
+      snapshot={snapshot}
+      selectedLocation={props.location}
       includeAllArtifacts={includeAllArtifacts}
       onIncludeAllArtifacts={setIncludeAllArtifacts}
     />
@@ -188,24 +179,15 @@ function RunDetailHeader(
 function LoadedRunDetail(
   props: RunDetailProps & {
     manifest: TestRunManifest
+    snapshot: StudioRunSnapshot
+    selectedLocation?: ResultInspectionLocation
     includeAllArtifacts: boolean
     onIncludeAllArtifacts: (include: boolean) => void
+    onSelectLocation: (location: ResultInspectionLocation) => void
   },
 ) {
   const manifest = props.manifest
-  const attempts = useMemo(
-    () =>
-      manifest.results.flatMap((result) =>
-        result.attempts.map((attempt) => ({ result, attempt })),
-      ),
-    [manifest.results],
-  )
-  const resultWindow = useVirtualWindow<HTMLDivElement>({
-    count: attempts.length,
-    itemSize: resultRowHeight,
-  })
   const running = props.live?.phase === 'running'
-  const visibleAttempts = attempts.slice(resultWindow.start, resultWindow.end)
 
   return (
     <section className="min-h-0 flex-1 space-y-5 overflow-auto px-3 py-4 sm:px-5">
@@ -213,170 +195,9 @@ function LoadedRunDetail(
 
       <RunMetadata manifest={manifest} />
 
-      <RunResults
-        {...props}
-        attempts={attempts}
-        running={running}
-        visibleAttempts={visibleAttempts}
-        window={resultWindow}
-      />
+      <RunAttempts {...props} running={running} />
     </section>
   )
-}
-
-type RunAttempt = { result: TestResult; attempt: ScenarioAttempt }
-
-function RunResults(
-  props: RunDetailProps & {
-    attempts: readonly RunAttempt[]
-    running: boolean
-    visibleAttempts: readonly RunAttempt[]
-    window: ReturnType<typeof useVirtualWindow<HTMLDivElement>>
-  },
-) {
-  return (
-    <section className="space-y-2" aria-labelledby="run-results-title">
-      <div className="flex items-center justify-between gap-3">
-        <h2 id="run-results-title" className="studio-display text-sm">
-          Test results
-        </h2>
-        <span className="text-xs text-muted-foreground">
-          {props.attempts.length}{' '}
-          {props.attempts.length === 1 ? 'attempt' : 'attempts'}
-        </span>
-      </div>
-      {props.attempts.length === 0 ? (
-        <div className="rounded-lg border border-dashed border-border px-4 py-5 text-center text-sm text-muted-foreground">
-          {props.running
-            ? 'Waiting for the first Scenario to start.'
-            : 'This Test run has no results.'}
-        </div>
-      ) : (
-        <RunAttemptsTable {...props} />
-      )}
-    </section>
-  )
-}
-
-function RunAttemptsTable(
-  props: RunDetailProps & {
-    visibleAttempts: readonly RunAttempt[]
-    window: ReturnType<typeof useVirtualWindow<HTMLDivElement>>
-  },
-) {
-  const headings = [
-    'Specification',
-    'Scenario',
-    'Target',
-    'State',
-    'Attempt',
-    'Execution mode',
-    'Cache outcome',
-    'Uncacheable reason',
-    'Inferences',
-    'Duration',
-    'Actions',
-  ]
-  return (
-    <section
-      ref={props.window.containerRef}
-      aria-label="Scrollable Test run results"
-      // biome-ignore lint/a11y/noNoninteractiveTabindex: keyboard users must be able to scroll a virtualized region
-      tabIndex={0}
-      className="max-h-[36rem] overflow-auto rounded-lg border border-border bg-card"
-    >
-      <Table aria-label="Test run results">
-        <TableHeader>
-          <TableRow>
-            {headings.map((heading) => (
-              <TableHead key={heading}>{heading}</TableHead>
-            ))}
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          <VirtualTableSpacer height={props.window.before} colSpan={11} />
-          {props.visibleAttempts.map((item) => (
-            <RunAttemptRow {...props} {...item} key={attemptKey(item)} />
-          ))}
-          <VirtualTableSpacer height={props.window.after} colSpan={11} />
-        </TableBody>
-      </Table>
-    </section>
-  )
-}
-
-function RunAttemptRow(props: RunDetailProps & RunAttempt) {
-  const { attempt, result } = props
-  return (
-    <TableRow style={{ height: resultRowHeight }}>
-      <TableCell>{result.specification.name}</TableCell>
-      <TableCell>{result.scenario.name}</TableCell>
-      <TableCell>{result.executionTargetProfile.id}</TableCell>
-      <TableCell>{attempt.state}</TableCell>
-      <TableCell>{attempt.attempt}</TableCell>
-      <TableCell>{attempt.executionMode ?? 'Not recorded'}</TableCell>
-      <TableCell>{attempt.cacheOutcome ?? 'Not recorded'}</TableCell>
-      <TableCell>{attempt.cacheUncacheableReason ?? 'Not recorded'}</TableCell>
-      <TableCell>{inferenceCountLabel(attempt.inferenceCount)}</TableCell>
-      <TableCell>{durationLabel(attempt.durationMs)}</TableCell>
-      <TableCell>
-        <RunAttemptActions {...props} />
-      </TableCell>
-    </TableRow>
-  )
-}
-
-function RunAttemptActions(props: RunDetailProps & RunAttempt) {
-  const { attempt, result } = props
-  const inspect = () =>
-    props.onInspectResult({
-      specificationUri: result.specification.uri,
-      runId: props.runId,
-      scenarioId: result.scenario.id ?? result.scenario.name,
-      examplesRowId: result.scenario.examplesRowId,
-      profileId: result.executionTargetProfile.id,
-      attempt: attempt.attempt,
-    })
-  const rerunScenario = () =>
-    void props.onRerun({
-      rerunId: props.runId,
-      scenarioId: result.scenario.id,
-      scenarioName: result.scenario.id ? undefined : result.scenario.name,
-    })
-  const rerunTarget = () =>
-    void props.onRerun({
-      rerunId: props.runId,
-      profiles: [result.executionTargetProfile.id],
-    })
-  return (
-    <div className="flex gap-2">
-      <Button type="button" size="sm" variant="outline" onClick={inspect}>
-        Inspect result
-      </Button>
-      <Button
-        type="button"
-        size="sm"
-        variant="outline"
-        disabled={props.runsBlocked}
-        onClick={rerunScenario}
-      >
-        Rerun Scenario
-      </Button>
-      <Button
-        type="button"
-        size="sm"
-        variant="outline"
-        disabled={props.runsBlocked}
-        onClick={rerunTarget}
-      >
-        Rerun target
-      </Button>
-    </div>
-  )
-}
-
-function attemptKey({ result, attempt }: RunAttempt): string {
-  return `${result.specification.uri}:${result.scenario.id ?? result.scenario.name}:${result.scenario.examplesRowId ?? ''}:${result.executionTargetProfile.id}:${attempt.attempt}`
 }
 
 function RunDetailMessage(props: {

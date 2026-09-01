@@ -101,12 +101,11 @@ async function expectRunningStatusCleared(page: Page) {
 }
 
 async function openAttemptFromRunRow(row: Locator) {
-  await row.getByRole('button', { name: /^Open attempt for / }).click()
+  await row.getByRole('button', { name: /^Open run / }).click()
 }
 
-async function openRunDetailsFromRow(page: Page, row: Locator) {
+async function openRunDetailsFromRow(_page: Page, row: Locator) {
   await openAttemptFromRunRow(row)
-  await page.getByRole('button', { name: 'Back to run' }).click()
 }
 
 async function saveExecutionTargetProfile(
@@ -575,7 +574,7 @@ export default {
           .getByRole('row')
           .nth(1),
       )
-      await page.getByRole('table', { name: 'Test run results' }).waitFor()
+      await page.getByRole('combobox', { name: 'Attempt' }).waitFor()
       expect(await page.getByText('adaptive').count()).toBeGreaterThan(0)
       expect(await page.getByText('refresh').count()).toBeGreaterThan(0)
       expect(await page.getByText('3 inferences').count()).toBeGreaterThan(0)
@@ -1367,38 +1366,25 @@ Feature: Search
           .getByRole('tab', { name: 'Timeline' })
           .getAttribute('aria-selected'),
       ).toBe('true')
-      await page.getByRole('button', { name: 'Back to run' }).click()
-      const results = page.getByRole('table', { name: 'Test run results' })
+      expect(new URL(page.url()).pathname).toMatch(/^\/runs\/[^/]+$/)
+      const attemptSelect = page.getByRole('combobox', { name: 'Attempt' })
+      await attemptSelect.waitFor()
       await page.getByText('app-42').waitFor()
-      expect(await results.textContent()).toContain('Pay for the order')
-      expect(await results.textContent()).toContain('adaptive')
-      expect(await results.textContent()).toContain('uncacheable')
-      expect(await results.textContent()).toContain('0 inferences')
+      expect(await page.getByText('adaptive').count()).toBeGreaterThan(0)
+      expect(await page.getByText('uncacheable').count()).toBeGreaterThan(0)
+      expect(await page.getByText('0 inferences').count()).toBeGreaterThan(0)
       expect(
-        await results
-          .getByRole('columnheader', { name: 'Uncacheable reason' })
-          .count(),
-      ).toBe(1)
-      expect(
-        await results.getByRole('button', { name: 'Rerun Scenario' }).count(),
+        await page.getByRole('button', { name: 'Rerun Scenario' }).count(),
       ).toBeGreaterThan(0)
       expect(
-        await results.getByRole('button', { name: 'Rerun target' }).count(),
+        await page.getByRole('button', { name: 'Rerun target' }).count(),
       ).toBeGreaterThan(0)
-      const failedResult = results
-        .getByRole('row')
-        .filter({ hasText: 'Pay for the order' })
-        .filter({ hasText: 'chrome' })
-        .first()
-      await failedResult.getByRole('button', { name: 'Inspect result' }).click()
       await page
         .getByRole('heading', {
           name: 'Pay for the order · chrome',
         })
         .waitFor()
-      expect(new URL(page.url()).pathname).toMatch(
-        /^\/runs\/[^/]+\/results\/features%2Fcheckout\.feature\/scenarios\/scnpaybbbbbbbbbb\/profiles\/chrome\/attempts\/1$/,
-      )
+      expect(new URL(page.url()).pathname).toMatch(/^\/runs\/[^/]+$/)
       expect(
         await page
           .getByRole('tab', { name: 'Timeline' })
@@ -1449,7 +1435,7 @@ Feature: Search
         await route.continue()
       })
       await page.reload()
-      await page.getByRole('status', { name: 'Opening Test result' }).waitFor()
+      await page.getByRole('status', { name: 'Opening Test run' }).waitFor()
       await page
         .getByRole('heading', {
           name: 'Pay for the order · chrome',
@@ -1457,25 +1443,20 @@ Feature: Search
         .waitFor()
       await page.unroute('**/api/runs/*')
       expect(page.url()).toBe(deepLink)
-      await page.getByRole('button', { name: 'Back to run' }).click()
-      await results.waitFor()
-      const passedResult = results
-        .getByRole('row')
-        .filter({ hasText: 'Complete a purchase' })
-        .filter({ hasText: 'chrome' })
+      await attemptSelect.click()
+      await page
+        .getByRole('option', {
+          name: /Complete a purchase · chrome · Attempt 1 · passed/,
+        })
         .first()
-      await passedResult.getByRole('button', { name: 'Inspect result' }).click()
+        .click()
       expect(
         await page
           .getByRole('tab', { name: 'Overview' })
           .getAttribute('aria-selected'),
       ).toBe('true')
-      await page.getByRole('button', { name: 'Back to run' }).click()
-      await results.waitFor()
-      await results
-        .getByRole('button', { name: 'Rerun Scenario' })
-        .first()
-        .click()
+      expect(new URL(page.url()).pathname).toMatch(/^\/runs\/[^/]+$/)
+      await page.getByRole('button', { name: 'Rerun Scenario' }).click()
       await history.getByRole('row').nth(3).waitFor({ timeout: 20_000 })
       await history.getByText('2 results').first().waitFor({ timeout: 20_000 })
       expect(await history.getByRole('row').nth(1).textContent()).toContain(
@@ -1485,13 +1466,7 @@ Feature: Search
         page,
         history.getByRole('row').filter({ hasText: '6 results' }).first(),
       )
-      const targetResults = page.getByRole('table', {
-        name: 'Test run results',
-      })
-      await targetResults
-        .getByRole('button', { name: 'Rerun target' })
-        .first()
-        .click()
+      await page.getByRole('button', { name: 'Rerun target' }).click()
       await history.getByRole('row').nth(4).waitFor({ timeout: 20_000 })
       await history.getByText('3 results').first().waitFor({ timeout: 20_000 })
       expect(await history.getByRole('row').nth(1).textContent()).toContain(
@@ -1724,14 +1699,12 @@ Feature: Checkout
       await page.getByRole('button', { name: 'Runs', exact: true }).click()
       const history = page.getByRole('table', { name: 'Test run history' })
       await openRunDetailsFromRow(page, history.getByRole('row').nth(1))
-      const results = page.getByRole('table', { name: 'Test run results' })
-      await results.waitFor()
-      expect(await results.getByRole('row').count()).toBe(5)
+      const attemptSelect = page.getByRole('combobox', { name: 'Attempt' })
+      await attemptSelect.click()
+      expect(await page.getByRole('option').count()).toBe(4)
+      await page.keyboard.press('Escape')
 
-      await results
-        .getByRole('button', { name: 'Rerun Scenario' })
-        .first()
-        .click()
+      await page.getByRole('button', { name: 'Rerun Scenario' }).click()
       await history.getByRole('row').nth(2).waitFor({ timeout: 20_000 })
       await history.getByText('2 results').waitFor({ timeout: 20_000 })
       expect(await history.getByRole('row').nth(1).textContent()).toContain(

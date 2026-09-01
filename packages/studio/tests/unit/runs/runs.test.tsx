@@ -76,7 +76,7 @@ test('composes the Runs dashboard without duplicating active runs in history', (
   expect(markup).toContain('Active Runs')
   expect(markup).toContain('run-active')
   expect(markup).toContain('aria-label="Test run history"')
-  expect(markup).toContain('Open attempt for run-failed')
+  expect(markup).toContain('Open run run-failed')
   expect(markup.match(/run-active/g)).toHaveLength(1)
   expect(markup).toContain('Local Test run storage')
 })

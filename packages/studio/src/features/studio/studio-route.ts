@@ -36,7 +36,11 @@ export type StudioRoute =
       scenarioId: string
     }
   | { kind: 'runs'; filters: RunsFilters }
-  | { kind: 'run'; runId: string }
+  | {
+      kind: 'run'
+      runId: string
+      location?: ResultInspectionLocation
+    }
   | { kind: 'result'; location: ResultInspectionLocation }
   | { kind: 'artifact'; location: ResultArtifactLocation }
   | { kind: 'not-found' }
@@ -69,10 +73,7 @@ export function parseStudioRoute(input: string): StudioRoute {
   if (resultMatch) return parseResultRoute(resultMatch, url.searchParams)
 
   const runMatch = url.pathname.match(runRoutePattern)
-  if (runMatch) {
-    const runId = decodeSegment(runMatch[1])
-    return runId ? { kind: 'run', runId } : { kind: 'not-found' }
-  }
+  if (runMatch) return parseRunRoute(runMatch, url.searchParams)
   return { kind: 'not-found' }
 }
 
@@ -90,10 +91,19 @@ export function studioRouteHref(
     const query = runsFilterQuery(route.filters)
     return query ? `/runs?${query}` : '/runs'
   }
-  if (route.kind === 'run') return `/runs/${encodeURIComponent(route.runId)}`
+  if (route.kind === 'run') return runRouteHref(route)
   if (route.kind === 'result') return resultRouteHref(route.location)
+  return artifactRouteHref(route.location)
+}
 
-  const { result, artifactIndex } = route.location
+function runRouteHref(route: Extract<StudioRoute, { kind: 'run' }>): string {
+  const path = `/runs/${encodeURIComponent(route.runId)}`
+  const query = route.location ? resultSelectionQuery(route.location) : ''
+  return query ? `${path}?${query}` : path
+}
+
+function artifactRouteHref(location: ResultArtifactLocation): string {
+  const { result, artifactIndex } = location
   const path = `${resultRoutePath(result)}/artifacts/${artifactIndex}`
   return result.tab ? `${path}?tab=${result.tab}` : path
 }
@@ -123,6 +133,55 @@ function parseRunsFilters(parameters: URLSearchParams): RunsFilters {
     profile: parameters.get('profile') ?? undefined,
     suite: parameters.get('suite') ?? undefined,
   })
+}
+
+function parseRunRoute(
+  match: RegExpMatchArray,
+  parameters: URLSearchParams,
+): StudioRoute {
+  const runId = decodeSegment(match[1])
+  if (!runId) return { kind: 'not-found' }
+  const selection = parseResultSelection(runId, parameters)
+  if (selection === 'invalid') return { kind: 'not-found' }
+  return selection
+    ? { kind: 'run', runId, location: selection }
+    : { kind: 'run', runId }
+}
+
+function parseResultSelection(
+  runId: string,
+  parameters: URLSearchParams,
+): ResultInspectionLocation | undefined | 'invalid' {
+  const identityKeys = [
+    'specification',
+    'scenario',
+    'examplesRow',
+    'profile',
+    'attempt',
+  ]
+  if (!identityKeys.some((key) => parameters.has(key))) return undefined
+  const specificationUri = parameters.get('specification')
+  const scenarioId = parameters.get('scenario')
+  const examplesRowId = parameters.get('examplesRow') ?? undefined
+  const profileId = parameters.get('profile')
+  const attempt = positiveInteger(parameters.get('attempt') ?? undefined)
+  if (!specificationUri || !scenarioId || !profileId || !attempt) {
+    return 'invalid'
+  }
+  const requestedTab = parameters.get('tab')
+  const tab = resultInspectorTabs.find(
+    (candidate) => candidate === requestedTab,
+  )
+  const location: ResultInspectionLocation = {
+    runId,
+    specificationUri,
+    scenarioId,
+    profileId,
+    attempt,
+  }
+  if (examplesRowId) location.examplesRowId = examplesRowId
+  if (tab) location.tab = tab
+  return location
 }
 
 function compactFilters(filters: RunsFilters): RunsFilters {
@@ -196,6 +255,18 @@ function hasLegacyResultIdentity(parameters: URLSearchParams): boolean {
 function resultRouteHref(location: ResultInspectionLocation): string {
   const path = resultRoutePath(location)
   return location.tab ? `${path}?tab=${location.tab}` : path
+}
+
+function resultSelectionQuery(location: ResultInspectionLocation): string {
+  const query = new URLSearchParams({
+    specification: location.specificationUri,
+    scenario: location.scenarioId,
+    profile: location.profileId,
+    attempt: String(location.attempt),
+  })
+  if (location.examplesRowId) query.set('examplesRow', location.examplesRowId)
+  if (location.tab) query.set('tab', location.tab)
+  return query.toString()
 }
 
 function resultRoutePath(location: ResultInspectionLocation): string {
