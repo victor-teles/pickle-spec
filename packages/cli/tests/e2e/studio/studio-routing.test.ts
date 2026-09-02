@@ -181,6 +181,26 @@ Feature: Search
     }
   }, 45_000)
 
+  test('returns home when the Studio brand is clicked', async () => {
+    const project = await fixture.createProject('brand-home-navigation')
+    const { child, url } = await fixture.start(project)
+    const page = await browser.newPage()
+    try {
+      await page.goto(url)
+      await page.getByRole('button', { name: 'Runs', exact: true }).click()
+      await page.getByRole('heading', { name: 'Runs' }).waitFor()
+
+      await page.getByRole('button', { name: 'Pickle Spec' }).click()
+
+      expect(new URL(page.url()).pathname).toBe('/')
+      await page.getByRole('heading', { name: 'Checkout' }).waitFor()
+    } finally {
+      await page.close()
+      child.kill()
+      await child.exited
+    }
+  })
+
   test('keeps live results scoped to their Specification', async () => {
     const project = await fixture.createProject('live-result-specification')
     const gate = join(project, 'continue.txt')
