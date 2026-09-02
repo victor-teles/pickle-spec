@@ -34,6 +34,7 @@ function StudioSpecificationsArea(props: { studio: StudioController }) {
       onError={data.setErrorMessage}
       onReloadProject={data.reloadProject}
       project={data.project}
+      runsIndex={data.runsIndex}
       run={{
         cells: studio.run.cells,
         live: studio.run.live,

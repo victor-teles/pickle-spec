@@ -7,7 +7,7 @@ import {
   useEffect,
   useState,
 } from 'react'
-import { Button } from '../../components/ui/button'
+import { Button, ButtonLink } from '../../components/ui/button'
 import { useVirtualWindow } from '../../hooks/use-virtual-window'
 import { cn } from '../../lib/utils'
 import type { StudioSpecification } from '../../server/contracts'
@@ -21,6 +21,7 @@ type SpecificationListProps = {
   onRunAll: () => void
   onSelect: (id: string) => void
   origin?: RunOrigin
+  reportHref?: string
   running: boolean
   selectedId?: string
   specifications: readonly StudioSpecification[]
@@ -28,7 +29,7 @@ type SpecificationListProps = {
 
 function RunAllSpecifications(props: SpecificationListProps) {
   return (
-    <div className="border-t border-border p-2">
+    <div className="space-y-2 border-t border-border p-2">
       {props.canRun ? (
         <RunControlButton
           variant="outline"
@@ -39,6 +40,17 @@ function RunAllSpecifications(props: SpecificationListProps) {
         >
           Run all Specifications
         </RunControlButton>
+      ) : null}
+      {props.reportHref ? (
+        <ButtonLink
+          variant="outline"
+          className="w-full"
+          href={props.reportHref}
+          download
+          aria-label="Download latest report for all Specifications"
+        >
+          Download latest report
+        </ButtonLink>
       ) : null}
     </div>
   )

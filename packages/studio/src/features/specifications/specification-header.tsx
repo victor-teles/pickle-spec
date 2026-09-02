@@ -1,5 +1,5 @@
 import type { RefObject } from 'react'
-import { Button } from '../../components/ui/button'
+import { Button, ButtonLink } from '../../components/ui/button'
 import type { StudioApi } from '../../lib/studio-api'
 import { cn } from '../../lib/utils'
 import type {
@@ -27,6 +27,7 @@ type SpecificationHeaderProps = {
   runId?: string
   running: boolean
   runReasons?: readonly string[]
+  reportHref?: string
   specification: StudioSpecification
 }
 
@@ -97,14 +98,17 @@ export function SpecificationHeader(props: SpecificationHeaderProps) {
           )}
         >
           {props.authoring ? null : (
-            <SpecificationRunActions
-              canRun={props.canRun}
-              hasRunId={Boolean(props.runId)}
-              onCancel={handleCancel}
-              onRun={handleRun}
-              origin={props.origin}
-              running={props.running}
-            />
+            <>
+              <ReportDownload href={props.reportHref} />
+              <SpecificationRunActions
+                canRun={props.canRun}
+                hasRunId={Boolean(props.runId)}
+                onCancel={handleCancel}
+                onRun={handleRun}
+                origin={props.origin}
+                running={props.running}
+              />
+            </>
           )}
           <SpecificationEditor
             uri={props.specification.uri}
@@ -119,6 +123,15 @@ export function SpecificationHeader(props: SpecificationHeaderProps) {
         </div>
       </div>
     </header>
+  )
+}
+
+function ReportDownload(props: { href?: string }) {
+  if (!props.href) return null
+  return (
+    <ButtonLink variant="outline" href={props.href} download>
+      Download report
+    </ButtonLink>
   )
 }
 
