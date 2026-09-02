@@ -134,14 +134,15 @@ export function registerStudioHardeningTests(
       await page.goto(url)
       await page.getByText('accessible-workflows', { exact: true }).waitFor()
 
-      for (const [areaIndex, area] of [
+      for (const [destinationIndex, destination] of [
+        'Pickle Spec',
         'Specifications',
         'Runs',
         'Settings',
       ].entries()) {
         await page.goto(url)
         await page.getByText('accessible-workflows', { exact: true }).waitFor()
-        for (let tabIndex = 0; tabIndex <= areaIndex; tabIndex++) {
+        for (let focusStep = 0; focusStep <= destinationIndex; focusStep++) {
           await page.keyboard.press('Tab')
         }
         const activeLink = await page.evaluate(() => {
@@ -152,7 +153,7 @@ export function registerStudioHardeningTests(
               browserDocument.document.activeElement?.matches(':focus-visible'),
           }
         })
-        expect(activeLink).toEqual({ label: area, focusVisible: true })
+        expect(activeLink).toEqual({ label: destination, focusVisible: true })
         await page.keyboard.press('Enter')
         const results = await new AxeBuilder({ page })
           .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa'])
