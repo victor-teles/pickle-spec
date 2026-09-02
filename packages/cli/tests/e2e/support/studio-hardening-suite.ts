@@ -17,6 +17,10 @@ type BrowserDocument = {
   }
 }
 
+type BrowserAnimation = {
+  finished: Promise<unknown>
+}
+
 export function registerStudioHardeningTests(
   fixture: StudioBrowserFixture,
 ): void {
@@ -162,7 +166,17 @@ export function registerStudioHardeningTests(
         .analyze()
       expect(historyResults.violations).toEqual([])
       await page.keyboard.press('Meta+k')
-      await page.getByRole('dialog', { name: 'Studio commands' }).waitFor()
+      const commandDialog = page.getByRole('dialog', {
+        name: 'Studio commands',
+      })
+      await commandDialog.waitFor()
+      await commandDialog.evaluate(async (element) => {
+        await Promise.all(
+          element
+            .getAnimations({ subtree: true })
+            .map((animation: BrowserAnimation) => animation.finished),
+        )
+      })
       const paletteResults = await new AxeBuilder({ page })
         .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa'])
         .analyze()

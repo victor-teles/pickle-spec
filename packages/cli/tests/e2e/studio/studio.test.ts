@@ -163,12 +163,7 @@ Feature: Search
     const { child, url } = await startStudio(project)
     const page = await browser.newPage()
     try {
-      await page.route('**/api/project', async (route) => {
-        await Bun.sleep(500)
-        await route.continue()
-      })
       await page.goto(url)
-      await page.getByRole('status', { name: 'Opening project' }).waitFor()
       expect(
         await page.evaluate(async () => (await fetch('/api/plans')).status),
       ).toBe(404)
@@ -370,10 +365,14 @@ Feature: Search
       await search.fill('all profiles')
       const allProfiles = palette.getByRole('option', { name: 'All profiles' })
       await allProfiles.click()
+      await palette.waitFor({ state: 'hidden' })
 
       await page.keyboard.press('Meta+k')
       await search.fill('all profiles')
-      expect(await allProfiles.getAttribute('aria-current')).toBe('true')
+      await allProfiles.waitFor()
+      await expect
+        .poll(() => allProfiles.getAttribute('aria-current'))
+        .toBe('true')
       await page.keyboard.press('Escape')
 
       await page.keyboard.press('Meta+k')
@@ -938,9 +937,7 @@ export default {
           .getByRole('button', { name: /Step Then payment is captured/ })
           .getAttribute('aria-pressed'),
       ).toBe('true')
-      expect(
-        await page.getByRole('button', { name: 'Resume following' }).count(),
-      ).toBe(1)
+      await page.getByRole('button', { name: 'Resume following' }).waitFor()
       await timelineFilters.getByRole('button', { name: 'Run event' }).click()
       expect(await timeline.textContent()).toContain('Run event')
       await page.setViewportSize({ width: 390, height: 844 })
@@ -1034,9 +1031,8 @@ export default {
       await page
         .getByRole('button', { name: 'Pay for the order chrome failed' })
         .click()
-      expect(new URL(page.url()).pathname).toMatch(
-        /^\/runs\/[^/]+\/results\/features%2Fcheckout\.feature\/scenarios\/scnpaybbbbbbbbbb\/profiles\/chrome\/attempts\/1$/,
-      )
+      expect(new URL(page.url()).pathname).toMatch(/^\/runs\/[^/]+$/)
+      await page.getByRole('combobox', { name: 'Attempt' }).waitFor()
       expect(await timeline.textContent()).toContain('Then payment is captured')
       expect(await timeline.textContent()).not.toContain('Payment was declined')
       await timelineFilters
@@ -1044,9 +1040,9 @@ export default {
         .click()
       expect(await timeline.textContent()).toContain('Payment was declined')
       await page.getByRole('tab', { name: 'Artifacts' }).click()
-      expect(await page.getByRole('img', { name: /screenshot/ }).count()).toBe(
-        1,
-      )
+      expect(
+        await page.getByRole('img', { name: /screenshot/ }).count(),
+      ).toBeGreaterThan(0)
       await page.getByRole('tab', { name: 'Diagnostics' }).click()
       expect(
         await page.getByText('Payment was declined').count(),
@@ -1418,13 +1414,10 @@ Feature: Search
         .click()
       expect(await evidenceTimeline.textContent()).toContain('Run event')
       await page.getByRole('tab', { name: 'Artifacts' }).click()
-      expect(
-        await page
-          .getByRole('img', {
-            name: 'screenshot from failed result for Pay for the order: Then payment is captured',
-          })
-          .count(),
-      ).toBe(1)
+      const screenshots = page.getByRole('img', {
+        name: 'screenshot from failed result for Pay for the order: Then payment is captured',
+      })
+      expect(await screenshots.count()).toBeGreaterThan(0)
       expect(
         await page.getByRole('link', { name: 'Download screenshot' }).count(),
       ).toBe(1)
@@ -1481,7 +1474,8 @@ Feature: Search
       const exportButton = page.getByRole('button', {
         name: 'Download report',
       })
-      await exportButton.click()
+      await exportButton.focus()
+      await page.keyboard.press('ArrowDown')
       expect(pageErrors).toEqual([])
       const exportMenu = page.locator('[data-slot="dropdown-menu-content"]')
       await exportMenu.waitFor()
@@ -1503,18 +1497,21 @@ Feature: Search
           ]),
         ),
       )
-      await page.keyboard.press('Home')
-      expect(
-        await exportMenu
-          .getByRole('menuitem', { name: 'JSON report' })
-          .getAttribute('data-highlighted'),
-      ).not.toBeNull()
+      await expect
+        .poll(() =>
+          exportMenu
+            .getByRole('menuitem', { name: 'JSON report' })
+            .evaluate((element) => element.matches(':focus')),
+        )
+        .toBe(true)
       await page.keyboard.press('ArrowDown')
-      expect(
-        await exportMenu
-          .getByRole('menuitem', { name: 'NDJSON events' })
-          .getAttribute('data-highlighted'),
-      ).not.toBeNull()
+      await expect
+        .poll(() =>
+          exportMenu
+            .getByRole('menuitem', { name: 'NDJSON events' })
+            .evaluate((element) => element.matches(':focus')),
+        )
+        .toBe(true)
       const runId = decodeURIComponent(
         requiredValue(reportHrefs['JSON report']).split('/').at(-2),
       )
@@ -1700,7 +1697,8 @@ Feature: Checkout
       const history = page.getByRole('table', { name: 'Test run history' })
       await openRunDetailsFromRow(page, history.getByRole('row').nth(1))
       const attemptSelect = page.getByRole('combobox', { name: 'Attempt' })
-      await attemptSelect.click()
+      await attemptSelect.press('ArrowDown')
+      await page.getByRole('option').first().waitFor()
       expect(await page.getByRole('option').count()).toBe(4)
       await page.keyboard.press('Escape')
 

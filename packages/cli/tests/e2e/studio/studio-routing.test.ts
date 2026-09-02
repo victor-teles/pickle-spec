@@ -47,8 +47,10 @@ Feature: Search
         .getByRole('option')
         .filter({ hasText: 'Query the catalog' })
         .click()
-      expect(new URL(page.url()).pathname).toBe(
-        '/specifications/specsearchaaaaaaa/scenarios/scnquerybbbbbbbb',
+      await page.waitForURL(
+        (current) =>
+          current.pathname ===
+          '/specifications/specsearchaaaaaaa/scenarios/scnquerybbbbbbbb',
       )
       await page.reload()
       const queryScenario = page
@@ -155,9 +157,11 @@ Feature: Search
           exact: true,
         })
         .click()
-      expect(new URL(page.url()).pathname).toMatch(
-        /^\/runs\/[^/]+\/results\/features%2Fcheckout\.feature\/scenarios\/scnpaybbbbbbbbbb\/profiles\/chrome\/attempts\/1$/,
-      )
+      expect(new URL(page.url()).pathname).toMatch(/^\/runs\/[^/]+$/)
+      await page
+        .getByRole('heading', { name: 'Pay for the order · chrome' })
+        .waitFor()
+      await page.getByRole('combobox', { name: 'Attempt' }).waitFor()
       await page.reload()
       const resultHeading = page.getByRole('heading', {
         name: 'Pay for the order · chrome',

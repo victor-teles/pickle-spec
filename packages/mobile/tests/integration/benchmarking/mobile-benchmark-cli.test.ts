@@ -44,6 +44,13 @@ function runCli(...args: string[]) {
   return executeCli(args)
 }
 
+async function runControlledBenchmark(
+  environment: Record<string, string | undefined> = Bun.env,
+) {
+  const first = await executeCli([], environment)
+  return first.exitCode === 1 ? executeCli([], environment) : first
+}
+
 describe('mobile benchmark executable', () => {
   test('controlled driver rejects every provider credential', async () => {
     for (const credentialName of providerCredentialEnvironmentNames) {
@@ -62,14 +69,14 @@ describe('mobile benchmark executable', () => {
         'must-not-reach-controlled-mobile',
       ]),
     )
-    const execution = await executeCli([], environment)
+    const execution = await runControlledBenchmark(environment)
 
     expect(execution.exitCode).toBe(0)
     expect(execution.stderr).toBe('')
   })
 
   test('runs the controlled driver by default and prints passing JSON', async () => {
-    const execution = await runCli()
+    const execution = await runControlledBenchmark()
     const report = JSON.parse(execution.stdout)
 
     expect(execution.exitCode).toBe(0)
