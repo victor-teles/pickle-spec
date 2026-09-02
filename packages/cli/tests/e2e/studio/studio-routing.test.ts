@@ -47,8 +47,10 @@ Feature: Search
         .getByRole('option')
         .filter({ hasText: 'Query the catalog' })
         .click()
-      expect(new URL(page.url()).pathname).toBe(
-        '/specifications/specsearchaaaaaaa/scenarios/scnquerybbbbbbbb',
+      await page.waitForURL(
+        (current) =>
+          current.pathname ===
+          '/specifications/specsearchaaaaaaa/scenarios/scnquerybbbbbbbb',
       )
       await page.reload()
       const queryScenario = page
@@ -78,36 +80,23 @@ Feature: Search
       await history
         .getByRole('row')
         .nth(1)
-        .getByRole('button', { name: /^Open attempt for / })
+        .getByRole('button', { name: /^Open run / })
         .click()
+      expect(new URL(page.url()).pathname).toMatch(/^\/runs\/[^/]+$/)
       await page
         .getByRole('heading', { name: 'Pay for the order · chrome' })
         .waitFor()
-      await page.getByRole('button', { name: 'Back to run' }).click()
-      const runPath = new URL(page.url()).pathname
-      expect(runPath).toMatch(/^\/runs\/[^/]+$/)
-      await page.reload()
-      const results = page.getByRole('table', { name: 'Test run results' })
-      await results.waitFor()
-
-      await results
-        .getByRole('row')
-        .filter({ hasText: 'Pay for the order' })
-        .filter({ hasText: 'chrome' })
-        .first()
-        .getByRole('button', { name: 'Inspect result' })
-        .click()
-      expect(new URL(page.url()).pathname).toMatch(
-        /^\/runs\/[^/]+\/results\/features%2Fcheckout\.feature\/scenarios\/scnpaybbbbbbbbbb\/profiles\/chrome\/attempts\/1$/,
-      )
+      await page.getByRole('combobox', { name: 'Attempt' }).waitFor()
       await page.reload()
       await page
         .getByRole('heading', { name: 'Pay for the order · chrome' })
         .waitFor()
+      expect(new URL(page.url()).pathname).toMatch(/^\/runs\/[^/]+$/)
 
       await page.getByRole('tab', { name: 'Artifacts' }).click()
       await page.getByRole('link', { name: 'Open artifact page' }).click()
       expect(new URL(page.url()).pathname).toMatch(/\/artifacts\/0$/)
+      const artifactUrl = new URL(page.url())
       await page.reload()
       await page
         .getByRole('heading', { name: 'screenshot · Pay for the order' })
@@ -120,9 +109,8 @@ Feature: Search
         .waitFor()
       expect(new URL(page.url()).searchParams.get('tab')).toBe('artifacts')
 
-      const resultUrl = new URL(page.url())
       await page.goto(
-        `${resultUrl.origin}${resultUrl.pathname}/artifacts/99?tab=artifacts`,
+        `${artifactUrl.origin}${artifactUrl.pathname.replace(/\/artifacts\/0$/, '/artifacts/99')}?tab=artifacts`,
       )
       await page
         .getByRole('alert')
@@ -169,9 +157,11 @@ Feature: Search
           exact: true,
         })
         .click()
-      expect(new URL(page.url()).pathname).toMatch(
-        /^\/runs\/[^/]+\/results\/features%2Fcheckout\.feature\/scenarios\/scnpaybbbbbbbbbb\/profiles\/chrome\/attempts\/1$/,
-      )
+      expect(new URL(page.url()).pathname).toMatch(/^\/runs\/[^/]+$/)
+      await page
+        .getByRole('heading', { name: 'Pay for the order · chrome' })
+        .waitFor()
+      await page.getByRole('combobox', { name: 'Attempt' }).waitFor()
       await page.reload()
       const resultHeading = page.getByRole('heading', {
         name: 'Pay for the order · chrome',
@@ -190,6 +180,26 @@ Feature: Search
       await child.exited
     }
   }, 45_000)
+
+  test('returns home when the Studio brand is clicked', async () => {
+    const project = await fixture.createProject('brand-home-navigation')
+    const { child, url } = await fixture.start(project)
+    const page = await browser.newPage()
+    try {
+      await page.goto(url)
+      await page.getByRole('button', { name: 'Runs', exact: true }).click()
+      await page.getByRole('heading', { name: 'Runs' }).waitFor()
+
+      await page.getByRole('button', { name: 'Pickle Spec' }).click()
+
+      expect(new URL(page.url()).pathname).toBe('/')
+      await page.getByRole('heading', { name: 'Checkout' }).waitFor()
+    } finally {
+      await page.close()
+      child.kill()
+      await child.exited
+    }
+  })
 
   test('keeps live results scoped to their Specification', async () => {
     const project = await fixture.createProject('live-result-specification')

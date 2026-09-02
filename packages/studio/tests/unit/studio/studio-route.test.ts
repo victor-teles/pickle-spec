@@ -29,6 +29,19 @@ describe('Studio route contract', () => {
     },
     { kind: 'run', runId: 'run/slash space % 測試' },
     {
+      kind: 'run',
+      runId: 'run/slash space % 測試',
+      location: {
+        runId: 'run/slash space % 測試',
+        specificationUri: 'features/payment flows %.feature',
+        scenarioId: 'scenario/pay now % 東京',
+        examplesRowId: 'row/slash space % café',
+        profileId: 'Pixel 9 / API 36 %',
+        attempt: 2,
+        tab: 'timeline',
+      },
+    },
+    {
       kind: 'result',
       location: {
         runId: 'run/slash space % 測試',
@@ -75,6 +88,22 @@ describe('Studio route contract', () => {
   }
 
   test('writes the canonical entity grammar', () => {
+    expect(
+      studioRouteHref({
+        kind: 'run',
+        runId: 'run-42',
+        location: {
+          runId: 'run-42',
+          specificationUri: 'features/checkout.feature',
+          scenarioId: 'scenario-pay',
+          profileId: 'chrome desktop',
+          attempt: 3,
+          tab: 'timeline',
+        },
+      }),
+    ).toBe(
+      '/runs/run-42?specification=features%2Fcheckout.feature&scenario=scenario-pay&profile=chrome+desktop&attempt=3&tab=timeline',
+    )
     expect(
       studioRouteHref({
         kind: 'scenario',

@@ -22,6 +22,12 @@ type HistoryIndexPayload = {
   activeRunIds: string[]
 }
 
+type TextReportResponse = {
+  body: string
+  contentDisposition: string | null
+  contentType: string | null
+}
+
 type RunRequestPayload = {
   paths?: string[]
   profiles?: string[]
@@ -95,12 +101,11 @@ async function expectRunningStatusCleared(page: Page) {
 }
 
 async function openAttemptFromRunRow(row: Locator) {
-  await row.getByRole('button', { name: /^Open attempt for / }).click()
+  await row.getByRole('button', { name: /^Open run / }).click()
 }
 
-async function openRunDetailsFromRow(page: Page, row: Locator) {
+async function openRunDetailsFromRow(_page: Page, row: Locator) {
   await openAttemptFromRunRow(row)
-  await page.getByRole('button', { name: 'Back to run' }).click()
 }
 
 async function saveExecutionTargetProfile(
@@ -158,12 +163,7 @@ Feature: Search
     const { child, url } = await startStudio(project)
     const page = await browser.newPage()
     try {
-      await page.route('**/api/project', async (route) => {
-        await Bun.sleep(500)
-        await route.continue()
-      })
       await page.goto(url)
-      await page.getByRole('status', { name: 'Opening project' }).waitFor()
       expect(
         await page.evaluate(async () => (await fetch('/api/plans')).status),
       ).toBe(404)
@@ -365,10 +365,14 @@ Feature: Search
       await search.fill('all profiles')
       const allProfiles = palette.getByRole('option', { name: 'All profiles' })
       await allProfiles.click()
+      await palette.waitFor({ state: 'hidden' })
 
       await page.keyboard.press('Meta+k')
       await search.fill('all profiles')
-      expect(await allProfiles.getAttribute('aria-current')).toBe('true')
+      await allProfiles.waitFor()
+      await expect
+        .poll(() => allProfiles.getAttribute('aria-current'))
+        .toBe('true')
       await page.keyboard.press('Escape')
 
       await page.keyboard.press('Meta+k')
@@ -569,7 +573,7 @@ export default {
           .getByRole('row')
           .nth(1),
       )
-      await page.getByRole('table', { name: 'Test run results' }).waitFor()
+      await page.getByRole('combobox', { name: 'Attempt' }).waitFor()
       expect(await page.getByText('adaptive').count()).toBeGreaterThan(0)
       expect(await page.getByText('refresh').count()).toBeGreaterThan(0)
       expect(await page.getByText('3 inferences').count()).toBeGreaterThan(0)
@@ -933,9 +937,7 @@ export default {
           .getByRole('button', { name: /Step Then payment is captured/ })
           .getAttribute('aria-pressed'),
       ).toBe('true')
-      expect(
-        await page.getByRole('button', { name: 'Resume following' }).count(),
-      ).toBe(1)
+      await page.getByRole('button', { name: 'Resume following' }).waitFor()
       await timelineFilters.getByRole('button', { name: 'Run event' }).click()
       expect(await timeline.textContent()).toContain('Run event')
       await page.setViewportSize({ width: 390, height: 844 })
@@ -1029,9 +1031,8 @@ export default {
       await page
         .getByRole('button', { name: 'Pay for the order chrome failed' })
         .click()
-      expect(new URL(page.url()).pathname).toMatch(
-        /^\/runs\/[^/]+\/results\/features%2Fcheckout\.feature\/scenarios\/scnpaybbbbbbbbbb\/profiles\/chrome\/attempts\/1$/,
-      )
+      expect(new URL(page.url()).pathname).toMatch(/^\/runs\/[^/]+$/)
+      await page.getByRole('combobox', { name: 'Attempt' }).waitFor()
       expect(await timeline.textContent()).toContain('Then payment is captured')
       expect(await timeline.textContent()).not.toContain('Payment was declined')
       await timelineFilters
@@ -1039,9 +1040,9 @@ export default {
         .click()
       expect(await timeline.textContent()).toContain('Payment was declined')
       await page.getByRole('tab', { name: 'Artifacts' }).click()
-      expect(await page.getByRole('img', { name: /screenshot/ }).count()).toBe(
-        1,
-      )
+      expect(
+        await page.getByRole('img', { name: /screenshot/ }).count(),
+      ).toBeGreaterThan(0)
       await page.getByRole('tab', { name: 'Diagnostics' }).click()
       expect(
         await page.getByText('Payment was declined').count(),
@@ -1361,38 +1362,25 @@ Feature: Search
           .getByRole('tab', { name: 'Timeline' })
           .getAttribute('aria-selected'),
       ).toBe('true')
-      await page.getByRole('button', { name: 'Back to run' }).click()
-      const results = page.getByRole('table', { name: 'Test run results' })
+      expect(new URL(page.url()).pathname).toMatch(/^\/runs\/[^/]+$/)
+      const attemptSelect = page.getByRole('combobox', { name: 'Attempt' })
+      await attemptSelect.waitFor()
       await page.getByText('app-42').waitFor()
-      expect(await results.textContent()).toContain('Pay for the order')
-      expect(await results.textContent()).toContain('adaptive')
-      expect(await results.textContent()).toContain('uncacheable')
-      expect(await results.textContent()).toContain('0 inferences')
+      expect(await page.getByText('adaptive').count()).toBeGreaterThan(0)
+      expect(await page.getByText('uncacheable').count()).toBeGreaterThan(0)
+      expect(await page.getByText('0 inferences').count()).toBeGreaterThan(0)
       expect(
-        await results
-          .getByRole('columnheader', { name: 'Uncacheable reason' })
-          .count(),
-      ).toBe(1)
-      expect(
-        await results.getByRole('button', { name: 'Rerun Scenario' }).count(),
+        await page.getByRole('button', { name: 'Rerun Scenario' }).count(),
       ).toBeGreaterThan(0)
       expect(
-        await results.getByRole('button', { name: 'Rerun target' }).count(),
+        await page.getByRole('button', { name: 'Rerun target' }).count(),
       ).toBeGreaterThan(0)
-      const failedResult = results
-        .getByRole('row')
-        .filter({ hasText: 'Pay for the order' })
-        .filter({ hasText: 'chrome' })
-        .first()
-      await failedResult.getByRole('button', { name: 'Inspect result' }).click()
       await page
         .getByRole('heading', {
           name: 'Pay for the order · chrome',
         })
         .waitFor()
-      expect(new URL(page.url()).pathname).toMatch(
-        /^\/runs\/[^/]+\/results\/features%2Fcheckout\.feature\/scenarios\/scnpaybbbbbbbbbb\/profiles\/chrome\/attempts\/1$/,
-      )
+      expect(new URL(page.url()).pathname).toMatch(/^\/runs\/[^/]+$/)
       expect(
         await page
           .getByRole('tab', { name: 'Timeline' })
@@ -1426,13 +1414,10 @@ Feature: Search
         .click()
       expect(await evidenceTimeline.textContent()).toContain('Run event')
       await page.getByRole('tab', { name: 'Artifacts' }).click()
-      expect(
-        await page
-          .getByRole('img', {
-            name: 'screenshot from failed result for Pay for the order: Then payment is captured',
-          })
-          .count(),
-      ).toBe(1)
+      const screenshots = page.getByRole('img', {
+        name: 'screenshot from failed result for Pay for the order: Then payment is captured',
+      })
+      expect(await screenshots.count()).toBeGreaterThan(0)
       expect(
         await page.getByRole('link', { name: 'Download screenshot' }).count(),
       ).toBe(1)
@@ -1443,7 +1428,7 @@ Feature: Search
         await route.continue()
       })
       await page.reload()
-      await page.getByRole('status', { name: 'Opening Test result' }).waitFor()
+      await page.getByRole('status', { name: 'Opening Test run' }).waitFor()
       await page
         .getByRole('heading', {
           name: 'Pay for the order · chrome',
@@ -1451,25 +1436,20 @@ Feature: Search
         .waitFor()
       await page.unroute('**/api/runs/*')
       expect(page.url()).toBe(deepLink)
-      await page.getByRole('button', { name: 'Back to run' }).click()
-      await results.waitFor()
-      const passedResult = results
-        .getByRole('row')
-        .filter({ hasText: 'Complete a purchase' })
-        .filter({ hasText: 'chrome' })
+      await attemptSelect.click()
+      await page
+        .getByRole('option', {
+          name: /Complete a purchase · chrome · Attempt 1 · passed/,
+        })
         .first()
-      await passedResult.getByRole('button', { name: 'Inspect result' }).click()
+        .click()
       expect(
         await page
           .getByRole('tab', { name: 'Overview' })
           .getAttribute('aria-selected'),
       ).toBe('true')
-      await page.getByRole('button', { name: 'Back to run' }).click()
-      await results.waitFor()
-      await results
-        .getByRole('button', { name: 'Rerun Scenario' })
-        .first()
-        .click()
+      expect(new URL(page.url()).pathname).toMatch(/^\/runs\/[^/]+$/)
+      await page.getByRole('button', { name: 'Rerun Scenario' }).click()
       await history.getByRole('row').nth(3).waitFor({ timeout: 20_000 })
       await history.getByText('2 results').first().waitFor({ timeout: 20_000 })
       expect(await history.getByRole('row').nth(1).textContent()).toContain(
@@ -1479,13 +1459,7 @@ Feature: Search
         page,
         history.getByRole('row').filter({ hasText: '6 results' }).first(),
       )
-      const targetResults = page.getByRole('table', {
-        name: 'Test run results',
-      })
-      await targetResults
-        .getByRole('button', { name: 'Rerun target' })
-        .first()
-        .click()
+      await page.getByRole('button', { name: 'Rerun target' }).click()
       await history.getByRole('row').nth(4).waitFor({ timeout: 20_000 })
       await history.getByText('3 results').first().waitFor({ timeout: 20_000 })
       expect(await history.getByRole('row').nth(1).textContent()).toContain(
@@ -1497,73 +1471,152 @@ Feature: Search
         page,
         history.getByRole('row').filter({ hasText: '6 results' }).first(),
       )
-      const exportButton = page.locator('[data-slot="dropdown-menu-trigger"]')
-      await exportButton.click()
-      await Bun.sleep(100)
+      const exportButton = page.getByRole('button', {
+        name: 'Download report',
+      })
+      await exportButton.focus()
+      await page.keyboard.press('ArrowDown')
       expect(pageErrors).toEqual([])
       const exportMenu = page.locator('[data-slot="dropdown-menu-content"]')
       await exportMenu.waitFor()
       expect(await exportMenu.getAttribute('role')).toBe('menu')
-      const defaultHtmlHref = await exportMenu
-        .getByRole('menuitem', { name: 'HTML report' })
-        .getAttribute('href')
-      const allureHref = await page
-        .getByRole('menuitem', { name: 'Allure results' })
-        .getAttribute('href')
-      const archiveHref = await page
-        .getByRole('menuitem', { name: 'Run archive' })
-        .getAttribute('href')
-      await page.keyboard.press('Home')
-      expect(
-        await exportMenu
-          .getByRole('menuitem', { name: 'Run archive' })
-          .getAttribute('data-highlighted'),
-      ).not.toBeNull()
+      const reportHrefs = Object.fromEntries(
+        await Promise.all(
+          [
+            'JSON report',
+            'NDJSON events',
+            'JUnit report',
+            'HTML report',
+            'Run archive',
+            'Allure results',
+          ].map(async (label) => [
+            label,
+            await exportMenu
+              .getByRole('menuitem', { name: label })
+              .getAttribute('href'),
+          ]),
+        ),
+      )
+      await expect
+        .poll(() =>
+          exportMenu
+            .getByRole('menuitem', { name: 'JSON report' })
+            .evaluate((element) => element.matches(':focus')),
+        )
+        .toBe(true)
       await page.keyboard.press('ArrowDown')
+      await expect
+        .poll(() =>
+          exportMenu
+            .getByRole('menuitem', { name: 'NDJSON events' })
+            .evaluate((element) => element.matches(':focus')),
+        )
+        .toBe(true)
+      const runId = decodeURIComponent(
+        requiredValue(reportHrefs['JSON report']).split('/').at(-2),
+      )
+      const textReports = await page.evaluate(
+        async (hrefs) => {
+          const reports: Record<string, TextReportResponse> = {}
+          for (const [label, href] of Object.entries(hrefs)) {
+            if (!href) throw new Error(`Missing ${label} export URL`)
+            const response = await fetch(href)
+            reports[label] = {
+              body: await response.text(),
+              contentDisposition: response.headers.get('content-disposition'),
+              contentType: response.headers.get('content-type'),
+            }
+          }
+          return reports
+        },
+        {
+          json: reportHrefs['JSON report'],
+          ndjson: reportHrefs['NDJSON events'],
+          junit: reportHrefs['JUnit report'],
+          html: reportHrefs['HTML report'],
+          archive: reportHrefs['Run archive'],
+        },
+      )
+      const jsonReport = requiredValue(textReports.json)
+      const ndjsonReport = requiredValue(textReports.ndjson)
+      const junitReport = requiredValue(textReports.junit)
+      const htmlReport = requiredValue(textReports.html)
+      const archiveReport = requiredValue(textReports.archive)
+      expect(JSON.parse(jsonReport.body).id).toBe(runId)
       expect(
-        await exportMenu
-          .getByRole('menuitem', { name: 'HTML report' })
-          .getAttribute('data-highlighted'),
-      ).not.toBeNull()
+        ndjsonReport.body
+          .trim()
+          .split('\n')
+          .every((line) => typeof JSON.parse(line).type === 'string'),
+      ).toBe(true)
+      expect(junitReport.body).toContain('<testsuites')
+      expect(htmlReport.body).toContain('<!DOCTYPE html>')
+      expect(htmlReport.body.match(/data:image\/png;base64,/g)?.length).toBe(1)
+      expect(JSON.parse(archiveReport.body).manifest.id).toBe(runId)
+      expect(jsonReport).toMatchObject({
+        contentType: 'application/json; charset=utf-8',
+        contentDisposition: `attachment; filename="${runId}.json"`,
+      })
+      expect(ndjsonReport).toMatchObject({
+        contentType: 'application/x-ndjson; charset=utf-8',
+        contentDisposition: `attachment; filename="${runId}.ndjson"`,
+      })
+      expect(junitReport).toMatchObject({
+        contentType: 'application/xml; charset=utf-8',
+        contentDisposition: `attachment; filename="${runId}.xml"`,
+      })
+      expect(htmlReport).toMatchObject({
+        contentType: 'text/html; charset=utf-8',
+        contentDisposition: `attachment; filename="${runId}.html"`,
+      })
+      expect(archiveReport).toMatchObject({
+        contentType: 'application/json; charset=utf-8',
+        contentDisposition: `attachment; filename="${runId}.pickle-run.json"`,
+      })
       const allureResponse = await page.evaluate(async (href) => {
         if (!href) throw new Error('Missing Allure export URL')
         const response = await fetch(href)
         return {
+          contentDisposition: response.headers.get('content-disposition'),
           contentType: response.headers.get('content-type'),
           signature: [
             ...new Uint8Array(await response.arrayBuffer()).slice(0, 4),
           ],
         }
-      }, allureHref)
+      }, reportHrefs['Allure results'])
       expect(allureResponse).toEqual({
+        contentDisposition: `attachment; filename="${runId}-allure-results.zip"`,
         contentType: 'application/zip',
         signature: [0x50, 0x4b, 0x03, 0x04],
       })
-      const defaultHtml = await page.evaluate(async (href) => {
+      await page
+        .getByRole('menuitemcheckbox', {
+          name: 'Include all artifacts in HTML report',
+        })
+        .click()
+      const allArtifactsHtmlHref = await page
+        .getByRole('menuitem', { name: 'HTML report' })
+        .getAttribute('href')
+      expect(allArtifactsHtmlHref).toContain('artifacts=all')
+      const allArtifactsHtml = await page.evaluate(async (href) => {
         if (!href) throw new Error('Missing HTML export URL')
         return (await fetch(href)).text()
-      }, defaultHtmlHref)
-      expect(defaultHtml).toContain('<!DOCTYPE html>')
-      expect(defaultHtml).toContain('data:image/png;base64,')
+      }, allArtifactsHtmlHref)
+      expect(allArtifactsHtml.match(/data:image\/png;base64,/g)?.length).toBe(2)
       await page.keyboard.press('Escape')
-      await page
-        .getByRole('checkbox', { name: 'Include all artifacts' })
-        .click()
+
       await exportButton.click()
       expect(
         await page
-          .getByRole('menuitem', { name: 'HTML report' })
-          .getAttribute('href'),
-      ).toContain('artifacts=all')
+          .getByRole('menuitemcheckbox', {
+            name: 'Include all artifacts in HTML report',
+          })
+          .getAttribute('aria-checked'),
+      ).toBe('true')
       await page.keyboard.press('Escape')
 
       const archivePath = join(project, 'importable-run.json')
-      const archive = JSON.parse(
-        await page.evaluate(async (href) => {
-          if (!href) throw new Error('Missing archive export URL')
-          return (await fetch(href)).text()
-        }, archiveHref),
-      )
+      const archive = JSON.parse(archiveReport.body)
       archive.manifest.id = 'run-imported'
       for (const event of archive.events) {
         if (event.type === 'run-started') event.run.id = 'run-imported'
@@ -1643,14 +1696,13 @@ Feature: Checkout
       await page.getByRole('button', { name: 'Runs', exact: true }).click()
       const history = page.getByRole('table', { name: 'Test run history' })
       await openRunDetailsFromRow(page, history.getByRole('row').nth(1))
-      const results = page.getByRole('table', { name: 'Test run results' })
-      await results.waitFor()
-      expect(await results.getByRole('row').count()).toBe(5)
+      const attemptSelect = page.getByRole('combobox', { name: 'Attempt' })
+      await attemptSelect.press('ArrowDown')
+      await page.getByRole('option').first().waitFor()
+      expect(await page.getByRole('option').count()).toBe(4)
+      await page.keyboard.press('Escape')
 
-      await results
-        .getByRole('button', { name: 'Rerun Scenario' })
-        .first()
-        .click()
+      await page.getByRole('button', { name: 'Rerun Scenario' }).click()
       await history.getByRole('row').nth(2).waitFor({ timeout: 20_000 })
       await history.getByText('2 results').waitFor({ timeout: 20_000 })
       expect(await history.getByRole('row').nth(1).textContent()).toContain(

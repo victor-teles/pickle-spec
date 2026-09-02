@@ -4,7 +4,6 @@ import { Badge } from '../../../components/ui/badge'
 import { Button, buttonVariants } from '../../../components/ui/button'
 import { Checkbox } from '../../../components/ui/checkbox'
 import { ResultMark } from '../../../components/ui/result-mark'
-import { Spinner } from '../../../components/ui/spinner'
 import {
   Table,
   TableBody,
@@ -33,7 +32,6 @@ type RunTableProps = {
   pinnedRunIds: ReadonlySet<string>
   specificationNames: ReadonlyMap<string, string>
   runsBlocked: boolean
-  openingRunId?: string
   onOpen: (runId: string) => void
   onPin: (runId: string, pinned: boolean) => void
   onRerun: (request: StudioRunRequest) => Promise<void>
@@ -86,7 +84,6 @@ function RunTableRow(props: Omit<RunTableProps, 'items'> & RunListItem) {
   const { summary, state } = props
   const selected = props.selectedRunIds.includes(summary.id)
   const pinned = props.pinnedRunIds.has(summary.id)
-  const opening = props.openingRunId === summary.id
 
   function handleSelectionChange(checked: boolean) {
     props.onSelect((current) =>
@@ -128,11 +125,7 @@ function RunTableRow(props: Omit<RunTableProps, 'items'> & RunListItem) {
         </Tooltip>
       </TableCell>
       <TableCell>
-        <RunIdentity
-          summary={summary}
-          opening={opening}
-          onOpen={props.onOpen}
-        />
+        <RunIdentity summary={summary} onOpen={props.onOpen} />
       </TableCell>
       <TableCell>
         {summary.specificationUris
@@ -165,7 +158,6 @@ function RunTableRow(props: Omit<RunTableProps, 'items'> & RunListItem) {
 
 function RunIdentity(props: {
   summary: TestRunSummary
-  opening: boolean
   onOpen: (runId: string) => void
 }) {
   function handleOpen() {
@@ -176,14 +168,11 @@ function RunIdentity(props: {
       <Button
         type="button"
         variant="link"
-        aria-label={`Open attempt for ${props.summary.id}`}
-        aria-busy={props.opening}
-        disabled={props.opening}
+        aria-label={`Open run ${props.summary.id}`}
         className="h-auto gap-1.5 p-0 font-mono text-left active:opacity-65"
         onClick={handleOpen}
       >
         {props.summary.id}
-        {props.opening ? <Spinner className="scale-75" /> : null}
       </Button>
       <time
         dateTime={props.summary.startedAt}

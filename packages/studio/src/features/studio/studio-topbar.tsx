@@ -14,10 +14,22 @@ type StudioTopbarProps = {
 }
 
 export function StudioTopbar(props: StudioTopbarProps) {
+  function handleHomeClick() {
+    props.onAreaChange('Specifications')
+  }
+
   return (
     <header className="studio-topbar flex min-h-11 shrink-0 flex-wrap items-center gap-2 border-b border-border px-3 py-1.5 sm:flex-nowrap sm:px-4">
       <div className="flex min-w-0 items-center gap-2.5">
-        <span className="studio-wordmark shrink-0">Pickle Spec</span>
+        <Button
+          type="button"
+          size="sm"
+          variant="ghost"
+          className="studio-wordmark -ml-1.5 shrink-0 px-1.5 text-foreground"
+          onClick={handleHomeClick}
+        >
+          Pickle Spec
+        </Button>
         <span aria-hidden="true" className="h-5 w-px bg-border" />
         <span className="studio-project-name hidden truncate sm:block">
           {props.projectName}

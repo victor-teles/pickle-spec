@@ -92,13 +92,7 @@ test('serves the Runs index, active lifecycle, compatibility alias, and deep lin
       async importArchive() {
         throw new Error('not used')
       },
-      async exportArchive() {
-        throw new Error('not used')
-      },
-      async exportHtml() {
-        throw new Error('not used')
-      },
-      async exportAllure() {
+      async exportReport() {
         throw new Error('not used')
       },
       async deleteEligible() {

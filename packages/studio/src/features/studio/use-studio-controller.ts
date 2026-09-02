@@ -70,7 +70,7 @@ export function useStudioController() {
     onClearError: data.clearError,
     onError: data.reportError,
     onInspectResult: (location) =>
-      navigation.navigate({ kind: 'result', location }),
+      navigation.navigate({ kind: 'run', runId: location.runId, location }),
     registerActiveRun: data.registerActiveRun,
     reloadRunsIndex: data.reloadRunsIndex,
     runsIndex: data.runsIndex,

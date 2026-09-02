@@ -5,7 +5,12 @@ import {
   type StudioHttpHandler,
   unavailable,
 } from '../../server/http'
-import type { StudioHistoryGateway, StudioRunsIndex } from './history.contracts'
+import type {
+  StudioHistoryGateway,
+  StudioRunReportRequest,
+  StudioRunsIndex,
+} from './history.contracts'
+import { studioRunReportDescriptor } from './history.contracts'
 
 type HistoryComparisonRequest = {
   baselineRunId?: string
@@ -83,40 +88,36 @@ async function exportHistory(
 ): Promise<Response> {
   if (!options.history) return historyUnavailable()
   const runId = decodeURIComponent(requiredValue(match[1]))
-  const exporters: Record<string, () => Promise<Response>> = {
-    archive: async () =>
-      new Response(await requiredValue(options.history).exportArchive(runId), {
-        headers: {
-          'content-type': 'application/json; charset=utf-8',
-          'content-disposition': `attachment; filename="${runId}.pickle-run.json"`,
-        },
-      }),
-    allure: async () => {
-      const bytes = await requiredValue(options.history).exportAllure(runId)
-      return new Response(bytes.buffer as ArrayBuffer, {
-        headers: {
-          'content-type': 'application/zip',
-          'content-disposition': `attachment; filename="${runId}-allure-results.zip"`,
-        },
-      })
-    },
-    html: async () => {
-      const artifacts =
-        url.searchParams.get('artifacts') === 'all' ? 'all' : 'failures'
-      const html = await requiredValue(options.history).exportHtml(
-        runId,
-        artifacts,
-      )
-      return new Response(html, {
-        headers: {
-          'content-type': 'text/html; charset=utf-8',
-          'content-disposition': `attachment; filename="${runId}.html"`,
-        },
-      })
-    },
+  const format = decodeURIComponent(requiredValue(match[2]))
+  const descriptor = studioRunReportDescriptor(format)
+  if (!descriptor) return new Response('Not found', { status: 404 })
+  try {
+    const request: StudioRunReportRequest =
+      descriptor.format === 'html'
+        ? {
+            runId,
+            format: 'html',
+            htmlArtifacts:
+              url.searchParams.get('artifacts') === 'all' ? 'all' : 'failures',
+          }
+        : { runId, format: descriptor.format }
+    const body = await options.history.exportReport(request)
+    const responseBody =
+      typeof body === 'string'
+        ? body
+        : (body.buffer.slice(
+            body.byteOffset,
+            body.byteOffset + body.byteLength,
+          ) as ArrayBuffer)
+    return new Response(responseBody, {
+      headers: {
+        'content-type': descriptor.contentType,
+        'content-disposition': `attachment; filename="${runId}${descriptor.filenameSuffix}"`,
+      },
+    })
+  } catch (error) {
+    return requestError(error)
   }
-  const exporter = match[2] ? exporters[match[2]] : undefined
-  return exporter ? exporter() : new Response('Not found', { status: 404 })
 }
 
 async function handleHistoryRequest(
@@ -138,9 +139,7 @@ async function handleHistoryRequest(
   if (pinMatch && ['POST', 'DELETE'].includes(request.method)) {
     return pinHistory(options, request, pinMatch)
   }
-  const exportMatch = url.pathname.match(
-    /^\/api\/history\/([^/]+)\/(html|archive|allure)$/,
-  )
+  const exportMatch = url.pathname.match(/^\/api\/history\/([^/]+)\/([^/]+)$/)
   return exportMatch && request.method === 'GET'
     ? exportHistory(options, url, exportMatch)
     : null

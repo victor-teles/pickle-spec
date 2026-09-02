@@ -6,13 +6,8 @@ import type {
 import { type Dispatch, type SetStateAction, useMemo, useState } from 'react'
 import { toast } from '../../../components/ui/toast'
 import type { StudioApi } from '../../../lib/studio-api'
-import type {
-  StudioProject,
-  StudioRunSnapshot,
-  StudioRunsIndex,
-} from '../../../server/contracts'
+import type { StudioProject, StudioRunsIndex } from '../../../server/contracts'
 import type { RunsFilters, StudioRoute } from '../../studio/studio-route'
-import { defaultRunAttemptLocation } from '../result/live-result-follow'
 import type { LiveResultInspection } from '../result/live-result-inspection'
 import { reasonMessage } from '../result/result-presentation'
 import {
@@ -36,7 +31,6 @@ export type RunsDashboardModel = {
   filterOptions: RunFilterOptions
   filters: RunsFilters
   items: RunListItem[]
-  openingRunId?: string
   pinnedRunIds: ReadonlySet<string>
   selectedRunIds: readonly string[]
   specificationNames: ReadonlyMap<string, string>
@@ -45,7 +39,7 @@ export type RunsDashboardModel = {
   compareSelected: () => void
   deleteEligible: () => void
   importArchive: (file?: File) => void
-  openRunAttempt: (runId: string) => void
+  openRun: (runId: string) => void
   setFilters: (patch: Partial<RunsFilters>) => void
   setPinned: (runId: string, pinned: boolean) => void
   setSelectedRunIds: Dispatch<SetStateAction<string[]>>
@@ -55,13 +49,12 @@ type RunsDashboardState = Pick<
   RunsDashboardModel,
   | 'comparison'
   | 'error'
-  | 'openingRunId'
   | 'selectedRunIds'
   | 'clearFilters'
   | 'compareSelected'
   | 'deleteEligible'
   | 'importArchive'
-  | 'openRunAttempt'
+  | 'openRun'
   | 'setFilters'
   | 'setPinned'
   | 'setSelectedRunIds'
@@ -126,7 +119,6 @@ function useRunsDashboardState(
   filters: RunsFilters,
 ): RunsDashboardState {
   const [error, setError] = useState<string>()
-  const [openingRunId, setOpeningRunId] = useState<string>()
   const [selectedRunIds, setSelectedRunIds] = useState<string[]>([])
   const [comparison, setComparison] = useState<TestRunComparison>()
   const navigateToFilters = (nextFilters: RunsFilters) =>
@@ -135,7 +127,6 @@ function useRunsDashboardState(
   return {
     comparison,
     error,
-    openingRunId,
     selectedRunIds,
     clearFilters: () => navigateToFilters({}),
     compareSelected: () =>
@@ -154,8 +145,7 @@ function useRunsDashboardState(
         setError,
       ),
     importArchive: (file) => void importRunArchive(options, file, setError),
-    openRunAttempt: (runId) =>
-      void openRunAttempt(options, runId, setOpeningRunId, setError),
+    openRun: (runId) => options.onNavigate({ kind: 'run', runId }),
     setFilters: (patch) => navigateToFilters({ ...filters, ...patch }),
     setPinned: (runId, pinned) =>
       void setRunPinned(options, runId, pinned, setError),
@@ -183,29 +173,6 @@ function useRunCollections(options: UseRunsDashboardOptions) {
     [activeIds, options.index?.runs],
   )
   return { activeIds, allItems, specificationNames }
-}
-
-async function openRunAttempt(
-  options: Pick<UseRunsDashboardOptions, 'api' | 'onNavigate'>,
-  runId: string,
-  setOpeningRunId: Dispatch<SetStateAction<string | undefined>>,
-  setError: (error?: string) => void,
-) {
-  setError(undefined)
-  setOpeningRunId(runId)
-  try {
-    const snapshot = await options.api<StudioRunSnapshot>(
-      `/api/runs/${encodeURIComponent(runId)}`,
-    )
-    const location = defaultRunAttemptLocation(snapshot)
-    options.onNavigate(
-      location ? { kind: 'result', location } : { kind: 'run', runId },
-    )
-  } catch (reason) {
-    setError(reasonMessage(reason))
-  } finally {
-    setOpeningRunId((current) => (current === runId ? undefined : current))
-  }
 }
 
 async function compareSelectedRuns(
