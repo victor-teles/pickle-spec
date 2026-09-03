@@ -176,6 +176,7 @@ function selectCreatedSpecification(
   uri: string,
 ): void {
   void props.onReloadProject().then((project) => {
+    props.onAuthoringChange(false)
     props.selection.onSelectCreated(project.specifications, uri)
   })
 }

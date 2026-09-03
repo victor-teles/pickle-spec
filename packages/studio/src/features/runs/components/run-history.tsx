@@ -13,8 +13,7 @@ type RunHistoryProps = Pick<
   | 'filterOptions'
   | 'filters'
   | 'items'
-  | 'openingRunId'
-  | 'openRunAttempt'
+  | 'openRun'
   | 'pinnedRunIds'
   | 'selectedRunIds'
   | 'setFilters'
@@ -58,8 +57,7 @@ export function RunHistory(props: RunHistoryProps) {
           pinnedRunIds={props.pinnedRunIds}
           specificationNames={props.specificationNames}
           runsBlocked={props.runsBlocked}
-          openingRunId={props.openingRunId}
-          onOpen={props.openRunAttempt}
+          onOpen={props.openRun}
           onPin={props.setPinned}
           onRerun={props.onRerun}
           onSelect={props.setSelectedRunIds}

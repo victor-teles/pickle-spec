@@ -104,6 +104,7 @@ function SingleRunRoute(
   },
 ) {
   if (props.route.kind !== 'run') return null
+  const runId = props.route.runId
   const onRerun = async (request: StudioRunRequest) => {
     await props.onRerun(request)
     props.onNavigate({ kind: 'runs', filters: {} })
@@ -111,13 +112,20 @@ function SingleRunRoute(
   return (
     <RunDetail
       api={props.api}
-      runId={props.route.runId}
-      live={props.inspections.get(props.route.runId)}
+      runId={runId}
+      location={props.route.location}
+      live={props.inspections.get(runId)}
       runsBlocked={props.runsBlocked}
       onBack={() => props.onNavigate({ kind: 'runs', filters: {} })}
       onCancel={props.onCancel}
-      onInspectResult={(location) =>
-        props.onNavigate({ kind: 'result', location })
+      onOpenArtifact={(location, artifactIndex) =>
+        props.onNavigate({
+          kind: 'artifact',
+          location: { result: location, artifactIndex },
+        })
+      }
+      onSelectLocation={(location) =>
+        props.onNavigate({ kind: 'run', runId, location }, true)
       }
       onRerun={onRerun}
     />

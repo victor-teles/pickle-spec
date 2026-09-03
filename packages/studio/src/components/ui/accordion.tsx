@@ -36,7 +36,11 @@ function AccordionTrigger({
   headerRef?: Ref<HTMLHeadingElement>
 }) {
   return (
-    <AccordionPrimitive.Header ref={headerRef} className="flex min-w-0 flex-1">
+    <AccordionPrimitive.Header
+      ref={headerRef}
+      tabIndex={headerRef ? -1 : undefined}
+      className="flex min-w-0 flex-1 outline-none"
+    >
       <AccordionPrimitive.Trigger
         data-slot="accordion-trigger"
         className={cn(

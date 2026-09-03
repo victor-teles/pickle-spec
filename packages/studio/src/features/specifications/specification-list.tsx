@@ -1,6 +1,15 @@
 import { SearchIcon } from '@hugeicons/core-free-icons'
 import { HugeiconsIcon } from '@hugeicons/react'
-import type { ChangeEvent, ReactNode, RefObject } from 'react'
+import {
+  type ChangeEvent,
+  type Dispatch,
+  type KeyboardEvent,
+  type ReactNode,
+  type RefObject,
+  type SetStateAction,
+  useEffect,
+  useState,
+} from 'react'
 import {
   Accordion,
   AccordionContent,
@@ -19,6 +28,7 @@ import {
   TabsList,
   TabsTrigger,
 } from '../../components/ui/tabs'
+import { useVirtualWindow } from '../../hooks/use-virtual-window'
 import { cn } from '../../lib/utils'
 import type { StudioSpecification } from '../../server/contracts'
 import { RunControlButton } from '../runs/run-control-button'
@@ -51,6 +61,7 @@ const specificationIndexScopes: readonly SpecificationIndexScope[] = [
   'specifications',
   'scenarios',
 ]
+const specificationIndexRowHeight = 58
 
 function isSpecificationIndexScope(
   value: string,
@@ -131,6 +142,11 @@ export function SpecificationList(props: SpecificationListProps) {
 }
 
 function SpecificationIndexEntries(props: SpecificationListProps) {
+  const { moveFocus, virtual } = useVirtualSpecificationIndex(
+    props.entries.length,
+  )
+  const visibleEntries = props.entries.slice(virtual.start, virtual.end)
+
   function handleSpecificationChange(value: string[]) {
     const specificationId = value[0]
     if (specificationId && specificationId !== props.selectedId) {
@@ -148,27 +164,44 @@ function SpecificationIndexEntries(props: SpecificationListProps) {
 
   return (
     <Accordion
+      render={<ul ref={virtual.containerRef} />}
       value={props.selectedId ? [props.selectedId] : []}
       onValueChange={handleSpecificationChange}
-      className="rounded-xl border-border bg-card"
+      className="h-full min-h-0 overflow-auto"
     >
-      {props.entries.map((entry) => (
+      <SpecificationIndexSpacer height={virtual.before} />
+      {visibleEntries.map((entry, visibleIndex) => (
         <SpecificationIndexItem
           key={entry.specification.id}
           current={entry.specification.id === props.selectedId}
           entry={entry}
+          index={virtual.start + visibleIndex}
+          onMoveFocus={moveFocus}
           selectedActions={props.selectedActions}
           selectedDetail={props.selectedDetail}
           selectedHeadingRef={props.selectedHeadingRef}
         />
       ))}
+      <SpecificationIndexSpacer height={virtual.after} />
     </Accordion>
   )
+}
+
+function SpecificationIndexSpacer(props: { height: number }) {
+  return props.height > 0 ? (
+    <li
+      aria-hidden="true"
+      className="shrink-0"
+      style={{ height: props.height }}
+    />
+  ) : null
 }
 
 type SpecificationIndexItemProps = {
   current: boolean
   entry: SpecificationIndexEntry
+  index: number
+  onMoveFocus: (event: KeyboardEvent, index: number) => void
   selectedActions?: ReactNode
   selectedDetail?: ReactNode
   selectedHeadingRef: RefObject<HTMLHeadingElement | null>
@@ -177,9 +210,14 @@ type SpecificationIndexItemProps = {
 function SpecificationIndexItem(props: SpecificationIndexItemProps) {
   const { specification } = props.entry
 
+  function handleKeyDown(event: KeyboardEvent) {
+    props.onMoveFocus(event, props.index)
+  }
+
   return (
     <AccordionItem
       value={specification.id}
+      render={<li />}
       className="data-open:bg-transparent"
     >
       <div
@@ -190,9 +228,11 @@ function SpecificationIndexItem(props: SpecificationIndexItemProps) {
       >
         <AccordionTrigger
           headerRef={props.current ? props.selectedHeadingRef : undefined}
+          data-specification-index={props.index}
           aria-label={specification.name}
           aria-current={props.current ? 'page' : undefined}
           className="min-h-10 min-w-0 items-center gap-3 px-2 text-left hover:no-underline"
+          onKeyDown={handleKeyDown}
         >
           <span className="flex min-w-0 flex-1 items-baseline gap-3">
             <span className="min-w-0 flex-1 truncate text-sm font-semibold text-foreground">
@@ -217,6 +257,74 @@ function SpecificationIndexItem(props: SpecificationIndexItemProps) {
       </AccordionContent>
     </AccordionItem>
   )
+}
+
+function isVisibleIndex(index: number | undefined, start: number, end: number) {
+  return index !== undefined && index >= start && index < end
+}
+
+function useVirtualSpecificationIndex(count: number) {
+  const virtual = useVirtualWindow<HTMLUListElement>({
+    count,
+    itemSize: specificationIndexRowHeight,
+  })
+  const [pendingFocus, setPendingFocus] = useState<number>()
+  const focusTargetVisible = isVisibleIndex(
+    pendingFocus,
+    virtual.start,
+    virtual.end,
+  )
+
+  useSpecificationIndexFocus(
+    pendingFocus,
+    setPendingFocus,
+    focusTargetVisible,
+    virtual.scrollRef,
+  )
+
+  function moveFocus(event: KeyboardEvent, index: number) {
+    const nextIndex = nextSpecificationIndex(event.key, index, count)
+    if (nextIndex === undefined || nextIndex === index) return
+    event.preventDefault()
+    const list = virtual.scrollRef.current
+    if (!list) return
+    setPendingFocus(nextIndex)
+    list.scrollTop = nextIndex * specificationIndexRowHeight
+  }
+
+  return { moveFocus, virtual }
+}
+
+function useSpecificationIndexFocus(
+  pendingFocus: number | undefined,
+  setPendingFocus: Dispatch<SetStateAction<number | undefined>>,
+  focusTargetVisible: boolean,
+  scrollRef: RefObject<HTMLUListElement | null>,
+): void {
+  useEffect(() => {
+    if (pendingFocus === undefined || !focusTargetVisible) return
+    const target = scrollRef.current?.querySelector<HTMLElement>(
+      `[data-specification-index="${pendingFocus}"]`,
+    )
+    if (!target) return
+    target.focus()
+    setPendingFocus(undefined)
+  }, [focusTargetVisible, pendingFocus, scrollRef, setPendingFocus])
+}
+
+function nextSpecificationIndex(key: string, index: number, count: number) {
+  switch (key) {
+    case 'ArrowDown':
+      return Math.min(count - 1, index + 1)
+    case 'ArrowUp':
+      return Math.max(0, index - 1)
+    case 'Home':
+      return 0
+    case 'End':
+      return count - 1
+    default:
+      return
+  }
 }
 
 function RunAllSpecifications(props: SpecificationListProps) {

@@ -67,20 +67,47 @@ test('pins and unpins a test run without mutating the immutable manifest', async
   expect(await Bun.file(manifestPath).bytes()).toEqual(before)
 })
 
-test('exports Studio Allure results as a valid empty ZIP archive', async () => {
+test('exports every Studio report format from a finalized Test run', async () => {
   const { root } = await fixture()
   const gateway = createStudioHistoryGateway(root, async () => ({}))
 
-  const bytes = await gateway.exportAllure('run-1')
+  const json = await gateway.exportReport({ runId: 'run-1', format: 'json' })
+  const ndjson = await gateway.exportReport({
+    runId: 'run-1',
+    format: 'ndjson',
+  })
+  const junit = await gateway.exportReport({
+    runId: 'run-1',
+    format: 'junit',
+  })
+  const html = await gateway.exportReport({
+    runId: 'run-1',
+    format: 'html',
+    htmlArtifacts: 'all',
+  })
+  const archive = await gateway.exportReport({
+    runId: 'run-1',
+    format: 'archive',
+  })
+  const allure = await gateway.exportReport({
+    runId: 'run-1',
+    format: 'allure',
+  })
 
-  expect([...bytes.slice(0, 4)]).toEqual([0x50, 0x4b, 0x05, 0x06])
+  expect(JSON.parse(String(json)).id).toBe('run-1')
+  expect(String(ndjson)).toContain('"type":')
+  expect(String(junit)).toContain('<testsuites')
+  expect(String(html)).toContain('<!DOCTYPE html>')
+  expect(JSON.parse(String(archive)).manifest.id).toBe('run-1')
+  if (!(allure instanceof Uint8Array)) throw new Error('Expected ZIP bytes')
+  expect([...allure.slice(0, 4)]).toEqual([0x50, 0x4b, 0x05, 0x06])
 })
 
-test('rejects Studio Allure export until the Test run is finalized', async () => {
+test('rejects Studio report export until the Test run is finalized', async () => {
   const { root } = await fixture(false)
   const gateway = createStudioHistoryGateway(root, async () => ({}))
 
-  await expect(gateway.exportAllure('run-1')).rejects.toThrow(
-    'must be finalized before export',
-  )
+  await expect(
+    gateway.exportReport({ runId: 'run-1', format: 'json' }),
+  ).rejects.toThrow('must be finalized before export')
 })

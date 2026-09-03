@@ -17,6 +17,10 @@ type BrowserDocument = {
   }
 }
 
+type BrowserAnimation = {
+  finished: Promise<unknown>
+}
+
 export function registerStudioHardeningTests(
   fixture: StudioBrowserFixture,
 ): void {
@@ -130,14 +134,15 @@ export function registerStudioHardeningTests(
       await page.goto(url)
       await page.getByText('accessible-workflows', { exact: true }).waitFor()
 
-      for (const [areaIndex, area] of [
+      for (const [destinationIndex, destination] of [
+        'Pickle Spec',
         'Specifications',
         'Runs',
         'Settings',
       ].entries()) {
         await page.goto(url)
         await page.getByText('accessible-workflows', { exact: true }).waitFor()
-        for (let tabIndex = 0; tabIndex <= areaIndex; tabIndex++) {
+        for (let focusStep = 0; focusStep <= destinationIndex; focusStep++) {
           await page.keyboard.press('Tab')
         }
         const activeLink = await page.evaluate(() => {
@@ -148,7 +153,7 @@ export function registerStudioHardeningTests(
               browserDocument.document.activeElement?.matches(':focus-visible'),
           }
         })
-        expect(activeLink).toEqual({ label: area, focusVisible: true })
+        expect(activeLink).toEqual({ label: destination, focusVisible: true })
         await page.keyboard.press('Enter')
         const results = await new AxeBuilder({ page })
           .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa'])
@@ -162,7 +167,17 @@ export function registerStudioHardeningTests(
         .analyze()
       expect(historyResults.violations).toEqual([])
       await page.keyboard.press('Meta+k')
-      await page.getByRole('dialog', { name: 'Studio commands' }).waitFor()
+      const commandDialog = page.getByRole('dialog', {
+        name: 'Studio commands',
+      })
+      await commandDialog.waitFor()
+      await commandDialog.evaluate(async (element) => {
+        await Promise.all(
+          element
+            .getAnimations({ subtree: true })
+            .map((animation: BrowserAnimation) => animation.finished),
+        )
+      })
       const paletteResults = await new AxeBuilder({ page })
         .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa'])
         .analyze()
@@ -378,7 +393,7 @@ Feature: Fixture ${suffix}
     }
   }, 45_000)
 
-  test('Studio virtualizes large run and reviewed-result collections', async () => {
+  test('Studio handles large run collections and attempt selection', async () => {
     const project = await createStudioProject('large-run-history')
     await createLargeHistory(project)
     const configPath = join(project, 'pickle.config.jsonc')
@@ -388,7 +403,8 @@ Feature: Fixture ${suffix}
       JSON.stringify({ ...config, retention: { days: 1 } }),
     )
     const { child, url } = await startStudio(project)
-    const page = await browser.newPage()
+    const context = await browser.newContext()
+    const page = await context.newPage()
     try {
       const response = await page.goto(url)
       expect(response?.status()).toBe(200)
@@ -457,26 +473,21 @@ Feature: Fixture ${suffix}
       await page.keyboard.press('Home')
       await largeRun.waitFor()
 
-      const openAttempt = largeRun.getByRole('button', {
-        name: /^Open attempt for /,
+      const openRun = largeRun.getByRole('button', {
+        name: /^Open run /,
       })
-      await tabTo(page, openAttempt)
+      await tabTo(page, openRun)
       await page.keyboard.press('Enter')
-      const backToRun = page.getByRole('button', { name: 'Back to run' })
-      await backToRun.waitFor()
-      await tabTo(page, backToRun)
+      const attempt = page.getByRole('combobox', { name: 'Attempt' })
+      await attempt.waitFor()
+      await tabTo(page, attempt)
       await page.keyboard.press('Enter')
-      const results = page.getByRole('table', { name: 'Test run results' })
-      await results.getByText('Scenario 000').waitFor()
-      expect(await results.getByRole('row').count()).toBeLessThan(60)
-
-      const resultScroller = page.getByRole('region', {
-        name: 'Scrollable test run results',
-      })
-      await tabTo(page, resultScroller)
-      await page.keyboard.press('End')
-      await results.getByText('Scenario 249').waitFor()
-      expect(await results.getByRole('row').count()).toBeLessThan(60)
+      expect(await page.getByRole('option').count()).toBe(250)
+      await page.keyboard.press('Escape')
+      const runResults = await new AxeBuilder({ page })
+        .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa'])
+        .analyze()
+      expect(runResults.violations).toEqual([])
 
       const backToRuns = page.getByRole('button', { name: 'Back to Runs' })
       await tabTo(page, backToRuns)
@@ -489,7 +500,7 @@ Feature: Fixture ${suffix}
       await page.getByText('No Test runs have been recorded yet.').waitFor()
       expect(await history.count()).toBe(0)
     } finally {
-      await page.close()
+      await context.close()
       child.kill()
       await child.exited
     }
