@@ -33,7 +33,7 @@
     "docs:build": "turbo run build --filter=@pickle-spec/docs",
     "release:check": "bun scripts/release-packages.ts validate",
     "run:example": "turbo run run:example --filter=@pickle-spec/example",
-    "studio": "turbo run studio --filter=@pickle-spec/example"
+    "studio": "turbo run build --filter=@pickle-spec/studio && turbo run studio --filter=@pickle-spec/example"
   },
   "devDependencies": {
     "@biomejs/biome": "catalog:",

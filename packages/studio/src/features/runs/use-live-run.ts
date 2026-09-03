@@ -16,6 +16,7 @@ import {
   liveInspectionFromSnapshot,
   pauseLiveFollowing,
   pinLiveCell,
+  pinLiveInvestigation,
   receiveLiveStreamEvent,
   resumeLiveFollowing,
   selectLiveInspectorTab,
@@ -300,12 +301,20 @@ async function cancelLiveRun(
 function liveInspectionControls(
   live: LiveResultInspection | undefined,
   setLive: SetValue<LiveResultInspection | undefined>,
+  setRunId: SetValue<string | undefined>,
   onInspectResult: (location: ResultInspectionLocation) => void,
 ) {
   const update = (
     transform: (inspection: LiveResultInspection) => LiveResultInspection,
   ) => setLive((current) => (current ? transform(current) : current))
   return {
+    dismissFinishedRun: () => {
+      if (live?.phase === 'running') return
+      setLive(undefined)
+      setRunId(undefined)
+    },
+    inspectLocation: (location: ResultInspectionLocation) =>
+      update((current) => pinLiveInvestigation(current, location)),
     pauseFollowing: () => update(pauseLiveFollowing),
     pinSelection: (cell: MatrixCell) => {
       if (!live) return
@@ -384,6 +393,7 @@ export function useLiveRun(options: UseLiveRunOptions) {
   const controls = liveInspectionControls(
     live,
     setLive,
+    setRunId,
     options.onInspectResult,
   )
   const startRun = (request: StudioRunRequest) =>
@@ -398,6 +408,7 @@ export function useLiveRun(options: UseLiveRunOptions) {
 
   return {
     ...controls,
+    activeLive: live,
     cancelRun,
     cells,
     clearReadinessAttempt,
