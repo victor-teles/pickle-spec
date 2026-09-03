@@ -1,6 +1,5 @@
-import type { RefObject } from 'react'
+import { type RefObject, useState } from 'react'
 import type { StudioApi } from '../../lib/studio-api'
-import { cn } from '../../lib/utils'
 import type {
   StudioProject,
   StudioRunRequest,
@@ -11,7 +10,14 @@ import type { LiveResultInspection } from '../runs/result/live-result-inspection
 import type { ResultInspectorTab } from '../runs/result/result-inspection'
 import type { MatrixCell } from '../runs/result/run-view'
 import type { RunOrigin } from '../runs/run-origin'
-import { SpecificationHeader } from './specification-header'
+import {
+  SpecificationHeader,
+  SpecificationViewActions,
+} from './specification-header'
+import {
+  filterSpecificationIndex,
+  type SpecificationIndexScope,
+} from './specification-index'
 import { SpecificationList } from './specification-list'
 import { SpecificationResults } from './specification-results'
 import type { MissingSpecificationSelection } from './use-specification-selection'
@@ -61,32 +67,76 @@ type SpecificationsScreenProps = {
 export function SpecificationsScreen(props: SpecificationsScreenProps) {
   const canRunAll = props.project.readiness?.ready ?? true
 
+  if (props.authoring) {
+    return (
+      <div className="studio-stage flex min-h-0 flex-1 overflow-hidden">
+        <SpecificationDetail {...props} canRunAll={canRunAll} />
+      </div>
+    )
+  }
+
+  if (props.selection.missing) {
+    return (
+      <div className="studio-stage flex min-h-0 flex-1 overflow-hidden">
+        <MissingSpecification missing={props.selection.missing} />
+      </div>
+    )
+  }
+
+  return (
+    <div className="studio-stage flex min-h-0 flex-1 overflow-hidden">
+      <SpecificationIndexScreen {...props} canRunAll={canRunAll} />
+    </div>
+  )
+}
+
+function SpecificationIndexScreen(props: SpecificationDetailProps) {
+  const [scope, setScope] = useState<SpecificationIndexScope>('all')
+  const [query, setQuery] = useState('')
+  const entries = filterSpecificationIndex(
+    props.project.specifications,
+    scope,
+    query,
+  )
+  const selected = props.selection.selected
+  const selectedEntry = selected
+    ? entries.find((entry) => entry.specification.id === selected.id)
+    : undefined
+
   function handleRunAll() {
     props.run.onRun({})
   }
 
   return (
-    <div
-      className={cn(
-        'studio-stage min-h-0 flex-1 overflow-hidden',
-        props.authoring
-          ? 'flex'
-          : 'grid lg:grid-cols-[16rem_minmax(0,1fr)] lg:grid-rows-[minmax(0,1fr)]',
-      )}
-    >
-      {props.authoring ? null : (
-        <SpecificationList
-          specifications={props.project.specifications}
-          selectedId={props.selection.selected?.id}
-          origin={props.run.origin}
-          running={props.run.running}
-          canRun={canRunAll}
-          onSelect={props.selection.onSelect}
-          onRunAll={handleRunAll}
-        />
-      )}
-      <SpecificationDetail {...props} canRunAll={canRunAll} />
-    </div>
+    <SpecificationList
+      canRun={props.canRunAll}
+      entries={entries}
+      onQueryChange={setQuery}
+      onRunAll={handleRunAll}
+      onScopeChange={setScope}
+      onSelect={props.selection.onSelect}
+      origin={props.run.origin}
+      query={query}
+      running={props.run.running}
+      scope={scope}
+      selectedActions={
+        selected ? (
+          <SpecificationIndexActions {...props} specification={selected} />
+        ) : null
+      }
+      selectedDetail={
+        selected && selectedEntry ? (
+          <SpecificationIndexDetail
+            {...props}
+            scenarios={selectedEntry.scenarios}
+            specification={selected}
+          />
+        ) : null
+      }
+      selectedHeadingRef={props.selection.headingRef}
+      selectedId={selected?.id}
+      specifications={props.project.specifications}
+    />
   )
 }
 
@@ -122,7 +172,7 @@ function EmptySpecificationSelection() {
 }
 
 function selectCreatedSpecification(
-  props: SpecificationDetailProps,
+  props: SpecificationsScreenProps,
   uri: string,
 ): void {
   void props.onReloadProject().then((project) => {
@@ -131,16 +181,95 @@ function selectCreatedSpecification(
 }
 
 async function reloadSpecificationCatalog(
-  props: SpecificationDetailProps,
+  props: SpecificationsScreenProps,
 ): Promise<void> {
   await props.onReloadProject()
 }
 
 function specificationRunReasons(
   specification: StudioSpecification,
-  props: SpecificationDetailProps,
+  props: SpecificationsScreenProps,
 ) {
   return specification.runReasons ?? props.project.readiness?.reasons
+}
+
+type SelectedSpecificationProps = SpecificationDetailProps & {
+  specification: StudioSpecification
+}
+
+function SpecificationIndexActions(props: SelectedSpecificationProps) {
+  const canRun = props.specification.canRun ?? props.canRunAll
+
+  return (
+    <SpecificationViewActions
+      api={props.api}
+      authoring={false}
+      canRun={canRun}
+      headingRef={props.selection.headingRef}
+      linkTemplates={props.project.links}
+      namespaces={Object.keys(props.project.links ?? {})}
+      onAuthoringChange={props.onAuthoringChange}
+      onCancelRun={props.run.onCancel}
+      onCatalogChange={() => reloadSpecificationCatalog(props)}
+      onCreated={(uri) => selectCreatedSpecification(props, uri)}
+      onError={props.onError}
+      onRun={props.run.onRun}
+      origin={props.run.origin}
+      runId={props.run.runId}
+      running={props.run.running}
+      runReasons={specificationRunReasons(props.specification, props)}
+      specification={props.specification}
+    />
+  )
+}
+
+type SpecificationIndexDetailProps = SelectedSpecificationProps & {
+  scenarios: readonly StudioScenario[]
+}
+
+function SpecificationIndexDetail(props: SpecificationIndexDetailProps) {
+  const runReasons = specificationRunReasons(props.specification, props)
+
+  return (
+    <>
+      {props.error ? (
+        <p
+          role="alert"
+          className="border-t border-border px-4 pt-3 text-sm text-destructive"
+        >
+          {props.error}
+        </p>
+      ) : null}
+      {props.specification.canRun === false && runReasons?.length ? (
+        <p
+          role="status"
+          className="border-t border-border px-4 pt-3 text-sm text-muted-foreground"
+        >
+          {runReasons.join(' ')}
+        </p>
+      ) : null}
+      <SpecificationResults
+        api={props.api}
+        cells={props.run.cells}
+        focusedScenarioId={props.selection.currentScenarioId}
+        focusTargetId={props.selection.focusTargetId}
+        focusRequest={props.selection.focusRequest}
+        live={props.run.live}
+        onPauseFollowing={props.run.onPauseFollowing}
+        onPinSelection={props.run.onPinSelection}
+        onSelectScenario={props.selection.onSelectScenario}
+        onResumeFollowing={props.run.onResumeFollowing}
+        onRun={props.run.onRun}
+        onSelectInspectorTab={props.run.onSelectInspectorTab}
+        origin={props.run.origin}
+        profiles={props.project.profiles}
+        running={props.run.running}
+        scenarios={props.scenarios}
+        selectedResult={props.run.selectedResult}
+        specification={props.specification}
+      />
+    </>
+  )
 }
 
 function SpecificationDetail(props: SpecificationDetailProps) {
@@ -180,27 +309,6 @@ function SpecificationDetail(props: SpecificationDetailProps) {
         runReasons={runReasons}
         specification={specification}
       />
-      {props.authoring ? null : (
-        <SpecificationResults
-          api={props.api}
-          cells={props.run.cells}
-          focusedScenarioId={props.selection.currentScenarioId}
-          focusTargetId={props.selection.focusTargetId}
-          focusRequest={props.selection.focusRequest}
-          live={props.run.live}
-          onPauseFollowing={props.run.onPauseFollowing}
-          onPinSelection={props.run.onPinSelection}
-          onSelectScenario={props.selection.onSelectScenario}
-          onResumeFollowing={props.run.onResumeFollowing}
-          onRun={props.run.onRun}
-          onSelectInspectorTab={props.run.onSelectInspectorTab}
-          origin={props.run.origin}
-          profiles={props.project.profiles}
-          running={props.run.running}
-          selectedResult={props.run.selectedResult}
-          specification={specification}
-        />
-      )}
     </main>
   )
 }

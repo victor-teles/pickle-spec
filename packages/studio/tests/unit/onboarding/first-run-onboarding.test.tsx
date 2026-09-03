@@ -66,6 +66,7 @@ test('renders an accessible checklist with structured setup blockers', () => {
   expect(markup).toContain('Install Chrome or configure Browserbase')
   expect(markup).toContain('Open Settings')
   expect(markup).toContain('Persist one passed Test run')
+  expect(markup).toContain('aria-label="Dismiss first-run guide"')
 })
 
 test('renders nothing after a persisted passed run', () => {

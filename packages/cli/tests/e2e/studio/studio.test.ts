@@ -38,6 +38,13 @@ type BrowserViewportHost = {
   innerWidth: number
 }
 
+type ElementBox = {
+  height: number
+  width: number
+  x: number
+  y: number
+}
+
 type MonacoEditorHost = {
   monaco?: {
     editor: {
@@ -68,6 +75,73 @@ async function expectBusyRunControl(page: Page, name: string) {
   const control = page.getByRole('button', { name, exact: true })
   await control.locator('[data-slot="spinner"]').waitFor()
   expect(await control.getAttribute('aria-busy')).toBe('true')
+}
+
+async function requiredBoundingBox(locator: Locator): Promise<ElementBox> {
+  const box = await locator.boundingBox()
+  if (!box) throw new Error('Expected a rendered element box')
+  return box
+}
+
+function expectContainedBox(container: ElementBox, content: ElementBox) {
+  expect(content.x).toBeGreaterThanOrEqual(container.x)
+  expect(content.x + content.width).toBeLessThanOrEqual(
+    container.x + container.width,
+  )
+}
+
+async function expectSpecificationAccordionLayout(
+  page: Page,
+  catalog: Locator,
+) {
+  const checkoutPanel = catalog
+    .getByRole('button', { name: 'Checkout' })
+    .locator('xpath=ancestor::*[@data-slot="accordion-item"]')
+    .locator('[data-slot="accordion-content"]')
+  expectContainedBox(
+    await requiredBoundingBox(checkoutPanel),
+    await requiredBoundingBox(
+      checkoutPanel.locator('[data-slot="table-container"]'),
+    ),
+  )
+
+  const searchTrigger = catalog.getByRole('button', {
+    name: 'Search',
+    exact: true,
+  })
+  await searchTrigger.click()
+  expect(await searchTrigger.getAttribute('aria-expanded')).toBe('true')
+  const searchPanel = catalog
+    .locator('[data-slot="accordion-item"][data-open]')
+    .locator('[data-slot="accordion-content"]')
+  await searchPanel.waitFor()
+  expect(
+    await searchPanel.evaluate((panel) =>
+      panel
+        .getAnimations()
+        .map(
+          () =>
+            panel.ownerDocument.defaultView?.getComputedStyle(panel)
+              .animationName,
+        ),
+    ),
+  ).toEqual([])
+
+  await page.setViewportSize({ width: 390, height: 844 })
+  const tableContainer = searchPanel.locator('[data-slot="table-container"]')
+  expectContainedBox(
+    await requiredBoundingBox(searchPanel),
+    await requiredBoundingBox(tableContainer),
+  )
+  expect(
+    await tableContainer.evaluate(
+      (container) => container.scrollWidth <= container.clientWidth,
+    ),
+  ).toBe(true)
+  const scenarioBox = await requiredBoundingBox(
+    searchPanel.getByRole('rowheader', { name: 'Query the catalog' }),
+  )
+  expect(scenarioBox.width).toBeGreaterThanOrEqual(160)
 }
 
 async function startCacheRefresh(page: Page) {
@@ -162,8 +236,10 @@ Feature: Search
         await Bun.sleep(500)
         await route.continue()
       })
-      await page.goto(url)
-      await page.getByRole('status', { name: 'Opening project' }).waitFor()
+      await Promise.all([
+        page.getByRole('status', { name: 'Opening project' }).waitFor(),
+        page.goto(url, { waitUntil: 'domcontentloaded' }),
+      ])
       expect(
         await page.evaluate(async () => (await fetch('/api/plans')).status),
       ).toBe(404)
@@ -202,6 +278,33 @@ Feature: Search
       expect(
         await catalog.getByRole('button', { name: 'Search' }).count(),
       ).toBe(1)
+      expect(await catalog.getByRole('tab', { name: 'All' }).count()).toBe(1)
+      expect(
+        await catalog.getByRole('tab', { name: 'Specifications' }).count(),
+      ).toBe(1)
+      const filter = catalog.getByRole('textbox', {
+        name: 'Filter Specifications and Scenarios',
+      })
+      await catalog.getByRole('tab', { name: 'Scenarios' }).click()
+      await filter.fill('Query the catalog')
+      expect(
+        await catalog.getByRole('button', { name: 'Checkout' }).count(),
+      ).toBe(0)
+      expect(
+        await catalog.getByRole('button', { name: 'Search' }).count(),
+      ).toBe(1)
+      await filter.fill('')
+      await catalog.getByRole('tab', { name: 'All' }).click()
+      expect(
+        await catalog
+          .getByRole('tab', { name: 'All' })
+          .getAttribute('aria-selected'),
+      ).toBe('true')
+      expect(
+        await catalog
+          .getByRole('tab', { name: 'Scenarios' })
+          .getAttribute('aria-selected'),
+      ).toBe('false')
       expect(
         await page.getByRole('heading', { name: 'Checkout' }).count(),
       ).toBe(1)
@@ -242,6 +345,30 @@ Feature: Search
     }
   }, 60_000)
 
+  test('keeps the Scenario table fitted inside its accordion', async () => {
+    const project = await createStudioProject('scenario-table-layout')
+    await Bun.write(
+      join(project, 'features', 'search.feature'),
+      `@pickle:id:specsearchaaaaaaa @pickle:state:active
+Feature: Search
+  @pickle:id:scnquerybbbbbbbb
+  Scenario: Query the catalog
+    Then results are shown`,
+    )
+    const { child, url } = await startStudio(project)
+    const page = await browser.newPage()
+    try {
+      await page.goto(url)
+      const catalog = page.getByRole('navigation', { name: 'Specifications' })
+      await catalog.waitFor()
+      await expectSpecificationAccordionLayout(page, catalog)
+    } finally {
+      await page.close()
+      child.kill()
+      await child.exited
+    }
+  }, 60_000)
+
   test('first-run onboarding starts one Scenario and closes after its first green run', async () => {
     const project = await createStudioProject('first-green-run')
     const configPath = join(project, 'pickle.config.jsonc')
@@ -275,6 +402,31 @@ Feature: Search
       expect(index.runs[0]?.specificationUris).toEqual([
         'features/checkout.feature',
       ])
+    } finally {
+      await page.close()
+      child.kill()
+      await child.exited
+    }
+  }, 60_000)
+
+  test('dismisses first-run onboarding permanently in this browser', async () => {
+    const project = await createStudioProject('dismiss-first-run')
+    const { child, url } = await startStudio(project)
+    const page = await browser.newPage()
+    try {
+      await page.goto(url)
+      const guide = page.getByRole('region', {
+        name: 'Run your first green Scenario',
+      })
+      await guide.waitFor()
+      await guide
+        .getByRole('button', { name: 'Dismiss first-run guide' })
+        .click()
+      await guide.waitFor({ state: 'hidden' })
+
+      await page.reload()
+      await page.getByRole('navigation', { name: 'Specifications' }).waitFor()
+      expect(await guide.count()).toBe(0)
     } finally {
       await page.close()
       child.kill()
