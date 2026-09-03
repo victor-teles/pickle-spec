@@ -1,0 +1,25 @@
+{
+  "scanDate": "2026-08-30",
+  "designSystem": {
+    "path": "DESIGN.md",
+    "locked": true
+  },
+  "fonts": {
+    "application": "Inter Variable",
+    "machineContent": "JetBrains Mono Variable",
+    "source": "packages/studio/src/styles.css"
+  },
+  "palette": {
+    "format": "OKLCH custom properties",
+    "source": "packages/studio/src/styles.css"
+  },
+  "motion": {
+    "stance": "motion-cut",
+    "detail": "Quiet CSS state transitions with prefers-reduced-motion support"
+  },
+  "spacing": {
+    "scale": "4px",
+    "source": "DESIGN.md"
+  },
+  "framework": ["TanStack Start", "React 19", "Tailwind CSS 4"]
+}
