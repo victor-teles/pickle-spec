@@ -31,6 +31,7 @@ type SpecificationResultsProps = {
   origin?: RunOrigin
   profiles: readonly string[]
   running: boolean
+  scenarios: readonly StudioScenario[]
   selectedResult?: MatrixCell
   specification: StudioSpecification
 }
@@ -45,10 +46,10 @@ export function SpecificationResults(props: SpecificationResultsProps) {
   }
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col gap-5 overflow-hidden px-3 py-4 sm:px-5">
+    <div className="flex min-w-0 flex-col gap-5 border-t border-border px-3 pb-4 pt-0 sm:px-4">
       <ScenarioTable
         profiles={props.profiles}
-        scenarios={props.specification.scenarios}
+        scenarios={props.scenarios}
         cells={props.cells}
         selected={props.selectedResult}
         focusedScenarioId={props.focusedScenarioId}

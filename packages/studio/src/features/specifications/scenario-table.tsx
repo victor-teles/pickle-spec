@@ -58,7 +58,7 @@ export function ScenarioTable(props: ScenarioTableProps) {
   }
 
   return (
-    <div className="scenario-table w-full min-w-0 max-w-full shrink-0 overflow-auto rounded-xl border border-border bg-card">
+    <div className="scenario-table w-full min-w-0 max-w-full shrink-0 overflow-auto">
       <Table
         aria-label="Scenarios"
         className="text-xs"
@@ -66,13 +66,17 @@ export function ScenarioTable(props: ScenarioTableProps) {
       >
         <TableHeader>
           <TableRow>
-            <TableHead>Scenario</TableHead>
+            <TableHead className="w-[48%]">Scenario</TableHead>
             {props.profiles.map((profile) => (
-              <TableHead key={profile} className="w-32">
+              <TableHead
+                key={profile}
+                className="w-auto truncate px-1.5 sm:w-32 sm:px-3"
+                title={profile}
+              >
                 {profile}
               </TableHead>
             ))}
-            <TableHead className="w-20 text-right">
+            <TableHead className="w-[16%] px-1.5 text-right sm:w-20 sm:px-3">
               <span className="sr-only">Run</span>
             </TableHead>
           </TableRow>
@@ -162,7 +166,7 @@ function ScenarioRow(props: ScenarioRowProps) {
           selected={props.selected}
         />
       ))}
-      <TableCell className="w-20 text-right">
+      <TableCell className="w-[16%] px-1 text-right sm:w-20 sm:px-3">
         {props.scenario.canRun !== false ? (
           <RunControlButton
             size="sm"
@@ -195,8 +199,8 @@ function ScenarioResultCell(props: ScenarioResultCellProps) {
   const { cell } = props
   if (!cell) {
     return (
-      <TableCell className="w-32">
-        <span className="text-muted-foreground">pending</span>
+      <TableCell className="w-auto px-1.5 sm:w-32 sm:px-3">
+        <span className="block truncate text-muted-foreground">pending</span>
       </TableCell>
     )
   }
@@ -207,18 +211,18 @@ function ScenarioResultCell(props: ScenarioResultCellProps) {
   }
 
   return (
-    <TableCell className="w-32">
+    <TableCell className="w-auto px-1.5 sm:w-32 sm:px-3">
       <Button
         type="button"
         size="sm"
         variant={matrixCellVariant(cell.state)}
         aria-label={`${props.scenarioName} ${props.profile} ${cell.state}`}
         aria-pressed={isSelectedCell(props.selected, cell)}
-        className="animate-in fade-in zoom-in-95 duration-120 motion-reduce:animate-none"
+        className="max-w-full animate-in px-1 fade-in zoom-in-95 duration-120 motion-reduce:animate-none sm:px-3"
         onClick={handleSelect}
       >
         <ResultMark key={cell.state} state={cell.state} />
-        {cell.state}
+        <span className="hidden sm:inline">{cell.state}</span>
       </Button>
     </TableCell>
   )

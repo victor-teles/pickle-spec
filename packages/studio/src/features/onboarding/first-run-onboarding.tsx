@@ -1,3 +1,6 @@
+import { Cancel01Icon } from '@hugeicons/core-free-icons'
+import { HugeiconsIcon } from '@hugeicons/react'
+import { useEffect, useState } from 'react'
 import { Badge } from '../../components/ui/badge'
 import { Button } from '../../components/ui/button'
 import {
@@ -39,6 +42,8 @@ type FirstRunOnboardingProps = {
   running: boolean
   runsIndex?: StudioRunsIndex
 }
+
+const firstRunDismissedKey = 'pickle-spec:first-run-onboarding-dismissed'
 
 const checkLabels: Record<StudioRunReadinessCheckId, string> = {
   selection: 'Scenario selected',
@@ -134,7 +139,21 @@ function firstGreenState(
   return 'idle'
 }
 
-function EmptyProjectOnboarding() {
+function DismissFirstRunButton(props: { onDismiss: () => void }) {
+  return (
+    <Button
+      type="button"
+      variant="ghost"
+      size="icon"
+      aria-label="Dismiss first-run guide"
+      onClick={props.onDismiss}
+    >
+      <HugeiconsIcon icon={Cancel01Icon} strokeWidth={2} aria-hidden="true" />
+    </Button>
+  )
+}
+
+function EmptyProjectOnboarding(props: { onDismiss: () => void }) {
   return (
     <section
       aria-labelledby="first-run-title"
@@ -148,6 +167,9 @@ function EmptyProjectOnboarding() {
           <CardDescription>
             Add a Specification with at least one Scenario to begin.
           </CardDescription>
+          <CardAction>
+            <DismissFirstRunButton onDismiss={props.onDismiss} />
+          </CardAction>
         </CardHeader>
       </Card>
     </section>
@@ -184,7 +206,10 @@ function FirstRunAction(props: {
 }
 
 function ActiveFirstRunOnboarding(
-  props: FirstRunOnboardingProps & { state: ActiveFirstRunState },
+  props: FirstRunOnboardingProps & {
+    onDismiss: () => void
+    state: ActiveFirstRunState
+  },
 ) {
   const copy = guideCopy(props.state.kind, props.state.target.scenario.name)
   const checks = (props.state.target.readiness.checks ?? []).filter(
@@ -207,7 +232,10 @@ function ActiveFirstRunOnboarding(
           </CardTitle>
           <CardDescription>{copy.description}</CardDescription>
           <CardAction>
-            <Badge variant={badgeVariant}>{copy.badge}</Badge>
+            <div className="flex items-center gap-1">
+              <Badge variant={badgeVariant}>{copy.badge}</Badge>
+              <DismissFirstRunButton onDismiss={props.onDismiss} />
+            </div>
           </CardAction>
         </CardHeader>
         <CardContent className="flex flex-wrap items-end justify-between gap-3">
@@ -248,8 +276,36 @@ function ActiveFirstRunOnboarding(
 }
 
 export function FirstRunOnboarding(props: FirstRunOnboardingProps) {
+  const [dismissed, setDismissed] = useState(false)
+  useEffect(() => {
+    try {
+      setDismissed(
+        globalThis.localStorage.getItem(firstRunDismissedKey) === 'true',
+      )
+    } catch {
+      setDismissed(false)
+    }
+  }, [])
+
+  function handleDismiss() {
+    setDismissed(true)
+    try {
+      globalThis.localStorage.setItem(firstRunDismissedKey, 'true')
+    } catch {
+      // The current session can still dismiss the guide when storage is unavailable.
+    }
+  }
+
   const state = firstRunOnboardingState(props)
-  if (state.kind === 'complete') return null
-  if (state.kind === 'empty-project') return <EmptyProjectOnboarding />
-  return <ActiveFirstRunOnboarding {...props} state={state} />
+  if (dismissed || state.kind === 'complete') return null
+  if (state.kind === 'empty-project') {
+    return <EmptyProjectOnboarding onDismiss={handleDismiss} />
+  }
+  return (
+    <ActiveFirstRunOnboarding
+      {...props}
+      onDismiss={handleDismiss}
+      state={state}
+    />
+  )
 }

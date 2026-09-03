@@ -121,6 +121,7 @@ function conflictFromReason(reason: unknown): ConflictState | undefined {
 
 type SpecificationEditorProps = {
   uri: string
+  initialMode?: 'view' | 'edit'
   namespaces?: readonly string[]
   linkTemplates?: Readonly<Record<string, string>>
   api: StudioApi
@@ -130,8 +131,8 @@ type SpecificationEditorProps = {
   onModeChange?: (mode: 'view' | 'edit') => void
 }
 
-function useSpecificationEditorState() {
-  const [mode, setMode] = useState<'view' | 'edit'>('view')
+function useSpecificationEditorState(initialMode: 'view' | 'edit' = 'view') {
+  const [mode, setMode] = useState<'view' | 'edit'>(initialMode)
   const [buffer, setBuffer] = useState<SpecificationBuffer>()
   const [source, setSource] = useState('')
   const [savedSource, setSavedSource] = useState('')
@@ -328,8 +329,14 @@ function useEditorSynchronization(
   catalogRef.current = props.onCatalogChange
   errorRef.current = props.onError
   useEffect(
-    () => synchronizeEditorDocument(props.uri, controllerRef, errorRef),
-    [props.uri],
+    () =>
+      synchronizeEditorDocument(
+        props.uri,
+        props.initialMode ?? 'view',
+        controllerRef,
+        errorRef,
+      ),
+    [props.initialMode, props.uri],
   )
   useEffect(
     () =>
@@ -346,10 +353,11 @@ function useEditorSynchronization(
 
 function synchronizeEditorDocument(
   uri: string,
+  initialMode: 'view' | 'edit',
   controller: React.RefObject<SpecificationEditorController>,
   error: React.RefObject<(message?: string) => void>,
 ) {
-  controller.current.setMode('view')
+  controller.current.setMode(initialMode)
   let cancelled = false
   void controller.current.load(uri).catch((reason: unknown) => {
     if (!cancelled) error.current(reasonMessage(reason))
@@ -386,7 +394,7 @@ function watchEditorDocument(
 }
 
 export function SpecificationEditor(props: SpecificationEditorProps) {
-  const state = useSpecificationEditorState()
+  const state = useSpecificationEditorState(props.initialMode)
   const controller = new SpecificationEditorController(props, state)
   useEditorSynchronization(props, controller, state)
 

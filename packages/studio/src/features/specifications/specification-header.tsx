@@ -10,7 +10,7 @@ import { SpecificationEditor } from '../documents/specification-editor'
 import { RunControlButton } from '../runs/run-control-button'
 import { isBusyOrigin, type RunOrigin } from '../runs/run-origin'
 
-type SpecificationHeaderProps = {
+export type SpecificationHeaderProps = {
   api: StudioApi
   authoring: boolean
   canRun: boolean
@@ -56,10 +56,6 @@ export function SpecificationHeader(props: SpecificationHeaderProps) {
     props.onCancelRun()
   }
 
-  function handleRun() {
-    props.onRun({ paths: [props.specification.uri] })
-  }
-
   return (
     <header
       className={cn(
@@ -96,29 +92,61 @@ export function SpecificationHeader(props: SpecificationHeaderProps) {
               : 'flex w-full flex-wrap items-center gap-2 sm:ml-auto sm:w-auto sm:shrink-0 sm:justify-end',
           )}
         >
-          {props.authoring ? null : (
-            <SpecificationRunActions
-              canRun={props.canRun}
-              hasRunId={Boolean(props.runId)}
-              onCancel={handleCancel}
-              onRun={handleRun}
-              origin={props.origin}
-              running={props.running}
+          {props.authoring ? (
+            <SpecificationEditor
+              uri={props.specification.uri}
+              initialMode="edit"
+              namespaces={props.namespaces}
+              linkTemplates={props.linkTemplates}
+              api={props.api}
+              onModeChange={handleModeChange}
+              onCatalogChange={props.onCatalogChange}
+              onCreated={props.onCreated}
+              onError={props.onError}
             />
+          ) : (
+            <SpecificationViewActions {...props} />
           )}
-          <SpecificationEditor
-            uri={props.specification.uri}
-            namespaces={props.namespaces}
-            linkTemplates={props.linkTemplates}
-            api={props.api}
-            onModeChange={handleModeChange}
-            onCatalogChange={props.onCatalogChange}
-            onCreated={props.onCreated}
-            onError={props.onError}
-          />
         </div>
       </div>
     </header>
+  )
+}
+
+export function SpecificationViewActions(props: SpecificationHeaderProps) {
+  function handleCancel() {
+    props.onCancelRun()
+  }
+
+  function handleRun() {
+    props.onRun({ paths: [props.specification.uri] })
+  }
+
+  function handleModeChange(mode: 'view' | 'edit') {
+    props.onAuthoringChange(mode === 'edit')
+  }
+
+  return (
+    <>
+      <SpecificationRunActions
+        canRun={props.canRun}
+        hasRunId={Boolean(props.runId)}
+        onCancel={handleCancel}
+        onRun={handleRun}
+        origin={props.origin}
+        running={props.running}
+      />
+      <SpecificationEditor
+        uri={props.specification.uri}
+        namespaces={props.namespaces}
+        linkTemplates={props.linkTemplates}
+        api={props.api}
+        onModeChange={handleModeChange}
+        onCatalogChange={props.onCatalogChange}
+        onCreated={props.onCreated}
+        onError={props.onError}
+      />
+    </>
   )
 }
 
