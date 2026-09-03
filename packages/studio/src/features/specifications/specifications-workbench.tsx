@@ -8,9 +8,12 @@ import {
 import { HugeiconsIcon } from '@hugeicons/react'
 import { useEffect, useState } from 'react'
 import { Button } from '../../components/ui/button'
-import { ResultMark } from '../../components/ui/result-mark'
-import { Spinner } from '../../components/ui/spinner'
-import { cn } from '../../lib/utils'
+import { ButtonGroup } from '../../components/ui/button-group'
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '../../components/ui/tooltip'
 import type {
   StudioRunRequest,
   StudioScenario,
@@ -31,11 +34,7 @@ import {
   type WorkbenchOrientation,
   type WorkbenchPanelVisibility,
 } from './specifications-workbench-layout'
-import type {
-  BatchWorkbenchModel,
-  SpecificationsWorkbenchModel,
-  WorkbenchTotals,
-} from './specifications-workbench-model'
+import type { SpecificationsWorkbenchModel } from './specifications-workbench-model'
 import { WorkbenchRail } from './specifications-workbench-rail'
 
 type SpecificationsWorkbenchProps = {
@@ -97,9 +96,6 @@ export function SpecificationsWorkbench(props: SpecificationsWorkbenchProps) {
         orientation={orientation}
         visibility={visibility}
       />
-      {props.model.kind === 'batch' ? (
-        <RunSummary model={props.model} onCancel={props.onCancel} />
-      ) : null}
     </main>
   )
 }
@@ -183,6 +179,7 @@ function WorkbenchActionBar(props: WorkbenchActionBarProps) {
       <div className="flex flex-wrap items-center gap-2">
         <Button
           type="button"
+          variant={props.selectedScenario ? 'outline' : 'default'}
           disabled={!props.canRunAll || props.running}
           onClick={handleRunAll}
         >
@@ -210,11 +207,21 @@ function WorkbenchActionBar(props: WorkbenchActionBarProps) {
             Back to Specifications
           </Button>
         ) : null}
+        {running ? (
+          <Button type="button" variant="outline" onClick={props.onCancel}>
+            Cancel run
+          </Button>
+        ) : null}
       </div>
-      <WorkbenchPanelToggles
-        visibility={props.visibility}
-        onVisibilityChange={props.onVisibilityChange}
-      />
+      <div className="ml-auto flex items-center gap-3">
+        <p className="hidden text-xs text-muted-foreground lg:block">
+          {workbenchSummary(props.model)}
+        </p>
+        <WorkbenchPanelToggles
+          visibility={props.visibility}
+          onVisibilityChange={props.onVisibilityChange}
+        />
+      </div>
     </header>
   )
 }
@@ -231,7 +238,7 @@ function WorkbenchPanelToggles(props: {
   }
 
   return (
-    <div className="ml-auto flex items-center gap-1">
+    <ButtonGroup aria-label="Workbench panels">
       <PanelToggle
         icon={PanelLeftIcon}
         label="Left sidebar"
@@ -250,7 +257,7 @@ function WorkbenchPanelToggles(props: {
         visible={props.visibility.right}
         onToggle={() => toggle('right')}
       />
-    </div>
+    </ButtonGroup>
   )
 }
 
@@ -262,107 +269,36 @@ type PanelToggleProps = {
 }
 
 function PanelToggle(props: PanelToggleProps) {
+  const action = `${props.visible ? 'Hide' : 'Show'} ${props.label}`
   return (
-    <Button
-      type="button"
-      size="icon"
-      variant="ghost"
-      aria-label={`${props.visible ? 'Hide' : 'Show'} ${props.label}`}
-      aria-pressed={props.visible}
-      title={`${props.visible ? 'Hide' : 'Show'} ${props.label}`}
-      onClick={props.onToggle}
-    >
-      <HugeiconsIcon icon={props.icon} strokeWidth={2} aria-hidden />
-    </Button>
-  )
-}
-
-function RunSummary(props: {
-  model: BatchWorkbenchModel
-  onCancel: () => void
-}) {
-  return (
-    <footer className="flex shrink-0 flex-nowrap items-center gap-x-6 overflow-x-auto border-t border-border px-3 py-2 text-xs whitespace-nowrap sm:px-4">
-      <div className="min-w-32">
-        <p className="font-medium">Run {props.model.runId}</p>
-        <p className="text-muted-foreground">
-          Started {formatStartedAt(props.model.startedAt)}
-        </p>
-      </div>
-      <SummaryValue label="Environment" value={props.model.environmentLabel} />
-      <SummaryValue label="Total" value={props.model.totals.scheduled} />
-      <SummaryState
-        label="Running"
-        state="running"
-        value={props.model.totals.running}
-      />
-      <SummaryValue label="Queued" value={props.model.totals.queued} />
-      <SummaryState
-        label="Passed"
-        state="passed"
-        value={props.model.totals.passed}
-      />
-      <SummaryState
-        label="Failed"
-        state="failed"
-        value={failedTotal(props.model.totals)}
-      />
-      {props.model.phase === 'running' ? (
-        <Button type="button" variant="outline" onClick={props.onCancel}>
-          Cancel run
-        </Button>
-      ) : null}
-      {props.model.totals.running + props.model.totals.queued > 1 ? (
-        <p className="text-muted-foreground">Run continues for other tests</p>
-      ) : null}
-    </footer>
-  )
-}
-
-function SummaryValue(props: { label: string; value: number | string }) {
-  return (
-    <div>
-      <p className="text-muted-foreground">{props.label}</p>
-      <p className="font-medium">{props.value}</p>
-    </div>
-  )
-}
-
-function SummaryState(props: {
-  label: string
-  state: 'running' | 'passed' | 'failed'
-  value: number
-}) {
-  return (
-    <div>
-      <p className="text-muted-foreground">{props.label}</p>
-      <p
-        className={cn(
-          'flex items-center gap-1.5 font-medium',
-          stateLabelClass(props.state),
-        )}
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          <Button
+            type="button"
+            size="icon"
+            variant="outline"
+            className="aria-pressed:bg-secondary aria-pressed:text-secondary-foreground"
+            aria-label={action}
+            aria-pressed={props.visible}
+            onClick={props.onToggle}
+          />
+        }
       >
-        {props.state === 'running' ? (
-          <Spinner className="text-primary" />
-        ) : (
-          <ResultMark state={props.state} />
-        )}
-        {props.value}
-      </p>
-    </div>
+        <HugeiconsIcon icon={props.icon} strokeWidth={1.5} aria-hidden />
+      </TooltipTrigger>
+      <TooltipContent>{action}</TooltipContent>
+    </Tooltip>
   )
 }
 
-function failedTotal(totals: WorkbenchTotals): number {
-  return totals.failed + totals.infrastructureError
-}
-
-function formatStartedAt(startedAt: string | undefined): string {
-  return startedAt ? new Date(startedAt).toLocaleTimeString() : 'Not recorded'
-}
-
-function stateLabelClass(state: string): string {
-  if (state === 'passed') return 'text-passed'
-  if (state === 'failed') return 'text-destructive'
-  return 'text-muted-foreground'
+function workbenchSummary(model: SpecificationsWorkbenchModel): string {
+  if (model.kind === 'batch') {
+    return `${model.totals.scheduled} Scenarios · ${model.environmentLabel}`
+  }
+  const scenarioCount = model.specifications.reduce(
+    (total, specification) => total + specification.scenarios.length,
+    0,
+  )
+  return `${model.specifications.length} Specifications · ${scenarioCount} Scenarios`
 }

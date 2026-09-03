@@ -35,6 +35,13 @@ import { ResultViewportSurface } from '../runs/result/result-inspector'
 import { resultBadgeVariant } from '../runs/result/result-presentation'
 import { durationLabel } from '../runs/run-format'
 import { studioRouteHref } from '../studio/studio-route'
+import {
+  EmptyArtifacts,
+  EmptyDiagnostics,
+  EmptyFocus,
+  EmptyTimeline,
+  PreviewEmptyState,
+} from './specifications-workbench-empty'
 import type {
   BatchWorkbenchModel,
   SpecificationsWorkbenchModel,
@@ -61,21 +68,32 @@ export function WorkbenchPreview(props: {
       aria-labelledby="workbench-preview-title"
       className="flex min-h-0 min-w-0 flex-col overflow-hidden"
     >
-      <header className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-b border-border px-3 py-2">
-        <h2 id="workbench-preview-title" className="text-sm font-medium">
-          Preview
-        </h2>
-        <div className="flex items-center gap-2 text-xs text-muted-foreground">
+      <header className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-b border-border px-3 py-2 sm:px-4">
+        <div className="flex items-center gap-2">
           <HugeiconsIcon icon={BrowserIcon} strokeWidth={2} aria-hidden />
-          <span>
-            {props.model.kind === 'batch'
-              ? viewportLabel(props.model)
-              : 'Browser preview'}
-          </span>
+          <h2 id="workbench-preview-title" className="text-sm font-semibold">
+            Browser preview
+          </h2>
+        </div>
+        <div className="flex items-center gap-2">
+          {props.model.kind === 'batch' && props.model.viewport ? (
+            <span className="text-xs text-muted-foreground">
+              {viewportLabel(props.model)}
+            </span>
+          ) : null}
+          <Badge
+            variant={
+              props.model.kind === 'batch' && props.model.phase === 'running'
+                ? 'running'
+                : 'default'
+            }
+          >
+            {previewStateLabel(props.model)}
+          </Badge>
         </div>
       </header>
       {props.model.kind === 'batch' && props.model.viewport ? (
-        <div className="min-h-72 flex-1 overflow-hidden bg-muted/40 p-1 xl:min-h-0">
+        <div className="min-h-72 flex-1 overflow-hidden bg-muted/20 p-2 xl:min-h-0">
           <ResultViewportSurface
             liveViewport={props.model.viewport}
             scenarioName={scenarioName}
@@ -83,28 +101,20 @@ export function WorkbenchPreview(props: {
           />
         </div>
       ) : (
-        <div className="flex min-h-72 flex-1 items-center justify-center p-6 text-center text-sm text-muted-foreground xl:min-h-0">
-          {previewEmptyMessage(props.model)}
-        </div>
+        <PreviewEmptyState
+          model={props.model}
+          selectedScenario={props.selectedScenario}
+        />
       )}
     </section>
   )
-}
-
-function previewEmptyMessage(model: SpecificationsWorkbenchModel): string {
-  if (model.kind === 'browse') {
-    return 'Run a Scenario to open its live browser preview here.'
-  }
-  return model.phase === 'running'
-    ? 'The browser preview will appear when the focused Scenario opens a page.'
-    : 'No live browser frame is available for this completed attempt.'
 }
 
 export function EvidenceDock(props: WorkbenchEvidenceProps) {
   const focus = props.model.kind === 'batch' ? props.model.focus : undefined
   const tab = evidenceTab(focus?.activeTab)
   return (
-    <section className="min-h-0 min-w-0 overflow-hidden border-t border-border">
+    <section className="min-h-0 min-w-0 overflow-hidden">
       <Tabs
         value={tab}
         onValueChange={(value) =>
@@ -271,11 +281,11 @@ export function WorkbenchDetails(props: WorkbenchDetailsProps) {
 
   const focus = props.model.focus
   return (
-    <aside className="min-h-0 min-w-0 border-t border-border xl:overflow-auto xl:border-t-0 xl:border-l">
+    <aside className="min-h-0 min-w-0 bg-muted/10 xl:overflow-auto">
       {focus ? (
         <>
           <header className="space-y-1 border-b border-border p-4">
-            <h2 className="text-base font-semibold">
+            <h2 className="text-xl font-semibold tracking-tight">
               {focus.inspected.result.specification.name}
             </h2>
             <p className="text-sm text-muted-foreground">
@@ -312,9 +322,11 @@ function BrowseDetails(props: WorkbenchDetailsProps) {
   }
 
   return (
-    <aside className="flex h-full min-h-0 min-w-0 flex-col overflow-auto">
+    <aside className="flex h-full min-h-0 min-w-0 flex-col overflow-auto bg-muted/10">
       <header className="space-y-1 border-b border-border p-4">
-        <h2 className="text-base font-semibold">{specification.name}</h2>
+        <h2 className="text-xl font-semibold tracking-tight">
+          {specification.name}
+        </h2>
         <p className="truncate font-mono text-xs text-muted-foreground">
           {specification.uri}
         </p>
@@ -325,7 +337,9 @@ function BrowseDetails(props: WorkbenchDetailsProps) {
             aria-labelledby="selected-scenario-title"
             className="space-y-2"
           >
-            <p className="text-xs text-muted-foreground">Selected Scenario</p>
+            <p className="text-[0.6875rem] font-semibold tracking-[0.04em] text-muted-foreground uppercase">
+              Selected Scenario
+            </p>
             <h3 id="selected-scenario-title" className="text-sm font-medium">
               {props.selectedScenario.name}
             </h3>
@@ -343,10 +357,14 @@ function BrowseDetails(props: WorkbenchDetailsProps) {
               Run Scenario
             </Button>
           </section>
-        ) : null}
+        ) : (
+          <p className="text-sm leading-relaxed text-muted-foreground">
+            Select a Scenario in the sidebar to inspect it or run it directly.
+          </p>
+        )}
         <Button
           type="button"
-          variant={props.selectedScenario ? 'outline' : 'default'}
+          variant="outline"
           className="w-full"
           disabled={
             props.running || !props.canRun || specification.canRun === false
@@ -485,50 +503,23 @@ function EvidenceCount(props: { label: string; value: number }) {
   )
 }
 
-function EmptyFocus() {
-  return (
-    <p className="p-4 text-sm text-muted-foreground">
-      Waiting for the first Scenario to start.
-    </p>
-  )
-}
-
-function EmptyTimeline() {
-  return (
-    <p className="p-4 text-sm text-muted-foreground">
-      Run a Scenario to see each browser action on the timeline.
-    </p>
-  )
-}
-
-function EmptyArtifacts() {
-  return (
-    <p className="p-4 text-sm text-muted-foreground">
-      Screenshots and recordings from the selected Scenario will appear here.
-    </p>
-  )
-}
-
-function EmptyDiagnostics() {
-  return (
-    <p className="p-4 text-sm text-muted-foreground">
-      Console, network, and runner diagnostics will appear here.
-    </p>
-  )
-}
-
 function evidenceTab(tab: ResultInspectorTab | undefined) {
   return tab === 'artifacts' || tab === 'diagnostics' ? tab : 'timeline'
 }
 
 function viewportLabel(model: BatchWorkbenchModel): string {
   const viewport = model.viewport
-  if (!viewport) return 'Waiting'
+  if (!viewport) return ''
   if (viewport.kind === 'browserbase') return 'Browser session'
   if (viewport.width && viewport.height) {
     return `${viewport.width}×${viewport.height}`
   }
   return viewport.kind === 'device-frame' ? 'Device frame' : 'Browser frame'
+}
+
+function previewStateLabel(model: SpecificationsWorkbenchModel): string {
+  if (model.kind === 'browse') return 'Idle'
+  return model.phase === 'running' ? 'Live' : 'Finished'
 }
 
 function stateLabelClass(state: string): string {

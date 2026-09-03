@@ -48,3 +48,14 @@ The reference includes controls and data that the current Studio contracts do no
 - P2: the implementation uses recorded browser frames instead of inventing browser address-bar controls that the current Studio evidence contract cannot operate.
 
 final result: passed
+
+## Better Interface refinement
+
+- Applied `DESIGN.md` typography, density, surface, and control hierarchy to the Specifications workbench.
+- Reduced the Specification rail to one expanded group by default and retained complete, wrapping Scenario names.
+- Replaced repeated high-emphasis row actions with Mira ghost buttons while preserving direct single-Scenario and whole-Specification execution.
+- Made the selected Scenario action the sole filled primary control; Run all remains primary when no Scenario is selected.
+- Consolidated the preview title and state into one header built from the existing Badge primitive.
+- Reworked idle and unavailable-evidence messages into concise, structured empty states using only design tokens.
+- Verified idle, selected, completed, and panel-reveal states in the collaborative browser.
+- Rechecked 320, 375, 414, 768, and 1280px layouts with no document-level horizontal overflow.

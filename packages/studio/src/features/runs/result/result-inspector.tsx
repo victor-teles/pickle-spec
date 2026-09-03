@@ -458,7 +458,9 @@ export function ResultViewportSurface(props: ResultViewportSurfaceProps) {
       <div
         className={cn(
           'overflow-hidden border border-border bg-muted',
-          props.size === 'workbench' ? 'h-full min-h-72' : 'rounded-xl',
+          props.size === 'workbench'
+            ? 'h-full min-h-72 rounded-lg'
+            : 'rounded-xl',
         )}
       >
         <iframe
@@ -480,7 +482,7 @@ export function ResultViewportSurface(props: ResultViewportSurfaceProps) {
       className={cn(
         'flex overflow-hidden border border-border bg-muted',
         props.size === 'workbench'
-          ? 'h-full min-h-72 items-center justify-center'
+          ? 'h-full min-h-72 items-center justify-center rounded-lg'
           : 'rounded-xl',
       )}
     >

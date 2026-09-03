@@ -1,3 +1,5 @@
+import { PlayCircleIcon } from '@hugeicons/core-free-icons'
+import { HugeiconsIcon } from '@hugeicons/react'
 import { useEffect, useState } from 'react'
 import {
   Accordion,
@@ -28,6 +30,7 @@ import type {
   BatchWorkbenchModel,
   SpecificationsWorkbenchModel,
   WorkbenchTarget,
+  WorkbenchTotals,
 } from './specifications-workbench-model'
 
 type WorkbenchRailProps = {
@@ -56,7 +59,7 @@ export function WorkbenchRail(props: WorkbenchRailProps) {
   }, [runKey])
 
   return (
-    <aside className="flex min-h-0 min-w-0 flex-col xl:overflow-hidden">
+    <aside className="flex h-full min-h-0 min-w-0 flex-col bg-muted/10 xl:overflow-hidden">
       <Tabs
         value={tab}
         onValueChange={setTab}
@@ -68,9 +71,14 @@ export function WorkbenchRail(props: WorkbenchRailProps) {
             <TabsTrigger value="specifications">Specifications</TabsTrigger>
           </TabsList>
         </div>
-        <TabsContent value="queue" className="min-h-0 overflow-auto">
+        <TabsContent value="queue" className="min-h-0 overflow-hidden">
           {props.model.kind === 'batch' ? (
-            <QueueGroups {...props} model={props.model} />
+            <div className="flex h-full min-h-0 flex-col">
+              <div className="min-h-0 flex-1 overflow-auto">
+                <QueueGroups {...props} model={props.model} />
+              </div>
+              <QueueSummary totals={props.model.totals} />
+            </div>
           ) : (
             <p className="p-4 text-sm text-muted-foreground">
               Start Run all to monitor the queue here.
@@ -84,23 +92,50 @@ export function WorkbenchRail(props: WorkbenchRailProps) {
           <SpecificationTargets {...props} />
         </TabsContent>
       </Tabs>
-      {props.model.kind === 'batch' ? (
-        <p className="shrink-0 border-t border-border px-4 py-2 text-xs text-muted-foreground">
-          {props.model.totals.scheduled} tests in this run
-        </p>
-      ) : null}
     </aside>
   )
 }
 
+function QueueSummary(props: { totals: WorkbenchTotals }) {
+  return (
+    <dl className="grid shrink-0 grid-cols-4 border-t border-border px-3 py-2 text-xs">
+      <div>
+        <dt className="text-muted-foreground">Total</dt>
+        <dd className="mt-0.5 font-medium">{props.totals.scheduled}</dd>
+      </div>
+      <div>
+        <dt className="text-muted-foreground">Queued</dt>
+        <dd className="mt-0.5 font-medium">{props.totals.queued}</dd>
+      </div>
+      <div>
+        <dt className="text-muted-foreground">Passed</dt>
+        <dd className="mt-0.5 flex items-center gap-1 text-passed">
+          <ResultMark state="passed" /> {props.totals.passed}
+        </dd>
+      </div>
+      <div>
+        <dt className="text-muted-foreground">Failed</dt>
+        <dd className="mt-0.5 flex items-center gap-1 text-destructive">
+          <ResultMark state="failed" /> {failedTotal(props.totals)}
+        </dd>
+      </div>
+    </dl>
+  )
+}
+
+function failedTotal(totals: WorkbenchTotals): number {
+  return totals.failed + totals.infrastructureError
+}
+
 function SpecificationTargets(props: WorkbenchRailProps) {
+  const initiallyExpanded =
+    props.selectedSpecificationId ?? props.model.specifications[0]?.id
+
   return (
     <Accordion
       multiple
-      defaultValue={props.model.specifications.map(
-        (specification) => specification.id,
-      )}
-      className="rounded-none border-0"
+      defaultValue={initiallyExpanded ? [initiallyExpanded] : []}
+      className="gap-0.5 rounded-none border-0"
     >
       {props.model.specifications.map((specification) => (
         <SpecificationTarget
@@ -124,24 +159,31 @@ function SpecificationTarget(
   }
 
   return (
-    <AccordionItem value={props.specification.id}>
+    <AccordionItem
+      value={props.specification.id}
+      className="border-0 data-open:bg-transparent"
+    >
       <AccordionTrigger
-        className={selected ? 'bg-secondary px-3 py-2' : 'px-3 py-2'}
+        className={
+          selected
+            ? 'items-center rounded-lg bg-secondary px-3 py-2 hover:no-underline'
+            : 'items-center rounded-lg px-3 py-2 hover:bg-muted hover:no-underline'
+        }
         onClick={() => props.onSelectSpecification(props.specification.id)}
       >
-        <span className="min-w-0 flex-1 truncate text-left">
+        <span className="min-w-0 flex-1 break-words text-left text-[0.8125rem] leading-snug">
           {props.specification.name}
         </span>
         <span className="text-xs text-muted-foreground">
           {props.specification.scenarios.length}
         </span>
       </AccordionTrigger>
-      <AccordionContent className="px-2 pb-2">
+      <AccordionContent className="px-2 pb-1">
         <Button
           type="button"
           size="sm"
-          variant="outline"
-          className="mb-1 w-full"
+          variant="ghost"
+          className="mb-1 w-full justify-start px-2 text-muted-foreground"
           disabled={
             props.running ||
             !props.canRun ||
@@ -149,6 +191,7 @@ function SpecificationTarget(
           }
           onClick={handleRunSpecification}
         >
+          <HugeiconsIcon icon={PlayCircleIcon} strokeWidth={1.5} aria-hidden />
           Run Specification
         </Button>
         <ul className="space-y-0.5">
@@ -184,22 +227,25 @@ function ScenarioTarget(
   }
 
   return (
-    <li className="flex min-w-0 items-center gap-1">
+    <li className="flex min-w-0 items-stretch gap-1">
       <Button
         type="button"
         size="sm"
         variant={selected ? 'secondary' : 'ghost'}
         aria-pressed={selected}
-        className="h-auto min-w-0 flex-1 justify-start px-2 py-1.5 text-left"
+        className="h-auto min-h-8 min-w-0 flex-1 justify-start px-2 py-1.5 text-left whitespace-normal"
         onClick={handleSelect}
       >
-        <span className="truncate">{props.scenario.name}</span>
+        <span className="break-words text-pretty leading-snug">
+          {props.scenario.name}
+        </span>
       </Button>
       <Button
         type="button"
         size="sm"
         variant="ghost"
         aria-label={`Run Scenario ${props.scenario.name}`}
+        className="self-center"
         disabled={
           props.running ||
           !props.canRun ||
@@ -208,6 +254,7 @@ function ScenarioTarget(
         }
         onClick={handleRun}
       >
+        <HugeiconsIcon icon={PlayCircleIcon} strokeWidth={1.5} aria-hidden />
         Run
       </Button>
     </li>
