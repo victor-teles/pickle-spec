@@ -1,0 +1,13 @@
+{
+  "date": "2026-09-02",
+  "designSystem": "DESIGN.md",
+  "fontStack": [
+    "Inter Variable",
+    "JetBrains Mono Variable",
+    "EB Garamond Variable"
+  ],
+  "framework": "TanStack Start with Rsbuild",
+  "motion": "motion-cut",
+  "palette": "OKLCH custom properties",
+  "spacing": "4px scale"
+}

@@ -138,8 +138,6 @@ describe('runScenario', () => {
     expect(openSession).toHaveBeenCalledTimes(1)
 
     attempt = 0
-    openSession.mockClear()
-    close.mockClear()
 
     const withPolicy = await runScenario({
       specification,
@@ -156,8 +154,8 @@ describe('runScenario', () => {
       ],
       flaky: true,
     })
-    expect(openSession).toHaveBeenCalledTimes(2)
-    expect(close).toHaveBeenCalledTimes(2)
+    expect(openSession).toHaveBeenCalledTimes(3)
+    expect(close).toHaveBeenCalledTimes(3)
   })
 
   test('aborts a timed-out step and closes its logical session', async () => {

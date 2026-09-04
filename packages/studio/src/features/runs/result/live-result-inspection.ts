@@ -131,7 +131,23 @@ export function pinLiveInvestigation(
 ): LiveResultInspection {
   return {
     ...inspection,
+    followedEntryId: inspection.snapshot
+      ? nextFollowedEntryId({ following: true }, inspection.snapshot, location)
+      : undefined,
     location,
+    pinned: true,
+  }
+}
+
+export function inspectLiveTimelineEntry(
+  inspection: LiveResultInspection,
+  entryId: string,
+): LiveResultInspection {
+  if (!inspection.location) return inspection
+  return {
+    ...inspection,
+    followedEntryId: entryId,
+    following: false,
     pinned: true,
   }
 }

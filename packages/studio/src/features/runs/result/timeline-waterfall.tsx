@@ -103,7 +103,7 @@ function TimelineLabelEntry(
         onClick={handleClick}
         onKeyDown={handleKeyDown}
         className={cn(
-          'h-full w-full min-w-0 justify-start rounded-none px-3 text-left transition-none',
+          'h-full w-full min-w-0 justify-start rounded-none px-3 text-left transition-colors duration-75',
           selected && 'bg-secondary text-foreground',
           props.entry.causal && 'text-destructive',
         )}
@@ -236,7 +236,7 @@ function timelinePlotPointerStyle(geometry: TimelinePlotGeometry) {
 
 function TimelinePlotEntry(props: TimelinePlotEntryProps) {
   const markClassName = cn(
-    'border border-transparent transition-none peer-hover:border-foreground/30 peer-active:border-foreground/45',
+    'border border-transparent transition-colors duration-75 peer-hover:border-foreground/30 peer-active:border-foreground/45',
     timelineKindSolidClassName(props.entry.kind),
     props.entry.causal && 'ring-2 ring-destructive/60',
     props.selected && 'border-foreground/35',
@@ -259,7 +259,7 @@ function TimelinePlotEntry(props: TimelinePlotEntryProps) {
         data-timeline-plot={props.geometry.type}
         onMouseDown={(event) => event.preventDefault()}
         onClick={() => props.onSelect(props.entry.id)}
-        className="peer absolute top-0 z-20 h-11 min-w-0 cursor-pointer rounded-none border-0 bg-transparent p-0 transition-none hover:bg-transparent active:bg-transparent"
+        className="peer absolute top-0 z-20 h-11 min-w-0 cursor-pointer rounded-none border-0 bg-transparent p-0 transition-colors duration-75 hover:bg-transparent active:bg-transparent"
         style={timelinePlotPointerStyle(props.geometry)}
       />
       <TimelinePlotMark

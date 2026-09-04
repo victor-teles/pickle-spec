@@ -18,20 +18,13 @@ import {
   TabsTrigger,
 } from '../../../components/ui/tabs'
 import type { StudioApi } from '../../../lib/studio-api'
+import { cn } from '../../../lib/utils'
 import type { StudioRunSnapshot } from '../../../server/contracts'
 import type { StudioLiveViewport } from '../live-viewport'
-import {
-  displayedAttemptState,
-  isAttemptInProgress,
-  type LiveConnectionStatus,
-} from './live-result-inspection'
-import {
-  artifactsFor,
-  defaultResultInspectorTab,
-  diagnosticsFor,
-  findInspectedResult,
-  timelineFor,
-} from './result-evidence'
+import type { FocusedAttemptProjection } from './focused-attempt'
+import { focusedAttemptProjection } from './focused-attempt'
+import type { LiveConnectionStatus } from './live-result-inspection'
+import type { artifactsFor } from './result-evidence'
 import {
   ResultArtifact,
   ResultArtifacts,
@@ -44,7 +37,6 @@ import type {
   ResultInspectorTab,
 } from './result-inspection'
 import { reasonMessage, resultBadgeVariant } from './result-presentation'
-import { timeTravelInspection } from './time-travel-inspection'
 
 type ResultInspectorProps = {
   api: StudioApi
@@ -93,8 +85,8 @@ function useFetchedRunSnapshot(props: ResultInspectorProps) {
 export function ResultInspector(props: ResultInspectorProps) {
   const fetched = useFetchedRunSnapshot(props)
   const snapshot = props.snapshot ?? fetched.snapshot
-  const inspected = snapshot
-    ? findInspectedResult(snapshot, props.location)
+  const projection = snapshot
+    ? focusedAttemptProjection(snapshot, props.location)
     : undefined
 
   if (fetched.error) {
@@ -113,7 +105,7 @@ export function ResultInspector(props: ResultInspectorProps) {
       </div>
     )
   }
-  if (!inspected) {
+  if (!projection) {
     return (
       <div className="space-y-3 p-4">
         <p role="alert" className="text-sm text-destructive">
@@ -128,21 +120,26 @@ export function ResultInspector(props: ResultInspectorProps) {
     )
   }
   return (
-    <InspectedResultView {...props} snapshot={snapshot} inspected={inspected} />
+    <InspectedResultView
+      {...props}
+      snapshot={snapshot}
+      projection={projection}
+    />
   )
 }
 
 type InspectedResultViewProps = ResultInspectorProps & {
   snapshot: StudioRunSnapshot
-  inspected: NonNullable<ReturnType<typeof findInspectedResult>>
+  projection: FocusedAttemptProjection
 }
 
 function ResultInspectorHeader(
   props: InspectedResultViewProps & {
-    displayState: ReturnType<typeof displayedAttemptState>
+    displayState: FocusedAttemptProjection['displayState']
   },
 ) {
-  const { inspected, snapshot } = props
+  const { inspected } = props.projection
+  const { snapshot } = props
   return (
     <header className="mb-4 flex flex-wrap items-start justify-between gap-3 border-b border-border pb-4">
       <div className="min-w-0 space-y-2">
@@ -191,19 +188,19 @@ function ResultInspectorHeader(
   )
 }
 
-function ResultInspectorTabs(
-  props: InspectedResultViewProps & {
-    activeTab: ResultInspectorTab
-    artifacts: ReturnType<typeof artifactsFor>
-    diagnostics: ReturnType<typeof diagnosticsFor>
-    displayState: ReturnType<typeof displayedAttemptState>
-    inProgress: boolean
-    resultState: TestResultState
-    timeline: ReturnType<typeof timelineFor>
-  },
-) {
-  const { inspected } = props
-  const evidenceTimeline = (
+type ResultInspectorContentProps = InspectedResultViewProps & {
+  activeTab: FocusedAttemptProjection['activeTab']
+  artifacts: FocusedAttemptProjection['artifacts']
+  diagnostics: FocusedAttemptProjection['diagnostics']
+  displayState: FocusedAttemptProjection['displayState']
+  inProgress: FocusedAttemptProjection['inProgress']
+  resultState: FocusedAttemptProjection['resultState']
+  timeline: FocusedAttemptProjection['timeline']
+}
+
+function ResultTimeline(props: ResultInspectorContentProps) {
+  const { inspected } = props.projection
+  return (
     <ResultEvidenceTimeline
       entries={props.timeline}
       startedAt={inspected.attempt.startedAt}
@@ -216,6 +213,10 @@ function ResultInspectorTabs(
       onPauseFollowing={props.onPauseFollowing}
     />
   )
+}
+
+function ResultInspectorTabs(props: ResultInspectorContentProps) {
+  const { inspected } = props.projection
   return (
     <Tabs
       value={props.activeTab}
@@ -238,7 +239,7 @@ function ResultInspectorTabs(
       <TabsContent value="timeline">
         {props.liveViewport?.kind === 'device-frame' ? (
           <div className="grid min-w-0 items-start gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(18rem,24rem)]">
-            {evidenceTimeline}
+            <ResultTimeline {...props} />
             <ResultViewportPanel
               liveViewport={props.liveViewport}
               scenarioName={inspected.result.scenario.name}
@@ -246,7 +247,7 @@ function ResultInspectorTabs(
             />
           </div>
         ) : (
-          evidenceTimeline
+          <ResultTimeline {...props} />
         )}
       </TabsContent>
       <TabsContent value="artifacts">
@@ -279,51 +280,32 @@ function ResultInspectorTabs(
 }
 
 function InspectedResultView(props: InspectedResultViewProps) {
-  const { snapshot, inspected } = props
-  const displayState = displayedAttemptState(inspected.attempt)
-  const inProgress = isAttemptInProgress(inspected.attempt)
-  const resultState =
-    displayState === 'running' ? inspected.attempt.state : displayState
-  const activeTab =
-    props.location.tab ?? defaultResultInspectorTab(inspected.attempt.state)
-  const artifacts = artifactsFor(inspected.attempt)
-  const diagnostics = diagnosticsFor(inspected.attempt)
-  const actions = timeTravelInspection(snapshot, props.location)
-  const timeline = timelineFor(
-    snapshot.events,
-    inspected.attempt,
-    props.location,
-    actions,
-  )
+  const { snapshot, projection } = props
+  const { inspected } = projection
   if (props.artifactIndex !== undefined) {
-    const artifact = artifacts[props.artifactIndex]
+    const artifact = projection.artifacts[props.artifactIndex]
     return (
       <ArtifactPage
         artifact={artifact}
         artifactIndex={props.artifactIndex}
         onBack={props.onBackToResult}
-        resultState={resultState}
+        resultState={projection.resultState}
         scenarioName={inspected.result.scenario.name}
         snapshot={snapshot}
       />
     )
+  }
+  const contentProps = {
+    ...props,
+    ...projection,
   }
   return (
     <section
       aria-labelledby="result-inspector-title"
       className="min-h-0 flex-1 overflow-auto px-3 py-4 sm:px-5"
     >
-      <ResultInspectorHeader {...props} displayState={displayState} />
-      <ResultInspectorTabs
-        {...props}
-        activeTab={activeTab}
-        artifacts={artifacts}
-        diagnostics={diagnostics}
-        displayState={displayState}
-        inProgress={inProgress}
-        resultState={resultState}
-        timeline={timeline}
-      />
+      <ResultInspectorHeader {...contentProps} />
+      <ResultInspectorTabs {...contentProps} />
     </section>
   )
 }
@@ -433,15 +415,11 @@ export function ResultViewportPanel(props: {
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
-          <div className="overflow-hidden rounded-xl border border-border bg-muted">
-            <iframe
-              title={`Browserbase live session for ${props.scenarioName}`}
-              src={props.liveViewport.url}
-              sandbox="allow-same-origin allow-scripts"
-              allow="clipboard-read; clipboard-write"
-              className="h-[640px] w-full bg-background"
-            />
-          </div>
+          <ResultViewportSurface
+            liveViewport={props.liveViewport}
+            scenarioName={props.scenarioName}
+            compact={props.compact}
+          />
         </CardContent>
       </Card>
     )
@@ -457,16 +435,65 @@ export function ResultViewportPanel(props: {
         </CardDescription>
       </CardHeader>
       <CardContent>
-        <div className="overflow-hidden rounded-xl border border-border bg-muted">
-          <img
-            alt={`Live ${deviceFrame ? 'device' : 'browser'} viewport for ${props.scenarioName}`}
-            src={`data:${props.liveViewport.mimeType};base64,${props.liveViewport.data}`}
-            className={
-              props.compact ? 'max-h-[36rem] w-full object-contain' : 'w-full'
-            }
-          />
-        </div>
+        <ResultViewportSurface
+          liveViewport={props.liveViewport}
+          scenarioName={props.scenarioName}
+          compact={props.compact}
+        />
       </CardContent>
     </Card>
+  )
+}
+
+type ResultViewportSurfaceProps = {
+  liveViewport: StudioLiveViewport
+  scenarioName: string
+  compact?: boolean
+  size?: 'default' | 'workbench'
+}
+
+export function ResultViewportSurface(props: ResultViewportSurfaceProps) {
+  if (props.liveViewport.kind === 'browserbase') {
+    return (
+      <div
+        className={cn(
+          'overflow-hidden border border-border bg-muted',
+          props.size === 'workbench'
+            ? 'h-full min-h-72 rounded-lg'
+            : 'rounded-xl',
+        )}
+      >
+        <iframe
+          title={`Browserbase live session for ${props.scenarioName}`}
+          src={props.liveViewport.url}
+          sandbox="allow-same-origin allow-scripts"
+          allow="clipboard-read; clipboard-write"
+          className={cn(
+            'w-full bg-background',
+            props.size === 'workbench' ? 'h-full min-h-72' : 'h-[640px]',
+          )}
+        />
+      </div>
+    )
+  }
+  const deviceFrame = props.liveViewport.kind === 'device-frame'
+  return (
+    <div
+      className={cn(
+        'flex overflow-hidden border border-border bg-muted',
+        props.size === 'workbench'
+          ? 'h-full min-h-72 items-center justify-center rounded-lg'
+          : 'rounded-xl',
+      )}
+    >
+      <img
+        alt={`Live ${deviceFrame ? 'device' : 'browser'} viewport for ${props.scenarioName}`}
+        src={`data:${props.liveViewport.mimeType};base64,${props.liveViewport.data}`}
+        className={cn(
+          props.compact ? 'max-h-[36rem] w-full object-contain' : 'w-full',
+          props.size === 'workbench' && 'h-full max-h-none object-contain',
+        )}
+      />
+    </div>
   )
 }

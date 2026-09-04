@@ -1,25 +1,15 @@
-import type { TestRunExportFormat, TestRunManifest } from '@pickle-spec/runner'
+import type { TestRunManifest } from '@pickle-spec/runner'
 import { useEffect, useState } from 'react'
 import { LedgerLoadingSkeleton } from '../../components/loading-skeletons'
 import { Badge } from '../../components/ui/badge'
-import { Button, buttonVariants } from '../../components/ui/button'
-import {
-  DropdownMenu,
-  DropdownMenuCheckboxItem,
-  DropdownMenuContent,
-  DropdownMenuGroup,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from '../../components/ui/dropdown-menu'
+import { Button } from '../../components/ui/button'
 import { ResultMark } from '../../components/ui/result-mark'
 import type { StudioApi } from '../../lib/studio-api'
 import type {
   StudioRunRequest,
   StudioRunSnapshot,
 } from '../../server/contracts'
-import { studioRunReportDescriptors } from '../history/history.contracts'
+import { RunReportMenu } from '../history/run-report-menu'
 import type { LiveResultInspection } from './result/live-result-inspection'
 import type { ResultInspectionLocation } from './result/result-inspection'
 import { reasonMessage, resultBadgeVariant } from './result/result-presentation'
@@ -69,7 +59,6 @@ function useFetchedRunSnapshot(props: RunDetailProps) {
 
 export function RunDetail(props: RunDetailProps) {
   const fetched = useFetchedRunSnapshot(props)
-  const [includeAllArtifacts, setIncludeAllArtifacts] = useState(false)
   const snapshot = props.live?.snapshot ?? fetched.snapshot
 
   if (fetched.error) {
@@ -94,8 +83,6 @@ export function RunDetail(props: RunDetailProps) {
       manifest={snapshot.manifest}
       snapshot={snapshot}
       selectedLocation={props.location}
-      includeAllArtifacts={includeAllArtifacts}
-      onIncludeAllArtifacts={setIncludeAllArtifacts}
     />
   )
 }
@@ -104,8 +91,6 @@ function RunDetailHeader(
   props: RunDetailProps & {
     manifest: TestRunManifest
     running: boolean
-    includeAllArtifacts: boolean
-    onIncludeAllArtifacts: (include: boolean) => void
   },
 ) {
   const displayState = props.running ? 'running' : props.manifest.state
@@ -157,11 +142,7 @@ function RunDetailHeader(
             Cancel Test run
           </Button>
         ) : (
-          <ExportMenu
-            runId={props.manifest.id}
-            includeAllArtifacts={props.includeAllArtifacts}
-            onIncludeAllArtifacts={props.onIncludeAllArtifacts}
-          />
+          <RunReportMenu runId={props.manifest.id} />
         )}
         <Button
           type="button"
@@ -181,8 +162,6 @@ function LoadedRunDetail(
     manifest: TestRunManifest
     snapshot: StudioRunSnapshot
     selectedLocation?: ResultInspectionLocation
-    includeAllArtifacts: boolean
-    onIncludeAllArtifacts: (include: boolean) => void
     onSelectLocation: (location: ResultInspectionLocation) => void
   },
 ) {
@@ -301,68 +280,5 @@ function Metadata(props: { label: string; value: string; mono?: boolean }) {
         {props.value}
       </dd>
     </div>
-  )
-}
-
-function ExportMenu(props: {
-  runId: string
-  includeAllArtifacts: boolean
-  onIncludeAllArtifacts: (checked: boolean) => void
-}) {
-  return (
-    <DropdownMenu>
-      <DropdownMenuTrigger
-        type="button"
-        className={buttonVariants({ variant: 'outline' })}
-      >
-        Download report
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="end">
-        <DropdownMenuGroup>
-          <DropdownMenuLabel>Report format</DropdownMenuLabel>
-          {studioRunReportDescriptors.map((descriptor) => (
-            <ExportItem
-              key={descriptor.format}
-              href={reportDownloadHref(
-                props.runId,
-                descriptor.format,
-                props.includeAllArtifacts,
-              )}
-              label={descriptor.label}
-            />
-          ))}
-          <DropdownMenuSeparator />
-          <DropdownMenuLabel>HTML options</DropdownMenuLabel>
-          <DropdownMenuCheckboxItem
-            checked={props.includeAllArtifacts}
-            closeOnClick={false}
-            onCheckedChange={props.onIncludeAllArtifacts}
-          >
-            Include all artifacts in HTML report
-          </DropdownMenuCheckboxItem>
-        </DropdownMenuGroup>
-      </DropdownMenuContent>
-    </DropdownMenu>
-  )
-}
-
-function reportDownloadHref(
-  runId: string,
-  format: TestRunExportFormat,
-  includeAllArtifacts: boolean,
-): string {
-  const artifacts =
-    format === 'html' && includeAllArtifacts ? '?artifacts=all' : ''
-  return `/api/history/${encodeURIComponent(runId)}/${format}${artifacts}`
-}
-
-function ExportItem(props: { href: string; label: string }) {
-  return (
-    <DropdownMenuItem
-      nativeButton={false}
-      render={<a href={props.href} download />}
-    >
-      {props.label}
-    </DropdownMenuItem>
   )
 }

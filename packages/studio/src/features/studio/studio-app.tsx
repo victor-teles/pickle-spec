@@ -5,6 +5,10 @@ import { FirstRunOnboarding } from '../onboarding/first-run-onboarding'
 import { RunsArea } from '../runs/runs'
 import { SettingsPanel } from '../settings/settings'
 import { SpecificationsScreen } from '../specifications/specifications-screen'
+import {
+  type SpecificationsWorkbenchModel,
+  specificationsWorkbenchModel,
+} from '../specifications/specifications-workbench-model'
 import { CommandPalette } from './command-palette'
 import type { StudioRoute } from './studio-route'
 import { StudioTopbar } from './studio-topbar'
@@ -21,7 +25,10 @@ function isRunsRoute(route: StudioRoute): route is RunsRoute {
 
 type StudioController = ReturnType<typeof useStudioController>
 
-function StudioSpecificationsArea(props: { studio: StudioController }) {
+function StudioSpecificationsArea(props: {
+  studio: StudioController
+  workbench: SpecificationsWorkbenchModel
+}) {
   const { studio } = props
   const { data } = studio
   if (!data.project) return null
@@ -35,38 +42,36 @@ function StudioSpecificationsArea(props: { studio: StudioController }) {
       onReloadProject={data.reloadProject}
       project={data.project}
       run={{
-        cells: studio.run.cells,
-        live: studio.run.live,
         onCancel: studio.actions.cancelCurrentRun,
+        onDismissFinishedRun: studio.run.dismissFinishedRun,
+        onInspectLocation: studio.run.inspectLocation,
+        onInspectTimelineEntry: studio.run.inspectTimelineEntry,
         onPauseFollowing: studio.run.pauseFollowing,
-        onPinSelection: studio.run.pinSelection,
         onResumeFollowing: studio.run.resumeFollowing,
         onRun: studio.actions.startNewRun,
         onSelectInspectorTab: studio.run.selectInspectorTab,
         origin: studio.run.origin,
         runId: studio.run.runId,
         running: studio.run.running,
-        selectedResult: studio.run.selectedResult,
       }}
       selection={{
-        currentScenarioId: studio.selection.currentScenarioContext?.scenario.id,
-        focusRequest: studio.selection.focus?.request ?? 0,
-        focusTargetId:
-          studio.selection.focus?.kind === 'scenario'
-            ? studio.selection.focus.scenarioId
-            : undefined,
+        currentScenario: studio.selection.currentScenarioContext?.scenario,
         headingRef: studio.selection.headingRef,
         missing: studio.selection.missing,
-        onSelectScenario: studio.selection.selectScenario,
+        onSelectScenario: studio.selection.jumpToSpecification,
         onSelect: studio.selection.selectSpecification,
         onSelectCreated: studio.selection.selectCreatedSpecification,
         selected: studio.selection.selected,
       }}
+      workbench={props.workbench}
     />
   )
 }
 
-function StudioAreaContent(props: { studio: StudioController }) {
+function StudioAreaContent(props: {
+  studio: StudioController
+  workbench: SpecificationsWorkbenchModel
+}) {
   const { studio } = props
   const { data, navigation } = studio
   if (!data.project) return null
@@ -100,13 +105,23 @@ function StudioAreaContent(props: { studio: StudioController }) {
       </div>
     )
   }
-  return <StudioSpecificationsArea studio={studio} />
+  return (
+    <StudioSpecificationsArea studio={studio} workbench={props.workbench} />
+  )
 }
 
-function StudioWorkspace(props: { studio: StudioController }) {
-  const { studio } = props
+function StudioWorkspace({ studio }: { studio: StudioController }) {
   const { data } = studio
   if (!data.project) return null
+  const workbench = specificationsWorkbenchModel({
+    live: studio.run.activeLive,
+    runsIndex: data.runsIndex,
+    specifications: data.project.specifications,
+  })
+  const specificationsWorkbenchVisible =
+    studio.navigation.area === 'Specifications' && !studio.authoring
+  const batchWorkbenchVisible =
+    workbench.kind === 'batch' && specificationsWorkbenchVisible
 
   function handleOpenSettings() {
     studio.actions.selectArea('Settings')
@@ -136,21 +151,23 @@ function StudioWorkspace(props: { studio: StudioController }) {
         area={studio.navigation.area}
         authoring={studio.authoring}
         projectName={data.project.name}
-        running={studio.run.running}
+        running={studio.run.running && !batchWorkbenchVisible}
         onAreaChange={studio.actions.selectArea}
         onOpenCommands={studio.actions.openCommands}
       />
-      <FirstRunOnboarding
-        activeProfileId={studio.activeProfileId}
-        currentSpecification={studio.selection.selected}
-        onOpenSettings={handleOpenSettings}
-        onRun={studio.run.startRun}
-        project={data.project}
-        readinessAttempt={studio.run.readinessAttempt}
-        running={studio.run.running}
-        runsIndex={data.runsIndex}
-      />
-      <StudioAreaContent studio={studio} />
+      {specificationsWorkbenchVisible ? null : (
+        <FirstRunOnboarding
+          activeProfileId={studio.activeProfileId}
+          currentSpecification={studio.selection.selected}
+          onOpenSettings={handleOpenSettings}
+          onRun={studio.run.startRun}
+          project={data.project}
+          readinessAttempt={studio.run.readinessAttempt}
+          running={studio.run.running}
+          runsIndex={data.runsIndex}
+        />
+      )}
+      <StudioAreaContent studio={studio} workbench={workbench} />
     </div>
   )
 }

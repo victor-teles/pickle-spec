@@ -47,10 +47,10 @@ test('renders pointer-only plot proxies for point and duration entries', () => {
   expect(markup).toContain('overflow-hidden')
   expect(markup).toContain('data-timeline-duration-label="true"')
   expect(markup).toContain('class="min-w-0 truncate"')
-  expect(markup).toContain('px-3 text-left transition-none')
+  expect(markup).toContain('px-3 text-left transition-colors duration-75')
   expect(markup.match(/data-timeline-mark="true"/g)?.length).toBe(2)
   expect(markup).toMatch(
-    /data-timeline-mark="true" class="[^"]*transition-none[^"]*peer-hover/,
+    /data-timeline-mark="true" class="[^"]*transition-colors[^"]*duration-75[^"]*peer-hover/,
   )
   expect(markup).toMatch(
     /data-timeline-tick="1000" class="[^"]*whitespace-nowrap/,

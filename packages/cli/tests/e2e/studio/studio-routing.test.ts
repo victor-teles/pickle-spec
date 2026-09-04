@@ -1,7 +1,42 @@
 import { join } from 'node:path'
-import type { Browser } from 'playwright'
+import type { Browser, Locator, Page } from 'playwright'
 import { afterAll, beforeAll, describe, expect, test } from 'vitest'
 import { StudioBrowserFixture } from '../support/studio-browser-fixture'
+
+function workbenchRail(page: Page): Locator {
+  return page
+    .getByRole('tablist', { name: 'Specifications workbench rail' })
+    .locator('xpath=ancestor::aside')
+}
+
+async function openSpecificationsRail(page: Page): Promise<Locator> {
+  const rail = workbenchRail(page)
+  await rail.getByRole('tab', { name: 'Specifications' }).click()
+  return rail
+}
+
+async function showWorkbenchDetails(page: Page): Promise<void> {
+  const hideDetails = page.getByRole('button', { name: 'Hide Right sidebar' })
+  if (await hideDetails.isVisible()) return
+  const showDetails = page.getByRole('button', { name: 'Show Right sidebar' })
+  await showDetails.waitFor()
+  await showDetails.click()
+  await hideDetails.waitFor()
+}
+
+async function runSpecification(page: Page): Promise<void> {
+  await showWorkbenchDetails(page)
+  const runSelected = page.getByRole('button', { name: 'Run Specification' })
+  if (await runSelected.isVisible()) {
+    await runSelected.click()
+    return
+  }
+  await page.getByRole('button', { name: 'Run all Specifications' }).click()
+}
+
+function scenarioResult(page: Page, name: RegExp): Locator {
+  return workbenchRail(page).getByRole('button', { name })
+}
 
 describe('Studio route restoration', () => {
   const fixture = new StudioBrowserFixture()
@@ -31,12 +66,13 @@ Feature: Search
     try {
       await page.goto(url)
 
-      await page.getByRole('button', { name: 'Search', exact: true }).click()
+      const rail = await openSpecificationsRail(page)
+      await rail.getByRole('button', { name: /Search/ }).click()
       expect(new URL(page.url()).pathname).toBe(
         '/specifications/specsearchaaaaaaa',
       )
       await page.reload()
-      await page.getByRole('heading', { name: 'Search' }).waitFor()
+      await rail.getByRole('button', { name: /Search/ }).waitFor()
 
       await page.keyboard.press('Meta+k')
       await page
@@ -53,25 +89,21 @@ Feature: Search
           '/specifications/specsearchaaaaaaa/scenarios/scnquerybbbbbbbb',
       )
       await page.reload()
-      const queryScenario = page
-        .getByRole('table', { name: 'Scenarios' })
-        .getByRole('row')
-        .filter({ hasText: 'Query the catalog' })
+      const queryScenario = workbenchRail(page).getByRole('button', {
+        name: 'Query the catalog',
+        exact: true,
+      })
       await queryScenario.waitFor()
-      expect(await queryScenario.getAttribute('data-state')).toBe('selected')
+      expect(await queryScenario.getAttribute('aria-pressed')).toBe('true')
 
       await page
         .getByRole('button', { name: 'Specifications', exact: true })
         .click()
-      await page.getByRole('button', { name: 'Checkout', exact: true }).click()
-      await page.getByRole('button', { name: 'Run Specification' }).click()
-      await page
-        .getByRole('button', {
-          name: 'Pay for the order chrome failed',
-          exact: true,
-        })
-        .waitFor({ timeout: 20_000 })
-      await page.getByRole('button', { name: 'Run Specification' }).waitFor({
+      await (await openSpecificationsRail(page))
+        .getByRole('button', { name: /Checkout/ })
+        .click()
+      await runSpecification(page)
+      await scenarioResult(page, /Pay for the order.*chrome.*failed/).waitFor({
         timeout: 20_000,
       })
 
@@ -132,46 +164,36 @@ Feature: Search
     const page = await browser.newPage()
     try {
       await page.goto(url)
-      await page.getByRole('button', { name: 'Run Specification' }).click()
-      await page
-        .getByRole('button', {
-          name: 'Pay for the order chrome running',
-          exact: true,
-        })
-        .waitFor({ timeout: 20_000 })
-
-      await page.reload()
-
-      await page
-        .getByRole('button', {
-          name: 'Pay for the order chrome running',
-          exact: true,
-        })
-        .waitFor({ timeout: 20_000 })
-      expect(new URL(page.url()).pathname).toBe('/')
-      await page.getByRole('button', { name: 'Cancel test run' }).waitFor()
-
-      await page
-        .getByRole('button', {
-          name: 'Pay for the order chrome running',
-          exact: true,
-        })
-        .click()
-      expect(new URL(page.url()).pathname).toMatch(/^\/runs\/[^/]+$/)
-      await page
-        .getByRole('heading', { name: 'Pay for the order · chrome' })
-        .waitFor()
-      await page.getByRole('combobox', { name: 'Attempt' }).waitFor()
-      await page.reload()
-      const resultHeading = page.getByRole('heading', {
-        name: 'Pay for the order · chrome',
+      await runSpecification(page)
+      await scenarioResult(page, /Pay for the order.*chrome.*running/).waitFor({
+        timeout: 20_000,
       })
+
+      await page.reload()
+
+      await scenarioResult(page, /Pay for the order.*chrome.*running/).waitFor({
+        timeout: 20_000,
+      })
+      expect(new URL(page.url()).pathname).toBe('/')
+      await page.getByRole('button', { name: 'Cancel run' }).waitFor()
+
+      await scenarioResult(page, /Pay for the order.*chrome.*running/).click()
+      expect(new URL(page.url()).pathname).toBe('/')
+      await showWorkbenchDetails(page)
+      const resultHeading = page.getByRole('heading', { name: 'Checkout' })
       await resultHeading.waitFor()
-      const resultHeader = resultHeading.locator('..')
-      await resultHeader.getByText('running', { exact: true }).waitFor()
+      const resultDetails = resultHeading.locator('xpath=ancestor::aside')
+      await resultDetails
+        .getByText('Pay for the order', { exact: true })
+        .waitFor()
+      await page.reload()
+      await scenarioResult(page, /Pay for the order.*chrome.*running/).click()
+      await showWorkbenchDetails(page)
+      await resultHeading.waitFor()
+      await resultDetails.getByText('running', { exact: true }).waitFor()
 
       await Bun.write(gate, 'continue')
-      await resultHeader.getByText('failed', { exact: true }).waitFor({
+      await resultDetails.getByText('failed', { exact: true }).waitFor({
         timeout: 20_000,
       })
     } finally {
@@ -201,7 +223,7 @@ Feature: Search
     }
   })
 
-  test('keeps live results scoped to their Specification', async () => {
+  test('keeps the live queue available while browsing Specifications', async () => {
     const project = await fixture.createProject('live-result-specification')
     const gate = join(project, 'continue.txt')
     await Bun.write(
@@ -221,26 +243,34 @@ Feature: Search
       await page
         .getByRole('button', { name: 'Run Scenario Pay for the order' })
         .click()
-      const liveResult = page.getByRole('heading', {
-        name: 'Pay for the order · chrome',
-      })
+      const liveResult = scenarioResult(
+        page,
+        /Pay for the order.*chrome.*running/,
+      )
       await liveResult.waitFor({ timeout: 20_000 })
 
-      await page.getByRole('button', { name: 'Search', exact: true }).click()
+      await (await openSpecificationsRail(page))
+        .getByRole('button', { name: /Search/ })
+        .click()
 
-      await page.getByRole('heading', { name: 'Search' }).waitFor()
-      expect(await liveResult.count()).toBe(0)
-      await page.getByRole('rowheader', { name: 'Query the catalog' }).waitFor()
-
-      await page.getByRole('button', { name: 'Checkout', exact: true }).click()
+      await workbenchRail(page)
+        .getByRole('button', { name: 'Query the catalog' })
+        .first()
+        .waitFor()
+      expect(new URL(page.url()).pathname).toBe(
+        '/specifications/specsearchaaaaaaa',
+      )
+      await workbenchRail(page).getByRole('tab', { name: 'Queue' }).click()
       await liveResult.waitFor()
+
+      await (await openSpecificationsRail(page))
+        .getByRole('button', { name: /^Checkout\s+\d+$/ })
+        .click()
       await Bun.write(gate, 'continue')
-      await page
-        .getByRole('button', {
-          name: 'Pay for the order chrome failed',
-          exact: true,
-        })
-        .waitFor({ timeout: 20_000 })
+      await workbenchRail(page).getByRole('tab', { name: 'Queue' }).click()
+      await scenarioResult(page, /Pay for the order.*chrome.*failed/).waitFor({
+        timeout: 20_000,
+      })
     } finally {
       await page.close()
       child.kill()

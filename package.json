@@ -16,7 +16,7 @@
       "agent-device": "^0.20.10",
       "turbo": "^2.8.1",
       "typescript": "^7.0.2",
-      "vitest": "4.1.11",
+      "vitest": "5.0.0",
       "vitest-mock-extended": "5.1.1",
       "zod": "^4"
     }
@@ -33,7 +33,7 @@
     "docs:build": "turbo run build --filter=@pickle-spec/docs",
     "release:check": "bun scripts/release-packages.ts validate",
     "run:example": "turbo run run:example --filter=@pickle-spec/example",
-    "studio": "turbo run studio --filter=@pickle-spec/example"
+    "studio": "turbo run build --filter=@pickle-spec/studio && turbo run studio --filter=@pickle-spec/example"
   },
   "devDependencies": {
     "@biomejs/biome": "catalog:",

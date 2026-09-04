@@ -39,5 +39,6 @@ report.[0-9]_.[0-9]_.[0-9]_.[0-9]_.json
 .collaborator
 .audit/
 .impeccable/questions
+.impeccable/live/
 .context
 .tanstack/
