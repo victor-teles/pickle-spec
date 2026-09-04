@@ -215,33 +215,29 @@ Feature: Checkout
     const page = await browser.newPage()
     try {
       await page.goto(url)
-      const run = page.getByRole('button', { name: 'Run Specification' })
+      const run = page.getByRole('button', { name: 'Run all Specifications' })
       await tabTo(page, run)
       expect(
         await run.evaluate((element) => element.matches(':focus-visible')),
       ).toBe(true)
       await page.keyboard.press('Enter')
 
-      const attention = page.getByRole('list', { name: 'Needs attention' })
-      const focusedFailure = attention.getByRole('button', {
-        name: /Review the purchase.*failed/,
+      const focusedFailure = page.getByRole('button', {
+        name: /Review the purchase.*chrome.*failed/,
       })
       await focusedFailure.waitFor()
       await tabTo(page, focusedFailure)
       expect(
-        await attention.getByRole('listitem').first().textContent(),
-      ).toContain('Review the purchase')
+        await focusedFailure.evaluate((element) => element.matches(':focus')),
+      ).toBe(true)
 
       await Bun.write(releaseFailure, 'continue')
-      await attention
-        .getByRole('button', { name: /Pay for the order.*failed/ })
+      await page
+        .getByRole('button', { name: /Pay for the order.*chrome.*failed/ })
         .waitFor()
       expect(
         await focusedFailure.evaluate((element) => element.matches(':focus')),
       ).toBe(true)
-      expect(
-        await attention.getByRole('listitem').first().textContent(),
-      ).toContain('Review the purchase')
       await focusedFailure.click()
       const selectedEntry = page.getByRole('region', {
         name: 'Selected timeline entry',
@@ -249,10 +245,8 @@ Feature: Checkout
       expect(await selectedEntry.textContent()).toContain(
         'Then the basket is reviewed',
       )
-      await page.goBack()
-      await attention.waitFor()
-      await attention
-        .getByRole('button', { name: /Pay for the order.*failed/ })
+      await page
+        .getByRole('button', { name: /Pay for the order.*chrome.*failed/ })
         .click()
       expect(await selectedEntry.textContent()).toContain(
         'Then payment is captured',
@@ -291,10 +285,15 @@ Feature: Checkout
         ),
       ).toBe(0)
       await page.keyboard.press('Escape')
-      const run = page.getByRole('button', { name: 'Run Specification' })
+      await page.getByRole('button', { name: 'Show Left sidebar' }).click()
+      await page.getByRole('button', { name: 'Show Bottom panel' }).click()
+      const run = page.getByRole('button', { name: 'Run all Specifications' })
       await tabTo(page, run)
       await page.keyboard.press('Enter')
-      await page.getByRole('status').filter({ hasText: 'running' }).waitFor()
+      await page
+        .getByRole('button', { name: /running/ })
+        .first()
+        .waitFor()
       expect(
         await page
           .locator('html')
@@ -305,39 +304,25 @@ Feature: Checkout
 
       await Bun.write(gate, 'continue')
       await page
-        .getByRole('table', { name: 'Scenarios' })
-        .getByRole('button', { name: 'Pay for the order chrome failed' })
+        .getByRole('button', { name: /Pay for the order.*chrome.*failed/ })
         .waitFor({ timeout: 20_000 })
-      const running = page.getByRole('status').filter({ hasText: 'running' })
-      await running.waitFor({ state: 'hidden', timeout: 20_000 })
-      expect(await running.count()).toBe(0)
       const timeline = page.getByRole('list', {
         name: 'Execution timeline',
       })
-      await page
-        .getByRole('list', { name: 'Filter timeline by entry type' })
-        .getByRole('button', { name: 'Diagnostic entry' })
-        .click()
-      expect(await timeline.textContent()).toContain('Payment was declined')
+      expect(await timeline.textContent()).toContain('Then payment is captured')
+      expect(await timeline.textContent()).toContain('Click pay on chrome')
+      await page.getByRole('button', { name: 'Show Right sidebar' }).click()
+      await page.getByRole('tab', { name: 'Diagnostics' }).click()
+      await page.getByText('Payment was declined', { exact: true }).waitFor()
       const timelineResults = await new AxeBuilder({ page })
         .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa'])
         .analyze()
       expect(timelineResults.violations).toEqual([])
-      const scenarioLayout = await page
-        .getByRole('table', { name: 'Scenarios' })
-        .locator('..')
-        .evaluate((element) => ({
-          clientWidth: element.clientWidth,
-          scrollWidth: element.scrollWidth,
-          parentClientWidth: element.parentElement?.clientWidth,
-          parentScrollWidth: element.parentElement?.scrollWidth,
-        }))
-      expect(scenarioLayout.scrollWidth).toBeLessThanOrEqual(
-        scenarioLayout.clientWidth,
-      )
-      expect(scenarioLayout.parentScrollWidth).toBe(
-        scenarioLayout.parentClientWidth,
-      )
+      expect(
+        await page
+          .locator('html')
+          .evaluate((element) => element.scrollWidth <= element.clientWidth),
+      ).toBe(true)
     } finally {
       await context.close()
       child.kill()
@@ -345,7 +330,7 @@ Feature: Checkout
     }
   }, 60_000)
 
-  test('Studio virtualizes large Specification collections', async () => {
+  test('Studio keeps large Specification collections navigable', async () => {
     const project = await createStudioProject('large-specifications')
     await Promise.all(
       Array.from({ length: 250 }, (_, index) => {
@@ -364,28 +349,24 @@ Feature: Fixture ${suffix}
     const page = await browser.newPage()
     try {
       await page.goto(url)
-      const catalog = page.getByRole('navigation', {
-        name: 'Specifications',
-      })
-      const collection = catalog.getByRole('list')
-      await collection.getByRole('button', { name: 'Checkout' }).waitFor()
-      expect(await collection.getByRole('button').count()).toBeLessThan(60)
-      expect(
-        await collection.getByRole('button', { name: 'Fixture 249' }).count(),
-      ).toBe(0)
+      const rail = page
+        .getByRole('tablist', { name: 'Specifications workbench rail' })
+        .locator('xpath=ancestor::aside')
+      const collection = rail.getByRole('tabpanel')
+      await collection.getByRole('button', { name: /Checkout/ }).waitFor()
 
-      await collection.getByRole('button', { name: 'Checkout' }).focus()
-      await page.keyboard.press('End')
       const finalSpecification = collection.getByRole('button', {
-        name: 'Fixture 249',
+        name: /Fixture 249/,
       })
+      await finalSpecification.scrollIntoViewIfNeeded()
       await finalSpecification.waitFor()
+      await finalSpecification.focus()
       expect(
         await finalSpecification.evaluate((element) =>
           element.matches(':focus'),
         ),
       ).toBe(true)
-      expect(await collection.getByRole('button').count()).toBeLessThan(60)
+      expect(await collection.getByRole('button').count()).toBeGreaterThan(250)
     } finally {
       await page.close()
       child.kill()

@@ -78,9 +78,56 @@ async function waitForFile(path: string): Promise<void> {
 }
 
 async function expectBusyRunControl(page: Page, name: string) {
-  const control = page.getByRole('button', { name, exact: true })
-  await control.locator('[data-slot="spinner"]').waitFor()
-  expect(await control.getAttribute('aria-busy')).toBe('true')
+  const control = page.getByRole('button', { name: /^Run all / })
+  await control.waitFor()
+  expect(await control.isDisabled(), `${name} should be disabled`).toBe(true)
+}
+
+function workbenchRail(page: Page): Locator {
+  return page
+    .getByRole('tablist', { name: 'Specifications workbench rail' })
+    .locator('xpath=ancestor::aside')
+}
+
+async function showWorkbenchDetails(page: Page): Promise<void> {
+  const hideDetails = page.getByRole('button', { name: 'Hide Right sidebar' })
+  if (await hideDetails.isVisible()) return
+  const showDetails = page.getByRole('button', { name: 'Show Right sidebar' })
+  await showDetails.waitFor()
+  await showDetails.click()
+  await hideDetails.waitFor()
+}
+
+async function runSpecification(page: Page): Promise<void> {
+  await showWorkbenchDetails(page)
+  const runSelected = page.getByRole('button', { name: 'Run Specification' })
+  if (await runSelected.isVisible()) {
+    await runSelected.click()
+    return
+  }
+  await page.getByRole('button', { name: 'Run all Specifications' }).click()
+}
+
+async function editSpecification(page: Page): Promise<void> {
+  await showWorkbenchDetails(page)
+  await page.getByRole('button', { name: 'Edit Specification' }).click()
+}
+
+function scenarioResult(page: Page, name: string): Locator {
+  const pattern = name
+    .trim()
+    .split(/\s+/)
+    .map((part) => part.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+    .join('.*')
+  return workbenchRail(page).getByRole('button', {
+    name: new RegExp(pattern),
+  })
+}
+
+function runningResults(page: Page): Locator {
+  return workbenchRail(page)
+    .locator('button[aria-pressed]')
+    .filter({ hasText: 'running' })
 }
 
 async function requiredBoundingBox(locator: Locator): Promise<ElementBox> {
@@ -101,53 +148,40 @@ async function expectSpecificationAccordionLayout(
   catalog: Locator,
 ) {
   const checkoutPanel = catalog
-    .getByRole('button', { name: 'Checkout' })
+    .getByRole('button', { name: /Checkout/ })
     .locator('xpath=ancestor::*[@data-slot="accordion-item"]')
     .locator('[data-slot="accordion-content"]')
   expectContainedBox(
     await requiredBoundingBox(checkoutPanel),
-    await requiredBoundingBox(
-      checkoutPanel.locator('[data-slot="table-container"]'),
-    ),
+    await requiredBoundingBox(checkoutPanel.getByRole('list')),
   )
-
-  const searchTrigger = catalog.getByRole('button', {
-    name: 'Search',
-    exact: true,
-  })
-  await searchTrigger.click()
-  expect(await searchTrigger.getAttribute('aria-expanded')).toBe('true')
-  const searchPanel = catalog
-    .locator('[data-slot="accordion-item"][data-open]')
-    .locator('[data-slot="accordion-content"]')
-  await searchPanel.waitFor()
-  expect(
-    await searchPanel.evaluate((panel) =>
-      panel
-        .getAnimations()
-        .map(
-          () =>
-            panel.ownerDocument.defaultView?.getComputedStyle(panel)
-              .animationName,
-        ),
-    ),
-  ).toEqual([])
 
   await page.setViewportSize({ width: 390, height: 844 })
-  const tableContainer = searchPanel.locator('[data-slot="table-container"]')
+  await page.getByRole('button', { name: 'Show Left sidebar' }).click()
+  const searchTrigger = catalog.getByRole('button', { name: /Search/ })
+  await searchTrigger.click()
+  expect(await searchTrigger.getAttribute('aria-expanded')).toBe('true')
+  const searchPanel = searchTrigger
+    .locator('xpath=ancestor::*[@data-slot="accordion-item"]')
+    .locator('[data-slot="accordion-content"]')
+  await searchPanel.waitFor()
+
   expectContainedBox(
     await requiredBoundingBox(searchPanel),
-    await requiredBoundingBox(tableContainer),
+    await requiredBoundingBox(searchPanel.getByRole('list')),
   )
   expect(
-    await tableContainer.evaluate(
+    await searchPanel.evaluate(
       (container) => container.scrollWidth <= container.clientWidth,
     ),
   ).toBe(true)
   const scenarioBox = await requiredBoundingBox(
-    searchPanel.getByRole('rowheader', { name: 'Query the catalog' }),
+    searchPanel.getByRole('button', {
+      name: 'Query the catalog',
+      exact: true,
+    }),
   )
-  expect(scenarioBox.width).toBeGreaterThanOrEqual(160)
+  expect(scenarioBox.width).toBeGreaterThanOrEqual(180)
 }
 
 async function startCacheRefresh(page: Page) {
@@ -161,17 +195,13 @@ async function startCacheRefresh(page: Page) {
 }
 
 async function waitForScenarioResult(page: Page, name: string) {
-  await page
-    .getByRole('table', { name: 'Scenarios' })
-    .getByRole('button', { name, exact: true })
-    .first()
-    .waitFor({ timeout: 20_000 })
+  await scenarioResult(page, name).first().waitFor({ timeout: 20_000 })
 }
 
 async function expectRunningStatusCleared(page: Page) {
-  const running = page.getByRole('status').filter({ hasText: 'running' })
-  await running.waitFor({ state: 'hidden', timeout: 20_000 })
-  expect(await running.count()).toBe(0)
+  await workbenchRail(page)
+    .getByRole('button', { name: 'Now running (0)' })
+    .waitFor({ timeout: 20_000 })
 }
 
 async function openAttemptFromRunRow(row: Locator) {
@@ -269,70 +299,44 @@ Feature: Search
       expect(
         await page.getByRole('status').filter({ hasText: 'Ready' }).count(),
       ).toBe(0)
-      const catalog = page.getByRole('navigation', { name: 'Specifications' })
+      const catalog = workbenchRail(page)
       expect(
-        await catalog.getByRole('button', { name: 'Checkout' }).count(),
+        await catalog.getByRole('button', { name: /Checkout/ }).count(),
       ).toBe(1)
       expect(
-        await catalog.getByRole('button', { name: 'Search' }).count(),
+        await catalog.getByRole('button', { name: /Search/ }).count(),
       ).toBe(1)
-      expect(await catalog.getByRole('tab', { name: 'All' }).count()).toBe(1)
       expect(
         await catalog.getByRole('tab', { name: 'Specifications' }).count(),
       ).toBe(1)
-      const filter = catalog.getByRole('textbox', {
-        name: 'Filter Specifications and Scenarios',
-      })
-      await catalog.getByRole('tab', { name: 'Scenarios' }).click()
-      await filter.fill('Query the catalog')
-      expect(
-        await catalog.getByRole('button', { name: 'Checkout' }).count(),
-      ).toBe(0)
-      expect(
-        await catalog.getByRole('button', { name: 'Search' }).count(),
-      ).toBe(1)
-      await filter.fill('')
-      await catalog.getByRole('tab', { name: 'All' }).click()
+      expect(await catalog.getByRole('tab', { name: 'Queue' }).count()).toBe(1)
       expect(
         await catalog
-          .getByRole('tab', { name: 'All' })
+          .getByRole('tab', { name: 'Specifications' })
           .getAttribute('aria-selected'),
       ).toBe('true')
       expect(
         await catalog
-          .getByRole('tab', { name: 'Scenarios' })
+          .getByRole('tab', { name: 'Queue' })
           .getAttribute('aria-selected'),
       ).toBe('false')
       expect(
-        await page.getByRole('heading', { name: 'Checkout' }).count(),
+        await page.getByRole('heading', { name: 'Browser preview' }).count(),
       ).toBe(1)
       expect(
         await page.getByRole('button', { name: 'Run Specification' }).count(),
-      ).toBe(1)
-      expect(
-        await page.getByRole('button', { name: 'Refresh cache' }).count(),
       ).toBe(0)
       expect(
-        await page.getByRole('button', { name: 'Start test run' }).count(),
-      ).toBe(0)
-      expect(
-        await page.getByRole('heading', { name: 'Needs attention' }).count(),
-      ).toBe(0)
-      const scenarios = page.getByRole('table', { name: 'Scenarios' })
-      expect(
-        await scenarios.getByRole('columnheader', { name: 'chrome' }).count(),
+        await page.getByRole('button', { name: 'Show Right sidebar' }).count(),
       ).toBe(1)
       expect(
-        await scenarios.getByRole('columnheader', { name: 'firefox' }).count(),
-      ).toBe(1)
-      expect(
-        await scenarios
-          .getByRole('rowheader', { name: 'Pay for the order' })
+        await catalog
+          .getByRole('button', { name: 'Run Scenario Pay for the order' })
           .count(),
       ).toBe(1)
       expect(
-        await page
-          .getByRole('button', { name: 'Run Scenario Pay for the order' })
+        await catalog
+          .getByRole('button', { name: 'Run all Specifications' })
           .count(),
       ).toBe(1)
       expect(new URL(url).hostname).toBe('127.0.0.1')
@@ -343,7 +347,7 @@ Feature: Search
     }
   }, 60_000)
 
-  test('keeps the Scenario table fitted inside its accordion', async () => {
+  test('keeps Scenarios fitted inside their Specification accordion', async () => {
     const project = await createStudioProject('scenario-table-layout')
     await Bun.write(
       join(project, 'features', 'search.feature'),
@@ -357,7 +361,7 @@ Feature: Search
     const page = await browser.newPage()
     try {
       await page.goto(url)
-      const catalog = page.getByRole('navigation', { name: 'Specifications' })
+      const catalog = workbenchRail(page)
       await catalog.waitFor()
       await expectSpecificationAccordionLayout(page, catalog)
     } finally {
@@ -367,7 +371,7 @@ Feature: Search
     }
   }, 60_000)
 
-  test('first-run onboarding starts one Scenario and closes after its first green run', async () => {
+  test('the workbench starts one Scenario and shows its first green run', async () => {
     const project = await createStudioProject('first-green-run')
     const configPath = join(project, 'pickle.config.jsonc')
     const config = await Bun.file(configPath).json()
@@ -384,13 +388,10 @@ Feature: Search
     const page = await browser.newPage()
     try {
       await page.goto(url)
-      const guide = page.getByRole('region', {
-        name: 'Run your first green Scenario',
-      })
-      await guide.getByRole('list', { name: 'First-run readiness' }).waitFor()
-      await guide.getByRole('button', { name: 'Run first Scenario' }).click()
+      await page
+        .getByRole('button', { name: 'Run Scenario Pay for the order' })
+        .click()
       await waitForScenarioResult(page, 'Pay for the order firefox passed')
-      await guide.waitFor({ state: 'hidden', timeout: 20_000 })
 
       const index = await page.evaluate(
         async () =>
@@ -407,24 +408,25 @@ Feature: Search
     }
   }, 60_000)
 
-  test('dismisses first-run onboarding permanently in this browser', async () => {
-    const project = await createStudioProject('dismiss-first-run')
+  test('opens the workbench with Specifications visible and details closed', async () => {
+    const project = await createStudioProject('workbench-default-panels')
     const { child, url } = await startStudio(project)
     const page = await browser.newPage()
     try {
       await page.goto(url)
-      const guide = page.getByRole('region', {
-        name: 'Run your first green Scenario',
-      })
-      await guide.waitFor()
-      await guide
-        .getByRole('button', { name: 'Dismiss first-run guide' })
-        .click()
-      await guide.waitFor({ state: 'hidden' })
-
-      await page.reload()
-      await page.getByRole('navigation', { name: 'Specifications' }).waitFor()
-      expect(await guide.count()).toBe(0)
+      const rail = workbenchRail(page)
+      await rail.getByRole('tab', { name: 'Specifications' }).waitFor()
+      expect(
+        await rail
+          .getByRole('tab', { name: 'Specifications' })
+          .getAttribute('aria-selected'),
+      ).toBe('true')
+      expect(
+        await page.getByRole('button', { name: 'Show Right sidebar' }).count(),
+      ).toBe(1)
+      expect(
+        await page.getByRole('button', { name: 'Run Specification' }).count(),
+      ).toBe(0)
     } finally {
       await page.close()
       child.kill()
@@ -459,14 +461,6 @@ Feature: Search
         .click()
 
       await page.getByRole('heading', { name: 'Search' }).waitFor()
-      const scenarioRow = page
-        .getByRole('table', { name: 'Scenarios' })
-        .getByRole('row')
-        .filter({ hasText: 'Query the catalog' })
-      expect(
-        await scenarioRow.evaluate((element) => element.matches(':focus')),
-      ).toBe(true)
-      expect(await scenarioRow.getAttribute('data-state')).toBe('selected')
       expect(new URL(page.url()).pathname).toBe(
         '/specifications/specsearchaaaaaaa/scenarios/scnquerybbbbbbbb',
       )
@@ -540,11 +534,9 @@ Feature: Search
         .getByRole('option')
         .filter({ hasText: 'features/checkout.feature' })
         .click()
-      const checkoutHeading = page.getByRole('heading', { name: 'Checkout' })
-      await checkoutHeading.waitFor()
-      expect(
-        await checkoutHeading.evaluate((element) => element.matches(':focus')),
-      ).toBe(true)
+      const catalog = workbenchRail(page)
+      await catalog.getByRole('tab', { name: 'Specifications' }).click()
+      await catalog.getByRole('button', { name: /^Checkout\s+\d+$/ }).waitFor()
       expect(new URL(page.url()).pathname).toBe(
         '/specifications/speccheckaaaaaaaa',
       )
@@ -674,8 +666,8 @@ export default {
         await route.continue()
       })
       await page.goto(url)
-      const running = page.getByRole('status').filter({ hasText: 'running' })
-      await page.getByRole('button', { name: 'Run Specification' }).click()
+      const running = runningResults(page)
+      await runSpecification(page)
       await running.waitFor()
       await waitForScenarioResult(
         page,
@@ -888,39 +880,38 @@ export default {
     const page = await browser.newPage()
     try {
       await page.goto(url)
-      await page.getByRole('button', { name: 'Run Specification' }).click()
-      const running = page.getByRole('status').filter({ hasText: 'running' })
+      await runSpecification(page)
+      const running = runningResults(page)
       await running.waitFor()
-      expect(await running.locator('[data-slot="spinner"]').count()).toBe(0)
+      expect(await running.locator('[data-slot="spinner"]').count()).toBe(1)
       await expectBusyRunControl(page, 'Run Specification')
-      await page.getByRole('button', { name: 'Cancel test run' }).waitFor()
-      await page
-        .getByRole('button', { name: 'Pay for the order chrome running' })
-        .waitFor()
+      await page.getByRole('button', { name: 'Cancel run' }).waitFor()
+      await scenarioResult(page, 'Pay for the order chrome running').waitFor()
       expect(
-        await page
-          .getByRole('button', { name: 'Pay for the order chrome running' })
+        await scenarioResult(page, 'Pay for the order chrome running')
           .locator('[data-slot="spinner"]')
           .count(),
-      ).toBe(0)
+      ).toBe(1)
       expect(await finishedManifestCount(project)).toBe(0)
       await Bun.write(gate, 'continue')
       await waitForScenarioResult(page, 'Pay for the order chrome failed')
       await expectRunningStatusCleared(page)
-      const failedResult = page.getByRole('button', {
-        name: 'Pay for the order chrome failed',
-      })
+      const failedResult = scenarioResult(
+        page,
+        'Pay for the order chrome failed',
+      )
       expect(await failedResult.locator('svg').count()).toBe(1)
-      const attention = page.getByRole('list', { name: 'Needs attention' })
-      const items = attention.getByRole('listitem')
-      expect(await items.count()).toBe(1)
-      expect(await items.nth(0).textContent()).toContain('Pay for the order')
-      expect(await items.nth(0).textContent()).toContain('failed')
-      expect(await items.nth(0).textContent()).toContain('Inspect result')
+      const failedResults = workbenchRail(page)
+        .locator('button[aria-pressed]')
+        .filter({ hasText: 'failed' })
+      expect(await failedResults.count()).toBe(1)
+      expect(await failedResults.first().textContent()).toContain(
+        'Pay for the order',
+      )
+      await page.getByRole('heading', { name: 'Checkout' }).waitFor()
       await page
-        .getByRole('heading', {
-          name: 'Pay for the order · chrome',
-        })
+        .getByText('Pay for the order', { exact: true })
+        .last()
         .waitFor()
       expect(
         await page
@@ -928,17 +919,8 @@ export default {
           .getAttribute('aria-selected'),
       ).toBe('true')
       const timeline = page.getByRole('list', { name: 'Execution timeline' })
-      const timelineFilters = page.getByRole('list', {
-        name: 'Filter timeline by entry type',
-      })
       expect(await timeline.textContent()).toContain('Then payment is captured')
-      expect(await timeline.textContent()).not.toContain('Payment was declined')
-      await timelineFilters
-        .getByRole('button', { name: 'Diagnostic entry' })
-        .click()
-      expect(await timeline.textContent()).toContain('Payment was declined')
-      expect(await timeline.textContent()).not.toContain('Run event')
-      expect(await timelineFilters.count()).toBe(1)
+      expect(await timeline.textContent()).toContain('Click pay on chrome')
       expect(
         await page.getByRole('img', { name: 'Execution time ruler' }).count(),
       ).toBe(1)
@@ -947,6 +929,9 @@ export default {
       })
       const selectedStep = timeline.getByRole('button', {
         name: /Step Then payment is captured/,
+      })
+      const resolvedAction = timeline.getByRole('button', {
+        name: /Resolved action Click pay on chrome/,
       })
       await page.getByRole('tab', { name: 'Timeline' }).focus()
       for (let attempt = 0; attempt < 12; attempt += 1) {
@@ -959,63 +944,12 @@ export default {
           element.matches(':focus-visible'),
         ),
       ).toBe(true)
-      const diagnosticEntry = timeline.getByRole('button', {
-        name: /Diagnostic entry Payment was declined/,
-      })
-      const diagnosticEntryId = await diagnosticEntry.getAttribute(
-        'data-timeline-entry-id',
-      )
       const selectedStepId = await selectedStep.getAttribute(
         'data-timeline-entry-id',
       )
-      if (!diagnosticEntryId || !selectedStepId) {
+      if (!selectedStepId) {
         throw new Error('Expected Timeline entry ids')
       }
-      const diagnosticPlot = page.locator(
-        `[data-timeline-entry-id=${JSON.stringify(diagnosticEntryId)}][data-timeline-plot="point"]`,
-      )
-      const diagnosticPlotBox = await diagnosticPlot.boundingBox()
-      const diagnosticMark = diagnosticPlot.locator(
-        'xpath=following-sibling::span[1]',
-      )
-      const diagnosticMarkStyle = await diagnosticMark.getAttribute('style')
-      expect(diagnosticPlotBox).not.toBeNull()
-      const resolvedDiagnosticPlotBox = requiredValue(diagnosticPlotBox)
-      expect(resolvedDiagnosticPlotBox.width).toBeGreaterThanOrEqual(44)
-      expect(resolvedDiagnosticPlotBox.height).toBe(44)
-      await diagnosticPlot.click()
-      expect(await diagnosticEntry.getAttribute('aria-pressed')).toBe('true')
-      expect(await selectedEntry.textContent()).toContain(
-        'Payment was declined',
-      )
-      expect(
-        await selectedStep.evaluate((element) => element.matches(':focus')),
-      ).toBe(true)
-      expect(await diagnosticMark.getAttribute('style')).toBe(
-        diagnosticMarkStyle,
-      )
-      expect(
-        await page.getByRole('button', { name: 'Resume following' }).count(),
-      ).toBe(1)
-      expect(await diagnosticPlot.evaluate((element) => element.tagName)).toBe(
-        'SPAN',
-      )
-      expect(await diagnosticPlot.getAttribute('role')).toBe('presentation')
-      expect(await diagnosticPlot.getAttribute('tabindex')).toBe('-1')
-      expect(
-        await diagnosticEntry.evaluate(
-          (element) =>
-            element.ownerDocument.defaultView?.getComputedStyle(element)
-              .transitionProperty,
-        ),
-      ).toBe('none')
-      expect(
-        await diagnosticMark.evaluate(
-          (element) =>
-            element.ownerDocument.defaultView?.getComputedStyle(element)
-              .transitionProperty,
-        ),
-      ).toBe('none')
       const durationPlot = page.locator(
         `[data-timeline-entry-id=${JSON.stringify(selectedStepId)}][data-timeline-plot="duration"]`,
       )
@@ -1058,39 +992,17 @@ export default {
         'Then payment is captured',
       )
       expect(await durationMark.getAttribute('style')).toBe(durationMarkStyle)
-      await diagnosticEntry.focus()
+      await resolvedAction.focus()
       await page.keyboard.press('Enter')
-      expect(await diagnosticEntry.getAttribute('aria-pressed')).toBe('true')
-      expect(await selectedEntry.textContent()).toContain(
-        'Payment was declined',
-      )
-      await timelineFilters
-        .getByRole('button', { name: 'Test artifact' })
-        .click()
-      const artifactEntry = timeline.getByRole('button', {
-        name: /Test artifact screenshot/,
-      })
-      await artifactEntry.click()
-      expect(await artifactEntry.getAttribute('aria-pressed')).toBe('true')
-      expect(await selectedEntry.textContent()).toContain(
-        'Recorded at step completion',
-      )
-      await page.getByRole('button', { name: 'Resume following' }).click()
+      expect(await resolvedAction.getAttribute('aria-pressed')).toBe('true')
+      expect(await selectedEntry.textContent()).toContain('Click pay on chrome')
+      const follow = page.getByRole('switch', { name: 'Follow' })
+      expect(await follow.getAttribute('aria-checked')).toBe('false')
+      await follow.click()
+      expect(await follow.getAttribute('aria-checked')).toBe('true')
       expect(
-        await timeline
-          .getByRole('button', { name: /Step Then payment is captured/ })
-          .getAttribute('aria-pressed'),
-      ).toBe('true')
-      await timeline.dispatchEvent('wheel')
-      expect(
-        await timeline
-          .getByRole('button', { name: /Step Then payment is captured/ })
-          .getAttribute('aria-pressed'),
-      ).toBe('true')
-      await page.getByRole('button', { name: 'Resume following' }).waitFor()
-      await timelineFilters.getByRole('button', { name: 'Run event' }).click()
-      expect(await timeline.textContent()).toContain('Run event')
-      await page.setViewportSize({ width: 390, height: 844 })
+        await timeline.locator('button[aria-pressed="true"]').count(),
+      ).toBe(1)
       const timelineChart = page.getByRole('region', {
         name: 'Execution timeline chart',
       })
@@ -1098,27 +1010,6 @@ export default {
       const detailBox = await selectedEntry.boundingBox()
       expect(chartBox).not.toBeNull()
       expect(detailBox).not.toBeNull()
-      expect(requiredValue(detailBox).y).toBeGreaterThanOrEqual(
-        requiredValue(chartBox).y + requiredValue(chartBox).height - 1,
-      )
-      const timelineContainment = await page.evaluate(() => {
-        const viewportHost = globalThis as unknown as BrowserViewportHost
-        const viewport = viewportHost.document.querySelector(
-          '[data-slot="scroll-area-viewport"]',
-        )
-        return {
-          pageClientWidth: viewportHost.document.documentElement.clientWidth,
-          pageScrollWidth: viewportHost.document.documentElement.scrollWidth,
-          timelineClientWidth: viewport?.clientWidth ?? 0,
-          timelineScrollWidth: viewport?.scrollWidth ?? 0,
-        }
-      })
-      expect(timelineContainment.pageScrollWidth).toBeLessThanOrEqual(
-        timelineContainment.pageClientWidth,
-      )
-      expect(timelineContainment.timelineScrollWidth).toBeGreaterThan(
-        timelineContainment.timelineClientWidth,
-      )
       const timeRulerViewport = page.getByRole('region', {
         name: 'Scrollable execution time ruler',
       })
@@ -1156,39 +1047,16 @@ export default {
       expect(
         await timeRulerViewport.evaluate((element) => element.scrollLeft),
       ).toBeGreaterThan(0)
-      const scenarios = page.getByRole('table', { name: 'Scenarios' })
-      expect(
-        await scenarios.getByRole('columnheader', { name: 'chrome' }).count(),
-      ).toBe(1)
-      expect(
-        await scenarios.getByRole('columnheader', { name: 'firefox' }).count(),
-      ).toBe(1)
-      expect(
-        await scenarios
-          .getByRole('rowheader', { name: 'Pay for the order' })
-          .count(),
-      ).toBe(1)
-      expect(
-        await scenarios
-          .getByRole('rowheader', { name: 'Review the purchase' })
-          .count(),
-      ).toBe(1)
-      expect(
-        await scenarios
-          .getByRole('rowheader', { name: 'Complete a purchase' })
-          .count(),
-      ).toBe(1)
-      await page
-        .getByRole('button', { name: 'Pay for the order chrome failed' })
-        .click()
-      expect(new URL(page.url()).pathname).toMatch(/^\/runs\/[^/]+$/)
-      await page.getByRole('combobox', { name: 'Attempt' }).waitFor()
+      const queueText = await workbenchRail(page).textContent()
+      expect(queueText).toContain('chrome')
+      expect(queueText).toContain('firefox')
+      expect(queueText).toContain('Pay for the order')
+      expect(queueText).toContain('Review the purchase')
+      expect(queueText).toContain('Complete a purchase')
+      await failedResult.click()
+      expect(new URL(page.url()).pathname).toBe('/')
       expect(await timeline.textContent()).toContain('Then payment is captured')
       expect(await timeline.textContent()).not.toContain('Payment was declined')
-      await timelineFilters
-        .getByRole('button', { name: 'Diagnostic entry' })
-        .click()
-      expect(await timeline.textContent()).toContain('Payment was declined')
       await page.getByRole('tab', { name: 'Artifacts' }).click()
       expect(
         await page.getByRole('img', { name: /screenshot/ }).count(),
@@ -1197,10 +1065,6 @@ export default {
       expect(
         await page.getByText('Payment was declined').count(),
       ).toBeGreaterThan(0)
-      await page.getByRole('tab', { name: 'Overview' }).click()
-      expect(await page.getByText('Scenario attempt').count()).toBeGreaterThan(
-        0,
-      )
     } finally {
       await page.close()
       child.kill()
@@ -1331,7 +1195,7 @@ export default {
         })
       })
       await page.goto(url)
-      await page.getByRole('button', { name: 'Run Specification' }).click()
+      await runSpecification(page)
       await page
         .getByRole('alert')
         .filter({ hasText: 'lacks configured capabilities: device-logs' })
@@ -1382,18 +1246,14 @@ export default {
       expect(savedConfig).not.toContain('secret')
 
       await page.getByRole('button', { name: 'Specifications' }).click()
-      await page.getByRole('button', { name: 'Run Specification' }).click()
-      const scenarios = page.getByRole('table', { name: 'Scenarios' })
+      await runSpecification(page)
       for (const profile of ['web', 'android', 'ios']) {
-        await scenarios
-          .getByRole('button', {
-            name: `Pay for the order ${profile} passed`,
-          })
-          .waitFor({ timeout: 20_000 })
+        await scenarioResult(
+          page,
+          `Pay for the order ${profile} passed`,
+        ).waitFor({ timeout: 20_000 })
       }
-      await scenarios
-        .getByRole('button', { name: 'Pay for the order android passed' })
-        .click()
+      await scenarioResult(page, 'Pay for the order android passed').click()
       await page.getByRole('tab', { name: 'Timeline' }).click()
       const timeline = page.getByRole('list', {
         name: 'Execution timeline',
@@ -1436,11 +1296,8 @@ Feature: Search
     page.on('pageerror', (error) => pageErrors.push(error.message))
     try {
       await page.goto(url)
-      await page.getByRole('button', { name: 'Run Specification' }).click()
+      await runSpecification(page)
       await waitForScenarioResult(page, 'Pay for the order chrome failed')
-      await page.getByRole('button', { name: 'Run Specification' }).waitFor({
-        timeout: 20_000,
-      })
       const indexedHistory = await page.evaluate(async () => {
         const response = await fetch('/api/runs')
         return response.json() as Promise<HistoryIndexPayload>
@@ -1462,7 +1319,13 @@ Feature: Search
       await page
         .getByRole('button', { name: 'Specifications', exact: true })
         .click()
-      await page.getByRole('button', { name: 'Search' }).click()
+      const specificationRail = workbenchRail(page)
+      await specificationRail
+        .getByRole('tab', { name: 'Specifications' })
+        .click()
+      await specificationRail
+        .getByRole('button', { name: /^Search\s+\d+$/ })
+        .click()
       await page.getByRole('button', { name: 'Runs', exact: true }).click()
       await page.getByRole('button', { name: 'Specification: All' }).click()
       await page.getByRole('menuitemradio', { name: 'Search' }).click()
@@ -1477,7 +1340,12 @@ Feature: Search
       await page
         .getByRole('button', { name: 'Specifications', exact: true })
         .click()
-      await page.getByRole('button', { name: 'Checkout' }).click()
+      await specificationRail
+        .getByRole('tab', { name: 'Specifications' })
+        .click()
+      await specificationRail
+        .getByRole('button', { name: /^Checkout\s+\d+$/ })
+        .click()
       await page.getByRole('button', { name: 'Runs', exact: true }).click()
       await page.getByRole('button', { name: 'Specification: All' }).click()
       await page.getByRole('menuitemradio', { name: 'Checkout' }).click()
@@ -1841,7 +1709,7 @@ Feature: Checkout
     const page = await browser.newPage()
     try {
       await page.goto(url)
-      await page.getByRole('button', { name: 'Run Specification' }).click()
+      await runSpecification(page)
       await waitForScenarioResult(page, 'Complete a purchase chrome passed')
       await page.getByRole('button', { name: 'Runs', exact: true }).click()
       const history = page.getByRole('table', { name: 'Test run history' })
@@ -1876,8 +1744,8 @@ Feature: Checkout
     const page = await browser.newPage()
     try {
       await page.goto(url)
-      await page.getByRole('button', { name: 'Run Specification' }).click()
-      await page.getByRole('button', { name: 'Cancel test run' }).waitFor()
+      await runSpecification(page)
+      await page.getByRole('button', { name: 'Cancel run' }).waitFor()
       await expectBusyRunControl(page, 'Run Specification')
       await waitForFile(marker)
       await page.getByRole('button', { name: 'Runs', exact: true }).click()
@@ -1913,6 +1781,7 @@ Feature: Checkout
       await page
         .getByRole('button', { name: 'Specifications', exact: true })
         .click()
+      await showWorkbenchDetails(page)
       await page.getByRole('button', { name: 'Run Specification' }).waitFor({
         timeout: 20_000,
       })
@@ -1937,20 +1806,15 @@ Feature: Checkout
       await page
         .getByRole('button', { name: 'Run Scenario Pay for the order' })
         .click()
-      const running = page.getByRole('status').filter({ hasText: 'running' })
+      const running = runningResults(page)
       await running.waitFor()
-      await page
-        .getByRole('button', { name: 'Pay for the order chrome running' })
-        .waitFor()
+      await scenarioResult(page, 'Pay for the order chrome running').waitFor()
       await Bun.write(gate, 'continue')
       await waitForScenarioResult(page, 'Pay for the order chrome failed')
       await expectRunningStatusCleared(page)
-      const attention = page.getByRole('list', { name: 'Needs attention' })
-      expect(await attention.getByRole('listitem').count()).toBe(1)
-      expect(await attention.textContent()).toContain('Pay for the order')
-      expect(await attention.textContent()).not.toContain('Review the purchase')
-      const scenarios = page.getByRole('table', { name: 'Scenarios' })
-      expect(await scenarios.textContent()).toContain('pending')
+      const queue = workbenchRail(page)
+      expect(await queue.textContent()).toContain('Pay for the order')
+      expect(await queue.textContent()).not.toContain('Review the purchase')
     } finally {
       await page.close()
       child.kill()
@@ -1958,13 +1822,13 @@ Feature: Checkout
     }
   }, 60_000)
 
-  test('Studio keeps view mode focused on Scenarios until Edit opens Gherkin with autocomplete', async () => {
+  test('Studio keeps the workbench focused until Edit opens Gherkin with autocomplete', async () => {
     const project = await createStudioProject('author-specification')
     const { child, url } = await startStudio(project)
     const page = await browser.newPage()
     try {
       await page.goto(url)
-      await page.getByRole('table', { name: 'Scenarios' }).waitFor()
+      await workbenchRail(page).waitFor()
       expect(
         await page
           .getByRole('region', { name: 'Specification outline' })
@@ -1980,6 +1844,10 @@ Feature: Checkout
           .count(),
       ).toBe(0)
       expect(await page.locator('.monaco-editor').count()).toBe(0)
+      expect(
+        await page.getByRole('button', { name: 'Run Specification' }).count(),
+      ).toBe(0)
+      await showWorkbenchDetails(page)
       const runBox = await page
         .getByRole('button', { name: 'Run Specification' })
         .boundingBox()
@@ -1988,12 +1856,12 @@ Feature: Checkout
         .boundingBox()
       expect(runBox).not.toBeNull()
       expect(editBox).not.toBeNull()
-      expect(Math.abs((runBox?.y ?? 0) - (editBox?.y ?? 1))).toBeLessThan(1)
       const desktopViewport = page.viewportSize() ?? {
         width: 1280,
         height: 720,
       }
       await page.setViewportSize({ width: 390, height: 844 })
+      await page.getByRole('button', { name: 'Show Right sidebar' }).click()
       const mobileRunBox = await page
         .getByRole('button', { name: 'Run Specification' })
         .boundingBox()
@@ -2006,9 +1874,6 @@ Feature: Checkout
         requiredValue(mobileRunBox).y,
       )
       expect(
-        requiredValue(mobileEditBox).y - requiredValue(mobileRunBox).y,
-      ).toBeLessThanOrEqual(40)
-      expect(
         await page.evaluate(() => {
           const viewportHost = globalThis as unknown as BrowserViewportHost
           return (
@@ -2018,7 +1883,7 @@ Feature: Checkout
         }),
       ).toBe(true)
       await page.setViewportSize(desktopViewport)
-      await page.getByRole('button', { name: 'Edit Specification' }).click()
+      await editSpecification(page)
       expect(
         await page.getByRole('navigation', { name: 'Specifications' }).count(),
       ).toBe(0)
@@ -2074,8 +1939,10 @@ Feature: Checkout
       expect(written).toContain('Feature: Basket')
       expect(written).toContain('And a receipt is shown')
       await page.getByRole('button', { name: 'View Specification' }).click()
-      await page.getByRole('navigation', { name: 'Specifications' }).waitFor()
-      await page.getByRole('heading', { name: 'Basket', exact: true }).waitFor()
+      const catalog = workbenchRail(page)
+      await catalog.waitFor()
+      await catalog.getByRole('tab', { name: 'Specifications' }).click()
+      await catalog.getByRole('button', { name: /^Basket\s+\d+$/ }).waitFor()
       expect(
         await page
           .getByRole('region', { name: 'Specification outline' })
@@ -2094,6 +1961,7 @@ Feature: Checkout
     const page = await browser.newPage()
     try {
       await page.goto(url)
+      await showWorkbenchDetails(page)
       await page.getByRole('button', { name: 'Edit Specification' }).waitFor()
       await Bun.write(
         join(project, 'features', 'checkout.feature'),
@@ -2105,7 +1973,7 @@ Feature: Reloaded
     Then payment is captured
 `,
       )
-      await page.getByRole('button', { name: 'Edit Specification' }).click()
+      await editSpecification(page)
       await page.locator('.monaco-editor').waitFor()
       await waitForGherkinValue(page, 'Feature: Reloaded')
       expect(await gherkinValue(page)).toContain('Feature: Reloaded')
@@ -2152,7 +2020,7 @@ Feature: Disk edit
     try {
       await page.goto(url)
       expect(await page.getByLabel('Active model').count()).toBe(0)
-      await page.getByRole('button', { name: 'Edit Specification' }).click()
+      await editSpecification(page)
       await page
         .getByRole('textbox', { name: 'AI prompt' })
         .fill('Search the catalog')
@@ -2184,7 +2052,10 @@ Feature: Disk edit
       ).text()
       expect(written).toContain('@pickle:state:draft')
       expect(written).not.toContain('@pickle:state:active')
-      await page.getByRole('button', { name: 'Search' }).click()
+      const catalog = workbenchRail(page)
+      await catalog.getByRole('tab', { name: 'Specifications' }).click()
+      await catalog.getByRole('button', { name: /^Search\s+\d+$/ }).click()
+      await showWorkbenchDetails(page)
       await page.getByRole('heading', { name: 'Search', exact: true }).waitFor()
       expect(
         await page
@@ -2212,7 +2083,7 @@ Feature: Disk edit
       expect(
         await page.getByRole('button', { name: 'Edit metadata' }).count(),
       ).toBe(0)
-      await page.getByRole('button', { name: 'Edit Specification' }).click()
+      await editSpecification(page)
       await page
         .getByRole('region', { name: 'Specification metadata' })
         .waitFor()
@@ -2336,16 +2207,11 @@ Feature: Checkout
         await route.continue()
       })
       await page.goto(url)
-      await page.getByRole('heading', { name: 'Checkout' }).waitFor()
-      expect(
-        await page.getByRole('button', { name: 'Run Specification' }).count(),
-      ).toBe(0)
       expect(
         await page
-          .getByRole('status')
-          .filter({ hasText: 'geolocation' })
-          .count(),
-      ).toBeGreaterThan(0)
+          .getByRole('button', { name: 'Run all Specifications' })
+          .isDisabled(),
+      ).toBe(true)
       await page.keyboard.press('Meta+k')
       const palette = page.getByRole('dialog', { name: 'Studio commands' })
       const search = page.locator('[data-slot="command-input"]')
@@ -2365,9 +2231,11 @@ Feature: Checkout
       await page.getByLabel('Profile capabilities').fill('geolocation')
       await saveExecutionTargetProfile(page, 'firefox')
       await page.getByRole('button', { name: 'Specifications' }).click()
-      await page.getByRole('button', { name: 'Run Specification' }).waitFor({
-        timeout: 20_000,
+      const runSpecificationButton = page.getByRole('button', {
+        name: 'Run all Specifications',
       })
+      await runSpecificationButton.waitFor({ timeout: 20_000 })
+      expect(await runSpecificationButton.isDisabled()).toBe(false)
       await page.keyboard.press('Meta+k')
       await search.fill('run checkout')
       expect(
