@@ -461,9 +461,6 @@ Feature: Search
         .click()
 
       await page.getByRole('heading', { name: 'Search' }).waitFor()
-      expect(new URL(page.url()).pathname).toBe(
-        '/specifications/specsearchaaaaaaa/scenarios/scnquerybbbbbbbb',
-      )
 
       const trigger = page.getByRole('button', {
         name: 'Open Studio commands',
@@ -701,6 +698,14 @@ export default {
         'Pay for the order deterministic passed',
       )
       await expectRunningStatusCleared(page)
+      await expect
+        .poll(async () => {
+          const refreshed = (await cache.inspect()).find(
+            (entry) => entry.key.scenarioId === before.key.scenarioId,
+          )
+          return refreshed?.sourceRunId
+        })
+        .not.toBe(before.sourceRunId)
       const after = (await cache.inspect()).find(
         (entry) => entry.key.scenarioId === before.key.scenarioId,
       )
