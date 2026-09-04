@@ -5,6 +5,10 @@ Reviewed on 2026-09-04. This is a proposed revision strategy for
 status certification. The companion [launch and growth plan](launch-and-growth.md)
 turns the adoption priorities into release and distribution work.
 
+ENG-01 has since reconciled the status and design-token contradictions in the
+[capability inventory](capability-status.md). Roadmap line references below
+describe the pre-inventory snapshot; the remaining workflow priorities still apply.
+
 ## Recommendation
 
 Finish the everyday QA loop before expanding autonomous authoring and repair:

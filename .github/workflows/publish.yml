@@ -29,6 +29,12 @@ jobs:
       - name: Test
         run: bun run test
 
+      - name: Integration test
+        run: bun run test:integration
+
+      - name: End-to-end test
+        run: bun run test:e2e
+
       - name: Replay performance gate
         run: bun run benchmark:replay
 
@@ -41,7 +47,7 @@ jobs:
       - name: Publish compatible package set
         run: |
           dist_tag="$(bun scripts/release-packages.ts dist-tag "$GITHUB_REF_NAME")"
-          for package in spec runner web mobile studio cli; do
+          for package in configuration spec runner web mobile studio cli; do
             (cd "packages/$package" && bun publish --access public --tag "$dist_tag")
           done
         env:

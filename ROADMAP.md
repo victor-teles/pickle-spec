@@ -1,6 +1,10 @@
 # Pickle Spec roadmap
 
-This roadmap reflects the repository state in August 2026. Its goal is to make Studio the flagship interface for local-first, AI-driven autonomous testing. Stagehand powers web execution, and agent-device powers mobile execution.
+This roadmap was reconciled on 2026-09-04 against the revision recorded in the
+[capability and release evidence inventory](docs/capability-status.md).
+Checked items describe implemented scope, not live-target certification or
+completed phase exit criteria. Stagehand powers web execution, and agent-device
+powers mobile execution.
 
 ## Where the platform stands
 
@@ -10,10 +14,17 @@ The execution engine is ahead of the product surface. Pickle Spec ships these ca
 - **Runner** — event-sourced runs under `~/.pickle`, worker-pool concurrency, retries, flake marking, and the Adaptive/Replay execution cache
 - **Web** — Stagehand observe, act, extract, and verify routing with screenshots and local, Browserbase, or external CDP environments
 - **Mobile** — agent-device automation for Android emulators and iOS simulators, with screenshots, logs, recordings, and traces
-- **CLI** — `run`, `studio`, `cache`, `check`, `migrate`, `compare`, `export`, and `import`. Exports support JUnit, JSON, NDJSON, HTML, archives, and Allure.
+- **CLI** — `init`, `apps`, `doctor`, `run`, `studio`, `cache`, `check`, `migrate`, `compare`, `export`, and `import`. Exports support JUnit, JSON, NDJSON, HTML, archives, and Allure.
 - **Studio** — a Specification catalog, Monaco Gherkin editing, and live scenario-by-profile progress. Studio also provides deep-linked evidence, history, comparison, export, rerun, settings, git integration, and mobile target discovery.
 
-Studio does not yet provide live target video, web traces, visual diffing, built-in AI authoring, or guarded test repair. Trend analytics and hosted collaboration are also absent.
+Studio displays live browser frames, Browserbase session embeds, and mobile
+frames. Web evidence includes structured activity traces, console and network
+diagnostics, screenshots, and optional recordings. These are not Playwright
+Trace Viewer archives or a complete network capture. Target prerequisites and
+verification limits are recorded in the [inventory](docs/capability-status.md).
+
+Visual diffing, built-in AI authoring, execution-plan editing, guarded test
+repair, trend analytics, and hosted collaboration remain unsupported.
 
 ## Competitive baseline
 
@@ -38,7 +49,9 @@ Four product rules protect that position:
 3. **Known work becomes deterministic.** Adaptive execution discovers a path. Replay executes the validated path without model inference when the cache remains applicable.
 4. **Mutation requires proof.** An agent can propose a Specification or repair. Acceptance requires a source diff and a validating run.
 
-Every phase also follows `DESIGN.md`: flat plates, spelled result states, Bone for the primary action, and teal, oxide, or amber only as labeled state ink. Every control uses a shadcn Mira primitive.
+Every phase follows [DESIGN.md](DESIGN.md) for current colors, typography,
+layout, motion, and labeled result states. Every control uses a shadcn Mira
+primitive. The roadmap does not define a second set of design tokens.
 
 ## Phase 1: Command Center (weeks 1–6)
 
@@ -59,12 +72,21 @@ Phase 2 makes concurrent execution understandable during and after a run. The li
 - [x] Shared evidence contract: version observations, tool activity, outcomes, timing, cost, artifact references, execution mode, and cache decisions. Redact secrets before streaming or persistence. Never store private chain-of-thought.
 - [x] Live browser viewport: stream CDP screencast frames from a local or attached browser over the per-run WebSocket. Embed the Browserbase live session for remote runs.
 - [x] Live device mirror: stream Android emulator and iOS simulator frames through the existing Node worker protocol. Render the active device beside the step timeline.
-- [x] Web diagnostics: capture redacted traces, recordings, network activity, and console output. Link each artifact to its step and event range.
+- [x] Web activity traces: retain structured browser and resolved-action evidence with step and event attribution. These are Pickle Spec traces, not Playwright trace archives.
+- [x] Web console and network diagnostics: collect instrumented page activity with redaction and explicit collection failures. This is not a complete browser network log.
+- [x] Web recordings: capture screenshot-based MP4 files when artifact policy requests them and local `ffmpeg` is available. Capture failures remain visible.
 - [x] Time-travel inspector: connect each action to target state, diagnostics, source evidence, retries, and before-and-after screenshots. Use the same view for live and completed runs.
 - [ ] Replay divergence explainer: show the divergence step, sealed prefix, and Adaptive fallback. Use the existing `replay-diverged` and `adaptive-fallback-started` events.
-- [ ] Operator controls: let an operator pin or cancel a scenario, open its live session, and capture evidence. Add pause-after-step only after the runner defines a safe suspension contract.
-- [ ] Follow mode and picture-in-picture: follow the worst result or a pinned scenario across the matrix. Show a filmstrip of concurrent targets for parallel workers.
-- [ ] Live step timeline: append screenshots, execution mode, cache provenance, retries, and elapsed time as step events arrive.
+- [x] Pin an investigation: keep the selected Scenario/profile evidence while other attempts update.
+- [x] Cancel a Test run: cancel the run through existing run controls. This is not individual Scenario cancellation.
+- [x] Live session viewing: display the selected target in the Viewport tab or workbench.
+- [ ] Individual Scenario cancellation: stop one Scenario without cancelling its Test run.
+- [ ] Manual evidence capture: let an operator request evidence independently of automatic artifact policy.
+- [ ] Pause after step: requires a safe runner suspension contract. Pausing follow mode does not suspend execution.
+- [x] Follow mode: follow causal activity and prioritize a failed attempt until the investigation is pinned. Manual timeline inspection pauses following; it can be resumed.
+- [ ] Concurrent target filmstrip: show multiple live targets together. Retaining frames by target does not provide a filmstrip UI.
+- [ ] Picture-in-picture: keep a target visible outside its normal inspector pane.
+- [x] Live step timeline: project step events, screenshots, execution mode, cache evidence, retries, and timing into the same inspector used for completed runs. A dedicated Replay divergence explanation remains pending above.
 - [ ] Read-and-run agent API: expose readiness, run control, events, result inspection, and artifact retrieval through local MCP tools.
 
 Exit criteria: an operator can watch a run, inspect any completed action, and cancel unsafe execution. The same evidence remains available after the run ends.
