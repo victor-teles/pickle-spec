@@ -8,6 +8,11 @@ adapter uses Stagehand for browser automation, and the mobile adapter uses
 is local-first: Specifications, test runs, caches, and artifacts stay on the
 user's machine or CI runner by default.
 
+See the [capability and release evidence inventory](docs/capability-status.md)
+for supported scope and revision-linked verification across local web, attached
+CDP, Browserbase, Android Emulator, and iOS Simulator. Implemented behavior is
+not a claim that every target or the published npm package has been verified.
+
 ## Package ownership
 
 Each scoped package owns one public boundary.
@@ -24,9 +29,11 @@ Each scoped package owns one public boundary.
 
 The `apps/example` workspace contains sample Specifications.
 
-All seven packages publish at one lockstep version. Library consumers use the
-package roots; adapter conformance and controlled benchmark tooling are exposed
-only at `@pickle-spec/runner/testing` and
+All seven packages belong to one lockstep release set. The publish workflow
+runs unit, integration, E2E, and package checks before publishing them in
+dependency order. See [Release validation](docs/releasing.md) for the gates.
+Library consumers use the package roots. Adapter conformance and controlled
+benchmark tooling are exposed only at `@pickle-spec/runner/testing` and
 `@pickle-spec/runner/benchmarking`.
 
 ## Install the executable products
@@ -52,6 +59,8 @@ bun install --frozen-lockfile
 bun run lint
 bun run typecheck
 bun run test
+bun run test:integration
+bun run test:e2e
 bun run release:check
 bun run benchmark:replay
 ```
@@ -63,7 +72,8 @@ bunx turbo run test --filter=@pickle-spec/web
 ```
 
 See [Release validation](docs/releasing.md) for package artifacts, required
-resource-independent gates, provisioned smoke tests, and release exclusions.
+resource-independent gates, the separate integration and E2E lanes,
+provisioned smoke tests, and release exclusions.
 
 ## Configure web execution
 
@@ -253,6 +263,11 @@ pickle cache clear
 `--refresh-cache` bypasses the current entry and replaces it after Adaptive evaluation. `--cache-only` never calls a model and fails on a miss, a short prefix, or divergence. CI that requires zero inference must use `--cache-only`.
 
 Pickle Spec stores one shared cache database at `~/.pickle/execution-cache.sqlite` and scopes every entry to its project. Git worktrees from the same repository share a project identity instead of creating another database. SQLite is the only cache tier. Each project's entries retain multiple Scenario and application revisions without a fixed TTL. The default configurable limit is 100 MiB per project, with least-recently-used eviction by `lastUsedAt`. Studio shows cache behavior with results, offers Cache refresh beside Run, and keeps cache inspection and clearing under Settings.
+
+Cache inspection shows operational metadata, not a readable execution plan.
+Studio can edit Gherkin Specifications, but it does not yet support editing,
+validating, activating, or rolling back durable execution-plan revisions.
+Cache refresh and clearing are not plan-maintenance operations.
 
 See [Replay performance gate](docs/replay-performance.md) for the controlled
 web/mobile benchmark, budgets, and rerun protocol.

@@ -13,6 +13,29 @@ import {
 
 const repositoryRoot = resolve(import.meta.dir, '../../..')
 
+type PublishWorkflowStep = {
+  name?: string
+  run?: string
+  'continue-on-error'?: boolean
+}
+
+type PublishWorkflow = {
+  jobs?: {
+    publish?: {
+      steps?: PublishWorkflowStep[]
+    }
+  }
+}
+
+async function readPublishSteps(): Promise<PublishWorkflowStep[] | undefined> {
+  const workflow = Bun.YAML.parse(
+    await Bun.file(
+      join(repositoryRoot, '.github/workflows/publish.yml'),
+    ).text(),
+  ) as PublishWorkflow
+  return workflow.jobs?.publish?.steps
+}
+
 const packageFixtures = [
   ['configuration', '@pickle-spec/configuration', { '.': './index.ts' }, {}],
   [
@@ -117,6 +140,41 @@ async function createReleaseWorkspace(): Promise<string> {
 }
 
 describe('release package acceptance', () => {
+  test('publishes every release package in dependency order', async () => {
+    const steps = await readPublishSteps()
+    const publishCommand = steps?.find(
+      (step) => step.name === 'Publish compatible package set',
+    )?.run
+    const packageLoop = publishCommand?.match(/for package in ([^;]+); do/)
+
+    expect(
+      packageLoop?.[1]?.split(/\s+/).map((name) => `packages/${name}`),
+    ).toEqual(releasePackageDirectories)
+  })
+
+  test('requires integration and end-to-end gates before release preparation and publication', async () => {
+    const steps = await readPublishSteps()
+    const preparationIndex =
+      steps?.findIndex(
+        (step) => step.name === 'Prepare lockstep version from release tag',
+      ) ?? -1
+    const publicationIndex =
+      steps?.findIndex(
+        (step) => step.name === 'Publish compatible package set',
+      ) ?? -1
+    const requiredCommands = ['bun run test:integration', 'bun run test:e2e']
+
+    expect(preparationIndex).toBeGreaterThan(-1)
+    expect(publicationIndex).toBeGreaterThan(preparationIndex)
+    for (const command of requiredCommands) {
+      const gateIndex = steps?.findIndex((step) => step.run === command) ?? -1
+
+      expect(gateIndex).toBeGreaterThan(-1)
+      expect(gateIndex).toBeLessThan(preparationIndex)
+      expect(steps?.[gateIndex]?.['continue-on-error']).toBeUndefined()
+    }
+  })
+
   test('publishes one compatible package set with curated public entry points', async () => {
     const result = await validateReleasePackages(repositoryRoot)
 

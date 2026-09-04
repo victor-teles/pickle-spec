@@ -4,8 +4,9 @@ Created on 2026-09-04. This backlog translates the
 [QA and UX review](roadmap-qa-ux-review.md) and
 [launch and growth plan](launch-and-growth.md) into assignable engineering tasks.
 It includes the QA request to inspect, manually edit, and autonomously repair
-AI-generated execution plans. All tasks are pending. This document does not
-certify features, authorize publication, or start implementation.
+AI-generated execution plans. Task status is recorded in the backlog below.
+This document does not certify features, authorize publication, or start
+implementation.
 
 ## Delivery outcome
 
@@ -57,7 +58,7 @@ contracts are settled. No delivery dates or effort estimates are assumed.
 
 | Done | ID | Priority | Task | Depends on |
 | --- | --- | --- | --- | --- |
-| [ ] | ENG-01 | P0 | Reconcile capability status and release evidence | None |
+| [x] | ENG-01 | P0 | Reconcile capability status and release evidence | None |
 | [ ] | ENG-02 | P0 | Create a repeatable QA acceptance fixture | ENG-01 |
 | [ ] | ENG-03 | P0 | Decide execution-plan ownership and contracts | ENG-01 |
 | [ ] | ENG-04 | P0 | Expose a readable execution plan | ENG-03 |
@@ -77,9 +78,9 @@ contracts are settled. No delivery dates or effort estimates are assumed.
 | [ ] | ENG-18 | P1 | Close second-journey authoring gaps | ENG-14, pilot feedback |
 | [ ] | ENG-19 | P2 | Scope later capabilities from observed demand | ENG-14, return-use evidence |
 
-Start with ENG-01, then ENG-02 and ENG-03. The critical maintenance path is
-ENG-03 through ENG-08. Diagnosis, onboarding, and CI work can advance alongside
-that path without inventing alternative plan contracts.
+ENG-01 is complete. Continue with ENG-02 and ENG-03. The critical maintenance
+path is ENG-03 through ENG-08. Diagnosis, onboarding, and CI work can advance
+alongside that path without inventing alternative plan contracts.
 
 ## P0 task details
 
@@ -102,6 +103,15 @@ Work:
 Done when every advertised capability has a supported scope and evidence status.
 No feature implementation belongs in this inventory task. Turn discovered gaps
 into the relevant task below or a separately scoped follow-up.
+
+Completed on 2026-09-04. The [capability and release evidence inventory](capability-status.md)
+records the audited revision, five-target task matrices, source and test
+evidence, exact verification results, and follow-up ownership. README, roadmap,
+and release policy now distinguish implemented behavior from live verification.
+The [four-criterion acceptance map](capability-status.md#eng-01-acceptance)
+links each requirement to its delivered result and evidence.
+Live-target, published-package, and rendered accessibility evidence remain
+unverified; inventory completion does not close those later release gates.
 
 ### ENG-02: Create a repeatable QA acceptance fixture
 
@@ -325,6 +335,9 @@ Entry points: [Release validation](releasing.md), existing package tests,
 Work:
 
 - Run focused regression tests, then required repository and release gates.
+- Verify the ENG-01 workflow follow-up on the release revision. The corrected
+  loop includes all seven packages and runs integration/E2E before publication;
+  actual publication and clean installation still require release evidence.
 - Verify the installable artifacts outside the monorepo. Verify the exact public
   package after publication is separately authorized and performed.
 - Run the full fixture on real advertised targets and capture revision, OS,
