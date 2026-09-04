@@ -45,6 +45,7 @@ function StudioSpecificationsArea(props: {
         onCancel: studio.actions.cancelCurrentRun,
         onDismissFinishedRun: studio.run.dismissFinishedRun,
         onInspectLocation: studio.run.inspectLocation,
+        onInspectTimelineEntry: studio.run.inspectTimelineEntry,
         onPauseFollowing: studio.run.pauseFollowing,
         onResumeFollowing: studio.run.resumeFollowing,
         onRun: studio.actions.startNewRun,
@@ -109,12 +110,12 @@ function StudioAreaContent(props: {
   )
 }
 
-function StudioWorkspace(props: { studio: StudioController }) {
-  const { studio } = props
+function StudioWorkspace({ studio }: { studio: StudioController }) {
   const { data } = studio
   if (!data.project) return null
   const workbench = specificationsWorkbenchModel({
     live: studio.run.activeLive,
+    runsIndex: data.runsIndex,
     specifications: data.project.specifications,
   })
   const specificationsWorkbenchVisible =

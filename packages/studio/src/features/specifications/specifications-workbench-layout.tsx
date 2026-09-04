@@ -30,13 +30,13 @@ export function WorkbenchLayout(props: WorkbenchLayoutProps) {
     >
       {props.visibility.left ? (
         <>
-          <ResizablePanel id="workbench-left" defaultSize="23%" minSize="15%">
+          <ResizablePanel id="workbench-left" defaultSize="20%" minSize="15%">
             {props.left}
           </ResizablePanel>
           <ResizableHandle withHandle />
         </>
       ) : null}
-      <ResizablePanel id="workbench-main" defaultSize="54%" minSize="30%">
+      <ResizablePanel id="workbench-main" defaultSize="60%" minSize="30%">
         <ResizablePanelGroup
           id="specifications-workbench-main"
           orientation="vertical"
@@ -66,7 +66,7 @@ export function WorkbenchLayout(props: WorkbenchLayoutProps) {
       {props.visibility.right ? (
         <>
           <ResizableHandle withHandle />
-          <ResizablePanel id="workbench-right" defaultSize="23%" minSize="15%">
+          <ResizablePanel id="workbench-right" defaultSize="20%" minSize="15%">
             {props.right}
           </ResizablePanel>
         </>
@@ -82,7 +82,7 @@ export function useWorkbenchOrientation(): WorkbenchOrientation {
     useState<WorkbenchOrientation>('horizontal')
 
   useEffect(() => {
-    const media = window.matchMedia('(min-width: 80rem)')
+    const media = window.matchMedia('(min-width: 64rem)')
     const updateOrientation = () =>
       setOrientation(media.matches ? 'horizontal' : 'vertical')
 

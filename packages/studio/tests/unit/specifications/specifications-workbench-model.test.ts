@@ -6,6 +6,8 @@ import { liveViewportTargetKey } from '../../../src/features/runs/live-viewport'
 import type { LiveResultInspection } from '../../../src/features/runs/result/live-result-inspection'
 import { SpecificationsWorkbench } from '../../../src/features/specifications/specifications-workbench'
 import { specificationsWorkbenchModel } from '../../../src/features/specifications/specifications-workbench-model'
+import { workbenchBrowserFrame } from '../../../src/features/specifications/workbench-browser-frame'
+import type { StudioRunsIndex } from '../../../src/server/contracts'
 
 const noEvidence: ScenarioAttempt['evidenceAvailability'] = [
   { kind: 'screenshot', state: 'not-requested' },
@@ -179,7 +181,97 @@ function workbenchInspection(): LiveResultInspection {
   }
 }
 
+function runsIndex(activeRunIds: readonly string[] = []): StudioRunsIndex {
+  return {
+    activeRunIds,
+    retention: {},
+    runs: [
+      {
+        id: 'run-all',
+        startedAt: '2026-09-02T12:00:00.000Z',
+        finishedAt: '2026-09-02T12:00:02.000Z',
+        executionTargetProfileIds: ['chrome', 'firefox'],
+        specificationUris: [
+          'features/checkout.feature',
+          'features/search.feature',
+        ],
+        state: 'failed',
+        resultCount: 2,
+      },
+    ],
+    storage: {
+      totalBytes: 0,
+      warningThresholdBytes: 1,
+      warning: false,
+      pinnedRunIds: [],
+    },
+  }
+}
+
 describe('Specifications workbench model', () => {
+  test('keeps the browser preview on the selected or nearest screenshot', () => {
+    const entries = [
+      {
+        id: 'before',
+        startedAt: '2026-09-02T12:00:01.000Z',
+        timingPrecision: 'exact' as const,
+        kind: 'Step' as const,
+        title: 'Before',
+        attributes: [],
+        artifacts: [
+          {
+            kind: 'screenshot' as const,
+            path: '/before.png',
+            capturedAt: '2026-09-02T12:00:01.000Z',
+          },
+        ],
+      },
+      {
+        id: 'selected-without-frame',
+        startedAt: '2026-09-02T12:00:02.000Z',
+        timingPrecision: 'exact' as const,
+        kind: 'Resolved action' as const,
+        title: 'Selected without frame',
+        attributes: [],
+      },
+      {
+        id: 'selected-with-frame',
+        startedAt: '2026-09-02T12:00:10.000Z',
+        finishedAt: '2026-09-02T12:00:10.200Z',
+        timingPrecision: 'exact' as const,
+        kind: 'Step' as const,
+        title: 'Selected with frame',
+        attributes: [],
+        artifacts: [
+          {
+            kind: 'screenshot' as const,
+            path: '/before-exact.png',
+            capturedAt: '2026-09-02T12:00:10.000Z',
+          },
+          {
+            kind: 'screenshot' as const,
+            path: '/after-exact.png',
+            capturedAt: '2026-09-02T12:00:10.200Z',
+          },
+        ],
+      },
+    ]
+    const selectedWithoutFrame = entries[1]
+    const selectedWithFrame = entries[2]
+    expect(selectedWithoutFrame).toBeDefined()
+    expect(selectedWithFrame).toBeDefined()
+    if (!selectedWithoutFrame || !selectedWithFrame) return
+
+    expect(workbenchBrowserFrame(entries, selectedWithoutFrame)).toMatchObject({
+      artifact: { path: '/before.png' },
+      exact: false,
+    })
+    expect(workbenchBrowserFrame(entries, selectedWithFrame)).toMatchObject({
+      artifact: { path: '/after-exact.png' },
+      exact: true,
+    })
+  })
+
   test('keeps idle browsing separate but opens every live run in the workbench', () => {
     const live = workbenchInspection()
     const specifications = [
@@ -284,6 +376,7 @@ describe('Specifications workbench model', () => {
         onCancel: () => undefined,
         onDismissFinishedRun: () => undefined,
         onInspectLocation: () => undefined,
+        onInspectTimelineEntry: () => undefined,
         onPauseFollowing: () => undefined,
         onEditSpecification: () => undefined,
         onResumeFollowing: () => undefined,
@@ -310,7 +403,11 @@ describe('Specifications workbench model', () => {
     expect(markup).toContain('aria-label="Workbench panels"')
     expect(markup).toContain('Hide Left sidebar')
     expect(markup).toContain('Hide Bottom panel')
-    expect(markup).toContain('Hide Right sidebar')
+    expect(markup).toContain('Show Right sidebar')
+    expect(markup).toMatch(
+      /<li[^>]*(?:bg-secondary[^>]*data-selected="true"|data-selected="true"[^>]*bg-secondary)/,
+    )
+    expect(markup).toContain('aria-pressed:border-transparent')
   })
 
   test('renders the reference workbench regions without unsupported controls', () => {
@@ -332,6 +429,7 @@ describe('Specifications workbench model', () => {
         onCancel: () => undefined,
         onDismissFinishedRun: () => undefined,
         onInspectLocation: () => undefined,
+        onInspectTimelineEntry: () => undefined,
         onPauseFollowing: () => undefined,
         onEditSpecification: () => undefined,
         onResumeFollowing: () => undefined,
@@ -350,13 +448,113 @@ describe('Specifications workbench model', () => {
     expect(markup).toContain('Live browser viewport for Pay')
     expect(markup).toContain('1280×800')
     expect(markup).toContain('Timeline')
+    expect(markup).toContain('Execution timeline')
+    expect(markup).toContain(
+      'Select a step or action to inspect the evidence captured then.',
+    )
+    expect(markup).toContain('aria-pressed="true"')
+    expect(markup).toContain('data-timeline-entry-id=')
     expect(markup).toContain('Artifacts 0')
-    expect(markup).toContain('Current step')
     expect(markup).toContain('When the customer signs in')
-    expect(markup).toContain('features/checkout.feature:12')
     expect(markup).toMatch(/Total.*Queued.*Passed.*Failed/s)
-    expect(markup).toContain('Cancel run')
+    expect(markup).toMatch(/Run all 4.*Cancel run/s)
+    expect(markup).toContain('Show Right sidebar')
+    expect(markup).not.toContain('Current step')
     const removedContent = />Running<\/dt>|<footer|Run selected|Concurrency/
     expect(markup).not.toMatch(removedContent)
+  })
+
+  test('offers report downloads after the workbench run finishes', () => {
+    const live = workbenchInspection()
+    const snapshot = live.snapshot
+    expect(snapshot).toBeDefined()
+    if (!snapshot?.manifest) return
+    const model = specificationsWorkbenchModel({
+      specifications: [],
+      live: {
+        ...live,
+        phase: 'finished',
+        liveViewports: new Map(),
+        snapshot: {
+          ...snapshot,
+          manifest: {
+            ...snapshot.manifest,
+            finishedAt: '2026-09-02T12:00:02.000Z',
+          },
+        },
+      },
+    })
+    const markup = renderToStaticMarkup(
+      createElement(SpecificationsWorkbench, {
+        canRunAll: true,
+        model,
+        onCancel: () => undefined,
+        onDismissFinishedRun: () => undefined,
+        onInspectLocation: () => undefined,
+        onInspectTimelineEntry: () => undefined,
+        onPauseFollowing: () => undefined,
+        onEditSpecification: () => undefined,
+        onResumeFollowing: () => undefined,
+        onRun: () => undefined,
+        onSelectInspectorTab: () => undefined,
+        onSelectScenario: () => undefined,
+        onSelectSpecification: () => undefined,
+        running: false,
+      }),
+    )
+
+    expect(markup).toContain('Download report')
+    expect(markup).toContain('Recorded')
+    expect(markup).toContain('aria-label="Selected timeline entry"')
+    expect(markup).not.toContain('Live browser viewport for Pay')
+    expect(model.kind === 'batch' ? model.report.state : undefined).toBe(
+      'available',
+    )
+    expect(markup).toContain('Back to Specifications')
+    expect(markup).not.toContain('Cancel run')
+  })
+
+  test('prepares reports until the finished Run is indexed and inactive', () => {
+    const live = {
+      ...workbenchInspection(),
+      phase: 'finished' as const,
+      liveViewports: new Map(),
+    }
+    const preparing = specificationsWorkbenchModel({
+      specifications: [],
+      live,
+    })
+    const stillActive = specificationsWorkbenchModel({
+      specifications: [],
+      runsIndex: runsIndex(['run-all']),
+      live,
+    })
+    const markup = renderToStaticMarkup(
+      createElement(SpecificationsWorkbench, {
+        canRunAll: true,
+        model: preparing,
+        onCancel: () => undefined,
+        onDismissFinishedRun: () => undefined,
+        onInspectLocation: () => undefined,
+        onInspectTimelineEntry: () => undefined,
+        onPauseFollowing: () => undefined,
+        onEditSpecification: () => undefined,
+        onResumeFollowing: () => undefined,
+        onRun: () => undefined,
+        onSelectInspectorTab: () => undefined,
+        onSelectScenario: () => undefined,
+        onSelectSpecification: () => undefined,
+        running: false,
+      }),
+    )
+
+    expect(
+      preparing.kind === 'batch' ? preparing.report.state : undefined,
+    ).toBe('preparing')
+    expect(
+      stillActive.kind === 'batch' ? stillActive.report.state : undefined,
+    ).toBe('preparing')
+    expect(markup).toMatch(/<button[^>]*disabled[^>]*>.*Preparing report/s)
+    expect(markup).not.toContain('Download report')
   })
 })

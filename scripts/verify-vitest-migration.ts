@@ -14,7 +14,7 @@ const sourceFilePattern = /\.[cm]?[jt]sx?$/
 const legacyImport = ['bun', 'test'].join(':')
 const legacyCommand = ['bun', 'test'].join(' ')
 const expectedCatalog: DependencyMap = {
-  vitest: '4.1.11',
+  vitest: '5.0.0',
   'vitest-mock-extended': '5.1.1',
 }
 const expectedRootDevDependencies = ['vitest']
@@ -77,7 +77,7 @@ function checkRunnerTestingDependency(manifest: JsonObject): Violation[] {
   const dev = dependency(manifest, 'devDependencies', 'vitest')
   const violations: Violation[] = []
 
-  if (peer !== '^4.1.11') {
+  if (peer !== '^5.0.0') {
     violations.push({
       file: 'packages/runner/package.json',
       detail:

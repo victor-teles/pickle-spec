@@ -16,7 +16,7 @@
       "agent-device": "^0.20.10",
       "turbo": "^2.8.1",
       "typescript": "^7.0.2",
-      "vitest": "4.1.11",
+      "vitest": "5.0.0",
       "vitest-mock-extended": "5.1.1",
       "zod": "^4"
     }

@@ -36,6 +36,7 @@ import type {
 type WorkbenchRailProps = {
   canRun: boolean
   model: SpecificationsWorkbenchModel
+  onCancel: () => void
   onInspectLocation: (location: ResultInspectionLocation) => void
   onRun: (request: StudioRunRequest) => void
   onSelectScenario: (
@@ -50,13 +51,28 @@ type WorkbenchRailProps = {
 
 export function WorkbenchRail(props: WorkbenchRailProps) {
   const runKey = props.model.kind === 'batch' ? props.model.runId : 'browse'
+  const canCancel =
+    props.model.kind === 'batch' && props.model.phase === 'running'
+  const runAllLabel =
+    props.model.kind === 'batch'
+      ? `Run all ${props.model.totals.scheduled}`
+      : 'Run all Specifications'
   const [tab, setTab] = useState(
-    props.model.kind === 'batch' ? 'queue' : 'specifications',
+    props.model.kind === 'batch' || props.running ? 'queue' : 'specifications',
   )
 
   useEffect(() => {
     setTab(runKey === 'browse' ? 'specifications' : 'queue')
   }, [runKey])
+
+  useEffect(() => {
+    if (props.running) setTab('queue')
+  }, [props.running])
+
+  function handleRun(request: StudioRunRequest) {
+    setTab('queue')
+    props.onRun(request)
+  }
 
   return (
     <aside className="flex h-full min-h-0 min-w-0 flex-col bg-muted/10 xl:overflow-hidden">
@@ -72,27 +88,61 @@ export function WorkbenchRail(props: WorkbenchRailProps) {
           </TabsList>
         </div>
         <TabsContent value="queue" className="min-h-0 overflow-hidden">
-          {props.model.kind === 'batch' ? (
-            <div className="flex h-full min-h-0 flex-col">
-              <div className="min-h-0 flex-1 overflow-auto">
-                <QueueGroups {...props} model={props.model} />
-              </div>
-              <QueueSummary totals={props.model.totals} />
-            </div>
-          ) : (
-            <p className="p-4 text-sm text-muted-foreground">
-              Start Run all to monitor the queue here.
-            </p>
-          )}
+          <QueueTabContent {...props} onRun={handleRun} />
         </TabsContent>
         <TabsContent
           value="specifications"
           className="min-h-0 overflow-auto p-2"
         >
-          <SpecificationTargets {...props} />
+          <SpecificationTargets {...props} onRun={handleRun} />
         </TabsContent>
       </Tabs>
+      <div className="flex shrink-0 gap-2 border-t border-border p-2">
+        <Button
+          type="button"
+          className="min-w-0 flex-1"
+          disabled={!props.canRun || props.running}
+          onClick={() => handleRun({})}
+        >
+          <HugeiconsIcon icon={PlayCircleIcon} strokeWidth={2} aria-hidden />
+          {runAllLabel}
+        </Button>
+        {canCancel ? (
+          <Button type="button" variant="outline" onClick={props.onCancel}>
+            Cancel run
+          </Button>
+        ) : null}
+      </div>
     </aside>
+  )
+}
+
+function QueueTabContent(props: WorkbenchRailProps) {
+  if (props.model.kind === 'batch') {
+    return (
+      <div className="flex h-full min-h-0 flex-col">
+        <div className="min-h-0 flex-1 overflow-auto">
+          <QueueGroups {...props} model={props.model} />
+        </div>
+        <QueueSummary totals={props.model.totals} />
+      </div>
+    )
+  }
+  if (props.running) {
+    return (
+      <div
+        role="status"
+        className="flex items-center gap-2 p-4 text-sm text-muted-foreground"
+      >
+        <Spinner />
+        Starting run…
+      </div>
+    )
+  }
+  return (
+    <p className="p-4 text-sm text-muted-foreground">
+      Start Run all to monitor the queue here.
+    </p>
   )
 }
 
@@ -151,17 +201,14 @@ function SpecificationTargets(props: WorkbenchRailProps) {
 function SpecificationTarget(
   props: WorkbenchRailProps & { specification: StudioSpecification },
 ) {
-  const selected = props.specification.id === props.selectedSpecificationId
-
-  function handleRunSpecification() {
-    props.onSelectSpecification(props.specification.id)
-    props.onRun({ paths: [props.specification.uri] })
-  }
+  const selected =
+    props.specification.id === props.selectedSpecificationId &&
+    !props.selectedScenarioId
 
   return (
     <AccordionItem
       value={props.specification.id}
-      className="border-0 data-open:bg-transparent"
+      className="not-last:border-b-0 data-open:bg-transparent"
     >
       <AccordionTrigger
         className={
@@ -179,21 +226,6 @@ function SpecificationTarget(
         </span>
       </AccordionTrigger>
       <AccordionContent className="px-2 pb-1">
-        <Button
-          type="button"
-          size="sm"
-          variant="ghost"
-          className="mb-1 w-full justify-start px-2 text-muted-foreground"
-          disabled={
-            props.running ||
-            !props.canRun ||
-            props.specification.canRun === false
-          }
-          onClick={handleRunSpecification}
-        >
-          <HugeiconsIcon icon={PlayCircleIcon} strokeWidth={1.5} aria-hidden />
-          Run Specification
-        </Button>
         <ul className="space-y-0.5">
           {props.specification.scenarios.map((scenario) => (
             <ScenarioTarget key={scenario.id} {...props} scenario={scenario} />
@@ -227,16 +259,23 @@ function ScenarioTarget(
   }
 
   return (
-    <li className="flex min-w-0 items-stretch gap-1">
+    <li
+      data-selected={selected || undefined}
+      className={
+        selected
+          ? 'flex min-w-0 items-stretch gap-1 rounded-lg bg-secondary'
+          : 'flex min-w-0 items-stretch gap-1 rounded-lg hover:bg-muted'
+      }
+    >
       <Button
         type="button"
         size="sm"
-        variant={selected ? 'secondary' : 'ghost'}
+        variant="ghost"
         aria-pressed={selected}
-        className="h-auto min-h-8 min-w-0 flex-1 justify-start px-2 py-1.5 text-left whitespace-normal"
+        className="h-auto min-h-8 min-w-0 flex-1 justify-start px-2 py-1.5 text-left whitespace-normal hover:bg-transparent aria-pressed:border-transparent"
         onClick={handleSelect}
       >
-        <span className="break-words text-pretty leading-snug">
+        <span className="line-clamp-2 break-words text-pretty leading-snug">
           {props.scenario.name}
         </span>
       </Button>
@@ -245,7 +284,7 @@ function ScenarioTarget(
         size="sm"
         variant="ghost"
         aria-label={`Run Scenario ${props.scenario.name}`}
-        className="self-center"
+        className="self-center hover:bg-background/40"
         disabled={
           props.running ||
           !props.canRun ||

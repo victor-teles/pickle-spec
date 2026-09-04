@@ -569,7 +569,7 @@ function traceTimelineEntry(
   context: TimelineContext,
 ): TimelineEntry {
   return {
-    id: context.entryId(`trace-${step.index}-${index}`),
+    id: context.entryId(`browser-trace-${step.index}-${index}`),
     startedAt: entry.occurredAt,
     timingPrecision: 'exact',
     kind:
@@ -588,7 +588,7 @@ function legacyActionEntries(
 ): TimelineEntry[] {
   const stepId = context.entryId(`step-${step.index}`)
   return step.resolvedActions.map((action, index) => ({
-    id: context.entryId(`trace-${step.index}-${index}`),
+    id: context.entryId(`action-${step.index}-${index}`),
     startedAt: step.finishedAt,
     timingPrecision: 'step-finish',
     kind: 'Resolved action',
@@ -613,7 +613,7 @@ function actionTimelineEntries(
     const evidence = action.evidence
     const causalAt = resolvedTrace[action.ordinal]?.causalAt
     return {
-      id: context.entryId(`trace-${step.index}-${action.ordinal}`),
+      id: context.entryId(`action-${step.index}-${action.ordinal}`),
       startedAt: evidence?.startedAt ?? step.finishedAt,
       finishedAt: evidence?.finishedAt,
       timingPrecision: evidence ? 'exact' : 'step-finish',

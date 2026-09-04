@@ -12,14 +12,6 @@ import { ResultMark } from '../../components/ui/result-mark'
 import { Spinner } from '../../components/ui/spinner'
 import { Switch } from '../../components/ui/switch'
 import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '../../components/ui/table'
-import {
   Tabs,
   TabsContent,
   TabsList,
@@ -30,9 +22,16 @@ import type {
   StudioScenario,
   StudioSpecification,
 } from '../../server/contracts'
+import { ArtifactViewer } from '../runs/result/artifact-viewer'
+import {
+  type TimelineEntry,
+  timelineEntriesOfKinds,
+} from '../runs/result/result-evidence'
 import type { ResultInspectorTab } from '../runs/result/result-inspection'
 import { ResultViewportSurface } from '../runs/result/result-inspector'
 import { resultBadgeVariant } from '../runs/result/result-presentation'
+import { TimelineEvidenceDetail } from '../runs/result/timeline-evidence-detail'
+import { TimelineWaterfall } from '../runs/result/timeline-waterfall'
 import { durationLabel } from '../runs/run-format'
 import { studioRouteHref } from '../studio/studio-route'
 import {
@@ -46,12 +45,73 @@ import type {
   BatchWorkbenchModel,
   SpecificationsWorkbenchModel,
 } from './specifications-workbench-model'
+import { workbenchBrowserFrame } from './workbench-browser-frame'
 
 export type WorkbenchEvidenceProps = {
   model: SpecificationsWorkbenchModel
+  onInspectTimelineEntry: (entryId: string) => void
   onPauseFollowing: () => void
   onResumeFollowing: () => void
   onSelectInspectorTab: (tab: ResultInspectorTab) => void
+}
+
+type WorkbenchPreviewContentProps = {
+  model: SpecificationsWorkbenchModel
+  scenarioName: string
+  selectedScenario?: StudioScenario
+}
+
+function WorkbenchPreviewContent(props: WorkbenchPreviewContentProps) {
+  if (
+    props.model.kind === 'batch' &&
+    props.model.following &&
+    props.model.viewport
+  ) {
+    return (
+      <div className="min-h-72 flex-1 overflow-hidden bg-muted/20 p-2 xl:min-h-0">
+        <ResultViewportSurface
+          liveViewport={props.model.viewport}
+          scenarioName={props.scenarioName}
+          size="workbench"
+        />
+      </div>
+    )
+  }
+  const selectedEntry = selectedWorkbenchTimelineEntry(props.model)
+  if (props.model.kind === 'batch' && props.model.focus && selectedEntry) {
+    const frame = workbenchBrowserFrame(
+      props.model.focus.timeline,
+      selectedEntry,
+    )
+    if (!frame) {
+      return (
+        <PreviewEmptyState
+          model={props.model}
+          selectedScenario={props.selectedScenario}
+        />
+      )
+    }
+    return (
+      <div className="flex min-h-72 flex-1 items-center overflow-hidden bg-muted/20 p-2 xl:min-h-0">
+        <ArtifactViewer
+          artifact={frame.artifact}
+          scenarioName={props.scenarioName}
+          resultState={props.model.focus.resultState}
+          stepText={
+            frame.exact
+              ? selectedEntry.title
+              : `Nearest browser frame to ${selectedEntry.title}`
+          }
+        />
+      </div>
+    )
+  }
+  return (
+    <PreviewEmptyState
+      model={props.model}
+      selectedScenario={props.selectedScenario}
+    />
+  )
 }
 
 export function WorkbenchPreview(props: {
@@ -70,20 +130,25 @@ export function WorkbenchPreview(props: {
     >
       <header className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-b border-border px-3 py-2 sm:px-4">
         <div className="flex items-center gap-2">
-          <HugeiconsIcon icon={BrowserIcon} strokeWidth={2} aria-hidden />
+          <HugeiconsIcon icon={BrowserIcon} strokeWidth={1} aria-hidden />
           <h2 id="workbench-preview-title" className="text-sm font-semibold">
             Browser preview
           </h2>
         </div>
         <div className="flex items-center gap-2">
-          {props.model.kind === 'batch' && props.model.viewport ? (
+          {props.model.kind === 'batch' &&
+          props.model.following &&
+          props.model.viewport ? (
             <span className="text-xs text-muted-foreground">
               {viewportLabel(props.model)}
             </span>
           ) : null}
           <Badge
             variant={
-              props.model.kind === 'batch' && props.model.phase === 'running'
+              props.model.kind === 'batch' &&
+              props.model.phase === 'running' &&
+              props.model.following &&
+              props.model.viewport
                 ? 'running'
                 : 'default'
             }
@@ -92,20 +157,11 @@ export function WorkbenchPreview(props: {
           </Badge>
         </div>
       </header>
-      {props.model.kind === 'batch' && props.model.viewport ? (
-        <div className="min-h-72 flex-1 overflow-hidden bg-muted/20 p-2 xl:min-h-0">
-          <ResultViewportSurface
-            liveViewport={props.model.viewport}
-            scenarioName={scenarioName}
-            size="workbench"
-          />
-        </div>
-      ) : (
-        <PreviewEmptyState
-          model={props.model}
-          selectedScenario={props.selectedScenario}
-        />
-      )}
+      <WorkbenchPreviewContent
+        model={props.model}
+        scenarioName={scenarioName}
+        selectedScenario={props.selectedScenario}
+      />
     </section>
   )
 }
@@ -151,8 +207,12 @@ export function EvidenceDock(props: WorkbenchEvidenceProps) {
             <Badge variant="running">Live</Badge>
           ) : null}
         </header>
-        <TabsContent value="timeline" className="min-h-0 overflow-auto">
-          <CompactTimeline model={props.model} />
+        <TabsContent value="timeline" className="min-h-0 overflow-hidden">
+          <WorkbenchTimeline
+            model={props.model}
+            onInspectTimelineEntry={props.onInspectTimelineEntry}
+            onPauseFollowing={props.onPauseFollowing}
+          />
         </TabsContent>
         <TabsContent value="artifacts" className="min-h-0 overflow-auto p-3">
           <CompactArtifacts model={props.model} />
@@ -165,59 +225,77 @@ export function EvidenceDock(props: WorkbenchEvidenceProps) {
   )
 }
 
-function CompactTimeline(props: { model: SpecificationsWorkbenchModel }) {
+function WorkbenchTimeline(props: {
+  model: SpecificationsWorkbenchModel
+  onInspectTimelineEntry: (entryId: string) => void
+  onPauseFollowing: () => void
+}) {
   if (props.model.kind === 'browse') return <EmptyTimeline />
   const focus = props.model.focus
   if (!focus) return <EmptyFocus />
-  const steps = focus.inspected.attempt.steps
-  if (steps.length === 0) {
+  const entries = workbenchTimelineEntries(focus.timeline)
+  const selectedEntry = selectedWorkbenchTimelineEntry(props.model)
+  if (!selectedEntry) {
     return (
       <p className="p-4 text-sm text-muted-foreground">
-        No steps have been recorded for this Scenario attempt yet.
+        No steps or actions have been recorded for this Scenario attempt yet.
       </p>
     )
   }
   return (
-    <Table aria-label="Focused Scenario timeline">
-      <TableHeader>
-        <TableRow>
-          <TableHead className="w-14">Step</TableHead>
-          <TableHead>Action</TableHead>
-          <TableHead className="w-24">Time</TableHead>
-          <TableHead className="w-28">Status</TableHead>
-        </TableRow>
-      </TableHeader>
-      <TableBody>
-        {steps.map((step, index) => {
-          const running = focus.inProgress && index === steps.length - 1
-          const state = running ? 'running' : step.state
-          return (
-            <TableRow
-              key={step.index}
-              data-state={running ? 'selected' : undefined}
-            >
-              <TableCell>{step.index + 1}</TableCell>
-              <TableCell className="max-w-0 truncate">
-                {step.step.keyword.trim()} {step.step.text}
-              </TableCell>
-              <TableCell className="font-mono">
-                {durationLabel(step.durationMs)}
-              </TableCell>
-              <TableCell>
-                <span className="flex items-center gap-1.5">
-                  {state === 'running' ? (
-                    <Spinner className="text-primary" />
-                  ) : (
-                    <ResultMark state={state} />
-                  )}
-                  <span className={stateLabelClass(state)}>{state}</span>
-                </span>
-              </TableCell>
-            </TableRow>
-          )
-        })}
-      </TableBody>
-    </Table>
+    <section className="h-full min-h-0 overflow-auto bg-background/20">
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border px-4 py-2">
+        <div className="min-w-0">
+          <h3 className="text-sm font-semibold">Execution timeline</h3>
+          <p className="text-xs text-muted-foreground">
+            Select a step or action to inspect the evidence captured then.
+          </p>
+        </div>
+        <span
+          role="status"
+          aria-live="polite"
+          className="font-mono text-[0.6875rem] text-muted-foreground tabular-nums"
+        >
+          {durationLabel(focus.inspected.attempt.durationMs)} · {entries.length}{' '}
+          {entries.length === 1 ? 'entry' : 'entries'}
+        </span>
+      </div>
+      <div className="grid min-w-0 items-start lg:grid-cols-[minmax(0,1fr)_minmax(16rem,22rem)]">
+        <TimelineWaterfall
+          entries={entries}
+          attemptStartedAt={focus.inspected.attempt.startedAt}
+          durationMs={focus.inspected.attempt.durationMs}
+          selectedEntryId={selectedEntry.id}
+          followedEntryId={selectedEntry.id}
+          following={props.model.following}
+          onSelect={props.onInspectTimelineEntry}
+          onPauseFollowing={props.onPauseFollowing}
+        />
+        <TimelineEvidenceDetail
+          entry={selectedEntry}
+          attemptStartedAt={focus.inspected.attempt.startedAt}
+          scenarioName={focus.inspected.result.scenario.name}
+          resultState={focus.resultState}
+        />
+      </div>
+    </section>
+  )
+}
+
+function workbenchTimelineEntries(
+  entries: readonly TimelineEntry[],
+): readonly TimelineEntry[] {
+  return timelineEntriesOfKinds(entries, ['Step', 'Resolved action'])
+}
+
+function selectedWorkbenchTimelineEntry(
+  model: SpecificationsWorkbenchModel,
+): TimelineEntry | undefined {
+  if (model.kind === 'browse' || !model.focus) return undefined
+  const entries = workbenchTimelineEntries(model.focus.timeline)
+  return (
+    entries.find((entry) => entry.id === model.followedEntryId) ??
+    entries.at(-1)
   )
 }
 
@@ -281,7 +359,7 @@ export function WorkbenchDetails(props: WorkbenchDetailsProps) {
 
   const focus = props.model.focus
   return (
-    <aside className="min-h-0 min-w-0 bg-muted/10 xl:overflow-auto">
+    <aside className="min-h-0 min-w-0 overflow-auto bg-muted/10">
       {focus ? (
         <>
           <header className="space-y-1 border-b border-border p-4">
@@ -428,7 +506,8 @@ function FocusedMetadata(props: { model: BatchWorkbenchModel }) {
           variant="ghost"
           size="sm"
           href={runHref}
-          className="h-5 px-1"
+          title={props.model.runId}
+          className="h-5 max-w-full truncate px-1 font-mono"
         >
           {props.model.runId}
         </ButtonLink>
@@ -519,13 +598,7 @@ function viewportLabel(model: BatchWorkbenchModel): string {
 
 function previewStateLabel(model: SpecificationsWorkbenchModel): string {
   if (model.kind === 'browse') return 'Idle'
+  if (!model.following) return 'Historical'
+  if (!model.viewport && model.focus) return 'Recorded'
   return model.phase === 'running' ? 'Live' : 'Finished'
-}
-
-function stateLabelClass(state: string): string {
-  if (state === 'passed') return 'text-passed'
-  if (state === 'failed' || state === 'infrastructure-error') {
-    return 'text-destructive'
-  }
-  return 'text-muted-foreground'
 }

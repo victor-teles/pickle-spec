@@ -3,7 +3,10 @@ import type {
   TestResult,
   TestResultState,
 } from '@pickle-spec/runner'
-import type { StudioSpecification } from '../../server/contracts'
+import type {
+  StudioRunsIndex,
+  StudioSpecification,
+} from '../../server/contracts'
 import { focusedAttemptProjection } from '../runs/result/focused-attempt'
 import {
   displayedAttemptState,
@@ -55,6 +58,11 @@ export type WorkbenchTotals = {
   skipped: number
 }
 
+export type WorkbenchReport =
+  | { state: 'hidden' }
+  | { state: 'preparing' }
+  | { state: 'available'; runId: string }
+
 type BrowseWorkbenchModel = {
   kind: 'browse'
   specifications: readonly StudioSpecification[]
@@ -71,6 +79,7 @@ export type BatchWorkbenchModel = {
   location?: ResultInspectionLocation
   phase: LiveResultInspection['phase']
   queued: readonly Extract<WorkbenchTarget, { kind: 'queued' }>[]
+  report: WorkbenchReport
   runId: string
   running: readonly Extract<WorkbenchTarget, { kind: 'running' }>[]
   specifications: readonly StudioSpecification[]
@@ -196,8 +205,24 @@ function environmentLabel(schedule: readonly ScheduledTestResult[]): string {
   return 'Not recorded'
 }
 
+function workbenchReport(
+  live: LiveResultInspection,
+  runsIndex: StudioRunsIndex | undefined,
+): WorkbenchReport {
+  if (live.snapshot?.manifest?.finishedAt) {
+    return { state: 'available', runId: live.runId }
+  }
+  if (live.phase !== 'finished') return { state: 'hidden' }
+  const run = runsIndex?.runs.find((candidate) => candidate.id === live.runId)
+  if (!run?.finishedAt || runsIndex?.activeRunIds.includes(live.runId)) {
+    return { state: 'preparing' }
+  }
+  return { state: 'available', runId: live.runId }
+}
+
 export function specificationsWorkbenchModel(input: {
   live?: LiveResultInspection
+  runsIndex?: StudioRunsIndex
   specifications: readonly StudioSpecification[]
 }): SpecificationsWorkbenchModel {
   const { live, specifications } = input
@@ -236,6 +261,7 @@ export function specificationsWorkbenchModel(input: {
       (target): target is Extract<WorkbenchTarget, { kind: 'queued' }> =>
         target.kind === 'queued',
     ),
+    report: workbenchReport(live, input.runsIndex),
     runId: live.runId,
     running: targets.filter(
       (target): target is Extract<WorkbenchTarget, { kind: 'running' }> =>

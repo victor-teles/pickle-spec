@@ -36,6 +36,7 @@ type SpecificationRun = {
   onCancel: () => void
   onDismissFinishedRun: () => void
   onInspectLocation: (location: ResultInspectionLocation) => void
+  onInspectTimelineEntry: (entryId: string) => void
   onPauseFollowing: () => void
   onResumeFollowing: () => void
   onRun: (request: StudioRunRequest) => void
@@ -80,6 +81,7 @@ export function SpecificationsScreen(props: SpecificationsScreenProps) {
         onCancel={props.run.onCancel}
         onDismissFinishedRun={props.run.onDismissFinishedRun}
         onInspectLocation={props.run.onInspectLocation}
+        onInspectTimelineEntry={props.run.onInspectTimelineEntry}
         onPauseFollowing={props.run.onPauseFollowing}
         onEditSpecification={() => props.onAuthoringChange(true)}
         onResumeFollowing={props.run.onResumeFollowing}

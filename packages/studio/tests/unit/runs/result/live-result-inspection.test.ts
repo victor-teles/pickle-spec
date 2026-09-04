@@ -9,6 +9,7 @@ import {
   cellsFromLiveInspection,
   disconnectLiveInspection,
   hydrateLiveInspection,
+  inspectLiveTimelineEntry,
   liveInspectionFromSnapshot,
   liveViewportFor,
   pauseLiveFollowing,
@@ -422,6 +423,48 @@ test('resumes following after manual navigation', () => {
   expect(inspection.following).toBe(true)
   expect(inspection.followedEntryId?.endsWith(':step-0')).toBe(true)
   expect(inspection.followedEntryId?.includes(':event-')).toBe(false)
+})
+
+test('uses the followed entry as the single cursor for timeline time travel', () => {
+  let inspection = startLiveInspection({
+    specificationUri,
+    runId: 'run-79',
+  })
+  for (const event of [runStarted(), scenarioStarted(), stepStarted()]) {
+    inspection = receiveLiveStreamEvent(inspection, event)
+  }
+  const selectedEntryId = requiredValue(inspection.followedEntryId)
+
+  inspection = inspectLiveTimelineEntry(inspection, selectedEntryId)
+  expect(inspection).toMatchObject({
+    followedEntryId: selectedEntryId,
+    following: false,
+    pinned: true,
+  })
+
+  inspection = receiveLiveStreamEvent(inspection, stepFinished())
+  expect(inspection.followedEntryId).toBe(selectedEntryId)
+
+  inspection = resumeLiveFollowing(inspection)
+  expect(inspection.following).toBe(true)
+  expect(inspection.followedEntryId?.endsWith(':step-0')).toBe(true)
+})
+
+test('recomputes the timeline cursor when an attempt is selected', () => {
+  let inspection = startLiveInspection({
+    specificationUri,
+    runId: 'run-79',
+  })
+  for (const event of [runStarted(), scenarioStarted(), stepStarted()]) {
+    inspection = receiveLiveStreamEvent(inspection, event)
+  }
+  inspection = inspectLiveTimelineEntry(inspection, 'stale-entry')
+  const location = requiredValue(inspection.location)
+
+  inspection = pinLiveInvestigation(inspection, location)
+
+  expect(inspection.followedEntryId).not.toBe('stale-entry')
+  expect(inspection.followedEntryId?.endsWith(':step-0')).toBe(true)
 })
 
 test('keeps a pinned investigation when a later failure arrives', () => {

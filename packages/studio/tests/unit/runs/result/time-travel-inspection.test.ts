@@ -1,6 +1,7 @@
 import type {
   ActionEvidence,
   RunEvent,
+  ScenarioAttempt,
   TestRunManifest,
 } from '@pickle-spec/runner'
 import { expect, test } from 'vitest'
@@ -67,10 +68,13 @@ function actionEvent(
   }
 }
 
-function manifest(resolvedAction: {
-  description: string
-  evidence?: ActionEvidence
-}): TestRunManifest {
+function manifest(
+  resolvedAction: {
+    description: string
+    evidence?: ActionEvidence
+  },
+  trace?: ScenarioAttempt['steps'][number]['trace'],
+): TestRunManifest {
   return {
     schemaVersion: 2,
     id: location.runId,
@@ -103,6 +107,7 @@ function manifest(resolvedAction: {
                 step: { keyword: 'When', text: 'click Pay', type: 'action' },
                 state: 'passed',
                 resolvedActions: [resolvedAction],
+                trace,
               },
             ],
             evidenceAvailability: [
@@ -154,6 +159,38 @@ test('connects exact action evidence to its Timeline entry', () => {
     timingPrecision: 'exact',
     action: { evidence: { id: action.id } },
   })
+})
+
+test('uses distinct cursor IDs for actions and browser trace entries', () => {
+  const snapshot: StudioRunSnapshot = {
+    id: location.runId,
+    events: [actionEvent()],
+    manifest: manifest({ description: action.description, evidence: action }, [
+      {
+        occurredAt: '2026-08-30T12:00:00.050Z',
+        kind: 'browser-activity',
+        description: 'Pay button became visible',
+      },
+    ]),
+  }
+  const attempt = snapshot.manifest?.results[0]?.attempts[0]
+  if (!attempt) throw new Error('Expected a completed attempt')
+  const entries = timelineFor(
+    snapshot.events,
+    attempt,
+    location,
+    timeTravelInspection(snapshot, location),
+  )
+
+  expect(new Set(entries.map((entry) => entry.id)).size).toBe(entries.length)
+  expect(
+    entries
+      .filter(
+        (entry) =>
+          entry.kind === 'Resolved action' || entry.kind === 'Browser activity',
+      )
+      .map((entry) => entry.id.slice(entry.id.lastIndexOf(':') + 1)),
+  ).toEqual(['action-0-0', 'browser-trace-0-0'])
 })
 
 test('labels legacy schema-v2 actions without inventing missing evidence', () => {

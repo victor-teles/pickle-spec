@@ -3,12 +3,12 @@ import {
   PanelBottomCloseIcon,
   PanelLeftIcon,
   PanelRightIcon,
-  PlayCircleIcon,
 } from '@hugeicons/core-free-icons'
 import { HugeiconsIcon } from '@hugeicons/react'
 import { useEffect, useState } from 'react'
 import { Button } from '../../components/ui/button'
 import { ButtonGroup } from '../../components/ui/button-group'
+import { Spinner } from '../../components/ui/spinner'
 import {
   Tooltip,
   TooltipContent,
@@ -19,6 +19,7 @@ import type {
   StudioScenario,
   StudioSpecification,
 } from '../../server/contracts'
+import { RunReportMenu } from '../history/run-report-menu'
 import type {
   ResultInspectionLocation,
   ResultInspectorTab,
@@ -44,6 +45,7 @@ type SpecificationsWorkbenchProps = {
   onCancel: () => void
   onDismissFinishedRun: () => void
   onInspectLocation: (location: ResultInspectionLocation) => void
+  onInspectTimelineEntry: (entryId: string) => void
   onPauseFollowing: () => void
   onEditSpecification: () => void
   onResumeFollowing: () => void
@@ -65,13 +67,13 @@ export function SpecificationsWorkbench(props: SpecificationsWorkbenchProps) {
   const [visibility, setVisibility] = useState<WorkbenchPanelVisibility>({
     bottom: true,
     left: true,
-    right: true,
+    right: false,
   })
 
   useEffect(() => {
     setVisibility(
       orientation === 'horizontal'
-        ? { bottom: true, left: true, right: true }
+        ? { bottom: true, left: true, right: false }
         : { bottom: false, left: false, right: false },
     )
   }, [orientation])
@@ -114,6 +116,7 @@ function WorkbenchPanels(props: WorkbenchPanelsProps) {
         <WorkbenchRail
           canRun={props.canRunAll}
           model={props.model}
+          onCancel={props.onCancel}
           onInspectLocation={props.onInspectLocation}
           onRun={props.onRun}
           onSelectScenario={props.onSelectScenario}
@@ -132,6 +135,7 @@ function WorkbenchPanels(props: WorkbenchPanelsProps) {
       bottom={
         <EvidenceDock
           model={props.model}
+          onInspectTimelineEntry={props.onInspectTimelineEntry}
           onPauseFollowing={props.onPauseFollowing}
           onResumeFollowing={props.onResumeFollowing}
           onSelectInspectorTab={props.onSelectInspectorTab}
@@ -165,10 +169,6 @@ function WorkbenchActionBar(props: WorkbenchActionBarProps) {
     !running &&
     props.model.totals.failed + props.model.totals.infrastructureError > 0
 
-  function handleRunAll() {
-    props.onRun({})
-  }
-
   function handleRerunFailures() {
     if (props.model.kind !== 'batch') return
     props.onRun({ rerunId: props.model.runId, failures: true })
@@ -177,24 +177,19 @@ function WorkbenchActionBar(props: WorkbenchActionBarProps) {
   return (
     <header className="flex shrink-0 flex-wrap items-center gap-2 border-b border-border px-3 py-2 sm:px-4">
       <div className="flex flex-wrap items-center gap-2">
-        <Button
-          type="button"
-          variant={props.selectedScenario ? 'outline' : 'default'}
-          disabled={!props.canRunAll || props.running}
-          onClick={handleRunAll}
-        >
-          <HugeiconsIcon icon={PlayCircleIcon} strokeWidth={2} aria-hidden />
-          {props.model.kind === 'batch'
-            ? `Run all ${props.model.totals.scheduled}`
-            : 'Run all Specifications'}
-        </Button>
-        {props.model.kind === 'batch' ? (
-          <Button
-            type="button"
-            variant="outline"
-            disabled={!canRerunFailures}
-            onClick={handleRerunFailures}
-          >
+        {props.model.kind === 'batch' &&
+        props.model.report.state === 'available' ? (
+          <RunReportMenu runId={props.model.report.runId} />
+        ) : null}
+        {props.model.kind === 'batch' &&
+        props.model.report.state === 'preparing' ? (
+          <Button type="button" variant="outline" disabled>
+            <Spinner />
+            Preparing report
+          </Button>
+        ) : null}
+        {canRerunFailures ? (
+          <Button type="button" variant="outline" onClick={handleRerunFailures}>
             Rerun failed
           </Button>
         ) : null}
@@ -205,11 +200,6 @@ function WorkbenchActionBar(props: WorkbenchActionBarProps) {
             onClick={props.onDismissFinishedRun}
           >
             Back to Specifications
-          </Button>
-        ) : null}
-        {running ? (
-          <Button type="button" variant="outline" onClick={props.onCancel}>
-            Cancel run
           </Button>
         ) : null}
       </div>
@@ -238,7 +228,11 @@ function WorkbenchPanelToggles(props: {
   }
 
   return (
-    <ButtonGroup aria-label="Workbench panels">
+    <ButtonGroup
+      aria-label="Workbench panels"
+      className="gap-0.5"
+      orientation={null}
+    >
       <PanelToggle
         icon={PanelLeftIcon}
         label="Left sidebar"
@@ -277,8 +271,8 @@ function PanelToggle(props: PanelToggleProps) {
           <Button
             type="button"
             size="icon"
-            variant="outline"
-            className="aria-pressed:bg-secondary aria-pressed:text-secondary-foreground"
+            variant="ghost"
+            className="aria-pressed:border-transparent aria-pressed:bg-secondary aria-pressed:text-foreground aria-pressed:focus-visible:border-current/40"
             aria-label={action}
             aria-pressed={props.visible}
             onClick={props.onToggle}
@@ -294,11 +288,15 @@ function PanelToggle(props: PanelToggleProps) {
 
 function workbenchSummary(model: SpecificationsWorkbenchModel): string {
   if (model.kind === 'batch') {
-    return `${model.totals.scheduled} Scenarios · ${model.environmentLabel}`
+    return `${countLabel(model.totals.scheduled, 'Scenario')} · ${model.environmentLabel}`
   }
   const scenarioCount = model.specifications.reduce(
     (total, specification) => total + specification.scenarios.length,
     0,
   )
-  return `${model.specifications.length} Specifications · ${scenarioCount} Scenarios`
+  return `${countLabel(model.specifications.length, 'Specification')} · ${countLabel(scenarioCount, 'Scenario')}`
+}
+
+function countLabel(count: number, singular: string): string {
+  return `${count} ${singular}${count === 1 ? '' : 's'}`
 }

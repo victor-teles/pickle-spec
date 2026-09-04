@@ -1,3 +1,8 @@
+const impeccableLiveDev =
+  Bun.env.NODE_ENV === 'development'
+    ? ['http://localhost:8400']
+    : []
+
 async function inlineScriptHashes(html: string): Promise<string[]> {
   const scripts = [
     ...html.matchAll(/<script(?:\s[^>]*)?>([\s\S]*?)<\/script>/g),
@@ -33,14 +38,14 @@ export async function secureStudioResponse(
     [
       "default-src 'none'",
       "base-uri 'none'",
-      `connect-src 'self' ${websocketOrigin}`,
+      ["connect-src 'self'", websocketOrigin, ...impeccableLiveDev].join(' '),
       "font-src 'self' data:",
       "form-action 'self'",
       "frame-src 'self' https://browserbase.com https://*.browserbase.com",
       "frame-ancestors 'none'",
       "img-src 'self' data: blob:",
       "media-src 'self'",
-      ["script-src 'self'", ...scriptHashes].join(' '),
+      ["script-src 'self'", ...scriptHashes, ...impeccableLiveDev].join(' '),
       "style-src 'self' 'unsafe-inline'",
     ].join('; '),
   )

@@ -523,7 +523,7 @@ test('marks action timestamps inherited from step completion without downgrading
       timingPrecision: 'exact',
     },
     {
-      id: 'trace-0-0',
+      id: 'action-0-0',
       kind: 'Resolved action',
       startedAt: '2026-08-22T12:00:01.000Z',
       timingPrecision: 'step-finish',

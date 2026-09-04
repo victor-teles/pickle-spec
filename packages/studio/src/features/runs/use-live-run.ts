@@ -11,6 +11,7 @@ import {
   cellsFromLiveInspection,
   disconnectLiveInspection,
   hydrateLiveInspection,
+  inspectLiveTimelineEntry,
   type LiveResultInspection,
   type LiveStreamEvent,
   liveInspectionFromSnapshot,
@@ -315,6 +316,8 @@ function liveInspectionControls(
     },
     inspectLocation: (location: ResultInspectionLocation) =>
       update((current) => pinLiveInvestigation(current, location)),
+    inspectTimelineEntry: (entryId: string) =>
+      update((current) => inspectLiveTimelineEntry(current, entryId)),
     pauseFollowing: () => update(pauseLiveFollowing),
     pinSelection: (cell: MatrixCell) => {
       if (!live) return
