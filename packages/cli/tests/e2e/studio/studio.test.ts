@@ -1063,9 +1063,24 @@ export default {
       expect(await timeline.textContent()).toContain('Then payment is captured')
       expect(await timeline.textContent()).not.toContain('Payment was declined')
       await page.getByRole('tab', { name: 'Artifacts' }).click()
-      expect(
-        await page.getByRole('img', { name: /screenshot/ }).count(),
-      ).toBeGreaterThan(0)
+      const previewArtifact = page.getByRole('button', {
+        name: /^Preview screenshot artifact/,
+      })
+      const artifactRow = previewArtifact.locator('xpath=ancestor::li')
+      await previewArtifact.click()
+      await artifactRow.getByRole('img', { name: /screenshot/ }).waitFor()
+      const [artifactDownload] = await Promise.all([
+        page.waitForEvent('download'),
+        artifactRow
+          .getByRole('link', { name: /^Download screenshot artifact/ })
+          .click(),
+      ])
+      expect(artifactDownload.suggestedFilename()).toBe(
+        'scnpaybbbbbbbbbb-chrome-attempt-1-step-1.png',
+      )
+      expect(await Bun.file(await artifactDownload.path()).bytes()).toEqual(
+        await Bun.file(join(project, 'failure.png')).bytes(),
+      )
       await page.getByRole('tab', { name: 'Diagnostics' }).click()
       expect(
         await page.getByText('Payment was declined').count(),

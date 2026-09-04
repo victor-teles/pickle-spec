@@ -119,6 +119,15 @@ function workbenchInspection(): LiveResultInspection {
               },
             },
             resolvedActions: [],
+            artifacts: [
+              {
+                kind: 'screenshot',
+                path: '/artifacts/checkout.png',
+                name: 'checkout.png',
+                mediaType: 'image/png',
+                capturedAt: '2026-09-02T12:00:01.000Z',
+              },
+            ],
           },
         ],
       },
@@ -454,7 +463,7 @@ describe('Specifications workbench model', () => {
     )
     expect(markup).toContain('aria-pressed="true"')
     expect(markup).toContain('data-timeline-entry-id=')
-    expect(markup).toContain('Artifacts 0')
+    expect(markup).toContain('Artifacts 1')
     expect(markup).toContain('When the customer signs in')
     expect(markup).toMatch(/Total.*Queued.*Passed.*Failed/s)
     expect(markup).toMatch(/Run all 4.*Cancel run/s)
@@ -462,6 +471,47 @@ describe('Specifications workbench model', () => {
     expect(markup).not.toContain('Current step')
     const removedContent = />Running<\/dt>|<footer|Run selected|Concurrency/
     expect(markup).not.toMatch(removedContent)
+  })
+
+  test('renders artifact preview and download actions', () => {
+    const live = workbenchInspection()
+    if (!live.location) throw new Error('Expected a focused Workbench result')
+    const model = specificationsWorkbenchModel({
+      specifications: [],
+      live: {
+        ...live,
+        location: { ...live.location, tab: 'artifacts' },
+      },
+    })
+    const markup = renderToStaticMarkup(
+      createElement(SpecificationsWorkbench, {
+        canRunAll: true,
+        model,
+        onCancel: () => undefined,
+        onDismissFinishedRun: () => undefined,
+        onInspectLocation: () => undefined,
+        onInspectTimelineEntry: () => undefined,
+        onPauseFollowing: () => undefined,
+        onEditSpecification: () => undefined,
+        onResumeFollowing: () => undefined,
+        onRun: () => undefined,
+        onSelectInspectorTab: () => undefined,
+        onSelectScenario: () => undefined,
+        onSelectSpecification: () => undefined,
+        running: true,
+      }),
+    )
+
+    expect(markup).toContain(
+      'aria-label="Preview screenshot artifact from When the customer signs in"',
+    )
+    expect(markup).toContain(
+      'aria-label="Download screenshot artifact from When the customer signs in"',
+    )
+    expect(markup).toContain(
+      'href="/api/artifact?path=%2Fartifacts%2Fcheckout.png&amp;download=true&amp;name=checkout.png"',
+    )
+    expect(markup).toContain('download="checkout.png"')
   })
 
   test('offers report downloads after the workbench run finishes', () => {
