@@ -8,6 +8,11 @@ import {
 } from '../../components/ui/accordion'
 import { Badge } from '../../components/ui/badge'
 import { Button, ButtonLink } from '../../components/ui/button'
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from '../../components/ui/collapsible'
 import { ResultMark } from '../../components/ui/result-mark'
 import { Spinner } from '../../components/ui/spinner'
 import { Switch } from '../../components/ui/switch'
@@ -24,6 +29,7 @@ import type {
 } from '../../server/contracts'
 import { ArtifactViewer } from '../runs/result/artifact-viewer'
 import {
+  artifactDownloadUrl,
   type TimelineEntry,
   timelineEntriesOfKinds,
 } from '../runs/result/result-evidence'
@@ -301,23 +307,61 @@ function selectedWorkbenchTimelineEntry(
 
 function CompactArtifacts(props: { model: SpecificationsWorkbenchModel }) {
   if (props.model.kind === 'browse') return <EmptyArtifacts />
-  const artifacts = props.model.focus?.artifacts ?? []
-  if (artifacts.length === 0) {
+  const focus = props.model.focus
+  if (!focus || focus.artifacts.length === 0) {
     return (
       <p className="text-sm text-muted-foreground">No artifacts retained.</p>
     )
   }
+  const artifacts = focus.artifacts
   return (
     <ul className="space-y-2">
-      {artifacts.map((evidence) => (
-        <li
-          key={evidence.index}
-          className="flex items-center justify-between gap-3 border-b border-border pb-2 text-sm"
-        >
-          <span className="min-w-0 truncate">{evidence.stepText}</span>
-          <Badge>{evidence.artifact.kind}</Badge>
-        </li>
-      ))}
+      {artifacts.map((evidence) => {
+        const downloadHref = artifactDownloadUrl(
+          evidence.artifact.path,
+          evidence.artifact.name,
+        )
+        return (
+          <li key={evidence.index} className="border-b border-border pb-2">
+            <Collapsible>
+              <div className="flex items-center gap-2 text-sm">
+                <CollapsibleTrigger
+                  render={
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      aria-label={`Preview ${evidence.artifact.kind} artifact from ${evidence.stepText}`}
+                      className="min-w-0 flex-1 justify-between gap-3 px-2"
+                    />
+                  }
+                >
+                  <span className="min-w-0 truncate text-left">
+                    {evidence.stepText}
+                  </span>
+                  <Badge>{evidence.artifact.kind}</Badge>
+                </CollapsibleTrigger>
+                <ButtonLink
+                  variant="outline"
+                  size="sm"
+                  href={downloadHref}
+                  download={evidence.artifact.name ?? true}
+                  aria-label={`Download ${evidence.artifact.kind} artifact from ${evidence.stepText}`}
+                >
+                  Download
+                </ButtonLink>
+              </div>
+              <CollapsibleContent className="pt-2">
+                <ArtifactViewer
+                  artifact={evidence.artifact}
+                  scenarioName={focus.inspected.result.scenario.name}
+                  resultState={focus.resultState}
+                  stepText={evidence.stepText}
+                />
+              </CollapsibleContent>
+            </Collapsible>
+          </li>
+        )
+      })}
     </ul>
   )
 }
