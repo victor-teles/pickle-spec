@@ -10,13 +10,27 @@
   "arrowParens": "always",
   "overrides": [
     {
-      "files": [
-        "**/*.{js,jsx,ts,tsx,mjs,mts,cjs,cts}"
-      ],
+      "files": ["**/*.{js,jsx,ts,tsx,mjs,mts,cjs,cts}"],
       "options": {
         "singleQuote": true,
-        "semi": false
-      }
-    }
-  ]
+        "semi": false,
+      },
+    },
+  ],
+  "ignorePatterns": [
+    ".agent/**",
+    ".agents/**",
+    ".claude/**",
+    ".codex/**",
+    ".continue/**",
+    ".cursor/**",
+    ".gemini/**",
+    ".opencode/**",
+    ".pi/**",
+    ".roo/**",
+    ".windsurf/**",
+    ".conductor/**",
+    ".impeccable/**",
+    "tools/oxlint/anti-slop/**",
+  ],
 }

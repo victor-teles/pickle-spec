@@ -41,14 +41,15 @@
   },
   "devDependencies": {
     "@biomejs/biome": "catalog:",
+    "@oxlint/plugins": "1.81.0",
     "@types/bun": "catalog:",
+    "eslint-plugin-playwright": "^2.11.0",
+    "oxfmt": "catalog:",
+    "oxlint": "catalog:",
+    "oxlint-tsgolint": "catalog:",
     "turbo": "catalog:",
     "typescript": "catalog:",
-    "vitest": "catalog:",
-    "oxlint": "catalog:",
-    "oxfmt": "catalog:",
-    "oxlint-tsgolint": "catalog:",
-    "eslint-plugin-playwright": "^2.11.0"
+    "vitest": "catalog:"
   },
   "packageManager": "bun@1.4.2"
 }
