@@ -1,4 +1,3 @@
-/* Hallmark · pre-emit critique: P5 H5 E4 S5 R5 V5 · macrostructure: Workbench · theme: Pickle Spec Studio */
 import {
   PanelBottomCloseIcon,
   PanelLeftIcon,

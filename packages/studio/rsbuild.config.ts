@@ -4,7 +4,10 @@ import tailwindcss from '@tailwindcss/postcss'
 import { tanstackStart } from '@tanstack/react-start/plugin/rsbuild'
 
 export default defineConfig({
-  plugins: [pluginReact(), tanstackStart()],
+  plugins: [
+    pluginReact(),
+    tanstackStart({ rsbuild: { installDevServerMiddleware: false } }),
+  ],
   tools: {
     postcss(_config, { addPlugins }) {
       addPlugins(tailwindcss())

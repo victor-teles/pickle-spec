@@ -19,8 +19,9 @@
       "persistent": false
     },
     "studio": {
+      "dependsOn": ["^build"],
       "cache": false,
-      "persistent": false
+      "persistent": true
     }
   }
 }

@@ -1,6 +1,5 @@
 import type { ServerWebSocket } from 'bun'
 import type { ServerRequest } from 'srvx'
-import { staticMiddleware } from 'srvx/static'
 import { createDocumentRoutes } from '../features/documents/document.routes'
 import {
   createSpecificationWorkspace,
@@ -24,13 +23,10 @@ import type { StudioOptions } from './contracts'
 import { createGitWorkspace, type GitWorkspace } from './git'
 import type { StudioHttpHandler, StudioHttpResponse } from './http'
 import type { StudioSocketData } from './socket-data'
-import {
-  buildStartApp,
-  type StartServerEntry,
-  startClientDirectory,
-} from './start-app'
+import { createStartApp, type StartServerEntry } from './start-app'
 
 export interface StudioRuntime {
+  hmrOrigin?: string
   closeSocket(socket: ServerWebSocket<StudioSocketData>): void
   handleApi(request: Request, url: URL): Promise<StudioHttpResponse>
   openSocket(socket: ServerWebSocket<StudioSocketData>): void
@@ -128,7 +124,7 @@ async function startResponse(
 export async function createStudioRuntime(
   options: StudioOptions,
 ): Promise<StudioRuntime> {
-  const startApp = await buildStartApp()
+  const startApp = await createStartApp()
   const project = createProjectModule(options)
   const documents =
     options.documents ??
@@ -141,11 +137,6 @@ export async function createStudioRuntime(
   const runEvents = createRunEventHub()
   const workspaceEvents = createWorkspaceEventHub()
   const stopWatch = await documents.watch(workspaceEvents.publish)
-  const staticAssets = staticMiddleware({
-    dir: startClientDirectory,
-    immutable: true,
-    maxAge: 31_536_000,
-  })
   const apiHandlers = createFeatureHandlers(options, {
     documents,
     git,
@@ -154,6 +145,7 @@ export async function createStudioRuntime(
   })
 
   return {
+    hmrOrigin: startApp.hmrOrigin,
     closeSocket(socket) {
       if (socket.data.kind === 'workspace') workspaceEvents.close(socket)
       else runEvents.close(socket)
@@ -168,13 +160,13 @@ export async function createStudioRuntime(
         return new Response(null, { status: 204 })
       }
       if (!url.pathname.startsWith('/assets/')) return null
-      return staticAssets(
-        request,
-        () => new Response('Not found', { status: 404 }),
-      )
+      return startApp.serveAsset(request)
     },
     startResponse: (request) =>
       startResponse(startApp, options, project, runEvents, request),
-    stop: stopWatch,
+    stop() {
+      stopWatch()
+      startApp.stop()
+    },
   }
 }

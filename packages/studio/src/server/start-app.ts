@@ -1,11 +1,18 @@
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
+import { staticMiddleware } from 'srvx/static'
 import type { StudioRequestContext } from '../server-context'
 
 const studioPackageRoot = join(import.meta.dir, '../..')
 const startServerEntryPath = join(studioPackageRoot, 'dist/server/index.js')
 
-export const startClientDirectory = join(studioPackageRoot, 'dist/client')
+const startClientDirectory = join(studioPackageRoot, 'dist/client')
+
+export interface StartApp extends StartServerEntry {
+  hmrOrigin?: string
+  serveAsset(request: Request): Promise<Response>
+  stop(): void
+}
 
 export type StartServerEntry = {
   fetch(
@@ -13,6 +20,8 @@ export type StartServerEntry = {
     options: { context: StudioRequestContext },
   ): Response | Promise<Response>
 }
+
+export type StartServerModule = { default: StartServerEntry }
 
 let startBuild: Promise<StartServerEntry> | undefined
 
@@ -38,14 +47,29 @@ async function loadStartServerEntry(): Promise<StartServerEntry> {
     }
   }
   const entryUrl = pathToFileURL(startServerEntryPath).href
-  const module = (await import(entryUrl)) as { default: StartServerEntry }
+  const module = (await import(entryUrl)) as StartServerModule
   return module.default
 }
 
-export function buildStartApp(): Promise<StartServerEntry> {
+export async function createStartApp(): Promise<StartApp> {
+  if (process.env.PICKLE_STUDIO_DEV === '1') {
+    const { createDevelopmentApp } = await import('./start-development')
+    return createDevelopmentApp(studioPackageRoot)
+  }
   startBuild ??= loadStartServerEntry().catch((error: unknown) => {
     startBuild = undefined
     throw error
   })
-  return startBuild
+  const entry = await startBuild
+  const assets = staticMiddleware({
+    dir: startClientDirectory,
+    immutable: true,
+    maxAge: 31_536_000,
+  })
+  return {
+    fetch: (request, options) => entry.fetch(request, options),
+    serveAsset: async (request) =>
+      assets(request, () => new Response('Not found', { status: 404 })),
+    stop() {},
+  }
 }

@@ -49,7 +49,11 @@ class StudioRequestRouter {
     if (context instanceof Response) return context
     const response = await this.route(context)
     return response
-      ? await secureStudioResponse(response, context.origin)
+      ? await secureStudioResponse(
+          response,
+          context.origin,
+          this.options.runtime.hmrOrigin,
+        )
       : undefined
   }
 

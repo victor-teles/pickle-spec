@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, expect, test } from 'vitest'
 import { requiredValue } from '../../../src/required-value'
+import { secureStudioResponse } from '../../../src/server/response-security'
 import { type StudioRunGateway, startStudio } from '../../../src/server/server'
 
 const directories: string[] = []
@@ -15,6 +16,26 @@ afterEach(async () => {
       .splice(0)
       .map((directory) => rm(directory, { recursive: true, force: true })),
   )
+})
+
+test('permits the active development HMR socket without relaxing script security', async () => {
+  const origin = 'http://127.0.0.1:4321'
+  const hmrOrigin = 'ws://127.0.0.1:3000'
+  const production = await secureStudioResponse(new Response('ok'), origin)
+  const development = await secureStudioResponse(
+    new Response('ok'),
+    origin,
+    hmrOrigin,
+  )
+  expect(production.headers.get('content-security-policy')).not.toContain(
+    hmrOrigin,
+  )
+  const policy = development.headers.get('content-security-policy')
+  expect(policy).toContain(
+    "connect-src 'self' ws://127.0.0.1:4321 ws://127.0.0.1:3000",
+  )
+  expect(policy).not.toContain("'unsafe-eval'")
+  expect(policy).not.toContain("script-src 'self' ws:")
 })
 
 test('serves the Runs index, active lifecycle, compatibility alias, and deep links', async () => {
