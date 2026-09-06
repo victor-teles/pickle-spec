@@ -2304,32 +2304,32 @@ Feature: Checkout
   test('Studio shows Git diffs, commits after confirmation, and never pushes', async () => {
     const project = await createStudioProject('manage-git')
     const remote = join(fixture.workspace, 'manage-git-remote.git')
-    await Bun.spawnSync({ cmd: ['git', 'init', '--bare', remote] })
-    await Bun.spawnSync({
+     Bun.spawnSync({ cmd: ['git', 'init', '--bare', remote] })
+     Bun.spawnSync({
       cmd: ['git', 'init'],
       cwd: project,
     })
-    await Bun.spawnSync({
+     Bun.spawnSync({
       cmd: ['git', 'config', 'user.email', 'studio@example.test'],
       cwd: project,
     })
-    await Bun.spawnSync({
+     Bun.spawnSync({
       cmd: ['git', 'config', 'user.name', 'Studio Test'],
       cwd: project,
     })
-    await Bun.spawnSync({
+     Bun.spawnSync({
       cmd: ['git', 'add', 'features/checkout.feature', 'pickle.config.jsonc'],
       cwd: project,
     })
-    await Bun.spawnSync({
+     Bun.spawnSync({
       cmd: ['git', 'commit', '-m', 'initial'],
       cwd: project,
     })
-    await Bun.spawnSync({
+     Bun.spawnSync({
       cmd: ['git', 'remote', 'add', 'origin', remote],
       cwd: project,
     })
-    await Bun.spawnSync({
+     Bun.spawnSync({
       cmd: [
         'git',
         'remote',
@@ -2340,11 +2340,11 @@ Feature: Checkout
       cwd: project,
     })
     const branch = currentGitBranch(project)
-    await Bun.spawnSync({
+     Bun.spawnSync({
       cmd: ['git', 'update-ref', `refs/remotes/github/${branch}`, 'HEAD'],
       cwd: project,
     })
-    await Bun.spawnSync({
+     Bun.spawnSync({
       cmd: ['git', 'branch', `--set-upstream-to=github/${branch}`],
       cwd: project,
     })
@@ -2373,7 +2373,7 @@ fi
 exit 0
 `,
     )
-    await Bun.spawnSync({ cmd: ['chmod', '+x', gh] })
+     Bun.spawnSync({ cmd: ['chmod', '+x', gh] })
     const { child, url } = await startStudio(project, {
       PATH: `${join(project, 'bin')}:${Bun.env.PATH ?? ''}`,
       GH_LOG: ghLog,

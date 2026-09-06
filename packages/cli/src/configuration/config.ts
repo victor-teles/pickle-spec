@@ -523,7 +523,7 @@ export async function loadConfig(
   } catch (error) {
     const reason = error instanceof Error ? error.message : String(error)
     throw new Error(
-      `Invalid configuration ${selectedPath}: ${reason}. Correct the value and run pickle check again.`,
+      `Invalid configuration ${selectedPath}: ${reason}. Correct the value and run pickle check again.`, { cause: error },
     )
   }
 }

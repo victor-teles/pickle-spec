@@ -30,7 +30,7 @@ async function historyIndex(options: HistoryRoutesOptions): Promise<Response> {
   if (!options.history) return historyUnavailable()
   return Response.json({
     ...(await options.history.list()),
-    activeRunIds: [...options.activeRunIds()].sort(),
+    activeRunIds: [...options.activeRunIds()].toSorted(),
   } satisfies StudioRunsIndex)
 }
 

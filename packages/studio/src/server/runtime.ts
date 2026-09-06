@@ -113,7 +113,7 @@ async function startResponse(
           }
           return {
             ...(await options.history.list()),
-            activeRunIds: [...runEvents.activeRunIds()].sort(),
+            activeRunIds: [...runEvents.activeRunIds()].toSorted(),
           }
         },
       },

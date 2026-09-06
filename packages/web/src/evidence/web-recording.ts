@@ -112,7 +112,7 @@ export async function startWebRecording(
       await writes
       const frame = await nextFrame()
       if (frame) await writeRecordingFrame(stdin, frame)
-      stdin.end()
+      void stdin.end()
       const code = await ffmpeg.exited
       if (code !== 0) {
         const stderr = await new Response(ffmpeg.stderr).text()
@@ -125,7 +125,7 @@ export async function startWebRecording(
       stopped = true
       clearInterval(timer)
       void writes.catch(() => {})
-      stdin.end()
+      void stdin.end()
       ffmpeg.kill()
       await ffmpeg.exited
     },

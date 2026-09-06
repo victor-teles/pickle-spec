@@ -75,8 +75,8 @@ export function createWebEvidenceCollector(
 
   function consume(): CollectedWebEvidence {
     return {
-      diagnostics: diagnostics.splice(0).sort(byOccurredAt),
-      activity: activity.splice(0).sort(byOccurredAt),
+      diagnostics: diagnostics.splice(0).toSorted(byOccurredAt),
+      activity: activity.splice(0).toSorted(byOccurredAt),
     }
   }
 

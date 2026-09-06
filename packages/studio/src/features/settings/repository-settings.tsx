@@ -323,7 +323,7 @@ function repositoryActions(input: {
       body: body ? JSON.stringify(body) : undefined,
     })
   const safely = async (action: () => Promise<void>) => {
-    input.onError(undefined)
+    input.onError()
     try {
       await action()
     } catch (reason) {

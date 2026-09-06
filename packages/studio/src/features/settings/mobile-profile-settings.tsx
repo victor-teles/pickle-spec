@@ -202,7 +202,7 @@ export function MobileProfileSettings({
 
   async function discoverTargets() {
     setDiscovering(true)
-    onError(undefined)
+    onError()
     try {
       setDiscoveries(
         await api<readonly StudioMobileTargetDiscovery[]>(

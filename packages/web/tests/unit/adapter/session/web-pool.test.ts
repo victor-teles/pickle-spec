@@ -74,11 +74,11 @@ describe('WebProcessPool', () => {
     const { factory, launch } = mockFactory(mockProcess(isolatedAutomation()))
     const pool = new WebProcessPool({ factory, idleTimeoutMs: 60_000 })
 
-    const first = await pool.openLogicalSession({}, undefined)
+    const first = await pool.openLogicalSession({})
     await first.automation.close()
     await first.release()
 
-    const second = await pool.openLogicalSession({}, undefined)
+    const second = await pool.openLogicalSession({})
     await second.automation.close()
     await second.release()
     await pool.dispose()
@@ -98,7 +98,7 @@ describe('WebProcessPool', () => {
     controller.abort()
     const outcome = await cancellationOutcome(opening)
     launched.resolve(process)
-    await opening.catch(() => undefined)
+    await opening.catch(() => {})
     await Bun.sleep(0)
 
     expect(outcome).toBe('AbortError')
@@ -122,7 +122,7 @@ describe('WebProcessPool', () => {
     controller.abort()
     const outcome = await cancellationOutcome(opening)
     opened.resolve(automation)
-    const session = await opening.catch(() => undefined)
+    const session = await opening.catch(() => {})
     if (session) {
       await session.automation.close()
       await session.release()
@@ -139,11 +139,11 @@ describe('WebProcessPool', () => {
     )
     const pool = new WebProcessPool({ factory, idleTimeoutMs: 60_000 })
 
-    const interrupted = await pool.openLogicalSession({}, undefined)
+    const interrupted = await pool.openLogicalSession({})
     await interrupted.automation.close()
     await interrupted.discard()
 
-    const recovered = await pool.openLogicalSession({}, undefined)
+    const recovered = await pool.openLogicalSession({})
     await recovered.automation.close()
     await recovered.release()
     await pool.dispose()
@@ -194,11 +194,11 @@ describe('WebProcessPool', () => {
     })
     const pool = new WebProcessPool({ factory: { launch } })
 
-    const session = await pool.openLogicalSession({}, undefined)
+    const session = await pool.openLogicalSession({})
     await session.automation.close()
     await session.release()
 
-    const recovered = await pool.openLogicalSession({}, undefined)
+    const recovered = await pool.openLogicalSession({})
     await recovered.automation.close()
     await recovered.release()
     await pool.dispose()
@@ -224,11 +224,11 @@ describe('WebProcessPool', () => {
     })
     const pool = new WebProcessPool({ factory: { launch } })
 
-    await expect(pool.openLogicalSession({}, undefined)).rejects.toThrow(
+    await expect(pool.openLogicalSession({})).rejects.toThrow(
       IsolationVerificationError,
     )
 
-    const recovered = await pool.openLogicalSession({}, undefined)
+    const recovered = await pool.openLogicalSession({})
     await recovered.automation.close()
     await recovered.release()
     await pool.dispose()
@@ -249,7 +249,7 @@ describe('WebProcessPool', () => {
     const { factory } = mockFactory(mockProcess(automation))
     const pool = new WebProcessPool({ factory, idleTimeoutMs: 60_000 })
 
-    const session = await pool.openLogicalSession({}, undefined)
+    const session = await pool.openLogicalSession({})
     const releasePromise = (async () => {
       await session.automation.close()
       await session.release()
@@ -259,7 +259,7 @@ describe('WebProcessPool', () => {
     expect(closeStarted).toBe(true)
     expect(closeFinished).toBe(true)
 
-    await pool.openLogicalSession({}, undefined)
+    await pool.openLogicalSession({})
     await pool.dispose()
   })
 
@@ -268,7 +268,7 @@ describe('WebProcessPool', () => {
     const { factory } = mockFactory(process)
     const pool = new WebProcessPool({ factory, idleTimeoutMs: 5 })
 
-    const session = await pool.openLogicalSession({}, undefined)
+    const session = await pool.openLogicalSession({})
     await session.automation.close()
     await session.release()
 
@@ -283,7 +283,7 @@ describe('WebProcessPool', () => {
     const { factory } = mockFactory(process)
     const pool = new WebProcessPool({ factory, idleTimeoutMs: 60_000 })
 
-    const session = await pool.openLogicalSession({}, undefined)
+    const session = await pool.openLogicalSession({})
     await session.automation.close()
     await session.release()
     await pool.dispose()

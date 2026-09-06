@@ -131,10 +131,10 @@ export function upsertRun(db: Database, manifest: TestRunManifest): void {
     ...new Set(
       manifest.results.map((result) => result.executionTargetProfile.id),
     ),
-  ].sort()
+  ].toSorted()
   const specificationUris = [
     ...new Set(manifest.results.map((result) => result.specification.uri)),
-  ].sort()
+  ].toSorted()
   const durationMs = manifest.finishedAt
     ? Date.parse(manifest.finishedAt) - Date.parse(manifest.startedAt)
     : undefined
@@ -146,7 +146,7 @@ export function upsertRun(db: Database, manifest: TestRunManifest): void {
         ),
       ),
     ),
-  ].sort()
+  ].toSorted()
   const cacheOutcomes = [
     ...new Set(
       manifest.results.flatMap((result) =>
@@ -155,7 +155,7 @@ export function upsertRun(db: Database, manifest: TestRunManifest): void {
         ),
       ),
     ),
-  ].sort()
+  ].toSorted()
   const inferenceCount = manifestInferenceCount(manifest)
   db.run(
     `INSERT INTO runs (

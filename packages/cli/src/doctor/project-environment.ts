@@ -120,7 +120,7 @@ function mobileProbe(
   profile: ProjectExecutionTargetProfile,
 ): EnvironmentProbe | undefined {
   if (!profile.mobile) return
-  const requiredCapabilities = [...(profile.capabilities ?? [])].sort()
+  const requiredCapabilities = [...(profile.capabilities ?? [])].toSorted()
   const { executionTarget, nodePath, targetId } = profile.mobile
   return {
     key: `mobile:${profileId}:${executionTarget}:${nodePath ?? ''}:${targetId ?? ''}:${requiredCapabilities.join(',')}`,

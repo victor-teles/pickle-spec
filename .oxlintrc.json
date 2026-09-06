@@ -1,0 +1,60 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "categories": {
+    "correctness": "warn",
+    "nursery": "off",
+    "pedantic": "off",
+    "perf": "off",
+    "restriction": "off",
+    "style": "off",
+    "suspicious": "warn"
+  },
+  "rules": {
+    "no-nested-ternary": "error",
+    "no-param-reassign": "error",
+    "typescript/no-non-null-assertion": "error",
+    "no-restricted-imports": "error",
+    "max-classes-per-file": [
+      "error",
+      {
+        "max": 1
+      }
+    ],
+    "unicorn/no-useless-undefined": "error",
+    "complexity": "error",
+    "typescript/no-explicit-any": "error",
+    "no-shadow": "error",
+    "import/no-cycle": [
+      "error",
+      {
+        "maxDepth": 3
+      }
+    ]
+  },
+  "plugins": [
+    "oxc",
+    "typescript",
+    "unicorn",
+    "import"
+  ],
+  "options": {
+    "typeAware": true,
+    "typeCheck": true
+  },
+  "overrides": [
+    {
+      "files": [
+        "**/*.test.{js,jsx,ts,tsx}",
+        "**/*.spec.{js,jsx,ts,tsx}",
+        "**/test/**/*.{js,jsx,ts,tsx}",
+        "**/tests/**/*.{js,jsx,ts,tsx}"
+      ]
+    }
+  ],
+  "jsPlugins": [
+    {
+      "name": "playwright",
+      "specifier": "eslint-plugin-playwright"
+    }
+  ]
+}

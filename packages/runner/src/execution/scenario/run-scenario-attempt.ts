@@ -118,7 +118,7 @@ function createAttemptEmitter(
       schemaVersion: testRunSchemaVersion,
       sequence: ++sequence,
       occurredAt,
-    } as RunEvent)
+    })
     events.push(versionedEvent)
     await input.onEvent?.(versionedEvent)
     return versionedEvent

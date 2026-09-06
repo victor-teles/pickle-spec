@@ -78,7 +78,7 @@ export function redactString(
   bindings: readonly ScenarioVariableBinding[],
 ): string {
   return [...bindings]
-    .sort((left, right) => right.value.length - left.value.length)
+    .toSorted((left, right) => right.value.length - left.value.length)
     .reduce(
       (redacted, binding) =>
         redacted.replaceAll(binding.value, `<${binding.name}>`),

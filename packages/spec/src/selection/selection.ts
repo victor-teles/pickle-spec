@@ -133,7 +133,7 @@ export function selectScenarios(
   const states = new Set<SpecificationState>(options.states ?? ['active'])
 
   const selected = [...specifications]
-    .sort((left, right) => left.source.uri.localeCompare(right.source.uri))
+    .toSorted((left, right) => left.source.uri.localeCompare(right.source.uri))
     .filter(
       (specification) =>
         paths.length === 0 ||

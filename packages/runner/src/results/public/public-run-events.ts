@@ -216,5 +216,5 @@ export function publicRunEvent(event: RunEvent): RunEvent {
     schemaVersion: testRunSchemaVersion,
     sequence: event.sequence,
     occurredAt: event.occurredAt,
-  } as RunEvent
+  }
 }

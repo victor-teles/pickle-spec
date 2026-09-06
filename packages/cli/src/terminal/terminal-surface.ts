@@ -182,7 +182,7 @@ export function createProcessTerminalSurface(
       externalLineOpen = !outputText(args[0]).endsWith('\n')
       if (!externalLineOpen) surface.update(dynamicLines)
       return result
-    }) as TerminalWrite
+    })
   }
 
   return {

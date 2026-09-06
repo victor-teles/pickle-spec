@@ -124,8 +124,8 @@ class LocalTestRunStore implements TestRunStore {
     const pending = this.runOperationQueues.get(id) ?? Promise.resolve()
     const result = pending.then(operation)
     const tail = result.then(
-      () => undefined,
-      () => undefined,
+      () => {},
+      () => {},
     )
     this.runOperationQueues.set(id, tail)
     void tail.then(() => {
@@ -140,8 +140,8 @@ class LocalTestRunStore implements TestRunStore {
   ): Promise<Value> {
     const result = this.managementOperationQueue.then(operation)
     this.managementOperationQueue = result.then(
-      () => undefined,
-      () => undefined,
+      () => {},
+      () => {},
     )
     return result
   }
@@ -282,7 +282,7 @@ class LocalTestRunStore implements TestRunStore {
       await mkdir(runDirectory)
     } catch (error) {
       if (isAlreadyExists(error)) {
-        throw new Error(`Test run "${id}" already exists`)
+        throw new Error(`Test run "${id}" already exists`, { cause: error })
       }
       throw error
     }
@@ -298,7 +298,7 @@ class LocalTestRunStore implements TestRunStore {
 
   async list(): Promise<TestRunSummary[]> {
     const manifests = await this.loadManifests()
-    const storedIds = manifests.map((manifest) => manifest.id).sort()
+    const storedIds = manifests.map((manifest) => manifest.id).toSorted()
     const indexedIds = (await Bun.file(this.indexPath).exists())
       ? withIndex(this.indexPath, listRunIds)
       : []

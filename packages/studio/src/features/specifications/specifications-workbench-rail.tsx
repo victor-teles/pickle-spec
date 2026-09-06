@@ -275,7 +275,7 @@ function ScenarioTarget(
         className="h-auto min-h-8 min-w-0 flex-1 justify-start px-2 py-1.5 text-left whitespace-normal hover:bg-transparent aria-pressed:border-transparent"
         onClick={handleSelect}
       >
-        <span className="line-clamp-2 break-words text-pretty leading-snug">
+        <span className="line-clamp-2 wrap-break-word text-pretty leading-snug">
           {props.scenario.name}
         </span>
       </Button>

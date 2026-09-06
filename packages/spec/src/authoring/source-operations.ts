@@ -25,7 +25,7 @@ export function applyReplacements(
   source: string,
   replacements: readonly Replacement[],
 ): string {
-  const ordered = [...replacements].sort(
+  const ordered = [...replacements].toSorted(
     (left, right) => right.start - left.start,
   )
   let next = source

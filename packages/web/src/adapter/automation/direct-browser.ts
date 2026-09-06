@@ -128,7 +128,7 @@ export function createDirectBrowser(
           waitUntil: 'domcontentloaded',
           timeout: options.navigationTimeoutMs,
         })
-        .then(() => undefined),
+        .then(() => {}),
       signal,
     )
   }

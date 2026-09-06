@@ -125,7 +125,7 @@ export async function copyStepArtifacts(
     ])
   } catch (error) {
     await rm(stagingDirectory, { recursive: true, force: true })
-    await rmdir(stagingRoot).catch(() => undefined)
+    await rmdir(stagingRoot).catch(() => {})
     return captureFailedStep(step, error)
   }
   const publishedPaths: string[] = []
@@ -153,7 +153,7 @@ export async function copyStepArtifacts(
     }
   } finally {
     await rm(stagingDirectory, { recursive: true, force: true })
-    await rmdir(stagingRoot).catch(() => undefined)
+    await rmdir(stagingRoot).catch(() => {})
   }
   return {
     step: {

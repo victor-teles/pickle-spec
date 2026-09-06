@@ -688,7 +688,7 @@ function DiagnosticChoice<Value extends string>(
           size="sm"
           variant={props.selected === undefined ? 'default' : 'outline'}
           aria-pressed={props.selected === undefined}
-          onClick={() => props.onSelect(undefined)}
+          onClick={() => props.onSelect()}
         >
           All
         </Button>

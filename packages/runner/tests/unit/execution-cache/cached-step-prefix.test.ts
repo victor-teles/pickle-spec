@@ -84,7 +84,7 @@ describe('CachedStepPrefix', () => {
     const cursor = gapCursor(prefix)
     expect(evaluationAt(cursor, 0)).toBe('replay')
     expect(evaluationAt(cursor, 1)).toBe('adaptive')
-    expect(evaluationAt(gapCursor(undefined), 0)).toBe('adaptive')
+    expect(evaluationAt(gapCursor(), 0)).toBe('adaptive')
     expect(reseatGap(cursor, 0)).toEqual({ replayUntil: 0 })
   })
 

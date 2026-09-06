@@ -63,7 +63,7 @@ export type MobileAdapterOptions =
 
 export interface MobileExecutionTargetAdapter
   extends ExecutionTargetAdapter<ScenarioTargetSession> {
-  discoverTargets(): Promise<Array<AndroidTarget | IosTarget>>
+  discoverTargets(): Promise<Array<AndroidTarget  >>
 }
 
 export type MobileLiveViewportTarget = {

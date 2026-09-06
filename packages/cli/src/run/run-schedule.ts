@@ -27,7 +27,7 @@ export function groupSchedule(
     }
     block.scheduleIndexes.push(scheduleIndex)
   })
-  return [...blocks.values()].sort((left, right) =>
+  return [...blocks.values()].toSorted((left, right) =>
     left.uri.localeCompare(right.uri),
   )
 }

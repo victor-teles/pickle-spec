@@ -193,7 +193,7 @@ Feature: Search
         }),
       ])
     } catch (error) {
-      throw new Error(`${String(error)}\n${stderr.text()}`)
+      throw new Error(`${String(error)}\n${stderr.text()}`, { cause: error })
     }
     return { child, url, stdout, stderr }
   }

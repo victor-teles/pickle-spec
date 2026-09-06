@@ -210,8 +210,7 @@ export function GherkinEditor(props: {
 }) {
   const hostRef = useRef<HTMLDivElement>(null)
   const editorRef = useRef<monacoEditor.IStandaloneCodeEditor | undefined>(
-    undefined,
-  )
+    )
   const catalogRef = useRef(props.catalog)
   const onChangeRef = useRef(props.onChange)
   const emittedSource = useRef(props.source)

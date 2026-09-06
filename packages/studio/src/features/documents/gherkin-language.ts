@@ -52,7 +52,7 @@ export const gherkinMonarch = {
 }
 
 function uniqueSorted(values: readonly string[]): string[] {
-  return [...new Set(values.filter((value) => value.length > 0))].sort(
+  return [...new Set(values.filter((value) => value.length > 0))].toSorted(
     (left, right) => left.localeCompare(right),
   )
 }

@@ -249,7 +249,7 @@ class SpecificationEditorController {
   }
 
   async save(): Promise<void> {
-    this.props.onError(undefined)
+    this.props.onError()
     try {
       const preview = await this.props.api<SpecificationPreview>(
         '/api/documents/preview',
@@ -270,7 +270,7 @@ class SpecificationEditorController {
 
   async propose(): Promise<void> {
     if (!this.state.buffer) return
-    this.props.onError(undefined)
+    this.props.onError()
     try {
       const creating = Boolean(this.state.newUri.trim())
       const uri = creating ? this.state.newUri.trim() : this.state.buffer.uri

@@ -66,7 +66,7 @@ function collectResultGroups(
 }
 
 function materializedResult(group: MaterializedResultGroup): TestResult {
-  const attempts = [...group.attempts.values()].sort(
+  const attempts = [...group.attempts.values()].toSorted(
     (left, right) => left.attempt - right.attempt,
   )
   const first = attempts[0]
@@ -95,7 +95,7 @@ export function materializeTestResults(
   events: readonly RunEvent[],
 ): TestResult[] {
   return [...collectResultGroups(events).values()]
-    .sort(
+    .toSorted(
       (left, right) =>
         left.order - right.order ||
         (left.scenario.id ?? left.scenario.name).localeCompare(

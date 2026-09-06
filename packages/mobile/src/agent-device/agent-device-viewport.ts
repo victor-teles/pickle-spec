@@ -82,7 +82,7 @@ export function startAgentDeviceViewport(input: {
         screenshotPath,
         sessionId: input.sessionId,
         signal: controller.signal,
-      }).catch(() => undefined)
+      }).catch(() => {})
       if (frame) input.publish(frame)
       await waitForNextCapture(controller.signal)
     }

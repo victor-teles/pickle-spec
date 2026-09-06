@@ -28,7 +28,7 @@ export async function latestHistoricalDurations(
   const runs = await store.list()
   const latest = runs
     .filter((run) => run.finishedAt)
-    .sort((left, right) =>
+    .toSorted((left, right) =>
       requiredValue(right.finishedAt).localeCompare(
         requiredValue(left.finishedAt),
       ),

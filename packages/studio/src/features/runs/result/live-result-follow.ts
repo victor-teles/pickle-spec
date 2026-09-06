@@ -95,7 +95,7 @@ function worstAttentionLocation(
   snapshot: StudioRunSnapshot,
   locations: readonly ResultInspectionLocation[],
 ): ResultInspectionLocation | undefined {
-  const [worst] = [...locations].sort((left, right) => {
+  const [worst] = [...locations].toSorted((left, right) => {
     const leftResult = findInspectedResult(snapshot, left)
     const rightResult = findInspectedResult(snapshot, right)
     return (

@@ -121,7 +121,7 @@ class NodeWorkerClient implements MobileWorkerClient {
     })
 
     try {
-      child.stdin.write(
+      void child.stdin.write(
         `${JSON.stringify({
           version: mobileWorkerProtocolVersion,
           type: 'request',
@@ -129,7 +129,7 @@ class NodeWorkerClient implements MobileWorkerClient {
           payload: request,
         })}\n`,
       )
-      child.stdin.flush()
+      void child.stdin.flush()
     } catch (error) {
       const pending = this.pending.get(id)
       this.pending.delete(id)
@@ -230,7 +230,7 @@ class NodeWorkerClient implements MobileWorkerClient {
       assertSupportedNodeVersion(message.nodeVersion)
       onReady()
     } catch (error) {
-      throw new Error(`Invalid mobile worker message: ${errorMessage(error)}`)
+      throw new Error(`Invalid mobile worker message: ${errorMessage(error)}`, { cause: error })
     }
   }
 

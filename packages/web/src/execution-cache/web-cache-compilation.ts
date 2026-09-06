@@ -296,7 +296,7 @@ function compileSelectOption(
   if (args.length === 0) return undefined
   const values = args.map((value) => parameterizeWebValue(value, bindings))
   return values.every((value) => value !== undefined)
-    ? { kind: 'select-option', locator, values: values as WebTemplate[] }
+    ? { kind: 'select-option', locator, values: values }
     : undefined
 }
 

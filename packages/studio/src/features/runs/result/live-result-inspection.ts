@@ -283,7 +283,7 @@ function insertRunEvent(
   if (events.some((item) => item.sequence === event.sequence)) {
     return [...events]
   }
-  return [...events, event].sort(
+  return [...events, event].toSorted(
     (left, right) => left.sequence - right.sequence,
   )
 }

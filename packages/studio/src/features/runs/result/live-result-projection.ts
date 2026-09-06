@@ -188,7 +188,7 @@ function appendFinishedResult(
     })
     return
   }
-  const attempts = [...existing.attempts, event.attempt].sort(
+  const attempts = [...existing.attempts, event.attempt].toSorted(
     (left, right) => left.attempt - right.attempt,
   )
   const final = attempts.at(-1)

@@ -296,7 +296,7 @@ function optionsFrom(
   }
   return {
     specifications: [...specificationUris]
-      .sort((left, right) =>
+      .toSorted((left, right) =>
         (names.get(left) ?? left).localeCompare(names.get(right) ?? right),
       )
       .map((value) => ({ value, label: names.get(value) ?? value })),
@@ -306,7 +306,7 @@ function optionsFrom(
         ...project.profiles,
       ]),
     ]
-      .sort()
+      .toSorted()
       .map((value) => ({ value, label: value })),
     suites: [
       ...new Set([
@@ -314,7 +314,7 @@ function optionsFrom(
         ...project.suites,
       ]),
     ]
-      .sort()
+      .toSorted()
       .map((value) => ({ value, label: value })),
   }
 }

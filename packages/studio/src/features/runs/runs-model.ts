@@ -22,7 +22,7 @@ export function runListItems(
   activeRunIds: ReadonlySet<string>,
 ): RunListItem[] {
   return [...runs]
-    .sort(
+    .toSorted(
       (left, right) =>
         Date.parse(right.startedAt) - Date.parse(left.startedAt) ||
         right.id.localeCompare(left.id),

@@ -329,8 +329,8 @@ export function createSpecificationWorkspace(
         await collectCompletions(state, pattern, tags, steps)
       }
       return {
-        tags: [...tags].sort((left, right) => left.localeCompare(right)),
-        steps: [...steps].sort((left, right) => left.localeCompare(right)),
+        tags: [...tags].toSorted((left, right) => left.localeCompare(right)),
+        steps: [...steps].toSorted((left, right) => left.localeCompare(right)),
       }
     },
 

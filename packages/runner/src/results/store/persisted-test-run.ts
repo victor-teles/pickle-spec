@@ -96,7 +96,7 @@ async function appendPersistedEvent(
   }
   return shouldPersistEventEvidence(recordable, policy)
     ? versioned
-    : ({ ...recordable, ...envelope } as RunEvent)
+    : ({ ...recordable, ...envelope })
 }
 
 async function materializePersistedRun(

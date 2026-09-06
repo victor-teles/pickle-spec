@@ -221,7 +221,7 @@ function observeConfiguredOutput(
   if (config.output?.stderr && child.stderr instanceof ReadableStream) {
     tasks.push(observeOutput(child.stderr, 'stderr', now, onOutput))
   }
-  return Promise.all(tasks).then(() => undefined)
+  return Promise.all(tasks).then(() => {})
 }
 
 async function waitForServer(

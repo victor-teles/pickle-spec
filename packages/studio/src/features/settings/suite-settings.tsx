@@ -203,7 +203,7 @@ async function saveSuite<T extends ConfigurableProject>(
   suites[name] = editedSuiteConfiguration(editor.fields)
   if (editor.originalName && editor.originalName !== name)
     delete suites[editor.originalName]
-  props.onError(undefined)
+  props.onError()
   try {
     props.onProject(
       await props.api<T>('/api/config', {

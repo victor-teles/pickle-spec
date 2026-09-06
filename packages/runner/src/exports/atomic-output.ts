@@ -43,7 +43,7 @@ async function replaceStagedPath(
       } catch (restoreError) {
         throw new AggregateError(
           [error, restoreError],
-          `Could not publish ${destination}; the previous output remains recoverable at ${backupPath}`,
+          `Could not publish ${destination}; the previous output remains recoverable at ${backupPath}`, { cause: restoreError },
         )
       }
     }

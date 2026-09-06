@@ -198,7 +198,7 @@ function VideoArtifact(props: ArtifactViewerProps) {
 function TextArtifact(props: ArtifactViewerProps) {
   const [loadState, setLoadState] = useState<TextLoadState>({ kind: 'idle' })
   const [query, setQuery] = useState('')
-  const request = useRef<AbortController | undefined>(undefined)
+  const request = useRef<AbortController | undefined>()
   useEffect(
     () => () => {
       request.current?.abort()

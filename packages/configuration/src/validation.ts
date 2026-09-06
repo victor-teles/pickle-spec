@@ -17,7 +17,7 @@ export function strictObject<Shape extends z.ZodRawShape>(
   return z.strictObject(shape, {
     error: (issue) => {
       if (issue.code === 'unrecognized_keys') {
-        const keys = 'keys' in issue ? (issue.keys as string[]) : []
+        const keys = 'keys' in issue ? (issue.keys) : []
         return keys.map((key) => `${field}.${key} is not supported`).join('\n')
       }
       return `${field} must be an object`

@@ -185,7 +185,7 @@ test('targets new runs at one profile or all configured profiles', () => {
     profiles: ['mobile'],
   })
   expect(
-    targetNewRun({ paths: ['features/checkout.feature'] }, undefined),
+    targetNewRun({ paths: ['features/checkout.feature'] }),
   ).toEqual({
     paths: ['features/checkout.feature'],
     profiles: undefined,

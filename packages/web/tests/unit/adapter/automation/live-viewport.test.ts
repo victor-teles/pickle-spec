@@ -76,6 +76,6 @@ test('streams CDP frames, acknowledges them, and stops the target session', asyn
     expect(methods).toContain('Page.stopScreencast')
     expect(methods).toContain('Target.detachFromTarget')
   } finally {
-    server.stop(true)
+    void server.stop(true)
   }
 })

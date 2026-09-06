@@ -39,7 +39,7 @@ export async function loadProjectSpecifications(
   }
   if (paths.size === 0) return []
   const files = await Promise.all(
-    [...paths].sort().map(async (path) => ({
+    [...paths].toSorted().map(async (path) => ({
       uri: relative(root, path),
       source: await Bun.file(path).text(),
     })),

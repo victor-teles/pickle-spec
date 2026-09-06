@@ -34,7 +34,7 @@ export function CredentialSettings<T extends ConfigurableProject>(
   const [name, setName] = useState('')
   const [secret, setSecret] = useState('')
   const save = async () => {
-    props.onError(undefined)
+    props.onError()
     try {
       props.onProject(
         await props.api<T>('/api/credentials', {

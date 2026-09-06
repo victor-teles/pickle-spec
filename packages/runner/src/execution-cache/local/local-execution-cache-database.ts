@@ -234,7 +234,7 @@ export async function openLocalExecutionCacheDatabase(
   const cacheDirectory = dirname(databasePath)
   await mkdir(cacheDirectory, { recursive: true, mode: 0o700 })
   if (process.platform !== 'win32') await chmod(cacheDirectory, 0o700)
-  await withRecovery(databasePath, () => undefined, {
+  await withRecovery(databasePath, () => {}, {
     verifyIntegrity: true,
   })
   return {

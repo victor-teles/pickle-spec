@@ -138,7 +138,7 @@ export class AgentDeviceGateway {
           await client.apps.list({ platform, appsFilter: scope }),
         ),
       ),
-    ].sort()
+    ].toSorted()
   }
 
   async discoverTargets(
@@ -301,7 +301,7 @@ export class AgentDeviceGateway {
       if (logError) {
         throw new AggregateError(
           [logError, error],
-          'Failed to close mobile evidence and session',
+          'Failed to close mobile evidence and session', { cause: error },
         )
       }
       throw error

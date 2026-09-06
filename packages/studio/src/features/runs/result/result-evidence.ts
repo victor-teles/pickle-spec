@@ -171,7 +171,7 @@ export function causalTimelineEntry(
 ): TimelineEntry | undefined {
   return entries
     .filter((entry) => entry.causal)
-    .sort((left, right) => {
+    .toSorted((left, right) => {
       const leftDistance = Math.abs(
         Date.parse(left.startedAt) -
           Date.parse(left.causalAt ?? left.startedAt),
@@ -340,7 +340,7 @@ export function diagnosticsFor(attempt: ScenarioAttempt): DiagnosticEvidence[] {
   const diagnostics = [...attemptDiagnostics, ...stepDiagnostics]
   appendStepMessages(diagnostics, attempt)
   appendAttemptMessage(diagnostics, attempt)
-  return diagnostics.sort(
+  return diagnostics.toSorted(
     (left, right) =>
       Date.parse(left.occurredAt) - Date.parse(right.occurredAt) ||
       left.id.localeCompare(right.id),
@@ -515,7 +515,7 @@ function timelineContext(
     ]),
   ]
     .filter((entry) => entry.causalAt)
-    .sort(
+    .toSorted(
       (left, right) =>
         Date.parse(left.occurredAt) - Date.parse(right.occurredAt),
     )
@@ -708,7 +708,7 @@ export function timelineFor(
     ...eventEntries,
     ...diagnosticEntries,
     ...artifactEntries,
-  ].sort(
+  ].toSorted(
     (left, right) =>
       Date.parse(left.startedAt) - Date.parse(right.startedAt) ||
       kindOrder[left.kind] - kindOrder[right.kind] ||

@@ -108,12 +108,12 @@ test('creates an in-memory Allure ZIP equivalent to the directory projection', a
     })
     const files = readStoredZip(zipBytes)
 
-    expect([...zipBytes.slice(0, 4)]).toEqual([0x50, 0x4b, 0x03, 0x04])
-    expect([...files.keys()].sort()).toEqual(
+    expect(zipBytes.slice(0, 4)).toEqual([0x50, 0x4b, 0x03, 0x04])
+    expect([...files.keys()].toSorted()).toEqual(
       [
         ...projection.results.map(({ fileName }) => fileName),
         ...projection.attachments.map(({ fileName }) => fileName),
-      ].sort(),
+      ].toSorted(),
     )
     for (const { fileName, result } of projection.results) {
       expect(await new Blob([requiredValue(files.get(fileName))]).text()).toBe(

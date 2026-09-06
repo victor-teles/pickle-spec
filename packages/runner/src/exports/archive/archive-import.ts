@@ -86,7 +86,7 @@ async function createImportedRunDirectory(
     await mkdir(runDirectory)
   } catch (error) {
     if (isAlreadyExists(error)) {
-      throw new Error(`Test run "${runId}" already exists`)
+      throw new Error(`Test run "${runId}" already exists`, { cause: error })
     }
     throw error
   }
@@ -165,7 +165,7 @@ export async function importRunArchive(
     await rm(runDirectory, { recursive: true, force: true })
     if (preservedArchive) await rm(preservedArchivePath, { force: true })
     if (isAlreadyExists(error)) {
-      throw new Error(`Test run "${archive.manifest.id}" already exists`)
+      throw new Error(`Test run "${archive.manifest.id}" already exists`, { cause: error })
     }
     throw error
   }

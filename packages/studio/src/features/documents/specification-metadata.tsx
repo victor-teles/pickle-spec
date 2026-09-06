@@ -102,7 +102,7 @@ function useSpecificationMetadata(props: SpecificationMetadataProps) {
   }, [props.buffer, props.namespaces])
 
   const save = async () => {
-    props.onError(undefined)
+    props.onError()
     try {
       const preview = await previewMetadata(props, state, tagText, links)
       if (!preview.diff) {

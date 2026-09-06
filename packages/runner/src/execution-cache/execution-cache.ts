@@ -317,7 +317,7 @@ function parseEnvelope(value: unknown): ExecutionCacheEnvelope | undefined {
   if (!parsed.success || !hasUniqueVariables(parsed.data.requiredVariables)) {
     return undefined
   }
-  return parsed.data as ExecutionCacheEnvelope
+  return parsed.data
 }
 
 function validatedEnvelope<AdapterPayload>(

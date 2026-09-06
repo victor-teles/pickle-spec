@@ -200,7 +200,7 @@ async function saveProfile<T extends ConfigurableProject>(
     editor.capabilities,
     editor.mobileProfile,
   )
-  props.onError(undefined)
+  props.onError()
   try {
     props.onProject(
       await props.api<T>('/api/config', {

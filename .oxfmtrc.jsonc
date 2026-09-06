@@ -1,0 +1,22 @@
+{
+  "$schema": "./node_modules/oxfmt/configuration_schema.json",
+  "printWidth": 80,
+  "useTabs": false,
+  "singleQuote": false,
+  "jsxSingleQuote": false,
+  "quoteProps": "as-needed",
+  "trailingComma": "all",
+  "semi": true,
+  "arrowParens": "always",
+  "overrides": [
+    {
+      "files": [
+        "**/*.{js,jsx,ts,tsx,mjs,mts,cjs,cts}"
+      ],
+      "options": {
+        "singleQuote": true,
+        "semi": false
+      }
+    }
+  ]
+}

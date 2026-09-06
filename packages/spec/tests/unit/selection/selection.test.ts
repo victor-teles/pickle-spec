@@ -106,11 +106,11 @@ describe('selectScenarios', () => {
       },
     )
 
-    expect(shardOne.map(({ scenario }) => scenario.name).sort()).toEqual([
+    expect(shardOne.map(({ scenario }) => scenario.name).toSorted()).toEqual([
       'Fast checkout',
       'Slow checkout',
     ])
-    expect(shardTwo.map(({ scenario }) => scenario.name).sort()).toEqual([
+    expect(shardTwo.map(({ scenario }) => scenario.name).toSorted()).toEqual([
       'Another slow checkout',
       'Medium checkout',
     ])
