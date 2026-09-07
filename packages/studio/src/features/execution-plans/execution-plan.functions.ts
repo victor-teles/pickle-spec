@@ -25,7 +25,7 @@ function executionPlanRequest(value: unknown): StudioExecutionPlanRequest {
   return {
     scenarioId: input.scenarioId,
     profileId: input.profileId,
-    applicationRevision: input.applicationRevision as string | undefined,
+    applicationRevision: input.applicationRevision,
   }
 }
 

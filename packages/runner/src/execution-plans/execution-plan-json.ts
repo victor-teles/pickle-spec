@@ -213,7 +213,7 @@ function jsonObject(
   const record = value as Record<string, unknown>
   return Object.fromEntries(
     Object.keys(record)
-      .sort()
+      .toSorted()
       .map((key) => [key, jsonValue(record[key], ancestors)]),
   )
 }

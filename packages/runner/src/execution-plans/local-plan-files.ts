@@ -144,7 +144,7 @@ export async function readRegularFile(
 }
 
 export async function listManagedFiles(directory: string): Promise<string[]> {
-  return (await readdir(directory)).sort()
+  return (await readdir(directory)).toSorted()
 }
 
 export async function flushDirectory(path: string) {

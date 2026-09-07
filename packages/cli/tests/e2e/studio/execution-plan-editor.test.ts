@@ -54,7 +54,7 @@ test('edits locators inline with recovery, revision chaining, keyboard focus, an
     viewport: { width: 1440, height: 1000 },
   })
   const page = await context.newPage()
-  let releaseSave: () => void = () => undefined
+  let releaseSave: () => void = () => {}
   try {
     await page.goto(url)
     await waitForStudio(page, 'inline-plan-editor')

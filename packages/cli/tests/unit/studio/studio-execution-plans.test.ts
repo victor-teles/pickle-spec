@@ -156,7 +156,7 @@ describe('Studio readable execution plan service', () => {
         specifications: [specification],
       }),
       openCache: async () => first.cache,
-      resolveApplicationRevision: () => undefined,
+      resolveApplicationRevision: () => {},
     })
 
     const ambiguous = await service.read({
@@ -349,7 +349,7 @@ describe('Studio readable execution plan service', () => {
     expect(edited.value.steps[0]?.operations[0]?.target).toMatchObject({
       selector: { segments: [{ kind: 'literal', value: '#new-password' }] },
     })
-    const scope = edited.value.scope as PlanScope
+    const scope = edited.value.scope
     const history = await store.inspect(scope)
     expect(history).toMatchObject({
       ok: true,

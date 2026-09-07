@@ -1,5 +1,4 @@
 import type {
-  Digest,
   ExecutionCacheEntryMetadata,
   ExecutionCacheEntrySnapshot,
   ExecutionCacheEnvelope,
@@ -177,7 +176,7 @@ function distinctApplicationRevisions(
 ): string[] {
   return [
     ...new Set(entries.map((entry) => entry.key.applicationRevision)),
-  ].sort()
+  ].toSorted()
 }
 
 function sameScenarioAndProfile(
@@ -450,11 +449,9 @@ function invalidEnvelope(
   envelope: ExecutionCacheEnvelope<WebExecutionCachePayload> | undefined,
   scenario: Scenario,
 ): boolean {
-  return Boolean(
-    !envelope ||
+  return (!envelope ||
     envelope.adapterPayload.steps.length > scenario.steps.length ||
-    !requiredVariablesAreValid(envelope.requiredVariables, scenario),
-  )
+    !requiredVariablesAreValid(envelope.requiredVariables, scenario))
 }
 
 async function projectSelectedPlan(
@@ -696,7 +693,7 @@ async function editDraft(
       step: request.step,
       instructionIndex: request.instructionIndex,
       expectedInstructionDigest: request.expectedInstructionDigest,
-      locator: request.locator as WebLocator,
+      locator: request.locator,
     },
   )
   if (!edited.ok) return edited

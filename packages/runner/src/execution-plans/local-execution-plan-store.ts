@@ -435,7 +435,7 @@ class FilesystemExecutionPlanStore implements LocalExecutionPlanStore {
   ): Promise<PlanResult<true>> {
     if (active === null) return { ok: true, value: true }
     const revision = await this.readRevision(active.revisionId)
-    if (!revision.ok) return revision as PlanResult<true>
+    if (!revision.ok) return revision
     if (revision.value === null) {
       return failure(
         'missing-revision',

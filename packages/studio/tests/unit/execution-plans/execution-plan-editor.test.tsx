@@ -53,7 +53,7 @@ test('renders the draft editor beside its Scenario step and protected checks', (
     <ExecutionPlanEditor
       draft={draft}
       onSave={async () => ({ ok: true, value: draft })}
-      onDiscard={() => undefined}
+      onDiscard={() => {}}
     />,
   )
 

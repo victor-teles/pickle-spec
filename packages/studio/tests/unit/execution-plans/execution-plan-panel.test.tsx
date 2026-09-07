@@ -24,7 +24,7 @@ function draftState(): ExecutionPlanDraftState & {
     setDraft: () => events.push('draft'),
     setCaptureError: (value) => events.push(value ? `error:${value}` : 'clear'),
     setCapturing: (value) => events.push(value ? 'capturing' : 'idle'),
-    discard: () => undefined,
+    discard: () => {},
   }
 }
 
