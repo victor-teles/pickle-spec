@@ -1,3 +1,4 @@
+import { studioProjectSchema } from '../project/project.schemas'
 import { type Dispatch, type SetStateAction, useEffect, useState } from 'react'
 import { Button } from '../../components/ui/button'
 import { SettingField } from './setting-field'
@@ -219,7 +220,7 @@ async function saveSuite<T extends ConfigurableProject>(
   props.onError()
   try {
     props.onProject(
-      await props.api<T>('/api/config', {
+      await props.api('/api/config', studioProjectSchema, {
         method: 'PUT',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ suites }),

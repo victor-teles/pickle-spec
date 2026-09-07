@@ -5,7 +5,7 @@ import {
   sharedEvidenceCacheDecisionTypes,
   sharedEvidenceObservationVersion,
   traceActivityKinds,
-} from '../../execution/run-scenario'
+} from '../../execution/run-scenario-types'
 import {
   artifactSchema,
   cacheOutcomeSchema,

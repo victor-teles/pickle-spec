@@ -1,20 +1,18 @@
+import { studioRunRequestSchema } from '../runs/run.schemas'
+import {
+  studioConfigPatchSchema,
+  credentialWriteRequestSchema,
+} from './project.schemas'
 import {
   requestError,
   routeKey,
   type StudioHttpHandler,
   unavailable,
 } from '../../server/http'
-import type { StudioRunRequest } from '../runs/run.contracts'
 import type {
-  StudioConfigPatch,
   StudioManagementGateway,
   StudioProject,
 } from './project.contracts'
-
-type CredentialWriteRequest = {
-  name?: string
-  secret?: string
-}
 
 interface ProjectRoutesOptions {
   loadProject(): Promise<StudioProject>
@@ -29,7 +27,7 @@ export function createProjectRoutes(
       return unavailable('Project configuration is unavailable')
     }
     try {
-      const patch = (await request.json()) as StudioConfigPatch
+      const patch = studioConfigPatchSchema.parse(await request.json())
       return Response.json(await options.management.saveConfig(patch))
     } catch (error) {
       return requestError(error)
@@ -39,7 +37,7 @@ export function createProjectRoutes(
   async function saveCredential(request: Request): Promise<Response> {
     if (!options.management) return unavailable('Credentials are unavailable')
     try {
-      const body = (await request.json()) as CredentialWriteRequest
+      const body = credentialWriteRequestSchema.parse(await request.json())
       return Response.json(
         await options.management.saveCredential({
           name: body.name ?? '',
@@ -56,8 +54,14 @@ export function createProjectRoutes(
       const project = await options.loadProject()
       return Response.json(project.readiness ?? { ready: true, reasons: [] })
     }
-    const body = (await request.json().catch(() => ({}))) as StudioRunRequest
-    return Response.json(await options.management.readiness(body))
+    try {
+      const body = studioRunRequestSchema.parse(
+        await request.json().catch(() => ({})),
+      )
+      return Response.json(await options.management.readiness(body))
+    } catch (error) {
+      return requestError(error)
+    }
   }
 
   async function mobileTargets(): Promise<Response> {

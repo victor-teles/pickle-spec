@@ -1,9 +1,15 @@
+import {
+  studioRunSnapshotSchema,
+  startedRunSchema,
+  studioRunStreamEventSchema,
+} from './run.schemas'
+import { studioRunReadinessSchema } from '../project/project.schemas'
+
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { type StudioApi, studioToken } from '../../lib/studio-api'
 import type {
   StudioRunReadiness,
   StudioRunRequest,
-  StudioRunSnapshot,
   StudioRunsIndex,
 } from '../../server/contracts'
 import { targetNewRun } from '../studio/command-palette-model'
@@ -13,7 +19,6 @@ import {
   hydrateLiveInspection,
   inspectLiveTimelineEntry,
   type LiveResultInspection,
-  type LiveStreamEvent,
   liveInspectionFromSnapshot,
   pauseLiveFollowing,
   pinLiveCell,
@@ -71,7 +76,10 @@ async function restoreActiveRun(input: {
   try {
     const snapshots = await Promise.all(
       input.activeRunIds.map((runId) =>
-        input.api<StudioRunSnapshot>(`/api/runs/${encodeURIComponent(runId)}`),
+        input.api(
+          `/api/runs/${encodeURIComponent(runId)}`,
+          studioRunSnapshotSchema,
+        ),
       ),
     )
     if (input.cancelled()) return
@@ -144,7 +152,9 @@ function useLiveRunSocket(input: {
       `${protocol}//${location.host}/api/runs/${runId}/events`,
     )
     socket.addEventListener('message', (message) => {
-      const event = JSON.parse(String(message.data)) as LiveStreamEvent
+      const event = studioRunStreamEventSchema.parse(
+        JSON.parse(String(message.data)),
+      )
       setLive((current) =>
         current ? receiveLiveStreamEvent(current, event) : current,
       )
@@ -182,8 +192,9 @@ async function hydrateFinishedRun(input: {
   setLive: SetValue<LiveResultInspection | undefined>
 }): Promise<void> {
   try {
-    const snapshot = await input.api<StudioRunSnapshot>(
+    const snapshot = await input.api(
       `/api/runs/${encodeURIComponent(input.runId)}`,
+      studioRunSnapshotSchema,
     )
     input.setLive((current) =>
       current ? hydrateLiveInspection(current, snapshot) : current,
@@ -247,8 +258,9 @@ async function startLiveRun(
   setters.setOrigin(runOriginFromRequest(request))
   setters.setStarting(true)
   try {
-    const readiness = await options.api<StudioRunReadiness>(
+    const readiness = await options.api(
       '/api/run-readiness',
+      studioRunReadinessSchema,
       {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
@@ -257,7 +269,7 @@ async function startLiveRun(
     )
     setters.setReadinessAttempt({ readiness, request })
     if (!readiness.ready) throw new Error(readiness.reasons.join('\n'))
-    const started = await options.api<{ id: string }>('/api/runs', {
+    const started = await options.api('/api/runs', startedRunSchema, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify(request),

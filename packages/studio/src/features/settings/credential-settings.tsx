@@ -1,3 +1,4 @@
+import { studioProjectSchema } from '../project/project.schemas'
 import { useState } from 'react'
 import { Button } from '../../components/ui/button'
 import { SettingField } from './setting-field'
@@ -37,7 +38,7 @@ export function CredentialSettings<T extends ConfigurableProject>(
     props.onError()
     try {
       props.onProject(
-        await props.api<T>('/api/credentials', {
+        await props.api('/api/credentials', studioProjectSchema, {
           method: 'PUT',
           headers: { 'content-type': 'application/json' },
           body: JSON.stringify({ name, secret }),

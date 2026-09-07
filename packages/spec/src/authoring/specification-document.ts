@@ -3,64 +3,34 @@ import {
   GherkinClassicTokenMatcher,
   Parser,
 } from '@cucumber/gherkin'
-import type {
-  Examples,
-  FeatureChild,
-  GherkinDocument,
-  RuleChild,
-  Step,
+import {
+  type Examples,
+  type FeatureChild,
+  type GherkinDocument,
+  type RuleChild,
+  type Step,
+  IdGenerator,
 } from '@cucumber/messages'
-import { IdGenerator } from '@cucumber/messages'
+
 import type { ParseSpecificationInput } from '../parsing/specification'
 
-export interface StructuredStep {
-  keyword: string
-  text: string
-  argument?: {
-    dataTable?: string[][]
-    docString?: string
-  }
-}
-
-export interface StructuredExamples {
-  name: string
-  tags: string[]
-  header: string[]
-  rows: string[][]
-}
-
-export interface StructuredScenario {
-  kind: 'scenario'
-  keyword: string
-  name: string
-  tags: string[]
-  steps: StructuredStep[]
-  examples: StructuredExamples[]
-}
-
-export interface StructuredBackground {
-  kind: 'background'
-  name: string
-  steps: StructuredStep[]
-}
-
-export interface StructuredRule {
-  kind: 'rule'
-  name: string
-  tags: string[]
-  children: Array<StructuredBackground | StructuredScenario>
-}
-
-export type StructuredChild =
-  | StructuredBackground
-  | StructuredScenario
-  | StructuredRule
-
-export interface StructuredSpecification {
-  name: string
-  tags: string[]
-  children: StructuredChild[]
-}
+import type {
+  StructuredStep,
+  StructuredExamples,
+  StructuredScenario,
+  StructuredBackground,
+  StructuredChild,
+  StructuredSpecification,
+} from './specification-schema'
+export type {
+  StructuredStep,
+  StructuredExamples,
+  StructuredScenario,
+  StructuredBackground,
+  StructuredRule,
+  StructuredChild,
+  StructuredSpecification,
+} from './specification-schema'
 
 export interface SpecificationDocument {
   uri: string

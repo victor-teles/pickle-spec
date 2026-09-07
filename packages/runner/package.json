@@ -4,6 +4,7 @@
   "files": [
     "benchmarking.ts",
     "index.ts",
+    "schemas.ts",
     "testing.ts",
     "src/**/*.ts"
   ],
@@ -11,7 +12,8 @@
   "exports": {
     ".": "./index.ts",
     "./benchmarking": "./benchmarking.ts",
-    "./testing": "./testing.ts"
+    "./testing": "./testing.ts",
+    "./schemas": "./schemas.ts"
   },
   "publishConfig": {
     "access": "public"

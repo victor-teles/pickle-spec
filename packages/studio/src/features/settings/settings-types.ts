@@ -1,5 +1,5 @@
 import type { StudioApi } from '../../lib/studio-api'
-import type { StudioMobileProfile } from '../../server/contracts'
+import type { StudioProject, StudioMobileProfile } from '../../server/contracts'
 
 export type StudioSuite = {
   name: string
@@ -30,6 +30,6 @@ export type ConfigurableProject = {
 export type SettingsProps<T extends ConfigurableProject> = {
   project: T
   api: StudioApi
-  onProject: (project: T) => void
+  onProject: (project: StudioProject) => void
   onError: (message?: string) => void
 }

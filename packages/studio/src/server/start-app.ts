@@ -1,6 +1,7 @@
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { staticMiddleware } from 'srvx/static'
+import { z } from 'zod'
 import type { StudioRequestContext } from '../server-context'
 
 const studioPackageRoot = join(import.meta.dir, '../..')
@@ -21,7 +22,13 @@ export type StartServerEntry = {
   ): Response | Promise<Response>
 }
 
-export type StartServerModule = { default: StartServerEntry }
+const startServerModuleSchema = z.object({
+  default: z.custom<StartServerEntry>(
+    (value) => z.object({ fetch: z.function() }).safeParse(value).success,
+  ),
+})
+
+export type StartServerModule = z.infer<typeof startServerModuleSchema>
 
 let startBuild: Promise<StartServerEntry> | undefined
 
@@ -47,7 +54,7 @@ async function loadStartServerEntry(): Promise<StartServerEntry> {
     }
   }
   const entryUrl = pathToFileURL(startServerEntryPath).href
-  const module = (await import(entryUrl)) as StartServerModule
+  const module = startServerModuleSchema.parse(await import(entryUrl))
   return module.default
 }
 

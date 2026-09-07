@@ -1,3 +1,4 @@
+import { studioProjectSchema } from '../project/project.schemas'
 import { useState } from 'react'
 import { Button } from '../../components/ui/button'
 import { toast } from '../../components/ui/toast'
@@ -209,7 +210,7 @@ async function saveProfile<T extends ConfigurableProject>(
   props.onError()
   try {
     props.onProject(
-      await props.api<T>('/api/config', {
+      await props.api('/api/config', studioProjectSchema, {
         method: 'PUT',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ executionTargetProfiles: profiles }),

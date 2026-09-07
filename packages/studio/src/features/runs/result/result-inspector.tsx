@@ -1,4 +1,9 @@
-import { isResultInspectorTab } from './result-inspection'
+import { studioRunSnapshotSchema } from '../run.schemas'
+import {
+  isResultInspectorTab,
+  type ResultInspectionLocation,
+  type ResultInspectorTab,
+} from './result-inspection'
 import type { TestResultState } from '@pickle-spec/runner'
 import { useEffect, useState } from 'react'
 import { LedgerLoadingSkeleton } from '../../../components/loading-skeletons'
@@ -22,8 +27,11 @@ import type { StudioApi } from '../../../lib/studio-api'
 import { cn } from '../../../lib/utils'
 import type { StudioRunSnapshot } from '../../../server/contracts'
 import type { StudioLiveViewport } from '../live-viewport'
-import type { FocusedAttemptProjection } from './focused-attempt'
-import { focusedAttemptProjection } from './focused-attempt'
+import {
+  type FocusedAttemptProjection,
+  focusedAttemptProjection,
+} from './focused-attempt'
+
 import type { LiveConnectionStatus } from './live-result-inspection'
 import type { artifactsFor } from './result-evidence'
 import {
@@ -33,10 +41,7 @@ import {
   ResultOverview,
 } from './result-evidence-panels'
 import { ResultEvidenceTimeline } from './result-evidence-timeline'
-import type {
-  ResultInspectionLocation,
-  ResultInspectorTab,
-} from './result-inspection'
+
 import { reasonMessage, resultBadgeVariant } from './result-presentation'
 
 type ResultInspectorProps = {
@@ -65,8 +70,9 @@ function useFetchedRunSnapshot(props: ResultInspectorProps) {
     setSnapshot(undefined)
     setError(undefined)
     void props
-      .api<StudioRunSnapshot>(
+      .api(
         `/api/runs/${encodeURIComponent(props.location.runId)}`,
+        studioRunSnapshotSchema,
       )
       .then(
         (value) => {

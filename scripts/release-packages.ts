@@ -1,17 +1,25 @@
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { z } from 'zod'
 import { requiredValue } from './required-value'
 
-type PackageManifest = {
-  name?: string
-  version?: string
-  exports?: Record<string, string>
-  bin?: Record<string, string>
-  files?: string[]
-  dependencies?: Record<string, string>
-  publishConfig?: { access?: string }
-}
+const packageManifestSchema = z
+  .object({
+    name: z.string().optional(),
+    version: z.string().optional(),
+    exports: z.record(z.string(), z.string()).optional(),
+    bin: z.record(z.string(), z.string()).optional(),
+    files: z.array(z.string()).optional(),
+    dependencies: z.record(z.string(), z.string()).optional(),
+    publishConfig: z
+      .object({ access: z.string().optional() })
+      .catchall(z.json())
+      .optional(),
+  })
+  .catchall(z.json())
+
+type PackageManifest = z.infer<typeof packageManifestSchema>
 
 type ReleasePackageDefinition = {
   directory: string
@@ -41,7 +49,10 @@ const releasePackageDefinitions: ReleasePackageDefinition[] = [
   {
     directory: 'packages/spec',
     name: '@pickle-spec/spec',
-    exports: { '.': './index.ts' },
+    exports: {
+      '.': './index.ts',
+      './schemas': './src/authoring/specification-schema.ts',
+    },
   },
   {
     directory: 'packages/runner',
@@ -49,6 +60,7 @@ const releasePackageDefinitions: ReleasePackageDefinition[] = [
     exports: {
       '.': './index.ts',
       './benchmarking': './benchmarking.ts',
+      './schemas': './schemas.ts',
       './testing': './testing.ts',
     },
   },
@@ -102,7 +114,9 @@ async function readManifest(
   root: string,
   directory: string,
 ): Promise<PackageManifest> {
-  return Bun.file(join(root, directory, 'package.json')).json()
+  return packageManifestSchema.parse(
+    await Bun.file(join(root, directory, 'package.json')).json(),
+  )
 }
 
 async function assertExportTargets(
@@ -153,13 +167,15 @@ async function readPackedManifest(
       join(root, definition.directory),
       `${definition.name} cannot be packed`,
     )
-    const manifest = JSON.parse(
-      runCommand(
-        ['tar', '-xOf', archivePath, 'package/package.json'],
-        root,
-        `${definition.name} packed manifest cannot be read`,
+    const manifest = packageManifestSchema.parse(
+      JSON.parse(
+        runCommand(
+          ['tar', '-xOf', archivePath, 'package/package.json'],
+          root,
+          `${definition.name} packed manifest cannot be read`,
+        ),
       ),
-    ) as PackageManifest
+    )
     const entries = runCommand(
       ['tar', '-tzf', archivePath],
       root,
@@ -249,8 +265,7 @@ function validateSourceManifest(
     `${definition.directory} must publish as ${definition.name}`,
   )
   assertRelease(
-    typeof manifest.version === 'string' &&
-      versionPattern.test(manifest.version),
+    manifest.version !== undefined && versionPattern.test(manifest.version),
     `${definition.name} must have a valid release version`,
   )
   const version = expectedVersion ?? manifest.version

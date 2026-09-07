@@ -1,9 +1,31 @@
 import type { ScenarioAttempt, TestResult } from '@pickle-spec/runner'
 import { renderToStaticMarkup } from 'react-dom/server'
-import { expect, test } from 'vitest'
+import { afterEach, expect, test, vi } from 'vitest'
+import { studioRunSnapshotSchema } from '../../../src/features/runs/run.schemas'
+import { studioApi } from '../../../src/lib/studio-api'
 import type { LiveResultInspection } from '../../../src/features/runs/result/live-result-inspection'
 import { RunDetail } from '../../../src/features/runs/run-detail'
 import type { StudioRunSnapshot } from '../../../src/server/contracts'
+
+afterEach(() => vi.unstubAllGlobals())
+
+test('validates fetched run snapshots before exposing them to the run page', async () => {
+  const fetchSnapshot = vi
+    .fn<typeof fetch>()
+    .mockResolvedValueOnce(Response.json({ id: 'run-42', events: [] }))
+    .mockResolvedValueOnce(Response.json({ id: 'run-42', events: 'invalid' }))
+    .mockResolvedValueOnce(new Response('Run unavailable', { status: 404 }))
+  vi.stubGlobal('fetch', fetchSnapshot)
+  await expect(
+    studioApi('/api/runs/run-42', studioRunSnapshotSchema),
+  ).resolves.toEqual({ id: 'run-42', events: [] })
+  await expect(
+    studioApi('/api/runs/run-42', studioRunSnapshotSchema),
+  ).rejects.toThrow('events')
+  await expect(
+    studioApi('/api/runs/run-42', studioRunSnapshotSchema),
+  ).rejects.toThrow('Run unavailable')
+})
 
 function attempt(number: number, state: 'passed' | 'failed'): ScenarioAttempt {
   return {
@@ -68,7 +90,7 @@ const live: LiveResultInspection = {
 test('keeps run actions and selects an attempt on the run page', () => {
   const markup = renderToStaticMarkup(
     <RunDetail
-      api={async <Value,>() => snapshot as Value}
+      api={async (_path, schema) => schema.parse(snapshot)}
       runId="run-42"
       live={live}
       runsBlocked={false}

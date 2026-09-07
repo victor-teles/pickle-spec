@@ -149,6 +149,16 @@ test('serves the Runs index, active lifecycle, compatibility alias, and deep lin
   expect(initial.status).toBe(200)
   expect((await initial.json()).activeRunIds).toEqual([])
 
+  const invalidRun = await fetch(`${origin}/api/runs`, {
+    method: 'POST',
+    headers: { ...headers, 'content-type': 'application/json' },
+    body: JSON.stringify({ profiles: 'chrome' }),
+  })
+  expect(invalidRun.status).toBe(400)
+  expect(await invalidRun.text()).toContain('profiles')
+  const afterInvalidRun = await fetch(`${origin}/api/runs`, { headers })
+  expect((await afterInvalidRun.json()).activeRunIds).toEqual([])
+
   const started = await fetch(`${origin}/api/runs`, {
     method: 'POST',
     headers: { ...headers, 'content-type': 'application/json' },

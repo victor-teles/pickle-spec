@@ -1,8 +1,10 @@
-import type {
-  TestRunComparison,
-  TestRunManifest,
-  TestRunSummary,
-} from '@pickle-spec/runner'
+import {
+  testRunComparisonSchema,
+  historyPinSchema,
+  historyDeletionSchema,
+} from '../../history/history.schemas'
+import { testRunManifestSchema } from '@pickle-spec/runner/schemas'
+import type { TestRunComparison, TestRunSummary } from '@pickle-spec/runner'
 import { type Dispatch, type SetStateAction, useMemo, useState } from 'react'
 import { toast } from '../../../components/ui/toast'
 import type { StudioApi } from '../../../lib/studio-api'
@@ -185,7 +187,7 @@ async function compareSelectedRuns(
   setError(undefined)
   try {
     setComparison(
-      await api('/api/history/compare', {
+      await api('/api/history/compare', testRunComparisonSchema, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
@@ -207,10 +209,14 @@ async function importRunArchive(
   if (!file) return
   setError(undefined)
   try {
-    const manifest = await options.api<TestRunManifest>('/api/history/import', {
-      method: 'POST',
-      body: file,
-    })
+    const manifest = await options.api(
+      '/api/history/import',
+      testRunManifestSchema,
+      {
+        method: 'POST',
+        body: file,
+      },
+    )
     await options.reloadIndex()
     toast.add({
       type: 'success',
@@ -230,9 +236,13 @@ async function setRunPinned(
 ) {
   setError(undefined)
   try {
-    await options.api(`/api/history/${encodeURIComponent(runId)}/pin`, {
-      method: pinned ? 'POST' : 'DELETE',
-    })
+    await options.api(
+      `/api/history/${encodeURIComponent(runId)}/pin`,
+      historyPinSchema,
+      {
+        method: pinned ? 'POST' : 'DELETE',
+      },
+    )
     await options.reloadIndex()
     toast.add({
       type: 'success',
@@ -255,8 +265,9 @@ async function deleteEligibleRuns(
 ) {
   setError(undefined)
   try {
-    const result = await options.api<{ removed: string[] }>(
+    const result = await options.api(
       '/api/history/retention',
+      historyDeletionSchema,
       { method: 'POST' },
     )
     setSelectedRunIds((current) =>

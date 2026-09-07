@@ -1,4 +1,8 @@
 import {
+  executionCacheClearSchema,
+  executionCacheInspectionSchema,
+} from '../execution-cache/execution-cache.schemas'
+import {
   type Dispatch,
   type SetStateAction,
   useCallback,
@@ -196,8 +200,9 @@ async function clearExecutionCache(input: ClearExecutionCacheInput) {
   input.setClearing(true)
   input.setClearError(undefined)
   try {
-    const result = await input.api<{ clearedEntries: number }>(
+    const result = await input.api(
       '/api/execution-cache',
+      executionCacheClearSchema,
       { method: 'DELETE' },
     )
     input.setConfirmOpen(false)
@@ -226,7 +231,7 @@ function useExecutionCacheSettings(api: StudioApi) {
     setError(undefined)
     try {
       setInspection(
-        await api<StudioExecutionCacheInspection>('/api/execution-cache'),
+        await api('/api/execution-cache', executionCacheInspectionSchema),
       )
     } catch (reason) {
       setError(errorMessage(reason))

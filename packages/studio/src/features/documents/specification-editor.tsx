@@ -1,3 +1,11 @@
+import {
+  specificationBufferSchema,
+  gherkinCatalogSchema,
+  specificationPreviewSchema,
+  documentConflictSchema,
+  diskChangedEventSchema,
+  type SpecificationBuffer,
+} from './document.schemas'
 import { useEffect, useRef, useState } from 'react'
 import { Button } from '../../components/ui/button'
 import {
@@ -16,60 +24,6 @@ import { GherkinEditor } from './gherkin-editor'
 import type { GherkinCatalog } from './gherkin-language'
 import { SpecificationMetadataForm } from './specification-metadata'
 
-export type StructuredStep = {
-  keyword: string
-  text: string
-}
-
-export type StructuredExamples = {
-  name: string
-  tags: string[]
-  header: string[]
-  rows: string[][]
-}
-
-export type StructuredScenario = {
-  kind: 'scenario'
-  keyword: string
-  name: string
-  tags: string[]
-  steps: StructuredStep[]
-  examples: StructuredExamples[]
-}
-
-export type StructuredBackground = {
-  kind: 'background'
-  name: string
-  steps: StructuredStep[]
-}
-
-export type StructuredRule = {
-  kind: 'rule'
-  name: string
-  tags: string[]
-  children: Array<StructuredBackground | StructuredScenario>
-}
-
-export type StructuredChild =
-  | StructuredBackground
-  | StructuredScenario
-  | StructuredRule
-
-export type StructuredSpecification = {
-  name: string
-  tags: string[]
-  children: StructuredChild[]
-}
-
-export type SpecificationBuffer = {
-  uri: string
-  source: string
-  revision: string
-  specification: StructuredSpecification
-}
-
-export type SpecificationPreview = SpecificationBuffer & { diff: string }
-
 type ReviewState = {
   title: string
   description: string
@@ -84,20 +38,6 @@ type ConflictState = {
   diff: string
 }
 
-type DiskChangedEvent = {
-  type: string
-  uri: string
-  source: string
-  revision: string
-}
-
-type DocumentConflictPayload = {
-  code: 'conflict'
-  diskSource: string
-  revision: string
-  diff: string
-}
-
 const emptyCatalog: GherkinCatalog = { tags: [], steps: [] }
 
 function reasonMessage(cause: unknown) {
@@ -107,8 +47,7 @@ function reasonMessage(cause: unknown) {
 function conflictFromReason(cause: unknown): ConflictState | undefined {
   if (!(cause instanceof Error)) return undefined
   try {
-    const payload = JSON.parse(cause.message) as DocumentConflictPayload
-    if (payload.code !== 'conflict') return undefined
+    const payload = documentConflictSchema.parse(JSON.parse(cause.message))
     return {
       diskSource: payload.diskSource,
       revision: payload.revision,
@@ -185,15 +124,16 @@ class SpecificationEditorController {
   }
 
   async load(uri: string): Promise<void> {
-    const loaded = await this.props.api<SpecificationBuffer>(
+    const loaded = await this.props.api(
       `/api/documents?uri=${encodeURIComponent(uri)}`,
+      specificationBufferSchema,
     )
     this.state.setBuffer(loaded)
     this.state.setSource(loaded.source)
     this.state.setSavedSource(loaded.source)
     this.state.setConflict(undefined)
     const nextCatalog = await this.props
-      .api<GherkinCatalog>('/api/documents/completions')
+      .api('/api/documents/completions', gherkinCatalogSchema)
       .catch(() => emptyCatalog)
     this.state.setCatalog(nextCatalog)
   }
@@ -206,18 +146,22 @@ class SpecificationEditorController {
     const uri = options.uri ?? this.state.buffer.uri
     let written: SpecificationBuffer
     try {
-      written = await this.props.api<SpecificationBuffer>('/api/documents', {
-        method: 'PUT',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          uri,
-          source: nextSource,
-          expectedRevision: options.create
-            ? undefined
-            : this.state.buffer.revision,
-          create: options.create,
-        }),
-      })
+      written = await this.props.api(
+        '/api/documents',
+        specificationBufferSchema,
+        {
+          method: 'PUT',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            uri,
+            source: nextSource,
+            expectedRevision: options.create
+              ? undefined
+              : this.state.buffer.revision,
+            create: options.create,
+          }),
+        },
+      )
     } catch (reason) {
       const nextConflict = conflictFromReason(reason)
       if (!nextConflict) throw reason
@@ -251,8 +195,9 @@ class SpecificationEditorController {
   async save(): Promise<void> {
     this.props.onError()
     try {
-      const preview = await this.props.api<SpecificationPreview>(
+      const preview = await this.props.api(
         '/api/documents/preview',
+        specificationPreviewSchema,
         {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
@@ -274,8 +219,9 @@ class SpecificationEditorController {
     try {
       const creating = Boolean(this.state.newUri.trim())
       const uri = creating ? this.state.newUri.trim() : this.state.buffer.uri
-      const proposal = await this.props.api<SpecificationPreview>(
+      const proposal = await this.props.api(
         '/api/documents/propose',
+        specificationPreviewSchema,
         {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
@@ -379,8 +325,11 @@ function watchEditorDocument(
     `${protocol}//${location.host}/api/workspace/events`,
   )
   socket.addEventListener('message', (message) => {
-    const event = JSON.parse(String(message.data)) as DiskChangedEvent
-    if (event.type !== 'disk-changed') return
+    const parsed = diskChangedEventSchema.safeParse(
+      JSON.parse(String(message.data)),
+    )
+    if (!parsed.success) return
+    const event = parsed.data
     void onCatalogChange.current()
     if (event.uri !== uri) return
     if (!dirty.current) {

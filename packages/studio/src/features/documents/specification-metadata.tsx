@@ -1,3 +1,4 @@
+import { specificationPreviewSchema } from './document.schemas'
 import { useEffect, useState } from 'react'
 import { Badge } from '../../components/ui/badge'
 import { Button, ButtonLink } from '../../components/ui/button'
@@ -7,7 +8,7 @@ import type { StudioApi } from '../../lib/studio-api'
 import type {
   SpecificationBuffer,
   SpecificationPreview,
-} from './specification-editor'
+} from './document.schemas'
 
 const specificationStates = ['draft', 'active', 'deprecated'] as const
 type SpecificationState = (typeof specificationStates)[number]
@@ -145,7 +146,7 @@ function previewMetadata(
   tagText: string,
   links: readonly ExternalLink[],
 ): Promise<SpecificationPreview> {
-  return props.api('/api/documents/preview', {
+  return props.api('/api/documents/preview', specificationPreviewSchema, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({

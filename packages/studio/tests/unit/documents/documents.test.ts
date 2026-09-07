@@ -2,6 +2,8 @@ import { mkdir, mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, test } from 'vitest'
+import { createDocumentRoutes } from '../../../src/features/documents/document.routes'
+import { specificationBufferSchema } from '../../../src/features/documents/document.schemas'
 import {
   createSpecificationWorkspace,
   DocumentConflictError,
@@ -35,12 +37,44 @@ describe('createSpecificationWorkspace', () => {
     return root
   }
 
+  test('rejects malformed document writes before changing the source', async () => {
+    const root = await project()
+    const routes = createDocumentRoutes({
+      documents: createSpecificationWorkspace({
+        root,
+        globs: 'features/**/*.feature',
+      }),
+      upgrade: () => {},
+    })
+    const url = new URL('http://localhost/api/documents')
+    const response = await routes(
+      new Request(url, {
+        method: 'PUT',
+        body: JSON.stringify({ uri: 'features/checkout.feature', source: 42 }),
+      }),
+      url,
+    )
+    expect(response?.status).toBe(400)
+    expect(await response?.text()).toContain('source')
+    expect(await Bun.file(join(root, 'features/checkout.feature')).text()).toBe(
+      checkoutSource,
+    )
+  })
+
   test('loads a Specification document from the project workspace', async () => {
     const workspace = createSpecificationWorkspace({
       root: await project(),
       globs: 'features/**/*.feature',
     })
     const document = await workspace.read('features/checkout.feature')
+    expect(
+      specificationBufferSchema.parse(JSON.parse(JSON.stringify(document))),
+    ).toMatchObject({
+      uri: document.uri,
+      source: document.source,
+      revision: document.revision,
+      specification: document.specification,
+    })
     expect(document.uri).toBe('features/checkout.feature')
     expect(document.source).toBe(checkoutSource)
     expect(document.revision).toBeTruthy()

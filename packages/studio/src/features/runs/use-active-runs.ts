@@ -1,3 +1,8 @@
+import {
+  studioRunSnapshotSchema,
+  studioRunStreamEventSchema,
+} from './run.schemas'
+
 import { useEffect, useRef, useState } from 'react'
 import type { StudioApi } from '../../lib/studio-api'
 import { requiredValue } from '../../required-value'
@@ -6,7 +11,6 @@ import {
   disconnectLiveInspection,
   hydrateLiveInspection,
   type LiveResultInspection,
-  type LiveStreamEvent,
   liveInspectionFromSnapshot,
   receiveLiveStreamEvent,
 } from './result/live-result-inspection'
@@ -65,7 +69,9 @@ class ActiveRunConnections {
   }
 
   private receive(runId: string, message: MessageEvent): void {
-    const event = JSON.parse(String(message.data)) as LiveStreamEvent
+    const event = studioRunStreamEventSchema.parse(
+      JSON.parse(String(message.data)),
+    )
     this.update(runId, (current) => receiveLiveStreamEvent(current, event))
     if (event.type === 'run-finished') void this.finish(runId)
   }
@@ -106,7 +112,10 @@ class ActiveRunConnections {
   }
 
   private loadSnapshot(runId: string): Promise<StudioRunSnapshot> {
-    return this.options.api(`/api/runs/${encodeURIComponent(runId)}`)
+    return this.options.api(
+      `/api/runs/${encodeURIComponent(runId)}`,
+      studioRunSnapshotSchema,
+    )
   }
 
   private close(): void {

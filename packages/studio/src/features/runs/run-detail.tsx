@@ -1,3 +1,4 @@
+import { studioRunSnapshotSchema } from './run.schemas'
 import type { TestRunManifest } from '@pickle-spec/runner'
 import { useEffect, useState } from 'react'
 import { LedgerLoadingSkeleton } from '../../components/loading-skeletons'
@@ -41,7 +42,10 @@ function useFetchedRunSnapshot(props: RunDetailProps) {
     setSnapshot(undefined)
     setError(undefined)
     void props
-      .api<StudioRunSnapshot>(`/api/runs/${encodeURIComponent(props.runId)}`)
+      .api(
+        `/api/runs/${encodeURIComponent(props.runId)}`,
+        studioRunSnapshotSchema,
+      )
       .then(
         (value) => {
           if (!cancelled) setSnapshot(value)

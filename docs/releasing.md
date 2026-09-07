@@ -3,15 +3,15 @@
 Pickle Spec ships seven npm packages at one version. A release is compatible only
 when all seven package artifacts pass together:
 
-| Package                      | Public install surface                                                                   |
-| ---------------------------- | ---------------------------------------------------------------------------------------- |
-| `@pickle-spec/configuration` | `@pickle-spec/configuration`                                                             |
-| `@pickle-spec/spec`          | `@pickle-spec/spec`                                                                      |
-| `@pickle-spec/runner`        | `@pickle-spec/runner`, `@pickle-spec/runner/benchmarking`, `@pickle-spec/runner/testing` |
-| `@pickle-spec/web`           | `@pickle-spec/web`                                                                       |
-| `@pickle-spec/mobile`        | `@pickle-spec/mobile`                                                                    |
-| `@pickle-spec/studio`        | Installed by the CLI for `pickle studio`                                                 |
-| `@pickle-spec/cli`           | The `pickle` executable                                                                  |
+| Package                      | Public install surface                                                                                                  |
+| ---------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| `@pickle-spec/configuration` | `@pickle-spec/configuration`                                                                                            |
+| `@pickle-spec/spec`          | `@pickle-spec/spec`, `@pickle-spec/spec/schemas`                                                                        |
+| `@pickle-spec/runner`        | `@pickle-spec/runner`, `@pickle-spec/runner/benchmarking`, `@pickle-spec/runner/schemas`, `@pickle-spec/runner/testing` |
+| `@pickle-spec/web`           | `@pickle-spec/web`                                                                                                      |
+| `@pickle-spec/mobile`        | `@pickle-spec/mobile`                                                                                                   |
+| `@pickle-spec/studio`        | Installed by the CLI for `pickle studio`                                                                                |
+| `@pickle-spec/cli`           | The `pickle` executable                                                                                                 |
 
 The release workflow derives the version from a `v<major>.<minor>.<patch>` tag,
 applies it to every package in the release job, validates each package artifact,

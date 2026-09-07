@@ -1,7 +1,8 @@
-import type {
-  SpecificationMetadata,
-  StructuredSpecification,
-} from '@pickle-spec/spec'
+import {
+  documentPreviewRequestSchema,
+  documentWriteRequestSchema,
+  documentProposeRequestSchema,
+} from './document.schemas'
 import { specificationSourceDiff } from '@pickle-spec/spec'
 import {
   requestError,
@@ -11,27 +12,6 @@ import {
 } from '../../server/http'
 import type { StudioAuthoringGateway } from '../project/project.contracts'
 import { DocumentConflictError, type SpecificationWorkspace } from './documents'
-
-type DocumentPreviewRequest = {
-  uri: string
-  source: string
-  specification?: StructuredSpecification
-  metadata?: SpecificationMetadata
-  diffAgainst?: string
-}
-
-type DocumentWriteRequest = {
-  uri: string
-  source: string
-  expectedRevision?: string
-  create?: boolean
-}
-
-type DocumentProposeRequest = {
-  prompt: string
-  uri?: string
-  currentSource?: string
-}
 
 interface DocumentRoutesOptions {
   authoring?: StudioAuthoringGateway
@@ -69,8 +49,8 @@ async function previewDocument(
   options: DocumentRoutesOptions,
   request: Request,
 ): Promise<Response> {
-  const body = (await request.json()) as DocumentPreviewRequest
   try {
+    const body = documentPreviewRequestSchema.parse(await request.json())
     return Response.json(
       options.documents.preview({
         uri: body.uri,
@@ -89,8 +69,10 @@ async function writeDocument(
   options: DocumentRoutesOptions,
   request: Request,
 ): Promise<Response> {
-  const body = (await request.json()) as DocumentWriteRequest
+  let source = ''
   try {
+    const body = documentWriteRequestSchema.parse(await request.json())
+    source = body.source
     return Response.json(
       await options.documents.write({
         uri: body.uri,
@@ -101,7 +83,7 @@ async function writeDocument(
     )
   } catch (error) {
     return error instanceof DocumentConflictError
-      ? conflictResponse(error, body.source)
+      ? conflictResponse(error, source)
       : requestError(error)
   }
 }
@@ -113,8 +95,8 @@ async function proposeDocument(
   if (!options.authoring?.propose) {
     return unavailable('AI assistance is unavailable')
   }
-  const body = (await request.json()) as DocumentProposeRequest
   try {
+    const body = documentProposeRequestSchema.parse(await request.json())
     return Response.json(
       await options.documents.propose({
         prompt: body.prompt,

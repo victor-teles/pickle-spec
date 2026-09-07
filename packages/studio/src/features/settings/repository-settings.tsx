@@ -1,4 +1,11 @@
 import {
+  gitStatusSchema,
+  pullRequestResultSchema,
+  type GitFile,
+  type GitStatus,
+  type GitCommitRequest,
+} from '../git/git.schemas'
+import {
   type ChangeEvent,
   type Dispatch,
   type SetStateAction,
@@ -20,20 +27,6 @@ import { Input } from '../../components/ui/input'
 import { Label } from '../../components/ui/label'
 import type { StudioApi } from '../../lib/studio-api'
 import { reasonMessage } from './settings-utils'
-
-type GitFile = {
-  path: string
-  status: string
-  staged: boolean
-  diff: string
-}
-
-type GitStatus = {
-  branch?: string
-  files: GitFile[]
-  pullRequestAvailable: boolean
-  pullRequestReason?: string
-}
 
 function GitFileRow(props: {
   file: GitFile
@@ -255,7 +248,7 @@ function useGitStatus(
   const [git, setGit] = useState<GitStatus>()
   useEffect(() => {
     let cancelled = false
-    void api<GitStatus>('/api/git').then(
+    void api('/api/git', gitStatusSchema).then(
       (value) => {
         if (!cancelled) setGit(value)
       },
@@ -316,11 +309,11 @@ function repositoryActions(input: {
   setGit: Dispatch<SetStateAction<GitStatus | undefined>>
   setSelectedPaths: (value: string[]) => void
 }) {
-  const request = async (path: string, body?: unknown) =>
-    input.api<GitStatus>(path, {
+  const request = async (path: string, body: GitCommitRequest) =>
+    input.api(path, gitStatusSchema, {
       method: 'POST',
-      headers: body ? { 'content-type': 'application/json' } : undefined,
-      body: body ? JSON.stringify(body) : undefined,
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(body),
     })
   const safely = async (action: () => Promise<void>) => {
     input.onError()
@@ -352,8 +345,10 @@ function repositoryActions(input: {
       }),
     pullRequest: () =>
       safely(async () => {
-        await request('/api/git/pull-request')
-        input.setGit(await input.api('/api/git'))
+        await input.api('/api/git/pull-request', pullRequestResultSchema, {
+          method: 'POST',
+        })
+        input.setGit(await input.api('/api/git', gitStatusSchema))
       }),
   }
 }

@@ -3,7 +3,7 @@ import {
   diagnosticLevels,
   diagnosticOrigins,
   traceActivityKinds,
-} from '../../execution/run-scenario'
+} from '../../execution/run-scenario-types'
 
 export const resultStateSchema = z.enum(
   ['passed', 'failed', 'skipped', 'cancelled', 'infrastructure-error'],

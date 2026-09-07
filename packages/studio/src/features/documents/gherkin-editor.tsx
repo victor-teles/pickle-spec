@@ -1,6 +1,6 @@
-import { initializeMonacoEnvironment } from './monaco-env'
-import {
-  type IDisposable,
+import { loadMonaco } from './monaco-env'
+import type {
+  IDisposable,
   languages,
   editor as monacoEditor,
 } from 'monaco-editor/editor/editor.main.js'
@@ -13,7 +13,7 @@ import {
 } from './gherkin-language'
 import { oklchToMonacoHex } from './monaco-theme-color'
 
-initializeMonacoEnvironment()
+const monaco = await loadMonaco()
 
 let languageReady = false
 
@@ -97,9 +97,9 @@ function completionSuggestions(
     suggestions: items.map((item) => ({
       label: item.label,
       kind: {
-        keyword: languages.CompletionItemKind.Keyword,
-        tag: languages.CompletionItemKind.Constant,
-        step: languages.CompletionItemKind.Snippet,
+        keyword: monaco.languages.CompletionItemKind.Keyword,
+        tag: monaco.languages.CompletionItemKind.Constant,
+        step: monaco.languages.CompletionItemKind.Snippet,
       }[item.kind],
       insertText: item.insertText,
       detail: item.detail,
@@ -116,19 +116,19 @@ function completionSuggestions(
 function registerGherkinLanguage(catalogRef: { current: GherkinCatalog }) {
   if (languageReady) return
   languageReady = true
-  languages.register({
+  monaco.languages.register({
     id: 'gherkin',
     extensions: ['.feature'],
     aliases: ['Gherkin'],
   })
-  languages.setMonarchTokensProvider('gherkin', gherkinMonarch)
-  languages.registerCompletionItemProvider('gherkin', {
+  monaco.languages.setMonarchTokensProvider('gherkin', gherkinMonarch)
+  monaco.languages.registerCompletionItemProvider('gherkin', {
     triggerCharacters: ['@', ' ', '\t'],
     provideCompletionItems(model, position) {
       return completionSuggestions(catalogRef, model, position)
     },
   })
-  monacoEditor.defineTheme('pickle-studio-dark', {
+  monaco.editor.defineTheme('pickle-studio-dark', {
     base: 'vs-dark',
     inherit: false,
     colors: gherkinThemeColors,
@@ -156,7 +156,7 @@ function useCreateGherkinEditor(input: {
     const host = hostRef.current
     if (!host) return undefined
     registerGherkinLanguage(catalogRef)
-    const instance = monacoEditor.create(host, {
+    const instance = monaco.editor.create(host, {
       value: initialSource.current,
       language: 'gherkin',
       theme: 'pickle-studio-dark',

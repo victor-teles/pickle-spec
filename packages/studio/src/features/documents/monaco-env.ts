@@ -8,6 +8,7 @@ function monacoWorker() {
   )
 }
 
-export function initializeMonacoEnvironment(): void {
+export async function loadMonaco() {
   globalThis.MonacoEnvironment ??= { globalAPI: true, getWorker: monacoWorker }
+  return import('monaco-editor/editor/editor.main.js')
 }

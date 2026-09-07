@@ -1,3 +1,4 @@
+import { historyComparisonRequestSchema } from './history.schemas'
 import { requiredValue } from '../../required-value'
 import {
   requestError,
@@ -5,17 +6,12 @@ import {
   type StudioHttpHandler,
   unavailable,
 } from '../../server/http'
-import type {
-  StudioHistoryGateway,
-  StudioRunReportRequest,
-  StudioRunsIndex,
+import {
+  type StudioHistoryGateway,
+  type StudioRunReportRequest,
+  type StudioRunsIndex,
+  studioRunReportDescriptor,
 } from './history.contracts'
-import { studioRunReportDescriptor } from './history.contracts'
-
-type HistoryComparisonRequest = {
-  baselineRunId?: string
-  candidateRunId?: string
-}
 
 interface HistoryRoutesOptions {
   activeRunIds(): readonly string[]
@@ -39,7 +35,11 @@ async function compareHistory(
   request: Request,
 ): Promise<Response> {
   if (!options.history) return historyUnavailable()
-  const body = (await request.json()) as HistoryComparisonRequest
+  const parsed = historyComparisonRequestSchema.safeParse(
+    await request.json().catch(() => null),
+  )
+  if (!parsed.success) return requestError(parsed.error)
+  const body = parsed.data
   if (!body.baselineRunId || !body.candidateRunId) {
     return new Response('Select two test runs to compare', { status: 400 })
   }

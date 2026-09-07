@@ -1,3 +1,4 @@
+import { mobileTargetDiscoveriesSchema } from '../project/project.schemas'
 import { useState } from 'react'
 import { Button } from '../../components/ui/button'
 import { Card, CardContent } from '../../components/ui/card'
@@ -205,9 +206,7 @@ export function MobileProfileSettings({
     onError()
     try {
       setDiscoveries(
-        await api<readonly StudioMobileTargetDiscovery[]>(
-          '/api/mobile-targets',
-        ),
+        await api('/api/mobile-targets', mobileTargetDiscoveriesSchema),
       )
     } catch (reason) {
       onError(reasonMessage(reason))
