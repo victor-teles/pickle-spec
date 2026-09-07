@@ -1,4 +1,3 @@
-import { z } from 'zod'
 import type {
   ExecutionCacheUncacheableReason,
   OpenSessionInput,
@@ -63,7 +62,7 @@ class WebCacheTargetSession implements Omit<StepTargetSession, 'close'> {
       []
     this.cachedPayload = input.executionCache
       ? parseWebExecutionCachePayload(
-          z.json().parse(input.executionCache.adapterPayload),
+          input.executionCache.adapterPayload,
           input.executionCache.requiredVariables,
         )
       : undefined

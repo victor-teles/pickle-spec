@@ -1,4 +1,4 @@
-import { z } from 'zod'
+import type { z } from 'zod'
 import {
   resolveScenarioId,
   type Scenario,
@@ -21,6 +21,19 @@ const targetSummaryLimit = 2_000
 const targetLocationLimit = 2_048
 const sensitiveLocationParameter =
   /(?:token|key|secret|password|credential|session|auth)/i
+
+type JsonCachePayload = z.core.util.JSONType
+
+type BindingSearchValue =
+  | JsonCachePayload
+  | {
+      resolvedActions: StepExecution['resolvedActions']
+      message?: StepExecution['message']
+      artifacts?: StepExecution['artifacts']
+      evidenceAvailability?: StepExecution['evidenceAvailability']
+      diagnostics?: StepExecution['diagnostics']
+      trace?: StepExecution['trace']
+    }
 
 export interface PublicStepExecution {
   execution: StepExecution
@@ -87,13 +100,16 @@ export function redactString(
     )
 }
 
+function isJsonString(value: BindingSearchValue): value is string {
+  return Object.prototype.toString.call(value) === '[object String]'
+}
+
 function redactReplayValue(
   value: z.core.util.JSONType,
   bindings: readonly ScenarioVariableBinding[],
   seen = new WeakSet<object>(),
 ): z.core.util.JSONType {
-  const text = z.string().safeParse(value)
-  if (text.success) return redactString(text.data, bindings)
+  if (isJsonString(value)) return redactString(value, bindings)
   if (Array.isArray(value)) {
     if (seen.has(value)) return '[Circular]'
     seen.add(value)
@@ -111,12 +127,11 @@ function redactReplayValue(
 }
 
 function valueContainsBinding(
-  value: z.core.util.JSONType,
+  value: BindingSearchValue,
   bindings: readonly ScenarioVariableBinding[],
   seen = new WeakSet<object>(),
 ): boolean {
-  const text = z.string().safeParse(value)
-  if (text.success) return stringContainsBinding(text.data, bindings)
+  if (isJsonString(value)) return stringContainsBinding(value, bindings)
   if (!(value instanceof Object)) return false
   if (seen.has(value)) return false
   seen.add(value)
@@ -247,20 +262,16 @@ export function publicStepExecution(
 ): PublicStepExecution {
   const runtimeValueExposed =
     valueContainsBinding(
-      z.json().parse(
-        JSON.parse(
-          JSON.stringify({
-            resolvedActions: execution.resolvedActions.map(
-              ({ description, evidence }) => ({ description, evidence }),
-            ),
-            message: execution.message,
-            artifacts: execution.artifacts,
-            evidenceAvailability: execution.evidenceAvailability,
-            diagnostics: execution.diagnostics,
-            trace: execution.trace,
-          }),
+      {
+        resolvedActions: execution.resolvedActions.map(
+          ({ description, evidence }) => ({ description, evidence }),
         ),
-      ),
+        message: execution.message,
+        artifacts: execution.artifacts,
+        evidenceAvailability: execution.evidenceAvailability,
+        diagnostics: execution.diagnostics,
+        trace: execution.trace,
+      },
       bindings,
     ) ||
     execution.resolvedActions.some(

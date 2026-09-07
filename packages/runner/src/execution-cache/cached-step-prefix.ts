@@ -1,4 +1,4 @@
-import { z } from 'zod'
+import type { z } from 'zod'
 import type {
   ReplayCacheInput,
   StepEvaluation,
@@ -10,13 +10,15 @@ import type {
   ExecutionCacheUncacheableReason,
 } from './execution-cache'
 
+type JsonCachePayload = z.core.util.JSONType
+
 const cachedStepPrefixBrand: unique symbol = Symbol('CachedStepPrefix')
 
 export type CachedStepPrefix = {
   readonly [cachedStepPrefixBrand]: true
   readonly stepCount: number
   readonly requiredVariables: readonly string[]
-  readonly adapterPayload: unknown
+  readonly adapterPayload: JsonCachePayload
 }
 
 export type GapCursor = {
@@ -50,7 +52,7 @@ export type SealCachedStepPrefixInput = {
 }
 
 export type CachedStepPrefixSource = {
-  adapterPayload: unknown
+  adapterPayload: JsonCachePayload
   requiredVariables: readonly string[]
 }
 
@@ -69,7 +71,7 @@ type PrefixCapableValidator = ExecutionCachePayloadValidator & {
 function mintCachedStepPrefix(input: {
   stepCount: number
   requiredVariables: readonly string[]
-  adapterPayload: unknown
+  adapterPayload: JsonCachePayload
 }): CachedStepPrefix {
   return {
     [cachedStepPrefixBrand]: true,
@@ -88,10 +90,8 @@ export function cachedStepPrefixFrom(
   scenarioStepCount: number,
   adapter: PrefixCapableValidator,
 ): CachedStepPrefix | undefined {
-  const serializedPayload = z.json().safeParse(envelope.adapterPayload)
-  if (!serializedPayload.success) return undefined
   const payload = adapter.parse(
-    serializedPayload.data,
+    envelope.adapterPayload,
     envelope.requiredVariables,
   )
   if (payload === undefined) return undefined

@@ -1,4 +1,3 @@
-import { z } from 'zod'
 import type {
   ExecutionTargetAdapter,
   OpenSessionInput,
@@ -164,7 +163,7 @@ function openSessionRequest(
   const replayCache = input.executionCache
   const replayPayload = replayCache
     ? executionCache.parse(
-        z.json().parse(replayCache.adapterPayload),
+        replayCache.adapterPayload,
         replayCache.requiredVariables,
       )
     : undefined
