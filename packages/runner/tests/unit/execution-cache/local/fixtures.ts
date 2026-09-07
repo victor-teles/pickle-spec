@@ -1,6 +1,7 @@
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { z } from 'zod'
 import { afterEach } from 'vitest'
 import {
   type ExecutionCacheEnvelope,
@@ -32,17 +33,9 @@ export const payloadValidator: ExecutionCachePayloadValidator<TestPayload> = {
   adapterKind: 'test',
   adapterCacheSchemaVersion: 'test.1',
   parse(payload) {
-    if (
-      typeof payload !== 'object' ||
-      payload === null ||
-      !('operation' in payload) ||
-      payload.operation !== 'click' ||
-      !('target' in payload) ||
-      typeof payload.target !== 'string'
-    ) {
-      return
-    }
-    return { operation: payload.operation, target: payload.target }
+    return z
+      .object({ operation: z.literal('click'), target: z.string() })
+      .safeParse(payload).data
   },
   prefixStepCount() {
     return 1

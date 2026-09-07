@@ -17,13 +17,13 @@ AI-assisted and autonomous repair use the same validation and activation rules.
 
 Keep these concepts distinct:
 
-| Concept | Responsibility |
-| --- | --- |
-| Specification | Gherkin intent and expected business outcomes |
-| Coverage plan | Proposed journeys and risks to test; deferred from the first delivery |
-| Execution plan | Ordered interactions and checks mapped to Specification steps |
-| Execution cache | Disposable runtime entries for applicable execution paths |
-| Plan revision | Proposed durable authored change, with provenance and validation |
+| Concept         | Responsibility                                                        |
+| --------------- | --------------------------------------------------------------------- |
+| Specification   | Gherkin intent and expected business outcomes                         |
+| Coverage plan   | Proposed journeys and risks to test; deferred from the first delivery |
+| Execution plan  | Ordered interactions and checks mapped to Specification steps         |
+| Execution cache | Disposable runtime entries for applicable execution paths             |
+| Plan revision   | Proposed durable authored change, with provenance and validation      |
 
 Plan revision storage and APIs are design work in ENG-03. They are not existing
 contracts. A passing run alone cannot prove that an edited assertion preserved
@@ -56,27 +56,27 @@ repair and target reach. P2 requires evidence from returning users. Dependencies
 are task IDs; independent tasks may be assigned separately after their shared
 contracts are settled. No delivery dates or effort estimates are assumed.
 
-| Done | ID | Priority | Task | Depends on |
-| --- | --- | --- | --- | --- |
-| [x] | ENG-01 | P0 | Reconcile capability status and release evidence | None |
-| [x] | ENG-02 | P0 | Create a repeatable QA acceptance fixture | ENG-01 |
-| [x] | ENG-03 | P0 | Decide execution-plan ownership and contracts | ENG-01 |
-| [ ] | ENG-04 | P0 | Expose a readable execution plan | ENG-03 |
-| [x] | ENG-05 | P0 | Persist durable drafts and revisions | ENG-03 |
-| [x] | ENG-06 | P0 | Add manual web interaction editing | ENG-04, ENG-05 |
-| [ ] | ENG-07 | P0 | Validate a candidate without activating it | ENG-02, ENG-05, ENG-06 |
-| [ ] | ENG-08 | P0 | Activate, roll back, and preserve edited plans | ENG-07 |
-| [ ] | ENG-09 | P0 | Explain failures and Replay divergence | ENG-01, ENG-02 |
-| [ ] | ENG-10 | P0 | Fix first-run and setup recovery gaps | ENG-02 |
-| [ ] | ENG-11 | P0 | Prove CI failure handoff and exports | ENG-02, ENG-09 |
-| [ ] | ENG-12 | P0 | Verify accessible, stable QA workflows | ENG-08, ENG-09, ENG-10, ENG-11 |
-| [ ] | ENG-13 | P0 | Complete manual-maintenance release verification | ENG-12 |
-| [ ] | ENG-14 | P0 | Prepare pilot and launch evidence assets | ENG-13 |
-| [ ] | ENG-15 | P1 | Generate an AI repair proposal | ENG-08, ENG-09 |
-| [ ] | ENG-16 | P1 | Add bounded autonomous repair policy | ENG-15 |
-| [ ] | ENG-17 | P1 | Extend plan maintenance to mobile | ENG-08 |
-| [ ] | ENG-18 | P1 | Close second-journey authoring gaps | ENG-14, pilot feedback |
-| [ ] | ENG-19 | P2 | Scope later capabilities from observed demand | ENG-14, return-use evidence |
+| Done | ID     | Priority | Task                                             | Depends on                     |
+| ---- | ------ | -------- | ------------------------------------------------ | ------------------------------ |
+| [x]  | ENG-01 | P0       | Reconcile capability status and release evidence | None                           |
+| [x]  | ENG-02 | P0       | Create a repeatable QA acceptance fixture        | ENG-01                         |
+| [x]  | ENG-03 | P0       | Decide execution-plan ownership and contracts    | ENG-01                         |
+| [ ]  | ENG-04 | P0       | Expose a readable execution plan                 | ENG-03                         |
+| [x]  | ENG-05 | P0       | Persist durable drafts and revisions             | ENG-03                         |
+| [x]  | ENG-06 | P0       | Add manual web interaction editing               | ENG-04, ENG-05                 |
+| [ ]  | ENG-07 | P0       | Validate a candidate without activating it       | ENG-02, ENG-05, ENG-06         |
+| [ ]  | ENG-08 | P0       | Activate, roll back, and preserve edited plans   | ENG-07                         |
+| [ ]  | ENG-09 | P0       | Explain failures and Replay divergence           | ENG-01, ENG-02                 |
+| [ ]  | ENG-10 | P0       | Fix first-run and setup recovery gaps            | ENG-02                         |
+| [ ]  | ENG-11 | P0       | Prove CI failure handoff and exports             | ENG-02, ENG-09                 |
+| [ ]  | ENG-12 | P0       | Verify accessible, stable QA workflows           | ENG-08, ENG-09, ENG-10, ENG-11 |
+| [ ]  | ENG-13 | P0       | Complete manual-maintenance release verification | ENG-12                         |
+| [ ]  | ENG-14 | P0       | Prepare pilot and launch evidence assets         | ENG-13                         |
+| [ ]  | ENG-15 | P1       | Generate an AI repair proposal                   | ENG-08, ENG-09                 |
+| [ ]  | ENG-16 | P1       | Add bounded autonomous repair policy             | ENG-15                         |
+| [ ]  | ENG-17 | P1       | Extend plan maintenance to mobile                | ENG-08                         |
+| [ ]  | ENG-18 | P1       | Close second-journey authoring gaps              | ENG-14, pilot feedback         |
+| [ ]  | ENG-19 | P2       | Scope later capabilities from observed demand    | ENG-14, return-use evidence    |
 
 ENG-01 through ENG-03, ENG-05, and ENG-06 are complete. ENG-04's remaining native
 viewport verification is tracked separately. The remaining
@@ -467,14 +467,14 @@ grounded autocomplete are not automatic dependencies.
 Depends on ENG-14 and evidence of returning projects. Deliver scoped issue briefs,
 not a batch implementation, for the highest demonstrated needs:
 
-| Candidate | Evidence needed before implementation | Required acceptance direction |
-| --- | --- | --- |
-| Visual comparison | Users cannot diagnose a visual regression with current artifacts | Compatible baselines and deliberate visual changes produce understandable differences |
-| Classification and quarantine | Repeated ambiguous failures or flakes block useful CI | Provenance, explicit override, visible ownership/expiry, no false green |
-| Trends and suite health | Returning teams cannot prioritize failing or slow Scenarios | Explainable measures from existing history, with missing data explicit |
-| Read-and-run MCP | Coding-agent users are blocked by manual handoffs | Same readiness, run, result, and artifact contracts as CLI/Studio |
-| AI coverage planning | Users cannot identify or author their next useful journey | Approved plan, traceable draft, validated Scenario, unchanged review ownership |
-| Change-impact selection and shard merging | Measured CI duration or scale bottleneck | Explained selection/merge, full-suite fallback, regression comparison |
+| Candidate                                 | Evidence needed before implementation                            | Required acceptance direction                                                         |
+| ----------------------------------------- | ---------------------------------------------------------------- | ------------------------------------------------------------------------------------- |
+| Visual comparison                         | Users cannot diagnose a visual regression with current artifacts | Compatible baselines and deliberate visual changes produce understandable differences |
+| Classification and quarantine             | Repeated ambiguous failures or flakes block useful CI            | Provenance, explicit override, visible ownership/expiry, no false green               |
+| Trends and suite health                   | Returning teams cannot prioritize failing or slow Scenarios      | Explainable measures from existing history, with missing data explicit                |
+| Read-and-run MCP                          | Coding-agent users are blocked by manual handoffs                | Same readiness, run, result, and artifact contracts as CLI/Studio                     |
+| AI coverage planning                      | Users cannot identify or author their next useful journey        | Approved plan, traceable draft, validated Scenario, unchanged review ownership        |
+| Change-impact selection and shard merging | Measured CI duration or scale bottleneck                         | Explained selection/merge, full-suite fallback, regression comparison                 |
 
 Each brief needs the observed problem, smallest scope, owners, dependencies,
 contract decisions, and proof. Keep picture-in-picture, filmstrip, physical

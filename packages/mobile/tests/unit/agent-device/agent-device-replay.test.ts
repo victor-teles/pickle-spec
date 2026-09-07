@@ -1,3 +1,4 @@
+import type { AgentDeviceDevice } from '../../../src/agent-device/agent-device-client'
 import { access, readFile, stat } from 'node:fs/promises'
 import { dirname } from 'node:path'
 import { expect, test, vi } from 'vitest'
@@ -8,7 +9,7 @@ import {
 import { AgentDeviceGateway } from '../../../src/agent-device/agent-device-gateway'
 import { mobileReplayVariableName } from '../../../src/execution-cache/mobile-execution-cache'
 
-const androidEmulator = {
+const androidEmulator: AgentDeviceDevice = {
   platform: 'android',
   target: 'mobile',
   kind: 'emulator',

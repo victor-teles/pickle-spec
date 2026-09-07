@@ -54,9 +54,9 @@ async function configuredExecutionCache(
   input: StartProjectRunInput,
   root: string,
   targets: ResolvedProjectRunConfiguration['targets'],
-) {
+): Promise<Awaited<ReturnType<typeof openLocalExecutionCache>> | undefined> {
   if (!targets.some((target) => target.adapter.executionCache !== undefined)) {
-    return
+    return undefined
   }
   return openLocalExecutionCache({
     projectRoot: root,

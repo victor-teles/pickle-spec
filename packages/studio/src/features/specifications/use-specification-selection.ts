@@ -161,11 +161,18 @@ export function useSpecificationSelection(
     currentScenarioContext,
     focus,
     headingRef,
-    jumpToSpecification: actions.jumpToSpecification,
+    jumpToSpecification: (
+      ...args: Parameters<typeof actions.jumpToSpecification>
+    ) => actions.jumpToSpecification(...args),
     missing: resolved.missing,
-    selectCreatedSpecification: actions.selectCreatedSpecification,
+    selectCreatedSpecification: (
+      ...args: Parameters<typeof actions.selectCreatedSpecification>
+    ) => actions.selectCreatedSpecification(...args),
     selected: resolved.selected,
-    selectScenario: actions.selectScenario,
-    selectSpecification: actions.selectSpecification,
+    selectScenario: (...args: Parameters<typeof actions.selectScenario>) =>
+      actions.selectScenario(...args),
+    selectSpecification: (
+      ...args: Parameters<typeof actions.selectSpecification>
+    ) => actions.selectSpecification(...args),
   }
 }

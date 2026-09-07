@@ -39,6 +39,7 @@ function requestToken(request: Request): string | undefined {
     const [name, ...rest] = part.trim().split('=')
     if (name === sessionCookie) return decodeURIComponent(rest.join('='))
   }
+  return undefined
 }
 
 class StudioRequestRouter {
@@ -49,7 +50,11 @@ class StudioRequestRouter {
     if (context instanceof Response) return context
     const response = await this.route(context)
     return response
-      ? await secureStudioResponse(response, context.origin)
+      ? await secureStudioResponse(
+          response,
+          context.origin,
+          this.options.runtime.hmrOrigin,
+        )
       : undefined
   }
 

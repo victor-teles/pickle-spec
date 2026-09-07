@@ -57,42 +57,80 @@ interface RecordingOptions {
   path?: string
 }
 
+type AgentDeviceSdk = ReturnType<typeof createAgentDeviceClient>
+
 export interface AgentDeviceClientPort {
   devices: {
-    list(options: { platform: MobilePlatform }): Promise<unknown>
-    capabilities(options: MobileSelection): Promise<unknown>
+    list(options: {
+      platform: MobilePlatform
+    }): Promise<Awaited<ReturnType<AgentDeviceSdk['devices']['list']>> | void>
+    capabilities(
+      options: MobileSelection,
+    ): Promise<Awaited<
+      ReturnType<AgentDeviceSdk['devices']['capabilities']>
+    > | void>
   }
   apps: {
-    list(options: AppListOptions): Promise<unknown>
-    reinstall(options: AppDeployOptions): Promise<unknown>
-    open(options: AppOpenOptions): Promise<unknown>
+    list(
+      options: AppListOptions,
+    ): Promise<Awaited<ReturnType<AgentDeviceSdk['apps']['list']>> | void>
+    reinstall(
+      options: AppDeployOptions,
+    ): Promise<Awaited<ReturnType<AgentDeviceSdk['apps']['reinstall']>> | void>
+    open(
+      options: AppOpenOptions,
+    ): Promise<Awaited<ReturnType<AgentDeviceSdk['apps']['open']>> | void>
   }
   command: {
-    appState(options: MobileSelection): Promise<unknown>
-    wait(options: WaitOptions): Promise<unknown>
+    appState(
+      options: MobileSelection,
+    ): Promise<Awaited<
+      ReturnType<AgentDeviceSdk['command']['appState']>
+    > | void>
+    wait(
+      options: WaitOptions,
+    ): Promise<Awaited<ReturnType<AgentDeviceSdk['command']['wait']>> | void>
   }
   interactions: {
-    find(options: FindOptions): Promise<unknown>
+    find(
+      options: FindOptions,
+    ): Promise<Awaited<
+      ReturnType<AgentDeviceSdk['interactions']['find']>
+    > | void>
   }
   replay: {
-    run(options: ReplayRunOptions): Promise<unknown>
+    run(
+      options: ReplayRunOptions,
+    ): Promise<Awaited<ReturnType<AgentDeviceSdk['replay']['run']>> | void>
   }
   capture: {
     screenshot(options: {
       path?: string
       scale?: number
       stabilize?: boolean
-    }): Promise<unknown>
+    }): Promise<{ path: string } | void>
   }
   observability: {
-    logs(options: LogsOptions): Promise<unknown>
+    logs(
+      options: LogsOptions,
+    ): Promise<Awaited<
+      ReturnType<AgentDeviceSdk['observability']['logs']>
+    > | void>
   }
   recording: {
-    record(options: RecordingOptions): Promise<unknown>
-    trace(options: RecordingOptions): Promise<unknown>
+    record(
+      options: RecordingOptions,
+    ): Promise<Awaited<
+      ReturnType<AgentDeviceSdk['recording']['record']>
+    > | void>
+    trace(
+      options: RecordingOptions,
+    ): Promise<Awaited<ReturnType<AgentDeviceSdk['recording']['trace']>> | void>
   }
   sessions: {
-    close(): Promise<unknown>
+    close(): Promise<Awaited<
+      ReturnType<AgentDeviceSdk['sessions']['close']>
+    > | void>
   }
   /** Counts semantic Agent Device routes invoked directly by Pickle code. */
   inferenceAudit: {
@@ -175,31 +213,26 @@ const functionalFailureCodes = new Set([
   'REPLAY_DIVERGENCE',
 ])
 
-export function isFunctionalAgentDeviceFailure(error: unknown): boolean {
-  return isAgentDeviceError(error) && functionalFailureCodes.has(error.code)
+export function isFunctionalAgentDeviceFailure(cause: unknown): boolean {
+  return isAgentDeviceError(cause) && functionalFailureCodes.has(cause.code)
 }
 
-export function isAgentDeviceReplayDivergence(error: unknown): boolean {
-  return isAgentDeviceError(error) && error.code === 'REPLAY_DIVERGENCE'
+export function isAgentDeviceReplayDivergence(cause: unknown): boolean {
+  return isAgentDeviceError(cause) && cause.code === 'REPLAY_DIVERGENCE'
 }
 
-type ReplayDivergenceDetails = {
-  divergence?: {
-    step?: {
-      index?: unknown
-    }
-  }
-}
+const replayDivergenceDetailsSchema = z.object({
+  divergence: z.object({
+    step: z.object({ index: z.number().int().positive() }),
+  }),
+})
 
-export function agentDeviceReplayPlanStep(error: unknown): number | undefined {
-  if (!isAgentDeviceError(error) || error.code !== 'REPLAY_DIVERGENCE') {
+export function agentDeviceReplayPlanStep(cause: unknown): number | undefined {
+  if (!isAgentDeviceError(cause) || cause.code !== 'REPLAY_DIVERGENCE') {
     return undefined
   }
-  const details = error.details as ReplayDivergenceDetails | undefined
-  const index = details?.divergence?.step?.index
-  return typeof index === 'number' && Number.isInteger(index) && index > 0
-    ? index
-    : undefined
+  return replayDivergenceDetailsSchema.safeParse(cause.details).data?.divergence
+    .step.index
 }
 
 export function observeAgentDeviceInferenceRoutes(

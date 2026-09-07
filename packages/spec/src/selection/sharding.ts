@@ -29,7 +29,7 @@ function selectionKey(
 
 function median(values: readonly number[]): number {
   if (values.length === 0) return 0
-  const sorted = [...values].sort((left, right) => left - right)
+  const sorted = [...values].toSorted((left, right) => left - right)
   const middle = Math.floor(sorted.length / 2)
   return sorted.length % 2 === 0
     ? (requiredValue(sorted[middle - 1]) + requiredValue(sorted[middle])) / 2
@@ -61,7 +61,7 @@ function rankedSelections(
     ({ key }) => historicalDurations[key] !== undefined,
   )
   if (!hasAnyHistory) return undefined
-  return ranked.sort(
+  return ranked.toSorted(
     (left, right) =>
       right.duration - left.duration || left.key.localeCompare(right.key),
   )

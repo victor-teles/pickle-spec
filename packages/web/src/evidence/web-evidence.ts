@@ -18,7 +18,7 @@ export type CollectedWebEvidence = {
 }
 
 type ObservablePage = {
-  evaluate(expression: string): Promise<unknown>
+  evaluate(expression: string): Promise<z.core.util.JSONType>
 }
 
 const bufferedEvidenceEntrySchema = z.discriminatedUnion('kind', [
@@ -41,18 +41,8 @@ const bufferedEvidenceSchema = z.object({
   droppedCount: z.number().int().nonnegative(),
 })
 
-function isObservablePage(value: unknown): value is ObservablePage {
-  return Boolean(
-    value &&
-      typeof value === 'object' &&
-      typeof (value as ObservablePage).evaluate === 'function',
-  )
-}
-
-function errorText(value: unknown): string {
-  if (value instanceof Error) return value.message
-  if (typeof value === 'string') return value
-  return String(value)
+function errorText(cause: unknown): string {
+  return cause instanceof Error ? cause.message : String(cause)
 }
 
 export function createWebEvidenceCollector(
@@ -69,14 +59,14 @@ export function createWebEvidenceCollector(
     diagnostics.push({ occurredAt, level: 'warning', origin, message })
   }
 
-  function recordAdapterFailure(message: string, error: unknown) {
-    recordDiagnostic('adapter', `${message}: ${errorText(error)}`)
+  function recordAdapterFailure(message: string, cause: unknown) {
+    recordDiagnostic('adapter', `${message}: ${errorText(cause)}`)
   }
 
   function consume(): CollectedWebEvidence {
     return {
-      diagnostics: diagnostics.splice(0).sort(byOccurredAt),
-      activity: activity.splice(0).sort(byOccurredAt),
+      diagnostics: diagnostics.splice(0).toSorted(byOccurredAt),
+      activity: activity.splice(0).toSorted(byOccurredAt),
     }
   }
 
@@ -92,8 +82,7 @@ export function createWebEvidenceCollector(
     activity.push(browserActivity)
   }
 
-  async function collectPage(page: unknown): Promise<void> {
-    if (!isObservablePage(page)) return
+  async function collectPage(page: ObservablePage): Promise<void> {
     try {
       const parsed = bufferedEvidenceSchema.safeParse(
         await page.evaluate(consumeWebEvidenceScript),
@@ -118,7 +107,7 @@ export function createWebEvidenceCollector(
   }
 
   async function collect(
-    pages: readonly unknown[],
+    pages: readonly ObservablePage[],
   ): Promise<CollectedWebEvidence> {
     for (const page of pages) {
       await collectPage(page)
@@ -132,12 +121,11 @@ export function createWebEvidenceCollector(
 type WebEvidenceCollector = ReturnType<typeof createWebEvidenceCollector>
 
 export async function instrumentWebEvidencePages(
-  pages: readonly unknown[],
+  pages: readonly ObservablePage[],
   collector: WebEvidenceCollector,
-): Promise<unknown[]> {
+): Promise<ObservablePage[]> {
   const instrumented = await Promise.all(
-    pages.map(async (page) => {
-      if (!isObservablePage(page)) return
+    pages.map(async (page): Promise<ObservablePage | undefined> => {
       try {
         await page.evaluate(installWebEvidenceScript)
         return page
@@ -146,7 +134,7 @@ export async function instrumentWebEvidencePages(
           'Browser evidence instrumentation failed',
           error,
         )
-        return
+        return undefined
       }
     }),
   )

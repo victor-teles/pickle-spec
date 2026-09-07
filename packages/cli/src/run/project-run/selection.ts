@@ -194,8 +194,13 @@ export async function prepareRunSelection(
 
 export function selectedTargetFilter(
   selectedResults: readonly TestResult[] | undefined,
-) {
-  if (!selectedResults) return
+):
+  | ((
+      selection: ScenarioSelection,
+      executionTargetProfile: ExecutionTargetProfile,
+    ) => boolean)
+  | undefined {
+  if (!selectedResults) return undefined
   return (
     selection: ScenarioSelection,
     executionTargetProfile: ExecutionTargetProfile,

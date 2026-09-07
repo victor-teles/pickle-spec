@@ -89,15 +89,15 @@ function configuredAdapterForProfile(
   profile: ExecutionTargetProfile,
 ): ExecutionTargetAdapter | undefined {
   const { args, config, extensions, onLiveViewport } = context
-  if (adapters[profile.id]) return
-  if (!hasBuiltInExecutionTarget(config, profile.id)) return
+  if (adapters[profile.id]) return undefined
+  if (!hasBuiltInExecutionTarget(config, profile.id)) return undefined
   if (profile.adapter === 'mobile') {
-    if (adapters.mobile) return
+    if (adapters.mobile) return undefined
     return configuredMobileAdapter(config, profile.id, undefined, {
       onLiveViewport,
     })
   }
-  if (profile.adapter !== 'web') return
+  if (profile.adapter !== 'web') return undefined
   if (adapters.web) return adapters.web
   const web = configuredWebOptions(config, args, profile.id)
   if (!web) {
@@ -115,7 +115,7 @@ function configuredRunExtensions(
   profiles: readonly ExecutionTargetProfile[],
 ): RunExtensions {
   const { args, config, extensions } = context
-  const adapters: Record<string, ExecutionTargetAdapter> = {
+  const adapters = {
     ...extensions.adapters,
   }
   if (extensions.adapter) adapters.custom ??= extensions.adapter

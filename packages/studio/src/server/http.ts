@@ -5,8 +5,8 @@ export type StudioHttpHandler = (
   url: URL,
 ) => Promise<StudioHttpResponse>
 
-export function requestError(error: unknown, status = 400): Response {
-  const message = error instanceof Error ? error.message : String(error)
+export function requestError(cause: unknown, status = 400): Response {
+  const message = cause instanceof Error ? cause.message : String(cause)
   return new Response(message, { status })
 }
 

@@ -79,15 +79,15 @@ describe('Execution cache lifecycle', () => {
 
   test('rejects a runtime session that exposes both execution seams', async () => {
     const { store, writes } = memoryStore()
-    const invalidSession = {
+    const invalidSession: TargetSession = {
       async executeStep() {
-        return { state: 'passed' as const, resolvedActions: [] }
-      },
-      async executeScenario() {
-        return { stepExecutions: [] }
+        return { state: 'passed', resolvedActions: [] }
       },
       async close() {},
-    } as unknown as TargetSession
+    }
+    Object.defineProperty(invalidSession, 'executeScenario', {
+      value: async () => ({ stepExecutions: [] }),
+    })
 
     const adapter: ExecutionTargetAdapter = {
       executionCache,

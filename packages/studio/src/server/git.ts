@@ -1,5 +1,7 @@
 import { join } from 'node:path'
 
+type RunResult = { stdout: string; stderr: string; exitCode: number }
+
 export interface StudioGitFile {
   path: string
   status: string
@@ -30,10 +32,7 @@ export interface GitWorkspace {
   pullRequest(): Promise<StudioPullRequestResult>
 }
 
-function run(
-  cwd: string,
-  cmd: string[],
-): { stdout: string; stderr: string; exitCode: number } {
+function run(cwd: string, cmd: string[]): RunResult {
   const result = Bun.spawnSync({
     cmd,
     cwd,
@@ -173,12 +172,17 @@ async function workspaceStatus(root: string): Promise<StudioGitStatus> {
   assertGitSuccess(porcelain, 'read repository status')
   const files = await statusFiles(root, porcelain.stdout)
   const pullRequest = await pullRequestAvailability(root)
-  return {
-    ...(branch ? { branch } : {}),
+  const status: StudioGitStatus = {
     files,
     pullRequestAvailable: pullRequest.available,
-    ...(pullRequest.reason ? { pullRequestReason: pullRequest.reason } : {}),
   }
+  if (branch) {
+    status.branch = branch
+  }
+  if (pullRequest.reason) {
+    status.pullRequestReason = pullRequest.reason
+  }
+  return status
 }
 
 async function stageWorkspaceFiles(
@@ -223,10 +227,13 @@ async function openPullRequest(root: string) {
     )
   }
   const url = result.stdout.match(/https?:\/\/\S+/)?.[0]
-  return {
-    ...(url ? { url } : {}),
+  const pullRequest: Awaited<ReturnType<GitWorkspace['pullRequest']>> = {
     message: 'Opened the GitHub pull request workflow',
   }
+  if (url) {
+    pullRequest.url = url
+  }
+  return pullRequest
 }
 
 export function createGitWorkspace(root: string): GitWorkspace {

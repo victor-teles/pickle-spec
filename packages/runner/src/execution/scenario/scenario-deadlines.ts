@@ -3,6 +3,11 @@ import type {
   TargetSessionCompletion,
 } from '../run-scenario-types'
 
+type StepDeadlineResult = {
+  timeoutMs: number | undefined
+  timeoutMessage: string
+}
+
 class ExecutionDeadlineError extends Error {
   constructor(message: string) {
     super(message)
@@ -10,14 +15,14 @@ class ExecutionDeadlineError extends Error {
   }
 }
 
-export function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error)
+export function errorMessage(cause: unknown): string {
+  return cause instanceof Error ? cause.message : String(cause)
 }
 
-export function isCancellation(error: unknown, signal?: AbortSignal): boolean {
+export function isCancellation(cause: unknown, signal?: AbortSignal): boolean {
   return (
     Boolean(signal?.aborted) ||
-    (error instanceof Error && error.name === 'AbortError')
+    (cause instanceof Error && cause.name === 'AbortError')
   )
 }
 
@@ -64,7 +69,7 @@ export function executeWithDeadline<T>(
 export function stepDeadline(
   timeout: ExecutionTimeouts | undefined,
   scenarioStartedAt: number,
-): { timeoutMs: number | undefined; timeoutMessage: string } {
+): StepDeadlineResult {
   const scenarioRemaining =
     timeout?.scenarioMs === undefined
       ? undefined

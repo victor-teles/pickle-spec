@@ -1,6 +1,5 @@
 import type { ServerWebSocket } from 'bun'
 import type { ServerRequest } from 'srvx'
-import { staticMiddleware } from 'srvx/static'
 import { createDocumentRoutes } from '../features/documents/document.routes'
 import {
   createSpecificationWorkspace,
@@ -24,13 +23,10 @@ import type { StudioOptions } from './contracts'
 import { createGitWorkspace, type GitWorkspace } from './git'
 import type { StudioHttpHandler, StudioHttpResponse } from './http'
 import type { StudioSocketData } from './socket-data'
-import {
-  buildStartApp,
-  type StartServerEntry,
-  startClientDirectory,
-} from './start-app'
+import { createStartApp, type StartServerEntry } from './start-app'
 
 export interface StudioRuntime {
+  hmrOrigin?: string
   closeSocket(socket: ServerWebSocket<StudioSocketData>): void
   handleApi(request: Request, url: URL): Promise<StudioHttpResponse>
   openSocket(socket: ServerWebSocket<StudioSocketData>): void
@@ -43,7 +39,7 @@ function upgrade(
   request: Request,
   data: StudioSocketData,
 ): Response | undefined {
-  const serverRequest = request as ServerRequest
+  const serverRequest: ServerRequest = request
   const upgraded = serverRequest.runtime?.bun?.server?.upgrade(request, {
     data,
   })
@@ -77,11 +73,11 @@ function createFeatureHandlers(
 ): readonly StudioHttpHandler[] {
   return [
     createProjectRoutes({
-      loadProject: modules.project.load,
+      loadProject: () => modules.project.load(),
       management: options.management,
     }),
     createHistoryRoutes({
-      activeRunIds: modules.runEvents.activeRunIds,
+      activeRunIds: () => modules.runEvents.activeRunIds(),
       history: options.history,
     }),
     createExecutionCacheRoutes({ executionCache: options.executionCache }),
@@ -110,14 +106,14 @@ async function startResponse(
   return startApp.fetch(request, {
     context: {
       studio: {
-        loadProject: project.load,
+        loadProject: () => project.load(),
         async listRuns() {
           if (!options.history) {
             throw new Error('Test run history is unavailable')
           }
           return {
             ...(await options.history.list()),
-            activeRunIds: [...runEvents.activeRunIds()].sort(),
+            activeRunIds: [...runEvents.activeRunIds()].toSorted(),
           }
         },
         executionPlans: options.executionPlans,
@@ -129,7 +125,7 @@ async function startResponse(
 export async function createStudioRuntime(
   options: StudioOptions,
 ): Promise<StudioRuntime> {
-  const startApp = await buildStartApp()
+  const startApp = await createStartApp()
   const project = createProjectModule(options)
   const documents =
     options.documents ??
@@ -141,12 +137,9 @@ export async function createStudioRuntime(
   const git = options.git ?? createGitWorkspace(options.project.root)
   const runEvents = createRunEventHub()
   const workspaceEvents = createWorkspaceEventHub()
-  const stopWatch = await documents.watch(workspaceEvents.publish)
-  const staticAssets = staticMiddleware({
-    dir: startClientDirectory,
-    immutable: true,
-    maxAge: 31_536_000,
-  })
+  const stopWatch = await documents.watch((event) =>
+    workspaceEvents.publish(event),
+  )
   const apiHandlers = createFeatureHandlers(options, {
     documents,
     git,
@@ -155,6 +148,7 @@ export async function createStudioRuntime(
   })
 
   return {
+    hmrOrigin: startApp.hmrOrigin,
     closeSocket(socket) {
       if (socket.data.kind === 'workspace') workspaceEvents.close(socket)
       else runEvents.close(socket)
@@ -169,13 +163,13 @@ export async function createStudioRuntime(
         return new Response(null, { status: 204 })
       }
       if (!url.pathname.startsWith('/assets/')) return null
-      return staticAssets(
-        request,
-        () => new Response('Not found', { status: 404 }),
-      )
+      return startApp.serveAsset(request)
     },
     startResponse: (request) =>
       startResponse(startApp, options, project, runEvents, request),
-    stop: stopWatch,
+    stop() {
+      stopWatch()
+      startApp.stop()
+    },
   }
 }

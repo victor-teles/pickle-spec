@@ -4,25 +4,25 @@
   "suites": {
     "smoke": {
       "tagExpression": "@smoke",
-      "states": ["active"]
-    }
+      "states": ["active"],
+    },
   },
   "executionTargetProfiles": {
     "android": {
       "adapter": "mobile",
       "mobile": {
         "application": {
-          "id": "com.android.settings"
+          "id": "com.android.settings",
         },
         "artifactDirectory": ".pickle/artifacts",
-        "artifacts": ["screenshot", "device-log"]
-      }
-    }
+        "artifacts": ["screenshot", "device-log"],
+      },
+    },
   },
   "execution": {
     "scenarioTimeoutMs": 120000,
-    "stepTimeoutMs": 30000
+    "stepTimeoutMs": 30000,
   },
   "applicationRevision": "android-settings-system",
-  "concurrency": 1
+  "concurrency": 1,
 }

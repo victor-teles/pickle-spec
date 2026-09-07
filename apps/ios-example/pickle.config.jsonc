@@ -4,8 +4,8 @@
   "suites": {
     "smoke": {
       "tagExpression": "@smoke",
-      "states": ["active"]
-    }
+      "states": ["active"],
+    },
   },
   "executionTargetProfiles": {
     "ios": {
@@ -14,17 +14,17 @@
         "executionTarget": "ios-simulator",
         "application": {
           "id": "com.example.app",
-          "binaryPath": "/absolute/path/to/YourApp.app"
+          "binaryPath": "/absolute/path/to/YourApp.app",
         },
         "artifactDirectory": ".pickle/artifacts",
-        "artifacts": ["screenshot", "device-log"]
-      }
-    }
+        "artifacts": ["screenshot", "device-log"],
+      },
+    },
   },
   "execution": {
     "scenarioTimeoutMs": 120000,
-    "stepTimeoutMs": 30000
+    "stepTimeoutMs": 30000,
   },
   "applicationRevision": "ios-example-local",
-  "concurrency": 1
+  "concurrency": 1,
 }

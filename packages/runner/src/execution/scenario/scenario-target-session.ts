@@ -91,7 +91,6 @@ async function executeTargetSessionSteps(
       context.bindings,
       context.input,
       context.latestOccurredAt(),
-      undefined,
     )
     return
   }
@@ -122,7 +121,6 @@ async function completeTargetSession(
       context.bindings,
       context.input,
       context.latestOccurredAt(),
-      undefined,
     )
     return undefined
   }
@@ -141,7 +139,6 @@ async function closeTargetSession(
       context.bindings,
       context.input,
       context.latestOccurredAt(),
-      undefined,
     )
   }
 }

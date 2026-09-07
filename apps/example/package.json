@@ -9,7 +9,8 @@
     "migrate": "pickle migrate",
     "smoke": "pickle run --suite smoke --profile web",
     "export": "pickle export 83c9a5e9-0384-466e-ae38-bc623214b9c3 --output html=report.html",
-    "studio": "pickle studio"
+    "studio": "pickle studio",
+    "studio:watch": "NODE_ENV=development PICKLE_STUDIO_DEV=1 pickle studio"
   },
   "dependencies": {
     "@pickle-spec/cli": "workspace:*"

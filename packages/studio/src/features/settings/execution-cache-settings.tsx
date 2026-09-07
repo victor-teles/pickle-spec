@@ -1,4 +1,8 @@
 import {
+  executionCacheClearSchema,
+  executionCacheInspectionSchema,
+} from '../execution-cache/execution-cache.schemas'
+import {
   type Dispatch,
   type SetStateAction,
   useCallback,
@@ -43,8 +47,8 @@ function dateTime(value: string): string {
   return Number.isNaN(date.valueOf()) ? value : date.toLocaleString()
 }
 
-function errorMessage(reason: unknown): string {
-  return reason instanceof Error ? reason.message : String(reason)
+function errorMessage(cause: unknown): string {
+  return cause instanceof Error ? cause.message : String(cause)
 }
 
 function ExecutionCacheTable(props: {
@@ -196,8 +200,9 @@ async function clearExecutionCache(input: ClearExecutionCacheInput) {
   input.setClearing(true)
   input.setClearError(undefined)
   try {
-    const result = await input.api<{ clearedEntries: number }>(
+    const result = await input.api(
       '/api/execution-cache',
+      executionCacheClearSchema,
       { method: 'DELETE' },
     )
     input.setConfirmOpen(false)
@@ -226,7 +231,7 @@ function useExecutionCacheSettings(api: StudioApi) {
     setError(undefined)
     try {
       setInspection(
-        await api<StudioExecutionCacheInspection>('/api/execution-cache'),
+        await api('/api/execution-cache', executionCacheInspectionSchema),
       )
     } catch (reason) {
       setError(errorMessage(reason))
@@ -282,7 +287,7 @@ export function ExecutionCacheSettings(props: ExecutionCacheSettingsProps) {
           type="button"
           variant="destructive"
           disabled={state.loading || !state.inspection?.entries.length}
-          onClick={state.openConfirmation}
+          onClick={() => state.openConfirmation()}
         >
           Clear Execution cache
         </Button>

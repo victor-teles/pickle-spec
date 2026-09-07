@@ -76,7 +76,7 @@ export class MobileWorkerRuntime {
         return this.completeSession(request)
       case 'close-session':
         return this.closeSession(request.sessionId)
-      case 'cancel-session':
+      default:
         return this.cancelSession(request.sessionId)
     }
   }

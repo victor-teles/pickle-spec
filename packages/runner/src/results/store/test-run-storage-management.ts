@@ -1,3 +1,4 @@
+import { z } from 'zod'
 import { mkdir, rename, rm, stat } from 'node:fs/promises'
 import { join } from 'node:path'
 import { validateTestRunId } from '../test-run-id'
@@ -26,11 +27,14 @@ export async function readPinnedRunIds(
 ): Promise<Set<string>> {
   if (!(await Bun.file(runPinsPath).exists())) return new Set()
   const source: unknown = await Bun.file(runPinsPath).json()
-  if (!isRunPinsFile(source)) {
+  const parsed = z
+    .object({ schemaVersion: z.literal(1), runIds: z.array(z.string()) })
+    .safeParse(source)
+  if (!parsed.success) {
     throw new Error('Pinned Test run metadata is invalid')
   }
-  source.runIds.forEach(validateTestRunId)
-  return new Set(source.runIds)
+  parsed.data.runIds.forEach(validateTestRunId)
+  return new Set(parsed.data.runIds)
 }
 
 async function writePinnedRunIds(
@@ -41,7 +45,7 @@ async function writePinnedRunIds(
   const temporaryPath = `${paths.runPinsPath}.${crypto.randomUUID()}.tmp`
   const contents: RunPinsFile = {
     schemaVersion: 1,
-    runIds: [...runIds].sort(),
+    runIds: [...runIds].toSorted(),
   }
   try {
     await Bun.write(temporaryPath, `${JSON.stringify(contents, null, 2)}\n`)
@@ -72,7 +76,9 @@ export async function inspectTestRunStorage(
   warningThresholdBytes: number,
 ): Promise<TestRunStorageInspection> {
   const totalBytes = await directorySize(paths.runsDirectory)
-  const pinnedRunIds = [...(await readPinnedRunIds(paths.runPinsPath))].sort()
+  const pinnedRunIds = [
+    ...(await readPinnedRunIds(paths.runPinsPath)),
+  ].toSorted()
   return {
     totalBytes,
     warningThresholdBytes,
@@ -96,7 +102,7 @@ export async function applyRunRetention(
   const pinnedRunIds = await readPinnedRunIds(paths.runPinsPath)
   const eligible = (await loadManifests())
     .filter((manifest) => manifest.finishedAt && !pinnedRunIds.has(manifest.id))
-    .sort(byOldest)
+    .toSorted(byOldest)
   const removed = await removeExpiredRuns(paths, eligible, cutoff)
   const afterBytes = await removeRunsOverLimit(
     paths,
@@ -160,16 +166,6 @@ function byOldest(left: TestRunManifest, right: TestRunManifest): number {
   )
 }
 
-function isRunPinsFile(value: unknown): value is RunPinsFile {
-  if (!value || typeof value !== 'object') return false
-  const candidate = value as Partial<RunPinsFile>
-  return (
-    candidate.schemaVersion === 1 &&
-    Array.isArray(candidate.runIds) &&
-    candidate.runIds.every((id: unknown) => typeof id === 'string')
-  )
-}
-
 async function directorySize(directory: string): Promise<number> {
   if (!(await pathExists(directory))) return 0
   let total = 0
@@ -178,7 +174,7 @@ async function directorySize(directory: string): Promise<number> {
     onlyFiles: true,
   })
   for await (const relativePath of files) {
-    total += (await Bun.file(join(directory, relativePath)).size) ?? 0
+    total += Bun.file(join(directory, relativePath)).size ?? 0
   }
   return total
 }

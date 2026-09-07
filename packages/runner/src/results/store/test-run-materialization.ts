@@ -66,7 +66,7 @@ function collectResultGroups(
 }
 
 function materializedResult(group: MaterializedResultGroup): TestResult {
-  const attempts = [...group.attempts.values()].sort(
+  const attempts = [...group.attempts.values()].toSorted(
     (left, right) => left.attempt - right.attempt,
   )
   const first = attempts[0]
@@ -74,7 +74,7 @@ function materializedResult(group: MaterializedResultGroup): TestResult {
   if (!first || !final) {
     throw new Error('A Test result requires at least one Scenario attempt')
   }
-  return {
+  const testResult: TestResult = {
     schemaVersion: testRunSchemaVersion,
     specification: group.specification,
     scenario: group.scenario,
@@ -87,15 +87,18 @@ function materializedResult(group: MaterializedResultGroup): TestResult {
       Date.parse(final.finishedAt) - Date.parse(first.startedAt),
     ),
     attempts,
-    ...(attempts.length > 1 && final.state === 'passed' ? { flaky: true } : {}),
   }
+  if (attempts.length > 1 && final.state === 'passed') {
+    testResult.flaky = true
+  }
+  return testResult
 }
 
 export function materializeTestResults(
   events: readonly RunEvent[],
 ): TestResult[] {
   return [...collectResultGroups(events).values()]
-    .sort(
+    .toSorted(
       (left, right) =>
         left.order - right.order ||
         (left.scenario.id ?? left.scenario.name).localeCompare(

@@ -147,22 +147,21 @@ class ApplicationDiagnosticBufferState {
     line: ApplicationOutputLine,
     scoped: boolean,
   ): DiagnosticEntry {
-    return {
+    const diagnostic: DiagnosticEntry = {
       occurredAt: line.occurredAt,
       level: line.stream === 'stderr' ? 'warning' : 'info',
       origin: 'application',
       stream: line.stream,
       message: line.line,
-      ...(scoped
-        ? {
-            scenarioId: scenario.scope.scenarioId,
-            scenarioName: scenario.scenario.name,
-            stepIndex: scenario.step?.index,
-            stepText: scenario.step?.text,
-          }
-        : {}),
       executionTargetProfileId: scenario.scope.executionTargetProfileId,
     }
+    if (scoped) {
+      diagnostic.scenarioId = scenario.scope.scenarioId
+      diagnostic.scenarioName = scenario.scenario.name
+      diagnostic.stepIndex = scenario.step?.index
+      diagnostic.stepText = scenario.step?.text
+    }
+    return diagnostic
   }
 
   private appendDiagnostic(

@@ -16,18 +16,25 @@ import type {
   AllureTestResult,
 } from '../allure-results'
 
+type ProjectAttemptResult = {
+  result: AllureResultFile
+  attachments: AllureAttachmentFile[]
+}
+
 type AllureStatus = AllureTestResult['status']
 type AllureStage = AllureTestResult['stage']
 type AllureStatusDetails = NonNullable<AllureTestResult['statusDetails']>
 
-const extensionByMediaType: Readonly<Record<string, string>> = {
-  'image/png': '.png',
-  'image/jpeg': '.jpg',
-  'image/webp': '.webp',
-  'application/json': '.json',
-  'application/zip': '.zip',
-  'text/plain': '.txt',
-}
+const extensionByMediaType = new Map(
+  Object.entries({
+    'image/png': '.png',
+    'image/jpeg': '.jpg',
+    'image/webp': '.webp',
+    'application/json': '.json',
+    'application/zip': '.zip',
+    'text/plain': '.txt',
+  }),
+)
 
 function opaqueId(...parts: Array<string | number | undefined>): string {
   return createHash('sha256')
@@ -58,10 +65,14 @@ function statusDetails(
   flaky = false,
 ): AllureStatusDetails | undefined {
   if (!message && !flaky) return undefined
-  return {
-    ...(message ? { message } : {}),
-    ...(flaky ? { flaky: true } : {}),
+  const details: AllureStatusDetails = {}
+  if (message) {
+    details.message = message
   }
+  if (flaky) {
+    details.flaky = true
+  }
+  return details
 }
 
 function actionStep(description: string, step: TestStepResult): AllureStep {
@@ -77,10 +88,9 @@ function actionStep(description: string, step: TestStepResult): AllureStep {
 
 function allureStep(step: TestStepResult): AllureStep {
   const details = statusDetails(step.message)
-  return {
+  const projected: AllureStep = {
     name: `${step.step.keyword} ${step.step.text}`,
     status: allureStatus(step.state),
-    ...(details ? { statusDetails: details } : {}),
     stage: allureStage(step.state),
     start: time(step.startedAt),
     stop: time(step.finishedAt),
@@ -88,12 +98,16 @@ function allureStep(step: TestStepResult): AllureStep {
       actionStep(description, step),
     ),
   }
+  if (details) {
+    projected.statusDetails = details
+  }
+  return projected
 }
 
 function attachmentExtension(artifact: TestArtifact): string {
   return (
     (artifact.mediaType
-      ? extensionByMediaType[artifact.mediaType]
+      ? extensionByMediaType.get(artifact.mediaType)
       : undefined) ??
     extname(artifact.path) ??
     ''
@@ -144,7 +158,7 @@ function projectAttempt(
   manifest: TestRunManifest,
   result: TestResult,
   attempt: ScenarioAttempt,
-): { result: AllureResultFile; attachments: AllureAttachmentFile[] } {
+): ProjectAttemptResult {
   const scenarioId =
     result.scenario.id ??
     opaqueId(result.specification.uri, result.scenario.name)
@@ -170,7 +184,6 @@ function projectAttempt(
     fullName: `${result.specification.uri}#${result.scenario.name}`,
     name: result.scenario.name,
     status: allureStatus(attempt.state),
-    ...(details ? { statusDetails: details } : {}),
     stage: allureStage(attempt.state),
     start: time(attempt.startedAt),
     stop: time(attempt.finishedAt),
@@ -188,6 +201,9 @@ function projectAttempt(
     parameters,
     attachments: attachments.map(({ descriptor }) => descriptor),
     steps: attempt.steps.map(allureStep),
+  }
+  if (details) {
+    testResult.statusDetails = details
   }
   return {
     result: { fileName: `${uuid}-result.json`, result: testResult },

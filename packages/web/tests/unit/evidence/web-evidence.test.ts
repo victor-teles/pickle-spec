@@ -1,3 +1,4 @@
+import type { z } from 'zod'
 import { runInNewContext } from 'node:vm'
 import { expect, test } from 'vitest'
 import {
@@ -8,14 +9,14 @@ import {
 import { projectWebStepEvidence } from '../../../src/evidence/web-step-evidence'
 
 function observablePage() {
-  let buffered: unknown[] = []
+  let buffered: z.core.util.JSONType[] = []
   return {
     page: {
       async evaluate() {
         return { entries: buffered.splice(0), droppedCount: 0 }
       },
     },
-    buffer(entries: unknown[]) {
+    buffer(entries: z.core.util.JSONType[]) {
       buffered = entries
     },
   }
@@ -192,7 +193,7 @@ test('the browser script records HTTP failures without duplicate navigation', as
   xhr.open('POST', 'https://example.test/xhr?api_key=private')
   xhr.send()
   const firstEntries =
-    context.__pickleSpecWebEvidenceV1?.entries.splice(0) ?? []
+    context['__pickleSpecWebEvidenceV1']?.entries.splice(0) ?? []
 
   expect(
     firstEntries.filter((entry) => entry.description?.startsWith('Navigate ')),
@@ -212,7 +213,7 @@ test('the browser script records HTTP failures without duplicate navigation', as
 
   await context.fetch('https://example.test/pay')
   expect(
-    context.__pickleSpecWebEvidenceV1?.entries.filter(
+    context['__pickleSpecWebEvidenceV1']?.entries.filter(
       (entry) => entry.origin === 'network',
     ),
   ).toMatchObject([
@@ -223,7 +224,7 @@ test('the browser script records HTTP failures without duplicate navigation', as
 
   await context.fetch('https://example.test/success?session=private')
   expect(
-    context.__pickleSpecWebEvidenceV1?.entries.find((entry) =>
+    context['__pickleSpecWebEvidenceV1']?.entries.find((entry) =>
       entry.message?.includes('/success'),
     ),
   ).toMatchObject({
@@ -260,7 +261,7 @@ test('bounds browser evidence and reports truncation', async () => {
   const collected = await collector.collect([
     {
       async evaluate() {
-        const buffer = context.__pickleSpecWebEvidenceV1
+        const buffer = context['__pickleSpecWebEvidenceV1']
         return {
           entries: buffer?.entries.splice(0) ?? [],
           droppedCount: buffer?.droppedCount ?? 0,

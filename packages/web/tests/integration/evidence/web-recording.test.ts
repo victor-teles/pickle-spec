@@ -1,3 +1,5 @@
+import { z } from 'zod'
+import { requiredValue } from '../../../src/required-value'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -19,27 +21,27 @@ type VideoStreamProbe = {
   height: number
 }
 
-function videoStreamProbe(stream: unknown): VideoStreamProbe {
-  if (!stream || typeof stream !== 'object') {
-    throw new Error('ffprobe did not return a video stream')
-  }
-  const fields = stream as Record<string, unknown>
-  if (
-    typeof fields.pix_fmt !== 'string' ||
-    typeof fields.width !== 'number' ||
-    typeof fields.height !== 'number'
-  ) {
-    throw new Error('ffprobe did not return a video stream')
-  }
-  return {
-    pixelFormat: fields.pix_fmt,
-    width: fields.width,
-    height: fields.height,
-    colorRange:
-      typeof fields.color_range === 'string' ? fields.color_range : undefined,
-    profile: typeof fields.profile === 'string' ? fields.profile : undefined,
-  }
-}
+const videoProbeSchema = z.object({
+  streams: z
+    .array(
+      z
+        .object({
+          pix_fmt: z.string(),
+          width: z.number(),
+          height: z.number(),
+          color_range: z.string().optional(),
+          profile: z.string().optional(),
+        })
+        .transform((stream) => ({
+          pixelFormat: stream.pix_fmt,
+          width: stream.width,
+          height: stream.height,
+          colorRange: stream.color_range,
+          profile: stream.profile,
+        })),
+    )
+    .min(1),
+})
 
 async function jpegFrameAt(size: string): Promise<Uint8Array> {
   const ffmpeg = Bun.spawn(
@@ -89,16 +91,7 @@ async function probeVideoStream(path: string): Promise<VideoStreamProbe> {
   if (code !== 0) {
     throw new Error((await new Response(ffprobe.stderr).text()).trim())
   }
-  const parsed: unknown = JSON.parse(output)
-  if (
-    !parsed ||
-    typeof parsed !== 'object' ||
-    !('streams' in parsed) ||
-    !Array.isArray(parsed.streams)
-  ) {
-    throw new Error('ffprobe did not return a video stream')
-  }
-  return videoStreamProbe(parsed.streams[0])
+  return requiredValue(videoProbeSchema.parse(JSON.parse(output)).streams[0])
 }
 
 async function recordFrames(

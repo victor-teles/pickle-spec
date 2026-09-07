@@ -16,13 +16,14 @@ function createSpecification(
   scenarios: Scenario[],
   state?: SpecificationState,
 ): Specification {
-  return {
+  const specification: Specification = {
     name: uri,
     source: { uri, language: 'en' },
     tags: [],
     scenarios,
-    ...(state ? { state } : {}),
   }
+  if (state) specification.state = state
+  return specification
 }
 
 describe('selectScenarios', () => {
@@ -106,11 +107,11 @@ describe('selectScenarios', () => {
       },
     )
 
-    expect(shardOne.map(({ scenario }) => scenario.name).sort()).toEqual([
+    expect(shardOne.map(({ scenario }) => scenario.name).toSorted()).toEqual([
       'Fast checkout',
       'Slow checkout',
     ])
-    expect(shardTwo.map(({ scenario }) => scenario.name).sort()).toEqual([
+    expect(shardTwo.map(({ scenario }) => scenario.name).toSorted()).toEqual([
       'Another slow checkout',
       'Medium checkout',
     ])

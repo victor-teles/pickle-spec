@@ -189,7 +189,7 @@ function compactFilters(filters: RunsFilters): RunsFilters {
     Object.entries(filters).filter((entry): entry is [string, string] =>
       Boolean(entry[1]),
     ),
-  ) as RunsFilters
+  )
 }
 
 function runsFilterQuery(filters: RunsFilters): string {

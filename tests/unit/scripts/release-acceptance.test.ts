@@ -41,7 +41,10 @@ const packageFixtures = [
   [
     'spec',
     '@pickle-spec/spec',
-    { '.': './index.ts' },
+    {
+      '.': './index.ts',
+      './schemas': './src/authoring/specification-schema.ts',
+    },
     { '@pickle-spec/configuration': 'workspace:*' },
   ],
   [
@@ -50,6 +53,7 @@ const packageFixtures = [
     {
       '.': './index.ts',
       './benchmarking': './benchmarking.ts',
+      './schemas': './schemas.ts',
       './testing': './testing.ts',
     },
     {
@@ -112,24 +116,26 @@ async function createReleaseWorkspace(): Promise<string> {
       ),
       'src/**/*.ts',
     ]
+    const manifest = {
+      name,
+      version: '1.0.2',
+      type: 'module',
+      exports,
+      publishConfig: { access: 'public' },
+      files,
+      dependencies,
+    }
+    const cliManifest = { ...manifest, bin: { pickle: './src/cli.ts' } }
     await Bun.write(
       join(packageRoot, 'package.json'),
       `${JSON.stringify(
-        {
-          name,
-          version: '1.0.2',
-          type: 'module',
-          exports,
-          publishConfig: { access: 'public' },
-          files,
-          ...(directory === 'cli' ? { bin: { pickle: './src/cli.ts' } } : {}),
-          dependencies,
-        },
+        directory === 'cli' ? cliManifest : manifest,
         null,
         2,
       )}\n`,
     )
     for (const target of Object.values(exports)) {
+      await mkdir(join(packageRoot, target, '..'), { recursive: true })
       await Bun.write(join(packageRoot, target), 'export {}\n')
     }
     if (directory === 'cli') {
@@ -220,6 +226,8 @@ describe('release package acceptance', () => {
           {
             name: `fixture-${directory}`,
             version: '1.0.2',
+            scripts: { build: 'bun build index.ts' },
+            customMetadata: { release: ['stable'] },
             dependencies: { '@pickle-spec/spec': 'workspace:*' },
           },
           null,
@@ -235,6 +243,8 @@ describe('release package acceptance', () => {
         join(root, directory, 'package.json'),
       ).json()
       expect(manifest.version).toBe('2.3.4')
+      expect(manifest.scripts).toEqual({ build: 'bun build index.ts' })
+      expect(manifest.customMetadata).toEqual({ release: ['stable'] })
       expect(manifest.dependencies).toEqual({
         '@pickle-spec/spec': 'workspace:*',
       })

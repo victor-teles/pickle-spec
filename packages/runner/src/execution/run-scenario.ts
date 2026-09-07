@@ -29,7 +29,7 @@ async function appendResequencedEvent(
   const versionedEvent = {
     ...event,
     sequence: events.length + 1,
-  } as RunEvent
+  } satisfies RunEvent
   events.push(versionedEvent)
   await input.onEvent?.(versionedEvent)
 }

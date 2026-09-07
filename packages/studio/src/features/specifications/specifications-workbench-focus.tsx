@@ -1,3 +1,4 @@
+import { isResultInspectorTab } from '../runs/result/result-inspection'
 import { BrowserIcon } from '@hugeicons/core-free-icons'
 import { HugeiconsIcon } from '@hugeicons/react'
 import { useState } from 'react'
@@ -188,9 +189,10 @@ export function EvidenceDock(props: WorkbenchEvidenceProps) {
       <Tabs
         value={tab}
         onValueChange={(value) =>
+          isResultInspectorTab(value) &&
           selectEvidenceDockTab(
             focus,
-            value as ResultInspectorTab,
+            value,
             props.onSelectInspectorTab,
             setBrowseTab,
           )

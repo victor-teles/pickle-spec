@@ -4,25 +4,25 @@
   "suites": {
     "smoke": {
       "tagExpression": "@smoke",
-      "states": ["active"]
+      "states": ["active"],
     },
     "regression": {
       "tagExpression": "@regression",
-      "states": ["active"]
-    }
+      "states": ["active"],
+    },
   },
   "web": {
     "baseUrl": "https://www.saucedemo.com",
     "browser": {
       "environment": "local",
       "modelName": "google/gemini-3.6-flash",
-      "headless": true
-    }
+      "headless": true,
+    },
   },
   "execution": {
     "scenarioTimeoutMs": 120000,
-    "stepTimeoutMs": 30000
+    "stepTimeoutMs": 30000,
   },
   "applicationRevision": "saucedemo-current",
-  "concurrency": 1
+  "concurrency": 1,
 }

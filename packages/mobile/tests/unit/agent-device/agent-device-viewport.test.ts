@@ -15,10 +15,10 @@ test('captures one frame at a time and closes exactly once', async () => {
         maximumActiveCaptures = Math.max(maximumActiveCaptures, activeCaptures)
         await writeFile(options.path ?? '', 'png')
         activeCaptures--
-        return { path: options.path }
+        return { path: options.path ?? '' }
       },
     },
-  } as AgentDeviceClientPort
+  } satisfies Pick<AgentDeviceClientPort, 'capture'>
   const viewport = startAgentDeviceViewport({
     sessionId: 'session-1',
     client,

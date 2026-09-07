@@ -30,55 +30,44 @@ interface StudioRunReportDescriptor {
   filenameSuffix: string
 }
 
-type StudioRunReportMetadata = Omit<StudioRunReportDescriptor, 'format'>
-type StudioRunReportMetadataEntry = [
-  TestRunExportFormat,
-  StudioRunReportMetadata,
-]
-
-const studioRunReportMetadataByFormat = {
-  json: {
+export const studioRunReportDescriptors = [
+  {
+    format: 'json',
     label: 'JSON report',
     contentType: 'application/json; charset=utf-8',
     filenameSuffix: '.json',
   },
-  ndjson: {
+  {
+    format: 'ndjson',
     label: 'NDJSON events',
     contentType: 'application/x-ndjson; charset=utf-8',
     filenameSuffix: '.ndjson',
   },
-  junit: {
+  {
+    format: 'junit',
     label: 'JUnit report',
     contentType: 'application/xml; charset=utf-8',
     filenameSuffix: '.xml',
   },
-  html: {
+  {
+    format: 'html',
     label: 'HTML report',
     contentType: 'text/html; charset=utf-8',
     filenameSuffix: '.html',
   },
-  archive: {
+  {
+    format: 'archive',
     label: 'Run archive',
     contentType: 'application/json; charset=utf-8',
     filenameSuffix: '.pickle-run.json',
   },
-  allure: {
+  {
+    format: 'allure',
     label: 'Allure results',
     contentType: 'application/zip',
     filenameSuffix: '-allure-results.zip',
   },
-} as const satisfies Record<TestRunExportFormat, StudioRunReportMetadata>
-
-export const studioRunReportDescriptors = (
-  Object.entries(
-    studioRunReportMetadataByFormat,
-  ) as StudioRunReportMetadataEntry[]
-).map(
-  ([format, metadata]): StudioRunReportDescriptor => ({
-    format,
-    ...metadata,
-  }),
-)
+] satisfies StudioRunReportDescriptor[]
 
 export function studioRunReportDescriptor(
   value: string,

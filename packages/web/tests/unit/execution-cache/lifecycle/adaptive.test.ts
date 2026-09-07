@@ -1,10 +1,10 @@
+import { webExecutionCachePayloadSchema } from '../../../../src/execution-cache/web-cache-schema'
 import { finalScenarioAttempt, runScenario } from '@pickle-spec/runner'
 import { parseSpecification } from '@pickle-spec/spec'
 import { describe, expect, test, vi } from 'vitest'
 import {
   createWebAdapter,
   type WebAutomation,
-  type WebExecutionCachePayload,
   type WebInstruction,
 } from '../../../../index'
 import { requiredValue } from '../../../../src/required-value'
@@ -79,11 +79,11 @@ Feature: Status
     expect(execution.state).toBe('passed')
     expect(observe).toHaveBeenCalledTimes(1)
     expect(completion?.replayRepresentation?.cacheable).toBe(true)
-    const payload = (
+    const payload = webExecutionCachePayloadSchema.parse(
       completion?.replayRepresentation?.cacheable
         ? completion.replayRepresentation.adapterPayload
-        : undefined
-    ) as WebExecutionCachePayload
+        : undefined,
+    )
     expect(payload.steps[0]?.instructions).toEqual(
       executeInstruction.mock.calls.map((call) => call[0]),
     )
@@ -165,11 +165,11 @@ Feature: Shopping cart
     expect(compileAssertion).not.toHaveBeenCalled()
     expect(verify).not.toHaveBeenCalled()
     expect(completion?.replayRepresentation?.cacheable).toBe(true)
-    const payload = (
+    const payload = webExecutionCachePayloadSchema.parse(
       completion?.replayRepresentation?.cacheable
         ? completion.replayRepresentation.adapterPayload
-        : undefined
-    ) as WebExecutionCachePayload
+        : undefined,
+    )
     expect(payload.steps[0]?.instructions.map(({ kind }) => kind)).toEqual([
       'navigate',
       'text-contains',

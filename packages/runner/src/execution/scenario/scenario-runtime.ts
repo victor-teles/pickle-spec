@@ -1,3 +1,4 @@
+import { z } from 'zod'
 import {
   resolveScenarioId,
   type Scenario,
@@ -78,7 +79,7 @@ export function redactString(
   bindings: readonly ScenarioVariableBinding[],
 ): string {
   return [...bindings]
-    .sort((left, right) => right.value.length - left.value.length)
+    .toSorted((left, right) => right.value.length - left.value.length)
     .reduce(
       (redacted, binding) =>
         redacted.replaceAll(binding.value, `<${binding.name}>`),
@@ -87,17 +88,18 @@ export function redactString(
 }
 
 function redactReplayValue(
-  value: unknown,
+  value: z.core.util.JSONType,
   bindings: readonly ScenarioVariableBinding[],
   seen = new WeakSet<object>(),
-): unknown {
-  if (typeof value === 'string') return redactString(value, bindings)
+): z.core.util.JSONType {
+  const text = z.string().safeParse(value)
+  if (text.success) return redactString(text.data, bindings)
   if (Array.isArray(value)) {
     if (seen.has(value)) return '[Circular]'
     seen.add(value)
     return value.map((item) => redactReplayValue(item, bindings, seen))
   }
-  if (!value || typeof value !== 'object') return value
+  if (!(value instanceof Object)) return value
   if (seen.has(value)) return '[Circular]'
   seen.add(value)
   return Object.fromEntries(
@@ -109,12 +111,13 @@ function redactReplayValue(
 }
 
 function valueContainsBinding(
-  value: unknown,
+  value: z.core.util.JSONType,
   bindings: readonly ScenarioVariableBinding[],
   seen = new WeakSet<object>(),
 ): boolean {
-  if (typeof value === 'string') return stringContainsBinding(value, bindings)
-  if (!value || typeof value !== 'object') return false
+  const text = z.string().safeParse(value)
+  if (text.success) return stringContainsBinding(text.data, bindings)
+  if (!(value instanceof Object)) return false
   if (seen.has(value)) return false
   seen.add(value)
   return Object.entries(value).some(
@@ -242,17 +245,28 @@ export function publicStepExecution(
   execution: StepExecution,
   bindings: readonly ScenarioVariableBinding[],
 ): PublicStepExecution {
-  const runtimeValueExposed = valueContainsBinding(
-    {
-      resolvedActions: execution.resolvedActions,
-      message: execution.message,
-      artifacts: execution.artifacts,
-      evidenceAvailability: execution.evidenceAvailability,
-      diagnostics: execution.diagnostics,
-      trace: execution.trace,
-    },
-    bindings,
-  )
+  const runtimeValueExposed =
+    valueContainsBinding(
+      z.json().parse(
+        JSON.parse(
+          JSON.stringify({
+            resolvedActions: execution.resolvedActions.map(
+              ({ description, evidence }) => ({ description, evidence }),
+            ),
+            message: execution.message,
+            artifacts: execution.artifacts,
+            evidenceAvailability: execution.evidenceAvailability,
+            diagnostics: execution.diagnostics,
+            trace: execution.trace,
+          }),
+        ),
+      ),
+      bindings,
+    ) ||
+    execution.resolvedActions.some(
+      (action) =>
+        action.replay && valueContainsBinding(action.replay, bindings),
+    )
   return {
     runtimeValueExposed,
     execution: {
@@ -271,10 +285,12 @@ export function publicStepExecution(
             )
           : undefined,
         replay: action.replay
-          ? (redactReplayValue(action.replay, bindings) as Record<
-              string,
-              unknown
-            >)
+          ? Object.fromEntries(
+              Object.entries(action.replay).map(([key, value]) => [
+                redactString(key, bindings),
+                redactReplayValue(value, bindings),
+              ]),
+            )
           : undefined,
       })),
       message: execution.message

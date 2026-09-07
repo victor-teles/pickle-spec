@@ -11,14 +11,17 @@ import {
 import { basename, dirname, join } from 'node:path'
 
 type OutputWriter = (stagedPath: string) => Promise<void>
-type NodeError = Error & { code?: string }
 
 async function pathExists(path: string): Promise<boolean> {
   try {
     await stat(path)
     return true
   } catch (error) {
-    if ((error as NodeError).code === 'ENOENT') return false
+    if (
+      (error instanceof Error && 'code' in error ? error.code : undefined) ===
+      'ENOENT'
+    )
+      return false
     throw error
   }
 }
@@ -44,6 +47,7 @@ async function replaceStagedPath(
         throw new AggregateError(
           [error, restoreError],
           `Could not publish ${destination}; the previous output remains recoverable at ${backupPath}`,
+          { cause: restoreError },
         )
       }
     }
@@ -66,7 +70,10 @@ async function publishStagedFile(
     await link(stagedPath, destination)
     await unlink(stagedPath)
   } catch (error) {
-    if ((error as NodeError).code === 'EEXIST')
+    if (
+      (error instanceof Error && 'code' in error ? error.code : undefined) ===
+      'EEXIST'
+    )
       throw destinationExists(destination)
     throw error
   }
@@ -88,7 +95,10 @@ async function publishStagedDirectory(
   try {
     await rename(stagedPath, destination)
   } catch (error) {
-    if ((error as NodeError).code === 'EEXIST')
+    if (
+      (error instanceof Error && 'code' in error ? error.code : undefined) ===
+      'EEXIST'
+    )
       throw destinationExists(destination)
     throw error
   }

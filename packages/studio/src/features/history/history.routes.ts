@@ -1,3 +1,4 @@
+import { historyComparisonRequestSchema } from './history.schemas'
 import { requiredValue } from '../../required-value'
 import {
   requestError,
@@ -5,17 +6,12 @@ import {
   type StudioHttpHandler,
   unavailable,
 } from '../../server/http'
-import type {
-  StudioHistoryGateway,
-  StudioRunReportRequest,
-  StudioRunsIndex,
+import {
+  type StudioHistoryGateway,
+  type StudioRunReportRequest,
+  type StudioRunsIndex,
+  studioRunReportDescriptor,
 } from './history.contracts'
-import { studioRunReportDescriptor } from './history.contracts'
-
-type HistoryComparisonRequest = {
-  baselineRunId?: string
-  candidateRunId?: string
-}
 
 interface HistoryRoutesOptions {
   activeRunIds(): readonly string[]
@@ -30,7 +26,7 @@ async function historyIndex(options: HistoryRoutesOptions): Promise<Response> {
   if (!options.history) return historyUnavailable()
   return Response.json({
     ...(await options.history.list()),
-    activeRunIds: [...options.activeRunIds()].sort(),
+    activeRunIds: [...options.activeRunIds()].toSorted(),
   } satisfies StudioRunsIndex)
 }
 
@@ -39,7 +35,11 @@ async function compareHistory(
   request: Request,
 ): Promise<Response> {
   if (!options.history) return historyUnavailable()
-  const body = (await request.json()) as HistoryComparisonRequest
+  const parsed = historyComparisonRequestSchema.safeParse(
+    await request.json().catch(() => null),
+  )
+  if (!parsed.success) return requestError(parsed.error)
+  const body = parsed.data
   if (!body.baselineRunId || !body.candidateRunId) {
     return new Response('Select two test runs to compare', { status: 400 })
   }
@@ -102,13 +102,9 @@ async function exportHistory(
           }
         : { runId, format: descriptor.format }
     const body = await options.history.exportReport(request)
-    const responseBody =
-      typeof body === 'string'
-        ? body
-        : (body.buffer.slice(
-            body.byteOffset,
-            body.byteOffset + body.byteLength,
-          ) as ArrayBuffer)
+    const responseBody = !(body instanceof Uint8Array)
+      ? body
+      : new Uint8Array(body).buffer
     return new Response(responseBody, {
       headers: {
         'content-type': descriptor.contentType,
@@ -125,14 +121,16 @@ async function handleHistoryRequest(
   request: Request,
   url: URL,
 ) {
-  const exactRoutes: Record<string, () => Promise<Response>> = {
-    'GET /api/history': () => historyIndex(options),
-    'GET /api/runs': () => historyIndex(options),
-    'POST /api/history/compare': () => compareHistory(options, request),
-    'POST /api/history/import': () => importHistory(options, request),
-    'POST /api/history/retention': () => deleteEligible(options),
-  }
-  const exact = exactRoutes[routeKey(request, url)]
+  const exactRoutes = new Map(
+    Object.entries({
+      'GET /api/history': () => historyIndex(options),
+      'GET /api/runs': () => historyIndex(options),
+      'POST /api/history/compare': () => compareHistory(options, request),
+      'POST /api/history/import': () => importHistory(options, request),
+      'POST /api/history/retention': () => deleteEligible(options),
+    }),
+  )
+  const exact = exactRoutes.get(routeKey(request, url))
   if (exact) return exact()
 
   const pinMatch = url.pathname.match(/^\/api\/history\/([^/]+)\/pin$/)

@@ -57,7 +57,7 @@ test('rejects a request when disposal interrupts worker startup', async () => {
     workerEntry: new URL('./fixtures/slow-worker.mjs', import.meta.url),
   })
   const request = client.request({ version: 6, type: 'discover-targets' })
-  const rejection = request.catch((error: unknown) => error)
+  const rejection = request.catch((cause: unknown) => cause)
   await new Promise((resolve) => setTimeout(resolve, 10))
 
   await client.dispose()

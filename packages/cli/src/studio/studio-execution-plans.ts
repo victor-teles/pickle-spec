@@ -42,6 +42,7 @@ import {
   type WebLocator,
   webTargetConfigurationFingerprint,
 } from '@pickle-spec/web'
+import { z } from 'zod'
 import { resolveApplicationRevision } from '../configuration/application-revision'
 import {
   defaultSpecificationGlob,
@@ -451,8 +452,8 @@ function invalidEnvelope(
 ): boolean {
   return Boolean(
     !envelope ||
-      envelope.adapterPayload.steps.length > scenario.steps.length ||
-      !requiredVariablesAreValid(envelope.requiredVariables, scenario),
+    envelope.adapterPayload.steps.length > scenario.steps.length ||
+    !requiredVariablesAreValid(envelope.requiredVariables, scenario),
   )
 }
 
@@ -535,21 +536,18 @@ function displayFailure(
 }
 
 function projectDraft(
-  revision: {
-    id: Digest
-    origin: { kind: string; revisionId?: Digest }
-    scope: PlanScope
-    requiredVariables: readonly string[]
-    adapterPayload: unknown
-  },
+  revision: PlanRevision,
   context: ResolvedPlanContext,
 ): StudioExecutionPlanDraftResult {
   const definitionSteps =
     context.scenario.template?.steps ?? context.scenario.steps
   let steps: readonly ExecutionPlanStepDisplay[]
   try {
+    const jsonPayload = z.json().safeParse(revision.adapterPayload)
+    if (!jsonPayload.success)
+      return draftFailure('The draft web payload is invalid')
     const payload = parseWebExecutionCachePayload(
-      revision.adapterPayload,
+      jsonPayload.data,
       revision.requiredVariables,
     )
     if (!payload) return draftFailure('The draft web payload is invalid')

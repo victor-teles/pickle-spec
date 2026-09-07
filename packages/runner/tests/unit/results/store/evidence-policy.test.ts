@@ -56,11 +56,15 @@ test('captures only failure artifacts under the default evidence policy', async 
   )
 
   const manifest = await run.materialize()
-  const passed = manifest.results.find(
-    (result) => result.scenario.name === 'Passed purchase',
+  const passed = requiredValue(
+    manifest.results.find(
+      (result) => result.scenario.name === 'Passed purchase',
+    ),
   )
-  const failed = manifest.results.find(
-    (result) => result.scenario.name === 'Failed purchase',
+  const failed = requiredValue(
+    manifest.results.find(
+      (result) => result.scenario.name === 'Failed purchase',
+    ),
   )
   const artifactsDirectory = join(
     storageFor(root).runsDirectory,
@@ -92,6 +96,18 @@ test('captures only failure artifacts under the default evidence policy', async 
   ).toEqual(new Uint8Array([137, 80, 78, 71]))
   expect(await Bun.file(screenshot).exists()).toBe(true)
 })
+
+function withDiagnosticAvailability(
+  item: ReturnType<
+    typeof resultWithArtifact
+  >['attempts'][number]['evidenceAvailability'][number],
+) {
+  if (item.kind === 'screenshot')
+    return { kind: item.kind, state: 'not-requested' as const }
+  return item.kind === 'diagnostics' || item.kind === 'trace'
+    ? { kind: item.kind, state: 'available' as const }
+    : item
+}
 
 test('persists Diagnostic entries for failed runs by default and drops them for passed runs', async () => {
   const root = await tempRoot()
@@ -216,14 +232,7 @@ test('persists Diagnostic entries for failed runs by default and drops them for 
           ...passedAttempt,
           diagnostics: [diagnostic],
           evidenceAvailability: passedAttempt.evidenceAvailability.map(
-            (item) => {
-              if (item.kind === 'screenshot') {
-                return { kind: item.kind, state: 'not-requested' as const }
-              }
-              return item.kind === 'diagnostics' || item.kind === 'trace'
-                ? { kind: item.kind, state: 'available' as const }
-                : item
-            },
+            withDiagnosticAvailability,
           ),
           steps: passedAttempt.steps.map((step) => ({
             ...step,
@@ -243,14 +252,7 @@ test('persists Diagnostic entries for failed runs by default and drops them for 
           ...failedAttempt,
           diagnostics: [diagnostic],
           evidenceAvailability: failedAttempt.evidenceAvailability.map(
-            (item) => {
-              if (item.kind === 'screenshot') {
-                return { kind: item.kind, state: 'not-requested' as const }
-              }
-              return item.kind === 'diagnostics' || item.kind === 'trace'
-                ? { kind: item.kind, state: 'available' as const }
-                : item
-            },
+            withDiagnosticAvailability,
           ),
           steps: failedAttempt.steps.map((step) => ({
             ...step,
@@ -264,29 +266,33 @@ test('persists Diagnostic entries for failed runs by default and drops them for 
   )
 
   const manifest = await run.materialize()
-  const passedPersisted = manifest.results.find(
-    (result) => result.scenario.name === 'Passed purchase',
+  const passedPersisted = requiredValue(
+    manifest.results.find(
+      (result) => result.scenario.name === 'Passed purchase',
+    ),
   )
-  const failedPersisted = manifest.results.find(
-    (result) => result.scenario.name === 'Failed purchase',
+  const failedPersisted = requiredValue(
+    manifest.results.find(
+      (result) => result.scenario.name === 'Failed purchase',
+    ),
   )
 
-  expect(passedPersisted?.attempts[0]?.steps[0]?.diagnostics).toBeUndefined()
-  expect(passedPersisted?.attempts[0]?.diagnostics).toBeUndefined()
-  expect(passedPersisted?.attempts[0]?.steps[0]?.trace).toBeUndefined()
+  expect(passedPersisted.attempts[0]?.steps[0]?.diagnostics).toBeUndefined()
+  expect(passedPersisted.attempts[0]?.diagnostics).toBeUndefined()
+  expect(passedPersisted.attempts[0]?.steps[0]?.trace).toBeUndefined()
   expect(
-    passedPersisted?.attempts[0]?.evidenceAvailability.find(
+    passedPersisted.attempts[0]?.evidenceAvailability.find(
       (item) => item.kind === 'diagnostics',
     )?.state,
   ).toBe('not-retained')
   expect(
-    passedPersisted?.attempts[0]?.evidenceAvailability.find(
+    passedPersisted.attempts[0]?.evidenceAvailability.find(
       (item) => item.kind === 'trace',
     )?.state,
   ).toBe('not-retained')
-  expect(failedPersisted?.attempts[0]?.steps[0]?.diagnostics).toEqual([
+  expect(failedPersisted.attempts[0]?.steps[0]?.diagnostics).toEqual([
     diagnostic,
   ])
-  expect(failedPersisted?.attempts[0]?.diagnostics).toEqual([diagnostic])
-  expect(failedPersisted?.attempts[0]?.steps[0]?.trace).toEqual([trace])
+  expect(failedPersisted.attempts[0]?.diagnostics).toEqual([diagnostic])
+  expect(failedPersisted.attempts[0]?.steps[0]?.trace).toEqual([trace])
 })

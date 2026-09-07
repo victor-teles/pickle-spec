@@ -58,12 +58,10 @@ function keyFromRow(entry: IndexedExecutionCacheEntry): ExecutionCacheKey {
 function metadataFromRow(
   entry: IndexedExecutionCacheEntry,
 ): ExecutionCacheEntryMetadata {
-  return {
+  const metadata: ExecutionCacheEntryMetadata = {
     key: keyFromRow(entry),
     sourceRunId: entry.sourceRunId,
-    ...(entry.evaluationModel
-      ? { evaluationModel: entry.evaluationModel }
-      : {}),
+
     evaluationInferenceCount: entry.evaluationInferenceCount,
     createdAt: entry.createdAt,
     lastUsedAt: entry.lastUsedAt,
@@ -71,6 +69,8 @@ function metadataFromRow(
     payloadDigest: entry.payloadDigest,
     sizeBytes: entry.sizeBytes,
   }
+  if (entry.evaluationModel) metadata.evaluationModel = entry.evaluationModel
+  return metadata
 }
 
 function inspectLocalEntries(
@@ -79,7 +79,7 @@ function inspectLocalEntries(
 ): Promise<ExecutionCacheEntryMetadata[]> {
   return database.use((db) =>
     db
-      .query(
+      .query<IndexedExecutionCacheEntry, [string]>(
         `SELECT
            project_key AS projectKey, scenario_id AS scenarioId,
            scenario_revision AS scenarioRevision,
@@ -97,7 +97,7 @@ function inspectLocalEntries(
          ORDER BY last_used_at DESC, created_at DESC, key_digest`,
       )
       .all(projectKey)
-      .map((row) => metadataFromRow(row as IndexedExecutionCacheEntry)),
+      .map(metadataFromRow),
   )
 }
 
@@ -125,16 +125,13 @@ export function createLocalExecutionCacheEntries(
       assertExecutionCacheProjectKey(projectKey, key)
       return database.use((db) => {
         const row = db
-          .query(
+          .query<StoredEnvelopeRow, [string, string]>(
             `UPDATE entries
              SET last_used_at = ?, hit_count = hit_count + 1
              WHERE key_digest = ?
              RETURNING serialized_envelope AS source`,
           )
-          .get(
-            now().toISOString(),
-            executionCacheKeyDigest(key),
-          ) as StoredEnvelopeRow | null
+          .get(now().toISOString(), executionCacheKeyDigest(key))
         return row?.source
       })
     },

@@ -22,7 +22,7 @@ export function runListItems(
   activeRunIds: ReadonlySet<string>,
 ): RunListItem[] {
   return [...runs]
-    .sort(
+    .toSorted(
       (left, right) =>
         Date.parse(right.startedAt) - Date.parse(left.startedAt) ||
         right.id.localeCompare(left.id),
@@ -33,10 +33,26 @@ export function runListItems(
     }))
 }
 
+function initialRunSummary(
+  runId: string,
+  manifest:
+    | NonNullable<LiveResultInspection['snapshot']>['manifest']
+    | undefined,
+): TestRunSummary {
+  return {
+    id: runId,
+    startedAt: manifest?.startedAt ?? '',
+    executionTargetProfileIds: [],
+    specificationUris: [],
+    state: manifest?.state ?? 'skipped',
+    resultCount: manifest?.results.length ?? 0,
+  } satisfies TestRunSummary
+}
+
 export function activeRunListItem(
   runId: string,
   inspection: LiveResultInspection | undefined,
-  indexedSummary: TestRunSummary | undefined,
+  indexedSummary?: TestRunSummary,
 ): RunListItem {
   const manifest = inspection?.snapshot?.manifest
   const scheduledProfiles =
@@ -47,14 +63,7 @@ export function activeRunListItem(
     manifest?.results.map((result) => result.executionTargetProfile.id) ?? []
   const resultSpecifications =
     manifest?.results.map((result) => result.specification.uri) ?? []
-  const summary = indexedSummary ?? {
-    id: runId,
-    startedAt: manifest?.startedAt ?? '',
-    executionTargetProfileIds: [],
-    specificationUris: [],
-    state: manifest?.state ?? 'skipped',
-    resultCount: manifest?.results.length ?? 0,
-  }
+  const summary = indexedSummary ?? initialRunSummary(runId, manifest)
   return {
     summary: {
       ...summary,

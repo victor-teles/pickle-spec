@@ -51,7 +51,7 @@ export const defaultReplayBenchmarkWarmupPairs = 3
 export const minimumReplayBenchmarkSamplePairs = 20
 
 function percentile(values: readonly number[], ratio: number): number {
-  const sorted = [...values].sort((left, right) => left - right)
+  const sorted = [...values].toSorted((left, right) => left - right)
   return requiredValue(sorted[Math.ceil(sorted.length * ratio) - 1])
 }
 

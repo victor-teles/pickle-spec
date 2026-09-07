@@ -1,8 +1,3 @@
-// biome-ignore-all lint/style/useNamingConvention: Monaco's global host uses these names
-type MonacoEnvironmentHost = {
-  MonacoEnvironment?: unknown
-}
-
 const monacoWorkerSource = 'self.onmessage = function () {}'
 
 function monacoWorker() {
@@ -13,10 +8,7 @@ function monacoWorker() {
   )
 }
 
-const host = globalThis as MonacoEnvironmentHost
-if (!host.MonacoEnvironment) {
-  host.MonacoEnvironment = {
-    globalAPI: true,
-    getWorker: monacoWorker,
-  }
+export async function loadMonaco() {
+  globalThis.MonacoEnvironment ??= { globalAPI: true, getWorker: monacoWorker }
+  return import('monaco-editor/editor/editor.main.js')
 }

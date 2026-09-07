@@ -2,7 +2,10 @@ import { openTestRunStore } from '@pickle-spec/runner'
 import cliPackage from '../../package.json' with { type: 'json' }
 import type { RunCommandInput } from '../command-inputs'
 import { loadConfig, type PickleConfig } from '../configuration/config'
-import { withRecoveryFailure } from '../terminal/command-error'
+import {
+  commandErrorFrom,
+  withRecoveryFailure,
+} from '../terminal/command-error'
 import { startProjectRun } from './execute-run'
 import {
   finalizeMaterializedEvidence,
@@ -16,6 +19,8 @@ import {
   type RunReportingSession,
 } from './run-reporting-session'
 import { evaluateTestRunExitStatus } from './test-run-exit-status'
+
+type RunRecovery = { commandError: Error; exitCode?: number }
 
 const dayMs = 24 * 60 * 60 * 1000
 
@@ -41,9 +46,9 @@ async function executeRunCommand(context: RunCommandContext): Promise<number> {
     config: context.config,
     options: context.args,
     signal: context.controller.signal,
-    onEvent: context.reporting.event,
-    onSchedule: context.reporting.prepare,
-    onResult: context.reporting.complete,
+    onEvent: (...args) => context.reporting.event(...args),
+    onSchedule: (...args) => context.reporting.prepare(...args),
+    onResult: (...args) => context.reporting.complete(...args),
   })
   runState.startedRunId = started.id
   context.reporting.start()
@@ -83,13 +88,13 @@ async function executeRunCommand(context: RunCommandContext): Promise<number> {
 
 async function recoverMaterializedEvidence(
   context: RunCommandContext,
-  commandError: unknown,
+  cause: Error,
   message: string,
   includeEmptyRun = false,
-): Promise<unknown> {
+): Promise<Error> {
   const runState = context.state
   const runId = runState.startedRunId
-  if (!runId || runState.outputsWritten) return commandError
+  if (!runId || runState.outputsWritten) return cause
   try {
     const outcomes = await finalizeMaterializedEvidence(
       context.args,
@@ -99,28 +104,28 @@ async function recoverMaterializedEvidence(
     )
     reportTestRunExportOutcomes(outcomes, console.error)
     runState.outputsWritten = true
-    return commandError
+    return cause
   } catch (recoveryError) {
-    return withRecoveryFailure(commandError, message, recoveryError)
+    return withRecoveryFailure(cause, message, recoveryError)
   }
 }
 
-function isInterruptedRun(error: unknown, context: RunCommandContext): boolean {
+function isInterruptedRun(cause: unknown, context: RunCommandContext): boolean {
   return (
     context.controller.signal.aborted &&
-    error instanceof Error &&
-    error.name === 'AbortError'
+    cause instanceof Error &&
+    cause.name === 'AbortError'
   )
 }
 
 async function recoverInterruptedRun(
   context: RunCommandContext,
-  commandError: unknown,
-): Promise<{ commandError: unknown; exitCode?: number }> {
-  if (!isInterruptedRun(commandError, context)) return { commandError }
+  cause: Error,
+): Promise<RunRecovery> {
+  if (!isInterruptedRun(cause, context)) return { commandError: cause }
   let recoveredError = await recoverMaterializedEvidence(
     context,
-    commandError,
+    cause,
     'Failed to finalize interrupted evidence',
     true,
   )
@@ -145,9 +150,9 @@ async function recoverInterruptedRun(
 
 async function recoverRunCommand(
   context: RunCommandContext,
-  error: unknown,
+  cause: Error,
 ): Promise<number> {
-  const interrupted = await recoverInterruptedRun(context, error)
+  const interrupted = await recoverInterruptedRun(context, cause)
   if (interrupted.exitCode !== undefined) return interrupted.exitCode
   let commandError = await recoverMaterializedEvidence(
     context,
@@ -184,7 +189,7 @@ export async function runCommand(args: RunCommandInput): Promise<number> {
     ),
   })
   const reporting = createRunReportingSession(reporter)
-  const onResize = reporting.refresh
+  const onResize = () => reporting.refresh()
   const startedAt = performance.now()
   const context: RunCommandContext = {
     args,
@@ -200,7 +205,7 @@ export async function runCommand(args: RunCommandInput): Promise<number> {
   try {
     return await executeRunCommand(context)
   } catch (error) {
-    return recoverRunCommand(context, error)
+    return recoverRunCommand(context, commandErrorFrom(error))
   } finally {
     process.off('SIGINT', onSigint)
     process.off('SIGWINCH', onResize)

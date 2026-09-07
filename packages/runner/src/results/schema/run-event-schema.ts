@@ -1,6 +1,9 @@
 import { z } from 'zod'
-import type { RunEvent } from '../../execution/run-scenario'
-import { testRunSchemaVersion } from '../../execution/run-scenario'
+import {
+  type RunEvent,
+  testRunSchemaVersion,
+} from '../../execution/run-scenario-types'
+
 import {
   actionEvidenceSchema,
   sharedEvidenceObservationSchema,

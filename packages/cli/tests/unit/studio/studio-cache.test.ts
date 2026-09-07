@@ -1,9 +1,12 @@
+import {
+  fillCachePayloadValidator as validator,
+  type FillCachePayload,
+} from '../../support/execution-cache-payload'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
   type ExecutionCacheEnvelope,
-  type ExecutionCachePayloadValidator,
   openLocalExecutionCache,
   serializeExecutionCacheEnvelope,
 } from '@pickle-spec/runner'
@@ -28,18 +31,7 @@ test('Studio inspects metadata and clears only its checkout Execution cache', as
   const projectRoot = await tempRoot('pickle-project')
   const cacheRoot = await tempRoot('pickle-cache')
   const cache = await openLocalExecutionCache({ projectRoot, cacheRoot })
-  type Payload = { operation: 'fill'; value: { variable: string } }
-  const validator: ExecutionCachePayloadValidator<Payload> = {
-    adapterKind: 'test',
-    adapterCacheSchemaVersion: 'test.1',
-    parse(payload) {
-      return payload as Payload
-    },
-    prefixStepCount() {
-      return 1
-    },
-  }
-  const envelope: ExecutionCacheEnvelope<Payload> = {
+  const envelope: ExecutionCacheEnvelope<FillCachePayload> = {
     schemaVersion: 1,
     key: {
       projectKey: cache.projectKey,

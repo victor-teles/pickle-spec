@@ -93,7 +93,7 @@ async function stopProjectResources(
   if (server) {
     server.stop()
     await Promise.race([
-      server.outputComplete.catch(() => undefined),
+      server.outputComplete.catch(() => {}),
       Bun.sleep(1_000),
     ])
   }

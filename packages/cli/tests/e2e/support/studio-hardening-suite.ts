@@ -1,5 +1,5 @@
 import { join } from 'node:path'
-import AxeBuilder from '@axe-core/playwright'
+import { AxeBuilder } from '@axe-core/playwright'
 import { openTestRunStore, type RunEventPayload } from '@pickle-spec/runner'
 import type { Browser, Page } from 'playwright'
 import { expect, test } from 'vitest'
@@ -7,15 +7,6 @@ import {
   collectStream,
   type StudioBrowserFixture,
 } from './studio-browser-fixture'
-
-type BrowserDocument = {
-  document: {
-    activeElement?: {
-      textContent?: string | null
-      matches: (selector: string) => boolean
-    } | null
-  }
-}
 
 type BrowserAnimation = {
   finished: Promise<unknown>
@@ -146,7 +137,7 @@ export function registerStudioHardeningTests(
           await page.keyboard.press('Tab')
         }
         const activeLink = await page.evaluate(() => {
-          const browserDocument = globalThis as unknown as BrowserDocument
+          const browserDocument = globalThis
           return {
             label: browserDocument.document.activeElement?.textContent?.trim(),
             focusVisible:

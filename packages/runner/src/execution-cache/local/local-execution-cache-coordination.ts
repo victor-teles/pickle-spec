@@ -1,3 +1,4 @@
+import { requiredValue } from '../../required-value'
 import type { Database } from 'bun:sqlite'
 import { randomUUID } from 'node:crypto'
 import type {
@@ -166,8 +167,8 @@ function leaseIsOwned(
 ): boolean {
   return Boolean(
     active &&
-      active.ownerToken === lease.ownerToken &&
-      active.expiresAt > timestamp,
+    active.ownerToken === lease.ownerToken &&
+    active.expiresAt > timestamp,
   )
 }
 
@@ -189,12 +190,12 @@ function publishLeaseEntry(
   const timestamp = now()
   const digestKey = executionCacheKeyDigest(lease.key)
   const active = db
-    .query(
+    .query<LeaseRow, [string]>(
       `SELECT owner_token AS ownerToken, expires_at AS expiresAt,
               baseline_revision AS baselineRevision
        FROM leases WHERE key_digest = ?`,
     )
-    .get(digestKey) as LeaseRow | null
+    .get(digestKey)
   if (!leaseIsOwned(active, lease, timestamp.getTime())) {
     return { published: false, stored: false, evictedEntries: 0 }
   }
@@ -236,12 +237,12 @@ function acquireLease(
     timestamp - timing.waitTimeoutMs,
   ])
   const existing = db
-    .query(
+    .query<LeaseRow, [string]>(
       `SELECT owner_token AS ownerToken, expires_at AS expiresAt,
               baseline_revision AS baselineRevision
        FROM leases WHERE key_digest = ?`,
     )
-    .get(digestKey) as LeaseRow | null
+    .get(digestKey)
   if (existing && existing.expiresAt > timestamp) {
     return {
       acquired: false,
@@ -274,13 +275,15 @@ function acquireLease(
       timestamp,
     ],
   )
-  const acquired = db
-    .query(
-      `SELECT owner_token AS ownerToken, expires_at AS expiresAt,
+  const acquired = requiredValue(
+    db
+      .query<LeaseRow, [string]>(
+        `SELECT owner_token AS ownerToken, expires_at AS expiresAt,
               baseline_revision AS baselineRevision
        FROM leases WHERE key_digest = ?`,
-    )
-    .get(digestKey) as LeaseRow
+      )
+      .get(digestKey),
+  )
   if (acquired.ownerToken !== ownerToken) {
     return {
       acquired: false,

@@ -1,3 +1,4 @@
+import { mobileTargetDiscoveriesSchema } from '../project/project.schemas'
 import { useState } from 'react'
 import { Button } from '../../components/ui/button'
 import { Card, CardContent } from '../../components/ui/card'
@@ -12,7 +13,7 @@ import type {
 type MobileProfileSettingsProps = {
   api: StudioApi
   onChange: (profile: StudioMobileProfile) => void
-  onError: (message: string | undefined) => void
+  onError: (message?: string) => void
   profile: StudioMobileProfile
   profileId: string
 }
@@ -68,8 +69,8 @@ function MobileDiscovery({
   )
 }
 
-function reasonMessage(reason: unknown) {
-  return reason instanceof Error ? reason.message : String(reason)
+function reasonMessage(cause: unknown) {
+  return cause instanceof Error ? cause.message : String(cause)
 }
 
 function MobileTargetKindSelector(props: MobileProfileSettingsProps) {
@@ -202,12 +203,10 @@ export function MobileProfileSettings({
 
   async function discoverTargets() {
     setDiscovering(true)
-    onError(undefined)
+    onError()
     try {
       setDiscoveries(
-        await api<readonly StudioMobileTargetDiscovery[]>(
-          '/api/mobile-targets',
-        ),
+        await api('/api/mobile-targets', mobileTargetDiscoveriesSchema),
       )
     } catch (reason) {
       onError(reasonMessage(reason))

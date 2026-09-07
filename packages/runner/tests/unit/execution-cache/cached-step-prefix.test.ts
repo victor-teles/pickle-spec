@@ -1,3 +1,4 @@
+import { z } from 'zod'
 import { describe, expect, test } from 'vitest'
 import {
   attemptCacheUse,
@@ -13,15 +14,7 @@ const adapter: ExecutionCachePayloadValidator<{ steps: string[] }> = {
   adapterKind: 'test',
   adapterCacheSchemaVersion: '1',
   parse(payload) {
-    if (
-      typeof payload !== 'object' ||
-      payload === null ||
-      !('steps' in payload) ||
-      !Array.isArray(payload.steps)
-    ) {
-      return
-    }
-    return { steps: payload.steps as string[] }
+    return z.object({ steps: z.array(z.string()) }).safeParse(payload).data
   },
   prefixStepCount(payload) {
     return payload.steps.length
@@ -84,7 +77,7 @@ describe('CachedStepPrefix', () => {
     const cursor = gapCursor(prefix)
     expect(evaluationAt(cursor, 0)).toBe('replay')
     expect(evaluationAt(cursor, 1)).toBe('adaptive')
-    expect(evaluationAt(gapCursor(undefined), 0)).toBe('adaptive')
+    expect(evaluationAt(gapCursor(), 0)).toBe('adaptive')
     expect(reseatGap(cursor, 0)).toEqual({ replayUntil: 0 })
   })
 

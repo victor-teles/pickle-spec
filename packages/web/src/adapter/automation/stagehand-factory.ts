@@ -1,7 +1,7 @@
 import {
   browserbase,
   localBrowser,
-  type ModelConfig,
+  StagehandCreateOptionsSchema,
   Stagehand,
   type StagehandCreateOptions,
 } from '@browserbasehq/stagehand'
@@ -34,21 +34,21 @@ import type {
 const defaultDomSettleTimeoutMs = 3_000
 const defaultObserveTimeoutMs = 10_000
 
+type StagehandViewport = NonNullable<
+  Parameters<typeof createStagehandAutomation>[4]
+>
+
 type StagehandBrowser = Awaited<ReturnType<typeof localBrowser.launch>>
 type WebEvidenceCollector = ReturnType<typeof createWebEvidenceCollector>
 
-function stagehandModel(
-  context: WebClientContext,
-  defaults: BrowserOptions,
-): ModelConfig {
+function stagehandModel(context: WebClientContext, defaults: BrowserOptions) {
   const modelName =
     context.browser.modelName ?? defaults.modelName ?? defaultModelName
   const modelApiKey = context.browser.modelApiKey ?? defaults.modelApiKey
-  const model: ModelConfig = {
-    modelName: modelName as ModelConfig['modelName'],
-  }
-  if (modelApiKey !== undefined) model.apiKey = modelApiKey
-  return model
+  return StagehandCreateOptionsSchema.shape.model.unwrap().options[0].parse({
+    modelName,
+    apiKey: modelApiKey,
+  })
 }
 
 function stagehandCreateOptions(
@@ -124,8 +124,10 @@ async function closeQuietly(close: () => Promise<void>): Promise<void> {
   } catch {}
 }
 
-function stagehandViewport(context: WebClientContext) {
-  if (!context.onLiveViewport) return
+function stagehandViewport(
+  context: WebClientContext,
+): StagehandViewport | undefined {
+  if (!context.onLiveViewport) return undefined
   return {
     options: context.browser,
     onViewport: context.onLiveViewport,

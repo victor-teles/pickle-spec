@@ -269,3 +269,9 @@ export {
   localProjectKey,
   resolveLocalProjectStorage,
 } from './src/storage/local-project-storage'
+
+export {
+  testRunManifestSchema,
+  testResultSchema,
+} from './src/results/schema/test-result-schema'
+export { runEventSchema } from './src/results/schema/run-event-schema'

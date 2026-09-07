@@ -7,6 +7,7 @@ import type {
   Examples,
   Feature,
   FeatureChild,
+  Location,
   RuleChild,
   Scenario,
   TableRow,
@@ -59,14 +60,12 @@ export function nodeLabel(node: IdentityNode): string {
       return `Scenario "${node.name}"`
     case 'examples':
       return node.name ? `Examples "${node.name}"` : 'Examples'
-    case 'examples-row':
+    default:
       return `Examples row ${node.rowIndex}`
   }
 }
 
-function sourcePosition(
-  location: { line?: number; column?: number } | undefined,
-): { line: number; column: number } {
+function sourcePosition(location: Partial<Location> | undefined) {
   return { line: location?.line ?? 1, column: location?.column ?? 1 }
 }
 
@@ -212,7 +211,7 @@ function resolvedNodeId(node: IdentityNode, uri: string): string {
         node.scenarioName ?? '',
         node.tags,
       )
-    case 'examples':
+    default:
       return resolveExamplesId(
         uri,
         node.specificationName,

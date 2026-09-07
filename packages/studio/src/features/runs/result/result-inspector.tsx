@@ -1,3 +1,9 @@
+import { studioRunSnapshotSchema } from '../run.schemas'
+import {
+  isResultInspectorTab,
+  type ResultInspectionLocation,
+  type ResultInspectorTab,
+} from './result-inspection'
 import type { TestResultState } from '@pickle-spec/runner'
 import { useEffect, useState } from 'react'
 import { LedgerLoadingSkeleton } from '../../../components/loading-skeletons'
@@ -22,8 +28,11 @@ import { cn } from '../../../lib/utils'
 import type { StudioRunSnapshot } from '../../../server/contracts'
 import { ExecutionPlanPanel } from '../../execution-plans/execution-plan-panel'
 import type { StudioLiveViewport } from '../live-viewport'
-import type { FocusedAttemptProjection } from './focused-attempt'
-import { focusedAttemptProjection } from './focused-attempt'
+import {
+  type FocusedAttemptProjection,
+  focusedAttemptProjection,
+} from './focused-attempt'
+
 import type { LiveConnectionStatus } from './live-result-inspection'
 import type { artifactsFor } from './result-evidence'
 import {
@@ -33,10 +42,7 @@ import {
   ResultOverview,
 } from './result-evidence-panels'
 import { ResultEvidenceTimeline } from './result-evidence-timeline'
-import type {
-  ResultInspectionLocation,
-  ResultInspectorTab,
-} from './result-inspection'
+
 import { reasonMessage, resultBadgeVariant } from './result-presentation'
 
 type ResultInspectorProps = {
@@ -59,21 +65,22 @@ type ResultInspectorProps = {
 function useFetchedRunSnapshot(props: ResultInspectorProps) {
   const [snapshot, setSnapshot] = useState<StudioRunSnapshot>()
   const [error, setError] = useState<string>()
-  useEffect(() => {
-    if (props.snapshot) return
+  useEffect((): (() => void) | undefined => {
+    if (props.snapshot) return undefined
     let cancelled = false
     setSnapshot(undefined)
     setError(undefined)
     void props
-      .api<StudioRunSnapshot>(
+      .api(
         `/api/runs/${encodeURIComponent(props.location.runId)}`,
+        studioRunSnapshotSchema,
       )
       .then(
         (value) => {
           if (!cancelled) setSnapshot(value)
         },
-        (reason: unknown) => {
-          if (!cancelled) setError(reasonMessage(reason))
+        (cause: unknown) => {
+          if (!cancelled) setError(reasonMessage(cause))
         },
       )
     return () => {
@@ -224,7 +231,9 @@ function ResultInspectorTabs(props: ResultInspectorContentProps) {
   return (
     <Tabs
       value={props.activeTab}
-      onValueChange={(value) => props.onTabChange(value as ResultInspectorTab)}
+      onValueChange={(value) =>
+        isResultInspectorTab(value) && props.onTabChange(value)
+      }
     >
       <TabsList
         variant="line"

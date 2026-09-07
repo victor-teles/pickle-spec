@@ -109,7 +109,7 @@ export function resultPriority(state: TestResultState | 'running'): number {
 export function attentionCells(cells: readonly MatrixCell[]): MatrixCell[] {
   return [...cells]
     .filter((cell) => needsAttention(cell.state))
-    .sort(
+    .toSorted(
       (left, right) =>
         resultPriority(left.state) - resultPriority(right.state) ||
         left.scenarioName.localeCompare(right.scenarioName),

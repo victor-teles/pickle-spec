@@ -80,14 +80,9 @@ async function loadRunFiles(
   if (!(await Bun.file(manifestPath).exists())) {
     throw new Error(`Test run "${runId}" must be finalized before export`)
   }
-  const manifest = parseTestRunManifest(
-    await Bun.file(manifestPath).json(),
-    (version): never => {
-      throw new Error(
-        `Test run storage schema version ${String(version)} is unsupported`,
-      )
-    },
-  )
+  const manifest = parseTestRunManifest((version): never => {
+    throw new Error(`Test run storage schema version ${version} is unsupported`)
+  })(await Bun.file(manifestPath).json())
   assertFinalizedManifest(manifest)
   return { runDirectory, manifest, events }
 }

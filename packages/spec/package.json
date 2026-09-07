@@ -1,17 +1,18 @@
 {
   "name": "@pickle-spec/spec",
   "version": "1.0.2",
-  "type": "module",
-  "exports": {
-    ".": "./index.ts"
-  },
-  "publishConfig": {
-    "access": "public"
-  },
   "files": [
     "index.ts",
     "src/**/*.ts"
   ],
+  "type": "module",
+  "exports": {
+    ".": "./index.ts",
+    "./schemas": "./src/authoring/specification-schema.ts"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
     "typecheck": "tsc --noEmit",
     "test": "bunx --bun vitest run --configLoader runner --experimental.viteModuleRunner=false --experimental.nodeLoader=false --config ../../vitest.package.config.ts"

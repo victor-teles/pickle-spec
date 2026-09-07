@@ -31,7 +31,7 @@ interface PersistedRunState {
   evidencePersistenceFor: (profileId: string) => EvidencePersistencePolicy
   onMaterialize: (manifest: TestRunManifest) => Promise<void>
   metadata: CreateTestRunOptions
-  incompatibleSchema: (version: unknown) => never
+  incompatibleSchema: (version: string) => never
   eventsPath: string
   manifestPath: string
   artifactsDirectory: string
@@ -45,7 +45,7 @@ export interface PersistedTestRunOptions {
   evidencePersistenceFor: (profileId: string) => EvidencePersistencePolicy
   onMaterialize: (manifest: TestRunManifest) => Promise<void>
   metadata: CreateTestRunOptions
-  incompatibleSchema: (version: unknown) => never
+  incompatibleSchema: (version: string) => never
   serializeOperation: SerializeOperation
 }
 
@@ -53,9 +53,8 @@ async function finalizedManifest(
   state: PersistedRunState,
 ): Promise<TestRunManifest | undefined> {
   if (!(await Bun.file(state.manifestPath).exists())) return undefined
-  const manifest = parseTestRunManifest(
+  const manifest = parseTestRunManifest(state.incompatibleSchema)(
     await Bun.file(state.manifestPath).json(),
-    state.incompatibleSchema,
   )
   return manifest.finishedAt ? manifest : undefined
 }
@@ -85,7 +84,7 @@ async function appendPersistedEvent(
     state.artifactsDirectory,
     envelope.sequence,
   )
-  const versioned = { ...persisted.event, ...envelope } as RunEvent
+  const versioned = { ...persisted.event, ...envelope } satisfies RunEvent
   try {
     await appendFile(state.eventsPath, `${JSON.stringify(versioned)}\n`)
   } catch (error) {
@@ -96,7 +95,7 @@ async function appendPersistedEvent(
   }
   return shouldPersistEventEvidence(recordable, policy)
     ? versioned
-    : ({ ...recordable, ...envelope } as RunEvent)
+    : { ...recordable, ...envelope }
 }
 
 async function materializePersistedRun(
@@ -111,18 +110,20 @@ async function materializePersistedRun(
     schemaVersion: testRunSchemaVersion,
     id: state.id,
     startedAt: startedAtFrom(recorded, state.startedAt),
-    ...(input?.finished === false
-      ? {}
-      : { finishedAt: state.now().toISOString() }),
-    ...(state.metadata.sourceRunId
-      ? { sourceRunId: state.metadata.sourceRunId }
-      : {}),
-    ...(state.metadata.suite ? { suite: state.metadata.suite } : {}),
-    ...(state.metadata.applicationRevision
-      ? { applicationRevision: state.metadata.applicationRevision }
-      : {}),
     state: aggregateTestResultState(results),
     results,
+  }
+  if (!(input?.finished === false)) {
+    manifest.finishedAt = state.now().toISOString()
+  }
+  if (state.metadata.sourceRunId) {
+    manifest.sourceRunId = state.metadata.sourceRunId
+  }
+  if (state.metadata.suite) {
+    manifest.suite = state.metadata.suite
+  }
+  if (state.metadata.applicationRevision) {
+    manifest.applicationRevision = state.metadata.applicationRevision
   }
   await Bun.write(state.manifestPath, `${JSON.stringify(manifest, null, 2)}\n`)
   await state.onMaterialize(manifest)
@@ -167,14 +168,14 @@ export function createPersistedTestRun(
 
 export async function readEvents(
   path: string,
-  incompatibleSchema: (version: unknown) => never,
+  incompatibleSchema: (version: string) => never,
 ): Promise<RunEvent[]> {
   if (!(await Bun.file(path).exists())) return []
   const source = await Bun.file(path).text()
   return source
     .split('\n')
     .filter((line) => line.length > 0)
-    .map((line) => parseRunEvent(JSON.parse(line), incompatibleSchema))
+    .map((line) => parseRunEvent(incompatibleSchema)(JSON.parse(line)))
 }
 
 function eventPayload(event: RunEvent | RunEventPayload): RunEventPayload {

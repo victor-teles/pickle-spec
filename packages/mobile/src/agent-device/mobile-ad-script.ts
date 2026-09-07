@@ -90,7 +90,18 @@ function assertionOperation(
       ),
     }
   }
-  const predicate = match[1] as MobileAssertionPredicate
+  const predicates = [
+    'visible',
+    'hidden',
+    'exists',
+    'text',
+    'editable',
+    'selected',
+    'focused',
+  ] as const
+  const predicate = requiredValue(
+    predicates.find((candidate) => candidate === match[1]),
+  )
   const templateBody = requiredValue(match[2])
   const runtimeBody = requiredValue(runtimeMatch[2])
   if (predicate !== 'text') {
@@ -160,7 +171,7 @@ function operationLine(operation: MobileDeterministicOperation): string {
       return `wait text ${quote(operation.target.template)}`
     case 'find-click':
       return `find ${quote(operation.target.template)} click`
-    case 'assert':
+    default:
       return `is ${operation.predicate} ${quote(operation.target.template)}${
         operation.predicate === 'text'
           ? ` ${quote(operation.expected?.template ?? '')}`

@@ -68,7 +68,7 @@ function outcomeDraftFor(
 function literalExpected(instruction: WebInstruction): string | undefined {
   if (!('expected' in instruction)) return undefined
   const expected = instruction.expected
-  if (typeof expected === 'number') return String(expected)
+  if (!(expected instanceof Object)) return String(expected)
   if ('variable' in expected) return undefined
   const segment = expected.segments[0]
   return expected.segments.length === 1 && segment && 'literal' in segment

@@ -1,4 +1,4 @@
-import type { Page, StagehandBrowser } from '@browserbasehq/stagehand'
+import { z } from 'zod'
 import { expect, test } from 'vitest'
 import { startCdpScreencast } from '../../../../src/adapter/live-viewport'
 
@@ -16,11 +16,13 @@ test('streams CDP frames, acknowledges them, and stops the target session', asyn
     },
     websocket: {
       message(socket, data) {
-        const command = JSON.parse(String(data)) as {
-          id: number
-          method: string
-          sessionId?: string
-        }
+        const command = z
+          .object({
+            id: z.number(),
+            method: z.string(),
+            sessionId: z.string().optional(),
+          })
+          .parse(JSON.parse(String(data)))
         methods.push(command.method)
         if (command.method === 'Target.attachToTarget') {
           socket.send(
@@ -50,19 +52,11 @@ test('streams CDP frames, acknowledges them, and stops the target session', asyn
       },
     },
   })
-  const browser = {
-    context: {
-      rpcClient: {
-        browserWebSocketDebuggerUrl: `ws://127.0.0.1:${server.port}`,
-      },
-    },
-  } as unknown as StagehandBrowser
-  const page = { pageId: 'page-1' } as Page
 
   try {
     const controller = await startCdpScreencast({
-      browser,
-      page,
+      debuggerUrl: `ws://127.0.0.1:${server.port}`,
+      pageId: 'page-1',
       onViewport(viewport) {
         if (viewport.kind === 'frame') frame.resolve(viewport.data)
       },
@@ -76,6 +70,6 @@ test('streams CDP frames, acknowledges them, and stops the target session', asyn
     expect(methods).toContain('Page.stopScreencast')
     expect(methods).toContain('Target.detachFromTarget')
   } finally {
-    server.stop(true)
+    void server.stop(true)
   }
 })

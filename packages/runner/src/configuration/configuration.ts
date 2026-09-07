@@ -1,6 +1,6 @@
 import {
   optionalPositiveInteger,
-  parseConfiguration,
+  configurationParser,
   strictObject,
 } from '@pickle-spec/configuration'
 import { z } from 'zod'
@@ -128,13 +128,10 @@ export const runConfigurationSchema = strictObject('run configuration', {
     schemaVersion: 1 as const,
   }))
 
-export function validateRunConfiguration(value: unknown): RunConfiguration {
-  return parseConfiguration(
-    runConfigurationSchema,
-    value,
-    'Invalid run configuration',
-  )
-}
+export const validateRunConfiguration = configurationParser(
+  runConfigurationSchema,
+  'Invalid run configuration',
+)
 
 function configuredProfiles(
   configuration: RunConfiguration,
@@ -153,11 +150,7 @@ function configuredProfiles(
 function isAdapter(
   value: ExecutionTargetAdapter | undefined,
 ): value is ExecutionTargetAdapter {
-  return (
-    typeof value === 'object' &&
-    value !== null &&
-    typeof value.openSession === 'function'
-  )
+  return z.object({ openSession: z.function() }).safeParse(value).success
 }
 
 function adapterForProfile(
@@ -195,7 +188,7 @@ function assertProfileCapabilities(
 }
 
 export function validateProjectRunConfiguration(
-  configuration: unknown,
+  configuration: RunConfiguration,
   extensions: RunExtensionManifest,
 ): RunConfiguration {
   const validatedConfiguration = validateRunConfiguration(configuration)

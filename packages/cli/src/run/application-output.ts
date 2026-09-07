@@ -18,9 +18,9 @@ export function resolveApplicationOutput(
   selectedProfiles: readonly ExecutionTargetProfile[],
   runOptions: ApplicationOutputOptions = {},
 ): ResolvedApplicationOutput {
-  const profiles = {
-    stdout: [] as string[],
-    stderr: [] as string[],
+  const profiles: ResolvedApplicationOutput['profiles'] = {
+    stdout: [],
+    stderr: [],
   }
 
   for (const profile of selectedProfiles) {

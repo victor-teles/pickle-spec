@@ -11,6 +11,11 @@ import type {
 } from '../../../../index'
 import { openLocalExecutionCache, type runScenario } from '../../../../index'
 
+type ObserveLeaseWaitResult = {
+  store: ExecutionCacheStore
+  waiting: Promise<void>
+}
+
 export type RunScenarioInput = Parameters<typeof runScenario>[0]
 
 export type CacheRunInput = RunScenarioInput & {
@@ -54,11 +59,12 @@ export function denseCompiledHead(
 }
 
 export function prefixRepresentation(operations: string[]) {
+  const requiredVariables: string[] = []
   return operations.length > 0
     ? {
         cacheable: true as const,
         adapterPayload: { operations },
-        requiredVariables: [] as string[],
+        requiredVariables,
       }
     : {
         cacheable: false as const,
@@ -115,10 +121,7 @@ export async function localStore(options: LocalStoreOptions = {}) {
 
 export function observeLeaseWait(
   cache: Awaited<ReturnType<typeof localStore>>,
-): {
-  store: ExecutionCacheStore
-  waiting: Promise<void>
-} {
+): ObserveLeaseWaitResult {
   let waiterStarted: (() => void) | undefined
   const waiting = new Promise<void>((resolve) => {
     waiterStarted = resolve

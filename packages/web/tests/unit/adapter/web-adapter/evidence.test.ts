@@ -7,6 +7,13 @@ import { createWebAdapter } from '../../../../index'
 import { requiredValue } from '../../../../src/required-value'
 import { factoryFor, scenario, specification, stubAutomation } from './fixtures'
 
+const outlineRow = (examplesRowId: string): Scenario => ({
+  ...scenario,
+  id: 'shared-outline-scenario',
+  examplesId: 'search-examples',
+  examplesRowId,
+})
+
 describe('createWebAdapter evidence', () => {
   const artifactDirectories: string[] = []
 
@@ -142,12 +149,7 @@ describe('createWebAdapter evidence', () => {
         }),
       ),
     )
-    const outlineRow = (examplesRowId: string): Scenario => ({
-      ...scenario,
-      id: 'shared-outline-scenario',
-      examplesId: 'search-examples',
-      examplesRowId,
-    })
+
     const first = await adapter.openSession({
       executionTargetProfile: { id: 'web' },
       specification,

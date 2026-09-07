@@ -35,8 +35,8 @@ export class CapturedWebActionError extends Error {
   }
 }
 
-export function capturedActionFromError(error: unknown) {
-  return error instanceof CapturedWebActionError ? error.action : undefined
+export function capturedActionFromError(cause: unknown) {
+  return cause instanceof CapturedWebActionError ? cause.action : undefined
 }
 
 async function targetState(automation: WebAutomation) {

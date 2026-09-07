@@ -1,3 +1,4 @@
+import packageManifest from '../../../package.json'
 import { mkdir, mkdtemp, rm, symlink } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
@@ -7,10 +8,6 @@ import { requiredValue } from '../../../src/required-value'
 
 let workspace: string
 let pickleCommand: string
-
-type PackageManifest = {
-  bin: { pickle: string }
-}
 
 type InteractiveRunOptions = {
   cmd: string[]
@@ -68,9 +65,6 @@ async function waitForOutput(
 beforeAll(async () => {
   workspace = await mkdtemp(join(tmpdir(), 'pickle-run-live-'))
   const packageDirectory = resolve(import.meta.dir, '../../..')
-  const packageManifest = (await Bun.file(
-    join(packageDirectory, 'package.json'),
-  ).json()) as PackageManifest
   pickleCommand = join(workspace, 'node_modules', '.bin', 'pickle')
   await mkdir(join(workspace, 'node_modules', '.bin'), { recursive: true })
   await symlink(
@@ -285,7 +279,7 @@ Feature: Interrupt safely
   expect(
     persistedManifest.results.map((result: { state: string }) => result.state),
   ).toEqual(['passed', 'cancelled'])
-  expect(typeof persistedManifest.finishedAt).toBe('string')
+  expect(persistedManifest.finishedAt).toBeTypeOf('string')
 
   const exportedEvents = (await Bun.file(ndjsonPath).text())
     .trim()
@@ -501,7 +495,7 @@ Feature: Startup interruption
 
   const exportedManifest = await Bun.file(jsonPath).json()
   expect(exportedManifest.results).toEqual([])
-  expect(typeof exportedManifest.finishedAt).toBe('string')
+  expect(exportedManifest.finishedAt).toBeTypeOf('string')
   expect(await Bun.file(junitPath).text()).toContain('tests="0"')
   const exportedEvents = (await Bun.file(ndjsonPath).text())
     .trim()

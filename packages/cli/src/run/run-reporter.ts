@@ -36,7 +36,7 @@ export interface RunReporter {
   prepare?(schedule: readonly ScheduledTestResult[]): void
   event(event: RunEvent): void
   complete?(result: TestResult): void
-  fail?(error: unknown, durationMs: number): void
+  fail?(cause: unknown, durationMs: number): void
   refresh?(): void
   finish(
     runs: readonly ScenarioRun[],
@@ -217,8 +217,8 @@ function createNdjsonReporter(write: WriteLine): RunReporter {
 
 export function terminalReporterCapabilities(
   isTerminal: boolean | undefined,
-  columns: number | undefined,
-  noColor: string | undefined,
+  columns?: number,
+  noColor?: string,
   term?: string,
 ): Pick<RunReporterOptions, 'color' | 'columns' | 'interactive'> {
   const interactive = Boolean(isTerminal) && term !== 'dumb'

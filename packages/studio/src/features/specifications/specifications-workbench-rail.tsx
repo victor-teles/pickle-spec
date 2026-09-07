@@ -185,7 +185,7 @@ function SpecificationTargets(props: WorkbenchRailProps) {
     <Accordion
       multiple
       defaultValue={initiallyExpanded ? [initiallyExpanded] : []}
-      className="gap-0.5 rounded-none border-0"
+      className="gap-1 rounded-none border-0"
     >
       {props.model.specifications.map((specification) => (
         <SpecificationTarget
@@ -218,14 +218,14 @@ function SpecificationTarget(
         }
         onClick={() => props.onSelectSpecification(props.specification.id)}
       >
-        <span className="min-w-0 flex-1 break-words text-left text-[0.8125rem] leading-snug">
+        <span className="min-w-0 flex-1 wrap-break-word text-left text-[0.8125rem] leading-snug">
           {props.specification.name}
         </span>
         <span className="text-xs text-muted-foreground">
           {props.specification.scenarios.length}
         </span>
       </AccordionTrigger>
-      <AccordionContent className="px-2 pb-1">
+      <AccordionContent className="p-2">
         <ul className="space-y-0.5">
           {props.specification.scenarios.map((scenario) => (
             <ScenarioTarget key={scenario.id} {...props} scenario={scenario} />
@@ -275,7 +275,7 @@ function ScenarioTarget(
         className="h-auto min-h-8 min-w-0 flex-1 justify-start px-2 py-1.5 text-left whitespace-normal hover:bg-transparent aria-pressed:border-transparent"
         onClick={handleSelect}
       >
-        <span className="line-clamp-2 break-words text-pretty leading-snug">
+        <span className="line-clamp-2 wrap-break-word text-pretty leading-snug">
           {props.scenario.name}
         </span>
       </Button>

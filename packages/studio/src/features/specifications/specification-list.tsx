@@ -312,7 +312,11 @@ function useSpecificationIndexFocus(
   }, [focusTargetVisible, pendingFocus, scrollRef, setPendingFocus])
 }
 
-function nextSpecificationIndex(key: string, index: number, count: number) {
+function nextSpecificationIndex(
+  key: string,
+  index: number,
+  count: number,
+): number | undefined {
   switch (key) {
     case 'ArrowDown':
       return Math.min(count - 1, index + 1)
@@ -323,7 +327,7 @@ function nextSpecificationIndex(key: string, index: number, count: number) {
     case 'End':
       return count - 1
     default:
-      return
+      return undefined
   }
 }
 

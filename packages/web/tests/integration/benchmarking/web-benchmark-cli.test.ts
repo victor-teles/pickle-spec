@@ -1,3 +1,4 @@
+import { z } from 'zod'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -8,6 +9,21 @@ import {
   type WebPerformanceBenchmarkResult,
 } from '../../../src/benchmarking/web-benchmark'
 import { webPerformanceBenchmarkExitCode } from '../../../src/benchmarking/web-benchmark-cli'
+
+const statisticsSchema = z.object({ p50Ms: z.number(), p95Ms: z.number() })
+const gateSchema = z.object({
+  ratio: z.number(),
+  limitRatio: z.number(),
+  passed: z.boolean(),
+})
+const benchmarkResultSchema = z.object({
+  warmupPairsDiscarded: z.literal(3),
+  samples: z.array(z.object({ adaptiveMs: z.number(), replayMs: z.number() })),
+  adaptive: statisticsSchema,
+  replay: statisticsSchema,
+  gates: z.object({ p50: gateSchema, p95: gateSchema }),
+  passed: z.boolean(),
+})
 
 interface CliResult {
   exitCode: number
@@ -20,7 +36,7 @@ interface CliExecution {
   stdout: string
 }
 
-function providerFreeEnvironment(): Record<string, string | undefined> {
+function providerFreeEnvironment() {
   const environment = { ...Bun.env }
   for (const name of providerCredentialEnvironmentNames) {
     delete environment[name]
@@ -35,7 +51,7 @@ async function runCli(
   if (!stdout.trim()) throw new Error(stderr || 'Benchmark produced no JSON')
   return {
     exitCode,
-    output: JSON.parse(stdout) as WebPerformanceBenchmarkResult,
+    output: benchmarkResultSchema.parse(JSON.parse(stdout)),
   }
 }
 

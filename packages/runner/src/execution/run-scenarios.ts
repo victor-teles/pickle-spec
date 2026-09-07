@@ -162,7 +162,7 @@ export async function runScenarios(
   validateTargetSelection(input.selections, targets)
 
   const scheduledTargets = scenarioTargets(input.selections, targets)
-  const runs = new Array<ScenarioRun>(scheduledTargets.length)
+  const runs: ScenarioRun[] = []
   let nextIndex = 0
   const workerCount = Math.min(concurrency, scheduledTargets.length)
   const onEvent = input.onEvent

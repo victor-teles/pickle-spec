@@ -24,16 +24,20 @@ function specificationState(
   return specificationStates.find((state) => state === value)
 }
 
-export function identityFromTags(tags: readonly string[]): {
+type SpecificationIdentity = {
   id?: string
   state?: SpecificationState
-} {
+}
+
+export function identityFromTags(
+  tags: readonly string[],
+): SpecificationIdentity {
   const id = idValues(tags)[0]
   const state = specificationState(stateValues(tags)[0])
-  return {
-    ...(id ? { id } : {}),
-    ...(state ? { state } : {}),
-  }
+  const identity: SpecificationIdentity = {}
+  if (id) identity.id = id
+  if (state) identity.state = state
+  return identity
 }
 
 export function examplesRowId(

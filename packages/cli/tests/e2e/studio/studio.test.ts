@@ -1,3 +1,5 @@
+import { z } from 'zod'
+import { testRunManifestSchema } from '@pickle-spec/runner'
 import { mkdir } from 'node:fs/promises'
 import { join } from 'node:path'
 import {
@@ -13,35 +15,15 @@ import { requiredValue } from '../../../src/required-value'
 import { StudioBrowserFixture } from '../support/studio-browser-fixture'
 import { registerStudioHardeningTests } from '../support/studio-hardening-suite'
 
-type TestRunManifestFile = {
-  finishedAt?: string
-}
-
-type HistoryIndexPayload = {
-  runs: Array<{ specificationUris: string[] }>
-  activeRunIds: string[]
-}
+const historyIndexSchema = z.object({
+  runs: z.array(z.object({ specificationUris: z.array(z.string()) })),
+  activeRunIds: z.array(z.string()),
+})
 
 type TextReportResponse = {
   body: string
   contentDisposition: string | null
   contentType: string | null
-}
-
-type RunRequestPayload = {
-  paths?: string[]
-  profiles?: string[]
-  scenarioId?: string
-}
-
-type BrowserViewportHost = {
-  document: {
-    documentElement: { clientWidth: number; scrollWidth: number }
-    querySelector: (
-      selector: string,
-    ) => { clientWidth: number; scrollWidth: number } | null
-  }
-  innerWidth: number
 }
 
 type ElementBox = {
@@ -63,10 +45,18 @@ type MonacoEditorHost = {
           getLineCount: () => number
           getLineMaxColumn: (lineNumber: number) => number
         } | null
-        trigger: (source: string, handlerId: string, payload: unknown) => void
+        trigger: (
+          source: string,
+          handlerId: string,
+          payload: z.core.util.JSONType | undefined,
+        ) => void
       }>
     }
   }
+}
+
+declare global {
+  var monaco: MonacoEditorHost['monaco']
 }
 
 async function waitForFile(path: string): Promise<void> {
@@ -393,9 +383,8 @@ Feature: Search
         .click()
       await waitForScenarioResult(page, 'Pay for the order firefox passed')
 
-      const index = await page.evaluate(
-        async () =>
-          (await (await fetch('/api/runs')).json()) as HistoryIndexPayload,
+      const index = historyIndexSchema.parse(
+        await page.evaluate(async () => (await fetch('/api/runs')).json()),
       )
       expect(index.runs).toHaveLength(1)
       expect(index.runs[0]?.specificationUris).toEqual([
@@ -494,13 +483,15 @@ Feature: Search
         .filter({ hasText: 'Run Scenario Query the catalog' })
         .click()
       const runRequest = await runRequestPromise
-      expect(runRequest.postDataJSON() as RunRequestPayload).toEqual({
+      expect(runRequest.postDataJSON()).toEqual({
         paths: ['features/search.feature'],
         profiles: ['firefox'],
         scenarioId: 'scnquerybbbbbbbb',
       })
       const runResponse = await runResponsePromise
-      const started = (await runResponse.json()) as { id: string }
+      const started = z
+        .object({ id: z.string() })
+        .parse(await runResponse.json())
 
       await page.keyboard.press('Meta+k')
       await search.fill('all profiles')
@@ -749,7 +740,9 @@ export default {
       adapterKind: 'test',
       adapterCacheSchemaVersion: 'test.1',
       parse(payload) {
-        return payload as CachePayload
+        return z
+          .object({ operation: z.literal('fill'), variable: z.string() })
+          .parse(payload)
       },
       prefixStepCount() {
         return 1
@@ -840,10 +833,8 @@ export default {
       PICKLE_CACHE_ROOT: join(fixture.workspace, 'empty-cache-root'),
     })
     const page = await browser.newPage()
-    let releaseRequest = () => {}
-    const requestGate = new Promise<void>((resolve) => {
-      releaseRequest = resolve
-    })
+    const { promise: requestGate, resolve: releaseRequest } =
+      Promise.withResolvers<void>()
     try {
       await page.route('**/api/execution-cache', async (route) => {
         await requestGate
@@ -1318,10 +1309,12 @@ Feature: Search
       await page.goto(url)
       await runSpecification(page)
       await waitForScenarioResult(page, 'Pay for the order chrome failed')
-      const indexedHistory = await page.evaluate(async () => {
-        const response = await fetch('/api/runs')
-        return response.json() as Promise<HistoryIndexPayload>
-      })
+      const indexedHistory = historyIndexSchema.parse(
+        await page.evaluate(async () => {
+          const response = await fetch('/api/runs')
+          return response.json()
+        }),
+      )
       expect(indexedHistory.runs[0]?.specificationUris).toEqual([
         'features/checkout.feature',
       ])
@@ -1585,7 +1578,11 @@ Feature: Search
         ndjsonReport.body
           .trim()
           .split('\n')
-          .every((line) => typeof JSON.parse(line).type === 'string'),
+          .every(
+            (line) =>
+              z.object({ type: z.string() }).safeParse(JSON.parse(line))
+                .success,
+          ),
       ).toBe(true)
       expect(junitReport.body).toContain('<testsuites')
       expect(htmlReport.body).toContain('<!DOCTYPE html>')
@@ -1771,11 +1768,12 @@ Feature: Checkout
       await page.getByRole('button', { name: 'Runs', exact: true }).click()
       const activeRuns = page.getByRole('heading', { name: 'Active Runs' })
       await activeRuns.waitFor()
-      const activeRunId = await page.evaluate(async () => {
-        const response = await fetch('/api/runs')
-        const index = (await response.json()) as HistoryIndexPayload
-        return index.activeRunIds[0]
-      })
+      const activeRunId = historyIndexSchema.parse(
+        await page.evaluate(async () => {
+          const response = await fetch('/api/runs')
+          return response.json()
+        }),
+      ).activeRunIds[0]
       expect(activeRunId).toBeDefined()
       if (!activeRunId) throw new Error('Expected an active Test run')
       expect(
@@ -1895,7 +1893,7 @@ Feature: Checkout
       )
       expect(
         await page.evaluate(() => {
-          const viewportHost = globalThis as unknown as BrowserViewportHost
+          const viewportHost = globalThis
           return (
             viewportHost.document.documentElement.scrollWidth <=
             viewportHost.innerWidth
@@ -1918,9 +1916,7 @@ Feature: Checkout
       expect(current).toContain('# keep this comment')
       expect(current).toContain('Feature: Checkout')
       await page.evaluate(() => {
-        const editor = (
-          globalThis as MonacoEditorHost
-        ).monaco?.editor.getEditors()[0]
+        const editor = globalThis.monaco?.editor.getEditors()[0]
         const model = editor?.getModel()
         if (!editor || !model) return
         editor.setValue(`${editor.getValue()}\n    Gi`)
@@ -2304,32 +2300,32 @@ Feature: Checkout
   test('Studio shows Git diffs, commits after confirmation, and never pushes', async () => {
     const project = await createStudioProject('manage-git')
     const remote = join(fixture.workspace, 'manage-git-remote.git')
-    await Bun.spawnSync({ cmd: ['git', 'init', '--bare', remote] })
-    await Bun.spawnSync({
+    Bun.spawnSync({ cmd: ['git', 'init', '--bare', remote] })
+    Bun.spawnSync({
       cmd: ['git', 'init'],
       cwd: project,
     })
-    await Bun.spawnSync({
+    Bun.spawnSync({
       cmd: ['git', 'config', 'user.email', 'studio@example.test'],
       cwd: project,
     })
-    await Bun.spawnSync({
+    Bun.spawnSync({
       cmd: ['git', 'config', 'user.name', 'Studio Test'],
       cwd: project,
     })
-    await Bun.spawnSync({
+    Bun.spawnSync({
       cmd: ['git', 'add', 'features/checkout.feature', 'pickle.config.jsonc'],
       cwd: project,
     })
-    await Bun.spawnSync({
+    Bun.spawnSync({
       cmd: ['git', 'commit', '-m', 'initial'],
       cwd: project,
     })
-    await Bun.spawnSync({
+    Bun.spawnSync({
       cmd: ['git', 'remote', 'add', 'origin', remote],
       cwd: project,
     })
-    await Bun.spawnSync({
+    Bun.spawnSync({
       cmd: [
         'git',
         'remote',
@@ -2340,11 +2336,11 @@ Feature: Checkout
       cwd: project,
     })
     const branch = currentGitBranch(project)
-    await Bun.spawnSync({
+    Bun.spawnSync({
       cmd: ['git', 'update-ref', `refs/remotes/github/${branch}`, 'HEAD'],
       cwd: project,
     })
-    await Bun.spawnSync({
+    Bun.spawnSync({
       cmd: ['git', 'branch', `--set-upstream-to=github/${branch}`],
       cwd: project,
     })
@@ -2373,7 +2369,7 @@ fi
 exit 0
 `,
     )
-    await Bun.spawnSync({ cmd: ['chmod', '+x', gh] })
+    Bun.spawnSync({ cmd: ['chmod', '+x', gh] })
     const { child, url } = await startStudio(project, {
       PATH: `${join(project, 'bin')}:${Bun.env.PATH ?? ''}`,
       GH_LOG: ghLog,
@@ -2426,9 +2422,7 @@ exit 0
 
 async function gherkinValue(page: Page): Promise<string> {
   return page.evaluate(() => {
-    const editor = (
-      globalThis as MonacoEditorHost
-    ).monaco?.editor.getEditors()[0]
+    const editor = globalThis.monaco?.editor.getEditors()[0]
     return editor?.getValue() ?? ''
   })
 }
@@ -2491,15 +2485,11 @@ async function waitForFileContent(
 async function setGherkinValue(page: Page, source: string) {
   await page.locator('.monaco-editor').waitFor()
   await page.evaluate((next) => {
-    const editor = (
-      globalThis as MonacoEditorHost
-    ).monaco?.editor.getEditors()[0]
+    const editor = globalThis.monaco?.editor.getEditors()[0]
     editor?.setValue(next)
   }, source)
   await page.waitForFunction((expected) => {
-    const editor = (
-      globalThis as MonacoEditorHost
-    ).monaco?.editor.getEditors()[0]
+    const editor = globalThis.monaco?.editor.getEditors()[0]
     return editor?.getValue() === expected
   }, source)
   await Bun.sleep(32)
@@ -2512,9 +2502,11 @@ async function finishedManifestCount(project: string): Promise<number> {
   })
   let finished = 0
   for await (const relativePath of manifests) {
-    const manifest = (await Bun.file(
-      join(resolveLocalProjectStorage(project).runsDirectory, relativePath),
-    ).json()) as TestRunManifestFile
+    const manifest = testRunManifestSchema.parse(
+      await Bun.file(
+        join(resolveLocalProjectStorage(project).runsDirectory, relativePath),
+      ).json(),
+    )
     if (manifest.finishedAt) finished++
   }
   return finished

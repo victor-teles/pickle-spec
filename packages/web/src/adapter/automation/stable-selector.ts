@@ -1,3 +1,4 @@
+import { z } from 'zod'
 type StableElement = {
   id: string
   tagName: string
@@ -28,6 +29,7 @@ export function stableSelectorFor(element: StableElement): string | undefined {
   if (element.name) {
     return `${element.tagName.toLowerCase()}[name=${JSON.stringify(element.name)}]`
   }
+  return undefined
 }
 
 export function stabilizeXpathScript(xpath: string): string {
@@ -56,7 +58,7 @@ export function xpathValue(selector: string): string {
 }
 
 type EvaluablePage = {
-  evaluate(expression: string): Promise<unknown>
+  evaluate(expression: string): Promise<string | null | undefined>
 }
 
 export async function stabilizeSelector(
@@ -68,7 +70,7 @@ export async function stabilizeSelector(
     const stable = await page.evaluate(
       stabilizeXpathScript(xpathValue(selector)),
     )
-    return typeof stable === 'string' && stable.length > 0 ? stable : selector
+    return z.string().min(1).safeParse(stable).data ?? selector
   } catch {
     return selector
   }

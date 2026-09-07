@@ -58,8 +58,7 @@ async function writeRecordingFrame(
   stdin: FileSink,
   frame: Uint8Array,
 ): Promise<void> {
-  const written = stdin.write(frame)
-  if (typeof written !== 'number') await written
+  await stdin.write(frame)
 }
 
 export async function startWebRecording(
@@ -81,11 +80,11 @@ export async function startWebRecording(
   const stdin = ffmpeg.stdin
   let writes = Promise.resolve()
 
-  async function nextFrame() {
+  async function nextFrame(): Promise<Uint8Array | undefined> {
     try {
       return await input.captureFrame()
     } catch {
-      return
+      return undefined
     }
   }
 
@@ -112,7 +111,7 @@ export async function startWebRecording(
       await writes
       const frame = await nextFrame()
       if (frame) await writeRecordingFrame(stdin, frame)
-      stdin.end()
+      void stdin.end()
       const code = await ffmpeg.exited
       if (code !== 0) {
         const stderr = await new Response(ffmpeg.stderr).text()
@@ -125,7 +124,7 @@ export async function startWebRecording(
       stopped = true
       clearInterval(timer)
       void writes.catch(() => {})
-      stdin.end()
+      void stdin.end()
       ffmpeg.kill()
       await ffmpeg.exited
     },

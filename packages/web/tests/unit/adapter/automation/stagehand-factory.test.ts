@@ -1,4 +1,10 @@
-import { browserbase, localBrowser, Stagehand } from '@browserbasehq/stagehand'
+import {
+  browserbase,
+  localBrowser,
+  Stagehand,
+  type BrowserContext,
+  type Page,
+} from '@browserbasehq/stagehand'
 import type { Scenario, Specification } from '@pickle-spec/spec'
 import { afterEach, describe, expect, test, vi } from 'vitest'
 import { mock } from 'vitest-mock-extended'
@@ -14,14 +20,15 @@ describe('stagehandFactory', () => {
 
   test('attaches Stagehand before opening an Adaptive browser context', async () => {
     let attached = false
-    const context = {
-      activePage: vi.fn(async () => null),
+    const context = mock<BrowserContext>({
+      activePage: vi.fn(async (): Promise<Page | undefined> => undefined),
       cookies: vi.fn(async () => []),
       pages: vi.fn(async () => []),
       addInitScript: vi.fn(async () => {}),
-    }
-    const browser = {
-      get context() {
+    })
+    const browser = mock<LaunchedBrowser>({ close: vi.fn(async () => {}) })
+    Object.defineProperty(browser, 'context', {
+      get() {
         if (!attached) {
           throw new Error(
             'Browser context is unavailable. Attach the browser with await Stagehand.create({ browser }).',
@@ -29,17 +36,14 @@ describe('stagehandFactory', () => {
         }
         return context
       },
+    })
+    const stagehand = mock<Stagehand>({
+      browser: mock<LaunchedBrowser>({ context }),
       close: vi.fn(async () => {}),
-    } as unknown as LaunchedBrowser
-    const stagehand = {
-      browser: {
-        context: {
-          activePage: vi.fn(async () => null),
-        },
-      },
-      close: vi.fn(async () => {}),
-      observe: vi.fn(async () => ({ data: [] })),
-    } as unknown as Stagehand
+    })
+    stagehand.observe.mockResolvedValue(
+      mock<Awaited<ReturnType<Stagehand['observe']>>>({ data: [] }),
+    )
     vi.spyOn(localBrowser, 'launch').mockResolvedValue(browser)
     vi.spyOn(Stagehand, 'create').mockImplementation(async (input) => {
       attached = true
@@ -68,20 +72,20 @@ describe('stagehandFactory', () => {
 
   test('closes the browser when Stagehand shutdown depends on it', async () => {
     const browserClosed = Promise.withResolvers<void>()
-    const context = {
-      activePage: vi.fn(async () => null),
+    const context = mock<BrowserContext>({
+      activePage: vi.fn(async (): Promise<Page | undefined> => undefined),
       cookies: vi.fn(async () => []),
       pages: vi.fn(async () => []),
       addInitScript: vi.fn(async () => {}),
-    }
-    const browser = {
+    })
+    const browser = mock<LaunchedBrowser>({
       context,
       close: vi.fn(async () => browserClosed.resolve()),
-    } as unknown as LaunchedBrowser
-    const stagehand = {
-      browser: { context },
+    })
+    const stagehand = mock<Stagehand>({
+      browser: mock<LaunchedBrowser>({ context }),
       close: vi.fn(async () => browserClosed.promise),
-    } as unknown as Stagehand
+    })
     vi.spyOn(localBrowser, 'launch').mockResolvedValue(browser)
     vi.spyOn(Stagehand, 'create').mockResolvedValue(stagehand)
     const browserOptions = {
@@ -102,25 +106,24 @@ describe('stagehandFactory', () => {
     await closing
 
     expect(outcome).toBe('closed')
-    expect(stagehand.close).toHaveBeenCalledTimes(1)
-    expect(browser.close).toHaveBeenCalledTimes(1)
+    expect(stagehand.close.mock.calls).toHaveLength(1)
+    expect(browser.close.mock.calls).toHaveLength(1)
   })
 
   test('attaches Stagehand for public cache Replay without a model', async () => {
     const goto = vi.fn(async () => null)
-    const page = {
-      goto,
-      evaluate: vi.fn(async () => 0),
-    }
+    const page = mock<Page>({ goto })
+    page.evaluate.mockResolvedValue(0)
     let attached = false
-    const context = {
+    const context = mock<BrowserContext>({
       activePage: vi.fn(async () => page),
       cookies: vi.fn(async () => []),
       pages: vi.fn(async () => [page]),
       addInitScript: vi.fn(async () => {}),
-    }
-    const browser = {
-      get context() {
+    })
+    const browser = mock<LaunchedBrowser>({ close: vi.fn(async () => {}) })
+    Object.defineProperty(browser, 'context', {
+      get() {
         if (!attached) {
           throw new Error(
             'Browser context is unavailable. Attach the browser with await Stagehand.create({ browser }).',
@@ -128,12 +131,11 @@ describe('stagehandFactory', () => {
         }
         return context
       },
-      close: vi.fn(async () => {}),
-    } as unknown as LaunchedBrowser
-    const stagehand = {
+    })
+    const stagehand = mock<Stagehand>({
       browser,
       close: vi.fn(async () => {}),
-    } as unknown as Stagehand
+    })
     vi.spyOn(localBrowser, 'launch').mockResolvedValue(browser)
     const create = vi
       .spyOn(Stagehand, 'create')
@@ -197,24 +199,22 @@ describe('stagehandFactory', () => {
   })
 
   test('connects to CDP with the configured extension and keeps Replay model-free', async () => {
-    const page = {
-      goto: vi.fn(async () => null),
-      evaluate: vi.fn(async () => 0),
-    }
-    const context = {
+    const page = mock<Page>({ goto: vi.fn(async () => null) })
+    page.evaluate.mockResolvedValue(0)
+    const context = mock<BrowserContext>({
       activePage: vi.fn(async () => page),
       cookies: vi.fn(async () => []),
       pages: vi.fn(async () => [page]),
       addInitScript: vi.fn(async () => {}),
-    }
-    const browser = {
+    })
+    const browser = mock<LaunchedBrowser>({
       context,
       close: vi.fn(async () => {}),
-    } as unknown as LaunchedBrowser
-    const stagehand = {
+    })
+    const stagehand = mock<Stagehand>({
       browser,
       close: vi.fn(async () => {}),
-    } as unknown as Stagehand
+    })
     const connect = vi.spyOn(localBrowser, 'connect').mockResolvedValue(browser)
     const create = vi.spyOn(Stagehand, 'create').mockResolvedValue(stagehand)
     const browserOptions = {
@@ -278,12 +278,12 @@ describe('stagehandFactory', () => {
   })
 
   test('closes Stagehand when attachment finishes after cancellation', async () => {
-    const browser = {
+    const browser = mock<LaunchedBrowser>({
       close: vi.fn(async () => {}),
-    } as unknown as LaunchedBrowser
-    const stagehand = {
+    })
+    const stagehand = mock<Stagehand>({
       close: vi.fn(async () => {}),
-    } as unknown as Stagehand
+    })
     const creation = Promise.withResolvers<Stagehand>()
     vi.spyOn(localBrowser, 'launch').mockResolvedValue(browser)
     vi.spyOn(Stagehand, 'create').mockImplementation(() => creation.promise)
@@ -307,7 +307,7 @@ describe('stagehandFactory', () => {
     creation.resolve(stagehand)
 
     await expect(opening).rejects.toMatchObject({ name: 'AbortError' })
-    expect(stagehand.close).toHaveBeenCalledTimes(1)
-    expect(browser.close).toHaveBeenCalledTimes(1)
+    expect(stagehand.close.mock.calls).toHaveLength(1)
+    expect(browser.close.mock.calls).toHaveLength(1)
   })
 })

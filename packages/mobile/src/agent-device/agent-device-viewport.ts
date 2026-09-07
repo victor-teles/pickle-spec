@@ -37,7 +37,7 @@ async function removeCapturedFiles(
 }
 
 async function captureViewportFrame(input: {
-  client: AgentDeviceClientPort
+  client: Pick<AgentDeviceClientPort, 'capture'>
   screenshotPath: string
   sessionId: string
   signal: AbortSignal
@@ -52,9 +52,9 @@ async function captureViewportFrame(input: {
       }),
     )
     capturedPath = result.path
-    if (input.signal.aborted) return
+    if (input.signal.aborted) return undefined
     const data = (await readFile(capturedPath)).toString('base64')
-    if (input.signal.aborted) return
+    if (input.signal.aborted) return undefined
     return {
       type: 'viewport-frame',
       sessionId: input.sessionId,
@@ -67,7 +67,7 @@ async function captureViewportFrame(input: {
 
 export function startAgentDeviceViewport(input: {
   sessionId: string
-  client: AgentDeviceClientPort
+  client: Pick<AgentDeviceClientPort, 'capture'>
   publish: (event: MobileWorkerEvent) => void
 }): MobileViewportController {
   const controller = new AbortController()
@@ -82,7 +82,7 @@ export function startAgentDeviceViewport(input: {
         screenshotPath,
         sessionId: input.sessionId,
         signal: controller.signal,
-      }).catch(() => undefined)
+      }).catch(() => {})
       if (frame) input.publish(frame)
       await waitForNextCapture(controller.signal)
     }

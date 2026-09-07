@@ -87,7 +87,7 @@ export async function formatHtml(
   options: FormatHtmlOptions = {},
 ): Promise<string> {
   const mode = options.artifacts ?? 'failures'
-  const results = [...manifest.results].sort(
+  const results = [...manifest.results].toSorted(
     (left, right) =>
       resultPriority(left.state) - resultPriority(right.state) ||
       left.scenario.name.localeCompare(right.scenario.name),

@@ -38,10 +38,10 @@ export type {
 export type { OpenGatewaySessionInput } from './agent-device-session.ts'
 
 function replayScenarioStepIndex(
-  error: unknown,
+  cause: unknown,
   payload: MobileExecutionCachePayload,
 ): number {
-  const planStep = agentDeviceReplayPlanStep(error)
+  const planStep = agentDeviceReplayPlanStep(cause)
   if (planStep === undefined) return 0
   const stepIndex = payload.stepRanges.findIndex(
     (range) => planStep >= range.from && planStep <= range.to,
@@ -66,9 +66,9 @@ function passedScenarioExecution(
 
 function divergentScenarioExecution(
   session: GatewaySession,
-  error: unknown,
+  cause: unknown,
 ): WorkerScenarioExecution {
-  const failedStep = replayScenarioStepIndex(error, session.compiled.payload)
+  const failedStep = replayScenarioStepIndex(cause, session.compiled.payload)
   return {
     stepExecutions: session.compiled.descriptions
       .slice(0, failedStep + 1)
@@ -138,7 +138,7 @@ export class AgentDeviceGateway {
           await client.apps.list({ platform, appsFilter: scope }),
         ),
       ),
-    ].sort()
+    ].toSorted()
   }
 
   async discoverTargets(
@@ -302,6 +302,7 @@ export class AgentDeviceGateway {
         throw new AggregateError(
           [logError, error],
           'Failed to close mobile evidence and session',
+          { cause: error },
         )
       }
       throw error

@@ -91,7 +91,7 @@ const diskWatchDebounceMs = 100
 const diskWatchPollMs = 200
 
 function globList(globs: string | readonly string[]): readonly string[] {
-  return typeof globs === 'string' ? [globs] : globs
+  return [globs].flat()
 }
 
 interface SpecificationWorkspaceState {
@@ -329,8 +329,8 @@ export function createSpecificationWorkspace(
         await collectCompletions(state, pattern, tags, steps)
       }
       return {
-        tags: [...tags].sort((left, right) => left.localeCompare(right)),
-        steps: [...steps].sort((left, right) => left.localeCompare(right)),
+        tags: [...tags].toSorted((left, right) => left.localeCompare(right)),
+        steps: [...steps].toSorted((left, right) => left.localeCompare(right)),
       }
     },
 

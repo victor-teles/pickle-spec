@@ -1,3 +1,5 @@
+import { z } from 'zod'
+import { testRunManifestSchema } from '@pickle-spec/runner'
 import { mkdir, mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
@@ -14,15 +16,8 @@ type SmokeConfiguration = {
   targetId?: string
 }
 
-type StudioRunSnapshot = {
-  manifest?: {
-    finishedAt?: string
-    results: Array<{
-      state: string
-      executionTargetProfile: { id: string }
-    }>
-  }
-}
+const snapshotSchema = z.object({ manifest: testRunManifestSchema.optional() })
+type StudioRunSnapshot = z.infer<typeof snapshotSchema>
 
 function smokeConfiguration(platform: SmokePlatform): SmokeConfiguration {
   const prefix = platform === 'android' ? 'ANDROID' : 'IOS'
@@ -121,10 +116,14 @@ Feature: Studio mobile smoke
       headers,
     })
     expect(discoveryResponse.ok).toBe(true)
-    const discoveries = (await discoveryResponse.json()) as Array<{
-      profileId: string
-      targets: Array<{ id: string; state: string }>
-    }>
+    const discoveries = z
+      .array(
+        z.object({
+          profileId: z.string(),
+          targets: z.array(z.object({ id: z.string(), state: z.string() })),
+        }),
+      )
+      .parse(await discoveryResponse.json())
     const targets = discoveries.find(
       (item) => item.profileId === configuration.profileId,
     )?.targets
@@ -142,7 +141,9 @@ Feature: Studio mobile smoke
       body: JSON.stringify({ profiles: [configuration.profileId] }),
     })
     if (!startResponse.ok) throw new Error(await startResponse.text())
-    const { id } = (await startResponse.json()) as { id: string }
+    const { id } = z
+      .object({ id: z.string() })
+      .parse(await startResponse.json())
     const deadline = Date.now() + 120_000
     let snapshot: StudioRunSnapshot = {}
     while (Date.now() < deadline) {
@@ -151,7 +152,7 @@ Feature: Studio mobile smoke
         { headers },
       )
       if (!response.ok) throw new Error(await response.text())
-      snapshot = (await response.json()) as StudioRunSnapshot
+      snapshot = snapshotSchema.parse(await response.json())
       if (snapshot.manifest?.finishedAt) break
       await Bun.sleep(250)
     }

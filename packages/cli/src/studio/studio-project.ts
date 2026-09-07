@@ -45,10 +45,14 @@ export function studioRunSelection(
   request: StudioRunRequest | undefined,
 ): SelectionOptions | undefined {
   if (!request?.paths?.length && !request?.scenarioName) return undefined
-  return {
-    ...(request.paths?.length ? { paths: [...request.paths] } : {}),
-    ...(request.scenarioName ? { scenarioName: request.scenarioName } : {}),
+  const selection: SelectionOptions = {}
+  if (request.paths?.length) {
+    selection.paths = [...request.paths]
   }
+  if (request.scenarioName) {
+    selection.scenarioName = request.scenarioName
+  }
+  return selection
 }
 
 async function studioCatalog(
@@ -85,17 +89,18 @@ async function studioCatalog(
           }
         }),
       )
-      return {
+      const item: StudioSpecification = {
         id: specification.id ?? specification.source.uri,
         name: specification.name,
         uri: specification.source.uri,
-        ...(specification.state ? { state: specification.state } : {}),
         tags: authorTags(specification.tags, namespaces),
         links: parseExternalLinks(specification.tags, namespaces),
         canRun: specReady.ready,
         runReasons: specReady.reasons,
         scenarios,
       }
+      if (specification.state) item.state = specification.state
+      return item
     }),
   )
 }
@@ -105,15 +110,12 @@ function profileDetails(config: PickleConfig): StudioProfile[] {
     return Object.entries(config.executionTargetProfiles).map(profileDetail)
   }
   const profile = config.executionTargetProfile
-  return [
-    {
-      id: profile?.id ?? (config.web ? 'web' : 'custom'),
-      adapter: profile?.adapter ?? (config.web ? 'web' : 'custom'),
-      ...(profile?.capabilities
-        ? { capabilities: [...profile.capabilities] }
-        : {}),
-    },
-  ]
+  const item: StudioProfile = {
+    id: profile?.id ?? (config.web ? 'web' : 'custom'),
+    adapter: profile?.adapter ?? (config.web ? 'web' : 'custom'),
+  }
+  if (profile?.capabilities) item.capabilities = [...profile.capabilities]
+  return [item]
 }
 
 function profileDetail([id, profile]: [
@@ -133,33 +135,40 @@ function profileDetail([id, profile]: [
         })),
       }
     : undefined
-  return {
+  const details: StudioProfile = {
     id,
     adapter: profile.adapter,
-    ...(profile.capabilities
-      ? { capabilities: [...profile.capabilities] }
-      : {}),
-    ...(mobile ? { mobile } : {}),
   }
+  if (profile.capabilities) {
+    details.capabilities = [...profile.capabilities]
+  }
+  if (mobile) {
+    details.mobile = mobile
+  }
+  return details
 }
 
 function suiteDetails(config: PickleConfig): StudioSuite[] {
-  return Object.entries(config.suites ?? {}).map(([name, query]) => ({
-    name,
-    ...(query.paths ? { paths: query.paths } : {}),
-    ...(query.tagExpression ? { tagExpression: query.tagExpression } : {}),
-    ...(query.states ? { states: [...query.states] } : {}),
-    ...(query.scenarioName ? { scenarioName: query.scenarioName } : {}),
-  }))
+  return Object.entries(config.suites ?? {}).map(([name, query]) => {
+    const suite: StudioSuite = { name }
+    if (query.paths) suite.paths = query.paths
+    if (query.tagExpression) suite.tagExpression = query.tagExpression
+    if (query.states) suite.states = [...query.states]
+    if (query.scenarioName) suite.scenarioName = query.scenarioName
+    return suite
+  })
 }
 
 function stubAdapter(capabilities?: readonly string[]): ExecutionTargetAdapter {
-  return {
-    ...(capabilities ? { capabilities: [...capabilities] } : {}),
+  const adapter: ExecutionTargetAdapter = {
     async openSession() {
       throw new Error('Studio run validation does not open sessions')
     },
   }
+  if (capabilities) {
+    adapter.capabilities = [...capabilities]
+  }
+  return adapter
 }
 
 function readinessSelections(
@@ -216,11 +225,11 @@ function validateReadinessTargets(
 function hasEnvironmentModelCredential(config: PickleConfig): boolean {
   return Boolean(
     config.web?.browser?.modelApiKey ||
-      process.env.OPENAI_API_KEY ||
-      process.env.ANTHROPIC_API_KEY ||
-      process.env.GOOGLE_API_KEY ||
-      process.env.GEMINI_API_KEY ||
-      process.env.GOOGLE_GENERATIVE_AI_API_KEY,
+    process.env.OPENAI_API_KEY ||
+    process.env.ANTHROPIC_API_KEY ||
+    process.env.GOOGLE_API_KEY ||
+    process.env.GEMINI_API_KEY ||
+    process.env.GOOGLE_GENERATIVE_AI_API_KEY,
   )
 }
 
@@ -368,22 +377,23 @@ function patchedExecutionTargetProfile(
     profile.adapter === 'mobile' && existing?.mobile
       ? { mobile: existing.mobile }
       : {}
-  return {
+  const configuredProfile: ProjectExecutionTargetProfile = {
     adapter: profile.adapter,
-    ...(profile.capabilities
-      ? { capabilities: [...profile.capabilities] }
-      : {}),
-    ...(existing?.web ? { web: existing.web } : {}),
     ...retainedMobile,
-    ...(profile.mobile
-      ? {
-          mobile: {
-            ...profile.mobile,
-            application: { ...profile.mobile.application },
-          },
-        }
-      : {}),
   }
+  if (profile.capabilities) {
+    configuredProfile.capabilities = [...profile.capabilities]
+  }
+  if (existing?.web) {
+    configuredProfile.web = existing.web
+  }
+  if (profile.mobile) {
+    configuredProfile.mobile = {
+      ...profile.mobile,
+      application: { ...profile.mobile.application },
+    }
+  }
+  return configuredProfile
 }
 
 function patchExecutionTargetProfiles(

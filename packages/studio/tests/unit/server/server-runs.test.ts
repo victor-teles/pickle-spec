@@ -3,7 +3,25 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, expect, test } from 'vitest'
 import { requiredValue } from '../../../src/required-value'
+import { secureStudioResponse } from '../../../src/server/response-security'
 import { type StudioRunGateway, startStudio } from '../../../src/server/server'
+
+async function compiledScript(url: string) {
+  const origin = new URL(url).origin
+  const token = new URL(url).searchParams.get('token')
+  const headers = { Authorization: `Bearer ${token}` }
+  const page = await fetch(url)
+  expect(page.status).toBe(200)
+  const document = await page.text()
+  const scriptPath = document.match(/<script[^>]+src="([^"]+)"/)?.[1]
+  expect(scriptPath).toBeDefined()
+  const script = await fetch(new URL(requiredValue(scriptPath), origin), {
+    headers,
+  })
+  expect(script.status).toBe(200)
+  expect(script.headers.get('content-type')).not.toContain('text/html')
+  expect(await script.text()).not.toContain('<!doctype html>')
+}
 
 const directories: string[] = []
 const servers: Array<{ stop(): void }> = []
@@ -15,6 +33,26 @@ afterEach(async () => {
       .splice(0)
       .map((directory) => rm(directory, { recursive: true, force: true })),
   )
+})
+
+test('permits the active development HMR socket without relaxing script security', async () => {
+  const origin = 'http://127.0.0.1:4321'
+  const hmrOrigin = 'ws://127.0.0.1:3000'
+  const production = await secureStudioResponse(new Response('ok'), origin)
+  const development = await secureStudioResponse(
+    new Response('ok'),
+    origin,
+    hmrOrigin,
+  )
+  expect(production.headers.get('content-security-policy')).not.toContain(
+    hmrOrigin,
+  )
+  const policy = development.headers.get('content-security-policy')
+  expect(policy).toContain(
+    "connect-src 'self' ws://127.0.0.1:4321 ws://127.0.0.1:3000",
+  )
+  expect(policy).not.toContain("'unsafe-eval'")
+  expect(policy).not.toContain("script-src 'self' ws:")
 })
 
 test('serves the Runs index, active lifecycle, compatibility alias, and deep links', async () => {
@@ -110,6 +148,16 @@ test('serves the Runs index, active lifecycle, compatibility alias, and deep lin
   const initial = await fetch(`${origin}/api/runs`, { headers })
   expect(initial.status).toBe(200)
   expect((await initial.json()).activeRunIds).toEqual([])
+
+  const invalidRun = await fetch(`${origin}/api/runs`, {
+    method: 'POST',
+    headers: { ...headers, 'content-type': 'application/json' },
+    body: JSON.stringify({ profiles: 'chrome' }),
+  })
+  expect(invalidRun.status).toBe(400)
+  expect(await invalidRun.text()).toContain('profiles')
+  const afterInvalidRun = await fetch(`${origin}/api/runs`, { headers })
+  expect((await afterInvalidRun.json()).activeRunIds).toEqual([])
 
   const started = await fetch(`${origin}/api/runs`, {
     method: 'POST',
@@ -244,23 +292,6 @@ test('compiles the Studio UI once for concurrent servers', async () => {
     })
     servers.push(server)
     return server
-  }
-
-  async function compiledScript(url: string) {
-    const origin = new URL(url).origin
-    const token = new URL(url).searchParams.get('token')
-    const headers = { Authorization: `Bearer ${token}` }
-    const page = await fetch(url)
-    expect(page.status).toBe(200)
-    const document = await page.text()
-    const scriptPath = document.match(/<script[^>]+src="([^"]+)"/)?.[1]
-    expect(scriptPath).toBeDefined()
-    const script = await fetch(new URL(requiredValue(scriptPath), origin), {
-      headers,
-    })
-    expect(script.status).toBe(200)
-    expect(script.headers.get('content-type')).not.toContain('text/html')
-    expect(await script.text()).not.toContain('<!doctype html>')
   }
 
   const [first, second] = await Promise.all([serve(), serve()])

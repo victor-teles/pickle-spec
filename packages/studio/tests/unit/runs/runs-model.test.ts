@@ -94,7 +94,7 @@ test('derives scheduled, running, completed, and failed live progress', () => {
     'features/checkout.feature',
   )
 
-  const activeItem = activeRunListItem('run-live', inspection, undefined)
+  const activeItem = activeRunListItem('run-live', inspection)
   expect(activeItem).toMatchObject({
     state: 'running',
     summary: {

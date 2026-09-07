@@ -23,12 +23,17 @@ export interface SpecificationMigrationPlan {
   files: SpecificationMigrationFile[]
 }
 
+type FileMigration = {
+  nextSource: string
+  changes: SpecificationMigrationChange[]
+}
+
 type SourceEdit = { type: 'insert-line'; beforeLine: number; text: string }
 
 function applyEdits(source: string, edits: readonly SourceEdit[]): string {
   const newline = source.includes('\r\n') ? '\r\n' : '\n'
   const lines = source.split(newline)
-  const orderedEdits = [...edits].sort(
+  const orderedEdits = [...edits].toSorted(
     (left, right) => right.beforeLine - left.beforeLine,
   )
   for (const edit of orderedEdits) {
@@ -44,7 +49,7 @@ function tagLine(column: number, tags: readonly string[]): string {
 function migrateFile(
   file: SpecificationSourceFile,
   feature: Feature | undefined,
-): { nextSource: string; changes: SpecificationMigrationChange[] } {
+): FileMigration {
   if (!feature) return { nextSource: file.source, changes: [] }
   const featureNode = identityNodes(feature).find(
     (node) => node.kind === 'feature',

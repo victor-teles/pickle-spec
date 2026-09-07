@@ -1,3 +1,4 @@
+import { studioRunRequestSchema } from './run.schemas'
 import { basename } from 'node:path'
 import { requiredValue } from '../../required-value'
 import {
@@ -9,7 +10,6 @@ import {
 import { resolveStudioArtifactPath } from '../../server/studio-artifact-path'
 import type {
   StudioRunGateway,
-  StudioRunRequest,
   StudioRunSnapshot,
   StudioRunStreamEvent,
 } from './run.contracts'
@@ -49,10 +49,13 @@ async function startRun(
   request: Request,
 ): Promise<Response> {
   if (!options.gateway) return unavailable('Test runs are unavailable')
-  const body = (await request.json().catch(() => ({}))) as StudioRunRequest
+  const parsed = studioRunRequestSchema.safeParse(
+    await request.json().catch(() => ({})),
+  )
+  if (!parsed.success) return requestError(parsed.error)
   const state: PendingRun = { runId: '', pending: [] }
   try {
-    const started = await options.gateway.start(body, (event) =>
+    const started = await options.gateway.start(parsed.data, (event) =>
       publishRunEvent(options, state, event),
     )
     state.runId = started.id
@@ -170,12 +173,14 @@ async function handleRunRequest(
   request: Request,
   url: URL,
 ) {
-  const exactRoutes: Record<string, () => Promise<Response>> = {
-    'POST /api/runs': () => startRun(options, request),
-    'GET /api/artifact': () => readArtifact(options, request, url),
-    'HEAD /api/artifact': () => readArtifact(options, request, url),
-  }
-  const exact = exactRoutes[routeKey(request, url)]
+  const exactRoutes = new Map(
+    Object.entries({
+      'POST /api/runs': () => startRun(options, request),
+      'GET /api/artifact': () => readArtifact(options, request, url),
+      'HEAD /api/artifact': () => readArtifact(options, request, url),
+    }),
+  )
+  const exact = exactRoutes.get(routeKey(request, url))
   return exact ? exact() : handleRunResource(options, request, url)
 }
 

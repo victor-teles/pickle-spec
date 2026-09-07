@@ -616,7 +616,7 @@ test('renders execution mode, Cache outcome, and inference count independently f
 })
 
 test('enables color only for a TTY when NO_COLOR is absent', () => {
-  expect(terminalReporterCapabilities(true, 100, undefined)).toEqual({
+  expect(terminalReporterCapabilities(true, 100)).toEqual({
     color: true,
     columns: 100,
     interactive: true,
@@ -626,7 +626,7 @@ test('enables color only for a TTY when NO_COLOR is absent', () => {
     columns: 100,
     interactive: true,
   })
-  expect(terminalReporterCapabilities(false, undefined, undefined)).toEqual({
+  expect(terminalReporterCapabilities(false)).toEqual({
     color: false,
     columns: undefined,
     interactive: false,

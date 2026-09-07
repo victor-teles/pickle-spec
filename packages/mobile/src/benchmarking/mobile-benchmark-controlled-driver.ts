@@ -1,3 +1,4 @@
+import { z } from 'zod'
 import { createHash } from 'node:crypto'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -98,11 +99,13 @@ function requireControlledSession(
   return session
 }
 
-function digestScript(script: unknown): string | undefined {
-  return typeof script === 'string'
-    ? createHash('sha256').update(script).digest('hex')
+const digestScriptSchema = z.unknown().transform((value) => {
+  const script = z.string().safeParse(value)
+  return script.success
+    ? createHash('sha256').update(script.data).digest('hex')
     : undefined
-}
+})
+const digestScript = digestScriptSchema.parse.bind(digestScriptSchema)
 
 function controlledScenarioExecution(
   state: ControlledWorkerState,
@@ -209,7 +212,7 @@ function createControlledWorker(
             request.sessionId,
             'session-closed',
           )
-        case 'cancel-session':
+        default:
           return closeControlledSession(
             state,
             request.sessionId,
@@ -241,8 +244,10 @@ function assertControlledRun(
       `Controlled ${mode} run failed: ${attempt.message ?? result.state}`,
     )
   }
-  for (const [field, value] of Object.entries(expectedAttemptFields(mode))) {
-    if (attempt[field as keyof typeof attempt] !== value) {
+  const expected = expectedAttemptFields(mode)
+  const fields = ['executionMode', 'cacheOutcome', 'inferenceCount'] as const
+  for (const field of fields) {
+    if (expected[field] !== undefined && attempt[field] !== expected[field]) {
       throw new Error(`Controlled ${mode} run reported invalid ${field}`)
     }
   }

@@ -1,5 +1,5 @@
 import type { ServerWebSocket } from 'bun'
-import { type ServerHandler, serve } from 'srvx'
+import { type Server, type ServerOptions, serve as serveBunHost } from 'srvx'
 import type { StudioOptions, StudioServer } from './contracts'
 import {
   createStudioRequestHandler,
@@ -7,6 +7,16 @@ import {
 } from './request-handler'
 import { createStudioRuntime, type StudioRuntime } from './runtime'
 import type { StudioSocketData } from './socket-data'
+
+type BunStudioServerOptions = Omit<ServerOptions, 'fetch' | 'bun'> & {
+  bun: NonNullable<ServerOptions['bun']>
+  fetch: StudioRequestHandler
+}
+
+// Bun accepts an empty response after upgrading a request to a WebSocket.
+declare module 'srvx' {
+  function serve(options: BunStudioServerOptions): Server
+}
 
 export type * from './contracts'
 
@@ -61,13 +71,13 @@ function startServer(
   runtime: StudioRuntime,
   requestHandler: StudioRequestHandler,
 ) {
-  return serve({
+  return serveBunHost({
     hostname,
     port: options.port ?? 0,
     gracefulShutdown: false,
     silent: true,
     bun: { websocket: websocketHandlers(runtime) },
-    fetch: requestHandler as ServerHandler,
+    fetch: requestHandler,
   })
 }
 

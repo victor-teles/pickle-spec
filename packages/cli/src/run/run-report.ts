@@ -254,7 +254,7 @@ export function groupResults(
     }
     scenario.results.push(result)
   }
-  return [...specifications.values()].sort((left, right) =>
+  return [...specifications.values()].toSorted((left, right) =>
     left.uri.localeCompare(right.uri),
   )
 }

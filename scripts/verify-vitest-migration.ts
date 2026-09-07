@@ -1,7 +1,15 @@
+import { z } from 'zod'
 import { basename, join, resolve } from 'node:path'
 
-type JsonObject = Record<string, unknown>
-type DependencyMap = Record<string, string>
+const stringMapSchema = z.record(z.string(), z.string().catch('')).catch({})
+const manifestSchema = z.object({
+  dependencies: stringMapSchema,
+  devDependencies: stringMapSchema,
+  peerDependencies: stringMapSchema,
+  scripts: stringMapSchema,
+  workspaces: z.object({ catalog: stringMapSchema }).catch({ catalog: {} }),
+})
+type PackageManifest = z.infer<typeof manifestSchema>
 type DependencyField = 'dependencies' | 'devDependencies' | 'peerDependencies'
 type Violation = {
   file: string
@@ -13,7 +21,7 @@ const ignoredDirectories = new Set(['.git', '.turbo', 'dist', 'node_modules'])
 const sourceFilePattern = /\.[cm]?[jt]sx?$/
 const legacyImport = ['bun', 'test'].join(':')
 const legacyCommand = ['bun', 'test'].join(' ')
-const expectedCatalog: DependencyMap = {
+const expectedCatalog = {
   vitest: '5.0.0',
   'vitest-mock-extended': '5.1.1',
 }
@@ -21,30 +29,16 @@ const expectedRootDevDependencies = ['vitest']
 const expectedPackageConfig = '../../vitest.package.config.ts'
 const expectedCliConfig = 'vitest.config.ts'
 
-function isObject(value: unknown): value is JsonObject {
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
-}
-
-function stringMap(value: unknown): DependencyMap {
-  if (!isObject(value)) return {}
-
-  const entries = Object.entries(value).filter(
-    (entry): entry is [string, string] => typeof entry[1] === 'string',
-  )
-  return Object.fromEntries(entries)
-}
-
 function dependency(
-  manifest: JsonObject,
+  manifest: PackageManifest,
   field: DependencyField,
   name: string,
 ): string | undefined {
-  return stringMap(manifest[field])[name]
+  return manifest[field][name]
 }
 
-function checkCatalog(manifest: JsonObject): Violation[] {
-  const workspace = manifest.workspaces
-  const catalog = isObject(workspace) ? stringMap(workspace.catalog) : {}
+function checkCatalog(manifest: PackageManifest): Violation[] {
+  const catalog = manifest.workspaces.catalog
 
   return Object.entries(expectedCatalog).flatMap(([name, version]) =>
     catalog[name] === version
@@ -58,8 +52,8 @@ function checkCatalog(manifest: JsonObject): Violation[] {
   )
 }
 
-function checkRootDependencies(manifest: JsonObject): Violation[] {
-  const devDependencies = stringMap(manifest.devDependencies)
+function checkRootDependencies(manifest: PackageManifest): Violation[] {
+  const devDependencies = manifest.devDependencies
   return expectedRootDevDependencies.flatMap((name) =>
     devDependencies[name] === 'catalog:'
       ? []
@@ -72,7 +66,7 @@ function checkRootDependencies(manifest: JsonObject): Violation[] {
   )
 }
 
-function checkRunnerTestingDependency(manifest: JsonObject): Violation[] {
+function checkRunnerTestingDependency(manifest: PackageManifest): Violation[] {
   const peer = dependency(manifest, 'peerDependencies', 'vitest')
   const dev = dependency(manifest, 'devDependencies', 'vitest')
   const violations: Violation[] = []
@@ -95,8 +89,11 @@ function checkRunnerTestingDependency(manifest: JsonObject): Violation[] {
   return violations
 }
 
-function checkPackageScripts(file: string, manifest: JsonObject): Violation[] {
-  const scripts = stringMap(manifest.scripts)
+function checkPackageScripts(
+  file: string,
+  manifest: PackageManifest,
+): Violation[] {
+  const scripts = manifest.scripts
   const violations = Object.entries(scripts).flatMap(([name, script]) =>
     script.includes(legacyCommand)
       ? [
@@ -143,10 +140,9 @@ function shouldInspect(file: string): boolean {
   return basename(file) === 'package.json' || sourceFilePattern.test(file)
 }
 
-async function readJsonObject(file: string): Promise<JsonObject> {
+async function readPackageManifest(file: string): Promise<PackageManifest> {
   const source = await Bun.file(join(repositoryRoot, file)).text()
-  const parsed: unknown = JSON.parse(source)
-  return isObject(parsed) ? parsed : {}
+  return manifestSchema.parse(JSON.parse(source))
 }
 
 async function checkFile(file: string): Promise<Violation[]> {
@@ -162,7 +158,7 @@ async function checkFile(file: string): Promise<Violation[]> {
   }
   if (basename(file) !== 'package.json') return violations
 
-  const manifest = await readJsonObject(file)
+  const manifest = await readPackageManifest(file)
   violations.push(...checkPackageScripts(file, manifest))
 
   if (file === 'package.json') {

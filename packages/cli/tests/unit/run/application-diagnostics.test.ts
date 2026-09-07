@@ -20,7 +20,7 @@ function event(input: RunEventData<RunEvent>) {
     sequence: 1,
     occurredAt: '2026-08-23T12:00:00.000Z',
     ...input,
-  } as RunEvent
+  } satisfies RunEvent
 }
 
 test('correlates managed output to an active step without changing its state', () => {
@@ -274,7 +274,7 @@ test('does not duplicate shared process output across concurrent Scenarios', () 
   expect(first.attempt.diagnostics?.[0]?.scenarioId).toBeUndefined()
   expect(second.attempt.diagnostics).toBeUndefined()
   expect(live).toEqual([expect.objectContaining({ profileId: 'desktop' })])
-  expect('scope' in (live[0] as object)).toBe(false)
+  expect(live[0]).not.toHaveProperty('scope')
 })
 
 test('reports reused managed output as not-supported when no diagnostics exist', () => {

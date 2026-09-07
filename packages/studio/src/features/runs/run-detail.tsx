@@ -1,3 +1,4 @@
+import { studioRunSnapshotSchema } from './run.schemas'
 import type { TestRunManifest } from '@pickle-spec/runner'
 import { useEffect, useState } from 'react'
 import { LedgerLoadingSkeleton } from '../../components/loading-skeletons'
@@ -35,19 +36,22 @@ type RunDetailProps = {
 function useFetchedRunSnapshot(props: RunDetailProps) {
   const [snapshot, setSnapshot] = useState<StudioRunSnapshot>()
   const [error, setError] = useState<string>()
-  useEffect(() => {
-    if (props.live?.snapshot) return
+  useEffect((): (() => void) | undefined => {
+    if (props.live?.snapshot) return undefined
     let cancelled = false
     setSnapshot(undefined)
     setError(undefined)
     void props
-      .api<StudioRunSnapshot>(`/api/runs/${encodeURIComponent(props.runId)}`)
+      .api(
+        `/api/runs/${encodeURIComponent(props.runId)}`,
+        studioRunSnapshotSchema,
+      )
       .then(
         (value) => {
           if (!cancelled) setSnapshot(value)
         },
-        (reason: unknown) => {
-          if (!cancelled) setError(reasonMessage(reason))
+        (cause: unknown) => {
+          if (!cancelled) setError(reasonMessage(cause))
         },
       )
     return () => {

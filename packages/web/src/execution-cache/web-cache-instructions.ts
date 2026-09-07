@@ -260,6 +260,7 @@ class DirectWebInstructionExecutor implements WebInstructionExecutor {
     if (executed.action) this.pendingActions.push(executed.action)
     if (persist) instructions.push(navigation)
     this.navigated = true
+    return undefined
   }
 
   markNavigated(): void {

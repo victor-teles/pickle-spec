@@ -1,3 +1,4 @@
+import packageManifest from '../../../package.json'
 import { mkdir, mkdtemp, rm, symlink } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
@@ -5,10 +6,6 @@ import { afterAll, beforeAll, expect, test } from 'vitest'
 
 let workspace: string
 let pickleCommand: string
-
-type PackageManifest = {
-  bin: { pickle: string }
-}
 
 async function waitForFile(path: string): Promise<void> {
   const deadline = Date.now() + 5_000
@@ -35,9 +32,6 @@ async function waitForOutput(
 beforeAll(async () => {
   workspace = await mkdtemp(join(tmpdir(), 'pickle-run-streaming-'))
   const packageDirectory = resolve(import.meta.dir, '../../..')
-  const packageManifest = (await Bun.file(
-    join(packageDirectory, 'package.json'),
-  ).json()) as PackageManifest
   pickleCommand = join(workspace, 'node_modules', '.bin', 'pickle')
   await mkdir(join(workspace, 'node_modules', '.bin'), { recursive: true })
   await symlink(

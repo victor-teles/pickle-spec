@@ -1,14 +1,13 @@
 import { z } from 'zod'
 import { persistedEvidenceKinds } from '../../evidence/evidence'
-import type {
-  ScenarioAttempt,
-  TestResult,
-  TestStepResult,
-} from '../../execution/run-scenario'
 import {
+  type ScenarioAttempt,
+  type TestResult,
+  type TestStepResult,
   evidenceKinds,
   testRunSchemaVersion,
-} from '../../execution/run-scenario'
+} from '../../execution/run-scenario-types'
+
 import type { TestRunManifest } from '../test-run-store'
 import { resolvedActionSchema } from './run-evidence-schema'
 import {

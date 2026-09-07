@@ -84,7 +84,7 @@ async function discoverSpecificationPaths(
       )
     }
   }
-  return [...specificationPaths].sort()
+  return [...specificationPaths].toSorted()
 }
 
 async function readSpecificationFiles(
@@ -102,6 +102,7 @@ async function readSpecificationFiles(
       throw new Error(
         `Invalid Specification ${uri}: ${reason}. ` +
           'Correct the Specification and run pickle check again.',
+        { cause: error },
       )
     }
     files.push({ uri, source })

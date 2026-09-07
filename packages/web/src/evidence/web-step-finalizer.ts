@@ -79,12 +79,12 @@ function shouldCaptureScreenshot(
   return mode === 'on-step' || isEvidenceState(state)
 }
 
-function recordingCaptureFailure(error: unknown): EvidenceAvailability {
+function recordingCaptureFailure(cause: unknown): EvidenceAvailability {
   return {
     kind: 'recording',
     state: 'capture-failed',
     message:
-      error instanceof Error ? error.message : 'Recording capture failed',
+      cause instanceof Error ? cause.message : 'Recording capture failed',
   }
 }
 
@@ -92,9 +92,9 @@ async function startWebStepRecording(
   input: StartWebStepRecordingInput,
 ): Promise<EvidenceAvailability | undefined> {
   const recordingState = input.state
-  if (!input.enabled) return
-  if (!input.automation.startRecording) return
-  if (recordingState.started) return
+  if (!input.enabled) return undefined
+  if (!input.automation.startRecording) return undefined
+  if (recordingState.started) return undefined
   recordingState.started = true
   try {
     await mkdir(input.directory, { recursive: true })
@@ -103,6 +103,7 @@ async function startWebStepRecording(
     recordingState.stopped = true
     return recordingCaptureFailure(error)
   }
+  return undefined
 }
 
 async function finishWebStepRecording(
@@ -110,11 +111,11 @@ async function finishWebStepRecording(
 ): Promise<CaptureResult | undefined> {
   const recordingState = input.state
   if (input.startFailure) return { availability: input.startFailure }
-  if (!recordingState.started || recordingState.stopped) return
+  if (!recordingState.started || recordingState.stopped) return undefined
   if (
     !shouldFinishRecording(input.stepState, input.stepNumber, input.stepCount)
   ) {
-    return
+    return undefined
   }
   recordingState.stopped = true
   if (!input.automation.stopRecording) {

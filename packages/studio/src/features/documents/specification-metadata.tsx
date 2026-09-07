@@ -1,3 +1,4 @@
+import { specificationPreviewSchema } from './document.schemas'
 import { useEffect, useState } from 'react'
 import { Badge } from '../../components/ui/badge'
 import { Button, ButtonLink } from '../../components/ui/button'
@@ -7,7 +8,7 @@ import type { StudioApi } from '../../lib/studio-api'
 import type {
   SpecificationBuffer,
   SpecificationPreview,
-} from './specification-editor'
+} from './document.schemas'
 
 const specificationStates = ['draft', 'active', 'deprecated'] as const
 type SpecificationState = (typeof specificationStates)[number]
@@ -48,8 +49,8 @@ function parseLinks(
   return links
 }
 
-function reasonMessage(reason: unknown) {
-  return reason instanceof Error ? reason.message : String(reason)
+function reasonMessage(cause: unknown) {
+  return cause instanceof Error ? cause.message : String(cause)
 }
 
 function LinkLabel(props: { link: ExternalLink; href?: string }) {
@@ -69,7 +70,7 @@ type SpecificationMetadataProps = {
   templates?: Readonly<Record<string, string>>
   api: StudioApi
   onChange: (source: string) => void
-  onError: (message: string | undefined) => void
+  onError: (message?: string) => void
 }
 
 export function SpecificationMetadataForm(props: SpecificationMetadataProps) {
@@ -102,7 +103,7 @@ function useSpecificationMetadata(props: SpecificationMetadataProps) {
   }, [props.buffer, props.namespaces])
 
   const save = async () => {
-    props.onError(undefined)
+    props.onError()
     try {
       const preview = await previewMetadata(props, state, tagText, links)
       if (!preview.diff) {
@@ -145,7 +146,7 @@ function previewMetadata(
   tagText: string,
   links: readonly ExternalLink[],
 ): Promise<SpecificationPreview> {
-  return props.api('/api/documents/preview', {
+  return props.api('/api/documents/preview', specificationPreviewSchema, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({

@@ -106,7 +106,7 @@ function webProbe(
   profile: ProjectExecutionTargetProfile,
 ): EnvironmentProbe | undefined {
   const options = profile.web ?? config.web
-  if (!options) return
+  if (!options) return undefined
   return {
     key: `web:${webEnvironmentProbeKey(options)}`,
     kind: 'web',
@@ -119,8 +119,8 @@ function mobileProbe(
   profileId: string,
   profile: ProjectExecutionTargetProfile,
 ): EnvironmentProbe | undefined {
-  if (!profile.mobile) return
-  const requiredCapabilities = [...(profile.capabilities ?? [])].sort()
+  if (!profile.mobile) return undefined
+  const requiredCapabilities = [...(profile.capabilities ?? [])].toSorted()
   const { executionTarget, nodePath, targetId } = profile.mobile
   return {
     key: `mobile:${profileId}:${executionTarget}:${nodePath ?? ''}:${targetId ?? ''}:${requiredCapabilities.join(',')}`,

@@ -1,57 +1,39 @@
+import { configurationParser } from '@pickle-spec/configuration'
 import { z } from 'zod'
-import type { RunEvent, TestResult } from '../execution/run-scenario'
 import { testRunSchemaVersion } from '../execution/run-scenario'
 import { runEventSchema } from './schema/run-event-schema'
 import {
   testResultSchema,
   testRunManifestSchema,
 } from './schema/test-result-schema'
-import type { TestRunManifest } from './test-run-store'
 
-type IncompatibleSchema = (version: unknown) => never
+export type IncompatibleSchema = (version: string) => never
 
-const schemaVersionSchema = z.object({ schemaVersion: z.unknown() })
+const parseSchemaVersion = configurationParser(
+  z.object({ schemaVersion: z.unknown() }),
+  'Invalid schema envelope',
+)
 
-export function parseRunSchema<T>(
-  schema: z.ZodType<T>,
-  value: unknown,
-  label: string,
-): T {
-  const result = schema.safeParse(value)
-  if (result.success) return result.data
-  throw new Error(result.error.issues[0]?.message ?? `Invalid ${label}`)
-}
-
-function requireCurrentSchema(
-  value: unknown,
-  incompatible: IncompatibleSchema,
-): void {
-  const envelope = parseRunSchema(schemaVersionSchema, value, 'schema envelope')
-  if (envelope.schemaVersion !== testRunSchemaVersion) {
-    incompatible(envelope.schemaVersion)
+function versionedRunParser<T>(schema: z.ZodType<T>, label: string) {
+  const parse = configurationParser(schema, `Invalid ${label}`)
+  return (incompatible: IncompatibleSchema) => {
+    const parser = z.unknown().transform((value) => {
+      const envelope = parseSchemaVersion(value)
+      if (envelope.schemaVersion !== testRunSchemaVersion) {
+        incompatible(String(envelope.schemaVersion))
+      }
+      return parse(value)
+    })
+    return parser.parse.bind(parser)
   }
 }
 
-export function parseTestRunManifest(
-  value: unknown,
-  incompatible: IncompatibleSchema,
-): TestRunManifest {
-  requireCurrentSchema(value, incompatible)
-  return parseRunSchema(testRunManifestSchema, value, 'Test run manifest')
-}
-
-export function parseRunEvent(
-  value: unknown,
-  incompatible: IncompatibleSchema,
-): RunEvent {
-  requireCurrentSchema(value, incompatible)
-  return parseRunSchema(runEventSchema, value, 'Run event')
-}
-
-export function validateTestResult(
-  value: unknown,
-  incompatible: IncompatibleSchema,
-): TestResult {
-  requireCurrentSchema(value, incompatible)
-  return parseRunSchema(testResultSchema, value, 'Test result')
-}
+export const parseTestRunManifest = versionedRunParser(
+  testRunManifestSchema,
+  'Test run manifest',
+)
+export const parseRunEvent = versionedRunParser(runEventSchema, 'Run event')
+export const validateTestResult = versionedRunParser(
+  testResultSchema,
+  'Test result',
+)

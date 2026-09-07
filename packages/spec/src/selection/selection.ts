@@ -1,6 +1,6 @@
 import {
   optionalString,
-  parseConfiguration,
+  configurationParser,
   strictObject,
 } from '@pickle-spec/configuration'
 import { z } from 'zod'
@@ -116,9 +116,10 @@ function assertShard(shard: Shard): void {
   }
 }
 
-export function validateSelectionOptions(value: unknown): SelectionOptions {
-  return parseConfiguration(selectionOptionsSchema, value, 'Invalid selection')
-}
+export const validateSelectionOptions = configurationParser(
+  selectionOptionsSchema,
+  'Invalid selection',
+)
 
 export function selectScenarios(
   specifications: readonly Specification[],
@@ -133,7 +134,7 @@ export function selectScenarios(
   const states = new Set<SpecificationState>(options.states ?? ['active'])
 
   const selected = [...specifications]
-    .sort((left, right) => left.source.uri.localeCompare(right.source.uri))
+    .toSorted((left, right) => left.source.uri.localeCompare(right.source.uri))
     .filter(
       (specification) =>
         paths.length === 0 ||

@@ -55,3 +55,17 @@ To run the complete journey directly from this project:
 cd apps/example
 bun run run:journey
 ```
+
+## Develop Studio
+
+From the repository root or `apps/example`, run:
+
+```sh
+bun run studio:watch
+```
+
+Studio uses the Rsbuild development server with React Fast Refresh. Component
+and CSS edits appear in the browser without restarting the Studio process or
+interrupting active runs. Compatible component edits preserve React state.
+Restart the command after changing the CLI or Studio runtime code.
+Press Ctrl+C to stop Studio and its development server.

@@ -1,11 +1,8 @@
+import packageManifest from '../../../package.json'
 import { mkdir, mkdtemp, rm, symlink } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { type Browser, chromium } from 'playwright'
-
-type CliPackageManifest = {
-  bin: { pickle: string }
-}
 
 export class StudioBrowserFixture {
   workspace = ''
@@ -15,9 +12,6 @@ export class StudioBrowserFixture {
   async setup(): Promise<void> {
     this.workspace = await mkdtemp(join(tmpdir(), 'pickle-spec-studio-'))
     const packageDirectory = resolve(import.meta.dir, '../../..')
-    const packageManifest = (await Bun.file(
-      join(packageDirectory, 'package.json'),
-    ).json()) as CliPackageManifest
     this.pickleCommand = join(this.workspace, 'node_modules', '.bin', 'pickle')
     await mkdir(join(this.workspace, 'node_modules', '.bin'), {
       recursive: true,
@@ -193,7 +187,7 @@ Feature: Search
         }),
       ])
     } catch (error) {
-      throw new Error(`${String(error)}\n${stderr.text()}`)
+      throw new Error(`${String(error)}\n${stderr.text()}`, { cause: error })
     }
     return { child, url, stdout, stderr }
   }

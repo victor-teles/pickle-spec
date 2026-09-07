@@ -1,3 +1,4 @@
+import { z } from 'zod'
 import {
   createMobileAdapter,
   type MobileAdapterBehavior,
@@ -22,17 +23,18 @@ const defaultMobileAdapterFactory: StudioMobileAdapterFactory = (
   behavior,
 ) => createMobileAdapter(options, undefined, behavior)
 
+function supportsMobileDiscovery(
+  adapter: ExecutionTargetAdapter,
+): adapter is MobileExecutionTargetAdapter {
+  return z.object({ discoverTargets: z.function() }).safeParse(adapter).success
+}
+
 function discoverableMobileAdapter(
   adapter: ExecutionTargetAdapter | undefined,
   profileId: string,
 ): MobileExecutionTargetAdapter | undefined {
   if (!adapter) return undefined
-  if (
-    'discoverTargets' in adapter &&
-    typeof adapter.discoverTargets === 'function'
-  ) {
-    return adapter as MobileExecutionTargetAdapter
-  }
+  if (supportsMobileDiscovery(adapter)) return adapter
   throw new Error(
     `Execution target profile "${profileId}" does not support mobile target discovery`,
   )
@@ -45,7 +47,7 @@ export function studioMobileEnvironmentAdapterFactory(
   profileId: string,
 ): MobileEnvironmentAdapterFactory | undefined {
   const adapter = extensionAdapters?.[profileId] ?? extensionAdapters?.mobile
-  if (!adapter) return
+  if (!adapter) return undefined
   return () => {
     const mobileAdapter = discoverableMobileAdapter(adapter, profileId)
     if (!mobileAdapter) {
@@ -59,8 +61,8 @@ export function studioMobileEnvironmentAdapterFactory(
   }
 }
 
-function errorMessage(reason: unknown): string {
-  return reason instanceof Error ? reason.message : String(reason)
+function errorMessage(cause: unknown): string {
+  return cause instanceof Error ? cause.message : String(cause)
 }
 
 export function configuredMobileAdapter(

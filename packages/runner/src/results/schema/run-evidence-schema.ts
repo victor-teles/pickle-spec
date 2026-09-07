@@ -5,7 +5,7 @@ import {
   sharedEvidenceCacheDecisionTypes,
   sharedEvidenceObservationVersion,
   traceActivityKinds,
-} from '../../execution/run-scenario'
+} from '../../execution/run-scenario-types'
 import {
   artifactSchema,
   cacheOutcomeSchema,
@@ -73,7 +73,7 @@ export const actionEvidenceSchema = z
 
 export const resolvedActionSchema = z.object({
   description: z.string(),
-  replay: z.record(z.string(), z.unknown()).optional(),
+  replay: z.record(z.string(), z.json()).optional(),
   evidence: actionEvidenceSchema.optional(),
 })
 

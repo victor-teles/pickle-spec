@@ -25,8 +25,8 @@ export function webEnvironmentProbeKey(options: WebAdapterOptions): string {
   return connection.kind
 }
 
-function blockedLocalBrowser(reason: unknown): EnvironmentDiagnostic {
-  const detail = reason instanceof Error ? reason.message : String(reason)
+function blockedLocalBrowser(cause: unknown): EnvironmentDiagnostic {
+  const detail = cause instanceof Error ? cause.message : String(cause)
   return {
     id: 'web.local-browser',
     kind: 'blocked',

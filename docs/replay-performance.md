@@ -34,10 +34,10 @@ No warm-up sample contributes to those values.
 
 ## Budgets
 
-| Adapter | p50 budget | p95 budget |
-| --- | ---: | ---: |
-| Web | Replay <= 50% of Adaptive | Replay <= 65% of Adaptive |
-| Mobile | Replay <= 75% of Adaptive | Replay <= 110% of Adaptive |
+| Adapter |                p50 budget |                 p95 budget |
+| ------- | ------------------------: | -------------------------: |
+| Web     | Replay <= 50% of Adaptive |  Replay <= 65% of Adaptive |
+| Mobile  | Replay <= 75% of Adaptive | Replay <= 110% of Adaptive |
 
 The mobile CI gate uses a controlled in-process driver. It compiles and compares
 the deterministic `.ad` representation without launching an emulator, a worker

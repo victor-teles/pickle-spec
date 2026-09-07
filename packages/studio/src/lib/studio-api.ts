@@ -1,5 +1,8 @@
+import type { z } from 'zod'
+
 export type StudioApi = <Value>(
   path: string,
+  schema: z.ZodType<Value>,
   init?: RequestInit,
 ) => Promise<Value>
 
@@ -10,6 +13,7 @@ export const studioToken =
 
 export const studioApi: StudioApi = async <Value>(
   path: string,
+  schema: z.ZodType<Value>,
   init?: RequestInit,
 ) => {
   const headers = new Headers(init?.headers)
@@ -19,5 +23,5 @@ export const studioApi: StudioApi = async <Value>(
     headers,
   })
   if (!response.ok) throw new Error(await response.text())
-  return response.json() as Promise<Value>
+  return schema.parse(await response.json())
 }

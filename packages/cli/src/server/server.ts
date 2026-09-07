@@ -108,7 +108,11 @@ function stopServerProcess(child: ManagedApplicationProcess): void {
   try {
     process.kill(-child.pid, 'SIGTERM')
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== 'ESRCH') throw error
+    if (
+      (error instanceof Error && 'code' in error ? error.code : undefined) !==
+      'ESRCH'
+    )
+      throw error
   }
 }
 
@@ -221,7 +225,7 @@ function observeConfiguredOutput(
   if (config.output?.stderr && child.stderr instanceof ReadableStream) {
     tasks.push(observeOutput(child.stderr, 'stderr', now, onOutput))
   }
-  return Promise.all(tasks).then(() => undefined)
+  return Promise.all(tasks).then(() => {})
 }
 
 async function waitForServer(

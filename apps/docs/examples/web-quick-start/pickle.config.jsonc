@@ -9,10 +9,10 @@
         "browser": {
           "environment": "local",
           "modelName": "anthropic/claude-sonnet-4-6",
-          "headless": true
-        }
-      }
-    }
+          "headless": true,
+        },
+      },
+    },
   },
-  "applicationRevision": "example-domain"
+  "applicationRevision": "example-domain",
 }

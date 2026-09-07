@@ -33,10 +33,10 @@ export async function runScenarioWithExecutionCache(
   const resolvedCacheKey = cacheKeyFor(input)
   const unsafeCacheKey = Boolean(
     resolvedCacheKey &&
-      serializedContainsRuntimeValue(
-        JSON.stringify(resolvedCacheKey),
-        input.scenario,
-      ),
+    serializedContainsRuntimeValue(
+      JSON.stringify(resolvedCacheKey),
+      input.scenario,
+    ),
   )
   const cacheKey = unsafeCacheKey ? undefined : resolvedCacheKey
   const unsafeOutline = !hasSeparatedOutlineBindings(input.scenario)

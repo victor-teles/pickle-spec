@@ -101,7 +101,7 @@ function successfulWorker(
           type: 'session-closed',
           sessionId: request.sessionId,
         }
-      case 'cancel-session':
+      default:
         return {
           version: 6,
           type: 'session-cancelled',
@@ -269,9 +269,12 @@ test('cancels the worker session when the run is aborted', async () => {
   const controller = new AbortController()
   const base = successfulWorker(requests)
   const adapter = createMobileAdapter({ application }, () =>
-    workerClient(base.request, async () => {
-      disposed = true
-    }),
+    workerClient(
+      (...args) => base.request(...args),
+      async () => {
+        disposed = true
+      },
+    ),
   )
   const session = await adapter.openSession({
     executionTargetProfile: { id: 'android' },

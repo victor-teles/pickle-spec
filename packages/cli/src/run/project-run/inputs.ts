@@ -6,7 +6,7 @@ import {
   validateSpecificationMetadata,
 } from '@pickle-spec/spec'
 import { defaultExtensionsFile } from '../../configuration/config'
-import type { Extensions } from '../../extensions/extensions'
+import { extensionsSchema, type Extensions } from '../../extensions/extensions'
 
 export async function loadExtensions(
   path?: string,
@@ -18,8 +18,9 @@ export async function loadExtensions(
     if (!path) return {}
     throw new Error(`Extensions file not found: ${selectedPath}`)
   }
-  return ((await import(pathToFileURL(absolutePath).href)).default ??
-    {}) as Extensions
+  return extensionsSchema.parse(
+    (await import(pathToFileURL(absolutePath).href)).default ?? {},
+  )
 }
 
 export async function loadProjectSpecifications(
@@ -39,7 +40,7 @@ export async function loadProjectSpecifications(
   }
   if (paths.size === 0) return []
   const files = await Promise.all(
-    [...paths].sort().map(async (path) => ({
+    [...paths].toSorted().map(async (path) => ({
       uri: relative(root, path),
       source: await Bun.file(path).text(),
     })),

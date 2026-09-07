@@ -1,3 +1,8 @@
+import {
+  studioRunSnapshotSchema,
+  studioRunStreamEventSchema,
+} from './run.schemas'
+
 import { useEffect, useRef, useState } from 'react'
 import type { StudioApi } from '../../lib/studio-api'
 import { requiredValue } from '../../required-value'
@@ -6,7 +11,6 @@ import {
   disconnectLiveInspection,
   hydrateLiveInspection,
   type LiveResultInspection,
-  type LiveStreamEvent,
   liveInspectionFromSnapshot,
   receiveLiveStreamEvent,
 } from './result/live-result-inspection'
@@ -58,12 +62,16 @@ class ActiveRunConnections {
       `${protocol}//${location.host}/api/runs/${encodeURIComponent(runId)}/events`,
     )
     this.sockets.push(socket)
-    socket.onmessage = (message) => this.receive(runId, message)
-    socket.onclose = () => this.disconnect(runId)
+    socket.addEventListener('message', (message) =>
+      this.receive(runId, message),
+    )
+    socket.addEventListener('close', () => this.disconnect(runId))
   }
 
   private receive(runId: string, message: MessageEvent): void {
-    const event = JSON.parse(String(message.data)) as LiveStreamEvent
+    const event = studioRunStreamEventSchema.parse(
+      JSON.parse(String(message.data)),
+    )
     this.update(runId, (current) => receiveLiveStreamEvent(current, event))
     if (event.type === 'run-finished') void this.finish(runId)
   }
@@ -93,18 +101,21 @@ class ActiveRunConnections {
   private update(runId: string, update: InspectionUpdate): void {
     this.setInspections((current) => {
       const existing = current.get(runId)
-      if (typeof update === 'function' && !existing) return current
+      if ('call' in update && !existing) return current
       const next = new Map(current)
       next.set(
         runId,
-        typeof update === 'function' ? update(requiredValue(existing)) : update,
+        'call' in update ? update(requiredValue(existing)) : update,
       )
       return next
     })
   }
 
   private loadSnapshot(runId: string): Promise<StudioRunSnapshot> {
-    return this.options.api(`/api/runs/${encodeURIComponent(runId)}`)
+    return this.options.api(
+      `/api/runs/${encodeURIComponent(runId)}`,
+      studioRunSnapshotSchema,
+    )
   }
 
   private close(): void {
@@ -139,6 +150,6 @@ export function useActiveRuns(options: ActiveRunsOptions) {
   return inspections
 }
 
-function messageFrom(reason: unknown): string {
-  return reason instanceof Error ? reason.message : String(reason)
+function messageFrom(cause: unknown): string {
+  return cause instanceof Error ? cause.message : String(cause)
 }

@@ -13,7 +13,7 @@ import {
   parameterizeWebValue,
 } from './web-template'
 
-const assertionLocatorShape = {
+const assertionLocatorFields = {
   selector: z
     .string()
     .min(1)
@@ -27,33 +27,33 @@ const assertionLocatorShape = {
 }
 
 export const webAssertionDraftSchema = z.discriminatedUnion('kind', [
-  z.strictObject({ kind: z.literal('exists'), ...assertionLocatorShape }),
-  z.strictObject({ kind: z.literal('visible'), ...assertionLocatorShape }),
-  z.strictObject({ kind: z.literal('hidden'), ...assertionLocatorShape }),
+  z.strictObject({ kind: z.literal('exists'), ...assertionLocatorFields }),
+  z.strictObject({ kind: z.literal('visible'), ...assertionLocatorFields }),
+  z.strictObject({ kind: z.literal('hidden'), ...assertionLocatorFields }),
   z.strictObject({
     kind: z.literal('text-equals'),
-    ...assertionLocatorShape,
+    ...assertionLocatorFields,
     expected: z
       .string()
       .describe('Exact inner text required by the expectation'),
   }),
   z.strictObject({
     kind: z.literal('text-contains'),
-    ...assertionLocatorShape,
+    ...assertionLocatorFields,
     expected: z
       .string()
       .describe('Substring that must appear in the element text'),
   }),
   z.strictObject({
     kind: z.literal('value-equals'),
-    ...assertionLocatorShape,
+    ...assertionLocatorFields,
     expected: z
       .string()
       .describe('Exact input value required by the expectation'),
   }),
   z.strictObject({
     kind: z.literal('count-equals'),
-    ...assertionLocatorShape,
+    ...assertionLocatorFields,
     expected: z
       .union([z.number().int().nonnegative(), z.string()])
       .describe('Exact number of matches required by the expectation'),
@@ -81,10 +81,6 @@ interface ObservedActionPayload {
   arguments?: string[]
 }
 
-type VariableReference = {
-  variable?: unknown
-}
-
 const observedActionPayloadSchema = z.strictObject({
   selector: z.string().min(1),
   description: z.string().optional(),
@@ -92,11 +88,11 @@ const observedActionPayloadSchema = z.strictObject({
   arguments: z.array(z.string()).optional(),
 })
 
-export function parseObservedActionPayload(
-  value: unknown,
-): ObservedActionPayload | undefined {
-  return observedActionPayloadSchema.safeParse(value).data
-}
+const parseObservedActionPayloadSchema = z
+  .unknown()
+  .transform((value) => observedActionPayloadSchema.safeParse(value).data)
+export const parseObservedActionPayload =
+  parseObservedActionPayloadSchema.parse.bind(parseObservedActionPayloadSchema)
 
 function absoluteNavigationTemplate(
   baseUrl: string,
@@ -139,24 +135,25 @@ export function compileWebNavigation(
   return url ? { kind: 'navigate', url } : undefined
 }
 
-function referencedVariables(value: unknown, variables: Set<string>): void {
-  if (Array.isArray(value)) {
-    for (const item of value) referencedVariables(item, variables)
-    return
-  }
-  if (!value || typeof value !== 'object') return
-  const reference = value as VariableReference
-  if ('variable' in value && typeof reference.variable === 'string') {
-    variables.add(reference.variable)
-  }
-  for (const item of Object.values(value)) referencedVariables(item, variables)
-}
-
 export function webInstructionVariables(
   instruction: WebInstruction,
 ): Set<string> {
   const variables = new Set<string>()
-  referencedVariables(instruction, variables)
+  const templates: WebTemplate[] = []
+  if ('locator' in instruction) templates.push(instruction.locator.selector)
+  if ('url' in instruction) templates.push(instruction.url)
+  if ('value' in instruction) templates.push(instruction.value)
+  if ('values' in instruction) templates.push(...instruction.values)
+  if ('expected' in instruction && instruction.expected instanceof Object) {
+    if ('variable' in instruction.expected)
+      variables.add(instruction.expected.variable)
+    else templates.push(instruction.expected)
+  }
+  for (const template of templates) {
+    for (const segment of template.segments) {
+      if ('variable' in segment) variables.add(segment.variable)
+    }
+  }
   return variables
 }
 
@@ -228,10 +225,11 @@ function compileCountAssertion(
   bindings: readonly ScenarioVariableBinding[],
 ): WebInstruction | undefined {
   if (draft.nth !== undefined) return undefined
-  if (typeof draft.expected === 'number') {
-    return { kind: draft.kind, locator, expected: draft.expected }
+  const countValue = z.number().safeParse(draft.expected)
+  if (countValue.success) {
+    return { kind: draft.kind, locator, expected: countValue.data }
   }
-  const expected = parameterizeWebValue(draft.expected, bindings)
+  const expected = parameterizeWebValue(String(draft.expected), bindings)
   if (expected?.segments.length !== 1) return undefined
   const segment = requiredValue(expected.segments[0])
   if (!('literal' in segment))
@@ -296,7 +294,7 @@ function compileSelectOption(
   if (args.length === 0) return undefined
   const values = args.map((value) => parameterizeWebValue(value, bindings))
   return values.every((value) => value !== undefined)
-    ? { kind: 'select-option', locator, values: values as WebTemplate[] }
+    ? { kind: 'select-option', locator, values: values }
     : undefined
 }
 

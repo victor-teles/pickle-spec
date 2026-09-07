@@ -63,24 +63,18 @@ function runStartedEvent(
   startedAt: string,
   options: CreateTestRunOptions,
 ): RunEventPayload {
-  return {
-    type: 'run-started',
-    run: {
-      id,
-      startedAt,
-      ...(options.sourceRunId ? { sourceRunId: options.sourceRunId } : {}),
-      ...(options.suite ? { suite: options.suite } : {}),
-      ...(options.applicationRevision
-        ? { applicationRevision: options.applicationRevision }
-        : {}),
-      ...(options.evidencePersistence
-        ? { evidencePersistence: options.evidencePersistence }
-        : {}),
-    },
+  const run: Extract<RunEventPayload, { type: 'run-started' }>['run'] = {
+    id,
+    startedAt,
   }
+  if (options.sourceRunId) run.sourceRunId = options.sourceRunId
+  if (options.suite) run.suite = options.suite
+  if (options.applicationRevision)
+    run.applicationRevision = options.applicationRevision
+  if (options.evidencePersistence)
+    run.evidencePersistence = options.evidencePersistence
+  return { type: 'run-started', run }
 }
-
-type NodeError = Error & { code?: string }
 
 class LocalTestRunStore implements TestRunStore {
   private readonly createId: () => string
@@ -110,9 +104,9 @@ class LocalTestRunStore implements TestRunStore {
     this.runPinsPath = storage.runPinsPath
   }
 
-  private incompatibleSchema = (version: unknown): never => {
+  private incompatibleSchema = (version: string): never => {
     throw new Error(
-      `Test run storage schema version ${String(version)} is unsupported. ` +
+      `Test run storage schema version ${version} is unsupported. ` +
         `Pickle did not modify it. Remove the runs directory manually and retry: ${this.runsDirectory}`,
     )
   }
@@ -124,8 +118,8 @@ class LocalTestRunStore implements TestRunStore {
     const pending = this.runOperationQueues.get(id) ?? Promise.resolve()
     const result = pending.then(operation)
     const tail = result.then(
-      () => undefined,
-      () => undefined,
+      () => {},
+      () => {},
     )
     this.runOperationQueues.set(id, tail)
     void tail.then(() => {
@@ -140,8 +134,8 @@ class LocalTestRunStore implements TestRunStore {
   ): Promise<Value> {
     const result = this.managementOperationQueue.then(operation)
     this.managementOperationQueue = result.then(
-      () => undefined,
-      () => undefined,
+      () => {},
+      () => {},
     )
     return result
   }
@@ -216,9 +210,8 @@ class LocalTestRunStore implements TestRunStore {
   private async manifestFor(id: string): Promise<TestRunManifest> {
     const manifestPath = join(this.runsDirectory, id, 'manifest.json')
     if (await Bun.file(manifestPath).exists()) {
-      return parseTestRunManifest(
+      return parseTestRunManifest(this.incompatibleSchema)(
         await Bun.file(manifestPath).json(),
-        this.incompatibleSchema,
       )
     }
     return (await this.open(id)).materialize({ finished: false })
@@ -282,7 +275,7 @@ class LocalTestRunStore implements TestRunStore {
       await mkdir(runDirectory)
     } catch (error) {
       if (isAlreadyExists(error)) {
-        throw new Error(`Test run "${id}" already exists`)
+        throw new Error(`Test run "${id}" already exists`, { cause: error })
       }
       throw error
     }
@@ -298,7 +291,7 @@ class LocalTestRunStore implements TestRunStore {
 
   async list(): Promise<TestRunSummary[]> {
     const manifests = await this.loadManifests()
-    const storedIds = manifests.map((manifest) => manifest.id).sort()
+    const storedIds = manifests.map((manifest) => manifest.id).toSorted()
     const indexedIds = (await Bun.file(this.indexPath).exists())
       ? withIndex(this.indexPath, listRunIds)
       : []
@@ -347,8 +340,11 @@ export function openTestRunStore(options: TestRunStoreOptions): TestRunStore {
   return new LocalTestRunStore(options)
 }
 
-function isAlreadyExists(error: unknown): boolean {
-  return error instanceof Error && (error as NodeError).code === 'EEXIST'
+function isAlreadyExists(cause: unknown): boolean {
+  return (
+    cause instanceof Error &&
+    ('code' in cause ? cause.code : undefined) === 'EEXIST'
+  )
 }
 
 async function pathExists(path: string): Promise<boolean> {

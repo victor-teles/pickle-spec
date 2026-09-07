@@ -1,3 +1,4 @@
+import type { z } from 'zod'
 import type { ResolvedFidelity } from '../adapter/configuration/fidelity'
 import {
   cdpEndpointOrigin,
@@ -31,16 +32,13 @@ export type {
   WebTemplate,
 } from './web-cache-schema'
 export type { WebValueProvenance } from './web-template'
-export {
-  bindWebTemplate,
-  parameterizeWebValue,
-} from './web-template'
+export { bindWebTemplate, parameterizeWebValue } from './web-template'
 
 export const defaultWebActionTimeoutMs = 15_000
 export const defaultWebNavigationTimeoutMs = 15_000
 
 export function parseWebExecutionCachePayload(
-  payload: unknown,
+  payload: z.core.util.JSONType,
   requiredVariables: readonly string[],
 ): WebExecutionCachePayload | undefined {
   const parsed = webExecutionCachePayloadSchema.safeParse(payload)

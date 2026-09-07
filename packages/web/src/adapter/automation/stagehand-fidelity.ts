@@ -21,18 +21,18 @@ interface FidelityBrowserContext {
     handler: (route: FidelityRoute) => Promise<void>,
   ) => Promise<void>
   unroute?: (pattern: string) => Promise<void>
-  activePage: () => Promise<FidelityBrowserPage | null>
+  activePage: () => Promise<FidelityBrowserPage | undefined>
 }
 
 function isBlockedResourceType(value: string): value is BlockedResourceType {
-  return blockedResourceTypes.includes(value as BlockedResourceType)
+  return blockedResourceTypes.some((type) => type === value)
 }
 
 export async function applyStagehandFidelity(
   browserContext: BrowserContext,
   fidelity?: ResolvedFidelity,
 ): Promise<void> {
-  const context = browserContext as FidelityBrowserContext
+  const context: FidelityBrowserContext = browserContext
   if (!fidelity || fidelity.profile === 'default') {
     if (context.unroute) await context.unroute('**/*')
     return

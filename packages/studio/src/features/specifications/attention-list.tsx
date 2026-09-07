@@ -121,7 +121,7 @@ function cellsInFocusOrder(
   const positions = new Map(
     focusOrder.map((key, index) => [key, index] as const),
   )
-  return [...cells].sort((left, right) => {
+  return [...cells].toSorted((left, right) => {
     const fallback = focusOrder.length
     const leftPosition =
       positions.get(cellKey(left.scenarioId, left.profileId)) ?? fallback

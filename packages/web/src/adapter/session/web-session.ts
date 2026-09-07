@@ -216,7 +216,7 @@ export async function openWebSession(
     finish,
     input,
   })
-  return {
+  const session: StepTargetSession = {
     async executeStep(step, signal, stepContext) {
       stepIndex++
       try {
@@ -226,9 +226,10 @@ export async function openWebSession(
         throw error
       }
     },
-    ...(runtime.complete
-      ? { complete: () => requiredValue(runtime.complete).call(runtime) }
-      : {}),
     close,
   }
+  if (runtime.complete) {
+    session.complete = () => requiredValue(runtime.complete).call(runtime)
+  }
+  return session
 }

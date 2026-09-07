@@ -20,23 +20,25 @@ async function inlineScriptHashes(html: string): Promise<string[]> {
 export async function secureStudioResponse(
   response: Response,
   origin: string,
+  hmrOrigin?: string,
 ): Promise<Response> {
   const websocketOrigin = origin.replace(/^http/, 'ws')
   const headers = new Headers(response.headers)
   const htmlResponse = response.headers
     .get('content-type')
     ?.startsWith('text/html')
-  const body = htmlResponse ? await response.text() : response.body
-  const scriptHashes = htmlResponse
-    ? await inlineScriptHashes(body as string)
-    : []
+  const html = htmlResponse ? await response.text() : undefined
+  const body = html ?? response.body
+  const scriptHashes = html === undefined ? [] : await inlineScriptHashes(html)
   headers.set('cache-control', 'no-store')
   headers.set(
     'content-security-policy',
     [
       "default-src 'none'",
       "base-uri 'none'",
-      ["connect-src 'self'", websocketOrigin, ...impeccableLiveDev].join(' '),
+      ["connect-src 'self'", websocketOrigin, hmrOrigin, ...impeccableLiveDev]
+        .filter(Boolean)
+        .join(' '),
       "font-src 'self' data:",
       "form-action 'self'",
       "frame-src 'self' https://browserbase.com https://*.browserbase.com",

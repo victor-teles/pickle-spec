@@ -5,10 +5,12 @@ import { historicalDurationsFrom } from '../../../src/results/historical-duratio
 function result(name: string, durationMs: number, id?: string): TestResult {
   const startedAt = '2026-08-15T12:00:00.000Z'
   const finishedAt = new Date(Date.parse(startedAt) + durationMs).toISOString()
+  const scenario: TestResult['scenario'] = { name }
+  if (id) scenario.id = id
   return {
     schemaVersion: 2,
     specification: { name: 'Checkout', uri: 'features/checkout.feature' },
-    scenario: { name, ...(id ? { id } : {}) },
+    scenario,
     executionTargetProfile: { id: 'web' },
     state: 'passed',
     startedAt,

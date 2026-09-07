@@ -66,15 +66,15 @@ this workflow, not claiming that every QA team wants autonomous changes.
 Track the funnel by distinct external project, excluding internal fixtures and
 maintainer demonstrations. Do not infer activation from package downloads.
 
-| Stage | Evidence |
-| --- | --- |
-| Attention | A source-tagged visit or response; only a distribution signal |
-| Setup started | A participant attempts installation in their own project |
-| Ready | Target and configuration checks pass |
-| First value | A real-application scenario with a meaningful assertion runs and the participant inspects its result |
-| Activated | The participant also explains a deliberate failure and repeats an eligible scenario through Replay |
-| Retained | The project runs again on a different day within seven days of activation |
-| Expanded | The project adds a second meaningful journey or uses the suite in CI |
+| Stage         | Evidence                                                                                             |
+| ------------- | ---------------------------------------------------------------------------------------------------- |
+| Attention     | A source-tagged visit or response; only a distribution signal                                        |
+| Setup started | A participant attempts installation in their own project                                             |
+| Ready         | Target and configuration checks pass                                                                 |
+| First value   | A real-application scenario with a meaningful assertion runs and the participant inspects its result |
+| Activated     | The participant also explains a deliberate failure and repeats an eligible scenario through Replay   |
+| Retained      | The project runs again on a different day within seven days of activation                            |
+| Expanded      | The project adds a second meaningful journey or uses the suite in CI                                 |
 
 Record why a scenario is not Replay-eligible. Report those users' first value and
 return behavior separately so the definition does not erase useful adoption.
@@ -114,15 +114,15 @@ collaboration. Keep the manual-maintenance gap visible in preview limitations.
 Use one tested scenario and one exact release across the assets. Prefer a small
 application with login and one meaningful state change. Use synthetic data.
 
-| Asset | Content | Completion check |
-| --- | --- | --- |
-| Quick start | Prerequisites, install, configure, run, inspect, repeat, troubleshooting | An external tester follows it without undocumented commands |
-| Short demo | Gherkin, real execution, failed expectation, evidence, applicable Replay | Every displayed capability works on the named release; provider calls and edits are disclosed |
-| Example repository | Small application, assertion, seeded failure, CI recipe | Clean checkout produces the documented outcomes |
-| Failure report | Portable HTML and importable archive from the demonstration | Another person opens the report and explains the failure |
-| Support matrix | Verified targets and task-level limitations | Each supported claim links to release evidence |
-| Release notes | Available capabilities, exclusions, known issues, recovery instructions | Claims match the release and roadmap status |
-| Feedback form or issue template | Task attempted, environment, version, expected/actual result, optional sanitized evidence | Reporter can describe a blocker without sending secrets |
+| Asset                           | Content                                                                                   | Completion check                                                                              |
+| ------------------------------- | ----------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
+| Quick start                     | Prerequisites, install, configure, run, inspect, repeat, troubleshooting                  | An external tester follows it without undocumented commands                                   |
+| Short demo                      | Gherkin, real execution, failed expectation, evidence, applicable Replay                  | Every displayed capability works on the named release; provider calls and edits are disclosed |
+| Example repository              | Small application, assertion, seeded failure, CI recipe                                   | Clean checkout produces the documented outcomes                                               |
+| Failure report                  | Portable HTML and importable archive from the demonstration                               | Another person opens the report and explains the failure                                      |
+| Support matrix                  | Verified targets and task-level limitations                                               | Each supported claim links to release evidence                                                |
+| Release notes                   | Available capabilities, exclusions, known issues, recovery instructions                   | Claims match the release and roadmap status                                                   |
+| Feedback form or issue template | Task attempted, environment, version, expected/actual result, optional sanitized evidence | Reporter can describe a blocker without sending secrets                                       |
 
 Keep package ownership details available for library consumers. The launch
 landing page should first explain the QA task, show the result, and provide the
@@ -134,13 +134,13 @@ verified install path. Use the repository's current package name,
 One person may own several roles. Assign names before starting. The periods
 below are proposed working windows, not release commitments.
 
-| Window | Owner | Work and decision |
-| --- | --- | --- |
-| Preparation | Release owner | Complete package gates and the primary example; keep the launch date unset until blockers are understood |
-| First pilot week | Product owner | Recruit five qualified external testers through existing contacts; observe the QA journey and record every blocker |
-| Second pilot week | Product and release owners | Fix repeated blockers, retest, and check seven-day return behavior; decide whether to broaden the preview |
-| Public preview week | Launch owner | Publish the tested quick start, example, demo, and limitations; remain available for support |
-| Following four weeks | Product and launch owners | Run one acquisition experiment at a time, review weekly cohorts, and prioritize recurring activation or retention failures |
+| Window               | Owner                      | Work and decision                                                                                                          |
+| -------------------- | -------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| Preparation          | Release owner              | Complete package gates and the primary example; keep the launch date unset until blockers are understood                   |
+| First pilot week     | Product owner              | Recruit five qualified external testers through existing contacts; observe the QA journey and record every blocker         |
+| Second pilot week    | Product and release owners | Fix repeated blockers, retest, and check seven-day return behavior; decide whether to broaden the preview                  |
+| Public preview week  | Launch owner               | Publish the tested quick start, example, demo, and limitations; remain available for support                               |
+| Following four weeks | Product and launch owners  | Run one acquisition experiment at a time, review weekly cohorts, and prioritize recurring activation or retention failures |
 
 Outreach and publication are future owner actions. This document does not send
 messages, publish posts, buy ads, or schedule campaigns.
@@ -151,14 +151,14 @@ Start with existing contacts and one public channel. The following sample sizes
 and decision rules are proposed learning thresholds, not forecasts. Small samples
 provide qualitative direction, not reliable conversion benchmarks.
 
-| Experiment | Hypothesis and asset | Measure and decision |
-| --- | --- | --- |
-| Assisted QA pilot | People maintaining smoke tests value clearer failure evidence; use the example plus a guided session | Five participants; if fewer than four finish the core journey, improve the repeated blocker before increasing traffic |
-| Technical walkthrough | A concrete failure-to-diagnosis demo attracts qualified evaluators; publish one walkthrough on the channel where pilot users already participate | Track source to setup attempts and activation; after ten qualified attempts, compare blockers and returns with the pilot |
-| Replay explanation | Explaining applicability and cache-only failure behavior reduces setup confusion; add one focused guide | Compare the next five sessions with the previous five; keep the guide if misunderstandings fall without new setup steps |
-| Execution-plan maintenance | QA control over generated interactions helps projects survive application changes; use a working editor or an explicitly labeled prototype | Observe five maintenance sessions; assess the companion review criteria and seven-day return before making maintainability claims |
-| CI recipe | Returning projects need unattended execution and portable failures; provide one tested workflow | Try it with three retained projects; prioritize CI work if at least two use it again without maintainer operation |
-| Mobile pilot | Existing emulator users value the same evidence workflow; publish a separate target-specific example | Recruit three provisioned teams only after the web journey is stable; record target-specific blockers separately |
+| Experiment                 | Hypothesis and asset                                                                                                                             | Measure and decision                                                                                                              |
+| -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------- |
+| Assisted QA pilot          | People maintaining smoke tests value clearer failure evidence; use the example plus a guided session                                             | Five participants; if fewer than four finish the core journey, improve the repeated blocker before increasing traffic             |
+| Technical walkthrough      | A concrete failure-to-diagnosis demo attracts qualified evaluators; publish one walkthrough on the channel where pilot users already participate | Track source to setup attempts and activation; after ten qualified attempts, compare blockers and returns with the pilot          |
+| Replay explanation         | Explaining applicability and cache-only failure behavior reduces setup confusion; add one focused guide                                          | Compare the next five sessions with the previous five; keep the guide if misunderstandings fall without new setup steps           |
+| Execution-plan maintenance | QA control over generated interactions helps projects survive application changes; use a working editor or an explicitly labeled prototype       | Observe five maintenance sessions; assess the companion review criteria and seven-day return before making maintainability claims |
+| CI recipe                  | Returning projects need unattended execution and portable failures; provide one tested workflow                                                  | Try it with three retained projects; prioritize CI work if at least two use it again without maintainer operation                 |
+| Mobile pilot               | Existing emulator users value the same evidence workflow; publish a separate target-specific example                                             | Recruit three provisioned teams only after the web journey is stable; record target-specific blockers separately                  |
 
 Possible public channels include a technical blog, existing QA communities,
 LinkedIn, and Show HN. Choose from participant behavior rather than posting

@@ -105,7 +105,7 @@ function matchesTagExpression(
         matchesTagExpression(expression.left, tags) &&
         matchesTagExpression(expression.right, tags)
       )
-    case 'or':
+    default:
       return (
         matchesTagExpression(expression.left, tags) ||
         matchesTagExpression(expression.right, tags)

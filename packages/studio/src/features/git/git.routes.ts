@@ -1,3 +1,4 @@
+import { gitPathsRequestSchema, gitCommitRequestSchema } from './git.schemas'
 import type { GitWorkspace } from '../../server/git'
 import {
   requestError,
@@ -5,20 +6,10 @@ import {
   type StudioHttpHandler,
 } from '../../server/http'
 
-type GitPathsRequest = {
-  paths?: string[]
-}
-
-type GitCommitRequest = {
-  message?: string
-  confirmed?: boolean
-  paths?: string[]
-}
-
 export function createGitRoutes(git: GitWorkspace): StudioHttpHandler {
   async function stage(request: Request): Promise<Response> {
-    const body = (await request.json()) as GitPathsRequest
     try {
+      const body = gitPathsRequestSchema.parse(await request.json())
       return Response.json(await git.stage(body.paths ?? []))
     } catch (error) {
       return requestError(error)
@@ -26,8 +17,8 @@ export function createGitRoutes(git: GitWorkspace): StudioHttpHandler {
   }
 
   async function commit(request: Request): Promise<Response> {
-    const body = (await request.json()) as GitCommitRequest
     try {
+      const body = gitCommitRequestSchema.parse(await request.json())
       return Response.json(
         await git.commit({
           message: body.message ?? '',
@@ -49,12 +40,14 @@ export function createGitRoutes(git: GitWorkspace): StudioHttpHandler {
   }
 
   return async function handleGitRequest(request, url) {
-    const routes: Record<string, () => Promise<Response>> = {
-      'GET /api/git': async () => Response.json(await git.status()),
-      'POST /api/git/stage': () => stage(request),
-      'POST /api/git/commit': () => commit(request),
-      'POST /api/git/pull-request': pullRequest,
-    }
-    return routes[routeKey(request, url)]?.() ?? null
+    const routes = new Map(
+      Object.entries({
+        'GET /api/git': async () => Response.json(await git.status()),
+        'POST /api/git/stage': () => stage(request),
+        'POST /api/git/commit': () => commit(request),
+        'POST /api/git/pull-request': pullRequest,
+      }),
+    )
+    return routes.get(routeKey(request, url))?.() ?? null
   }
 }

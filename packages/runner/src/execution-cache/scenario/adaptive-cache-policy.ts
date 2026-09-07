@@ -20,6 +20,11 @@ import {
   requiredVariablesAreValid,
 } from './scenario-cache-run'
 
+type PublishableCachedPrefixResult = {
+  prefix: CachedStepPrefix | undefined
+  policyReason: ExecutionCacheUncacheableReason | undefined
+}
+
 export interface FinalizeAdaptiveRunInput {
   run: RetriedScenarioRun
   cacheKey?: ExecutionCacheKey
@@ -78,10 +83,7 @@ export function publishableCachedPrefix(
   input: RunScenarioInput,
   run: RetriedScenarioRun,
   finalization: FinalizeAdaptiveRunInput,
-): {
-  prefix: CachedStepPrefix | undefined
-  policyReason: ExecutionCacheUncacheableReason | undefined
-} {
+): PublishableCachedPrefixResult {
   const adapter = requiredValue(input.adapter.executionCache)
   const scenarioStepCount = input.scenario.steps.length
   const prefix = sealCachedStepPrefix({

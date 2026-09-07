@@ -45,7 +45,7 @@ export function timeTravelInspection(
       ...action,
       retries: actionRetries(snapshot, location, action),
     }))
-    .sort(
+    .toSorted(
       (left, right) =>
         (left.scope.stepIndex ?? 0) - (right.scope.stepIndex ?? 0) ||
         (left.evidence?.ordinal ?? 0) - (right.evidence?.ordinal ?? 0),
@@ -63,7 +63,7 @@ function actionRetries(
   addCompletedRetries(attempts, snapshot, location, action, stepIndex)
   if (action.evidence) attempts.set(location.attempt, action.evidence.state)
   return [...attempts]
-    .sort(([left], [right]) => left - right)
+    .toSorted(([left], [right]) => left - right)
     .map(([attempt, state]) => ({
       attempt,
       state,

@@ -28,12 +28,12 @@ function countExpectation(
 ): number {
   const expectation = instruction.expected
   const expected =
-    typeof expectation === 'number'
-      ? expectation
-      : Number(
+    expectation instanceof Object
+      ? Number(
           bindings.find((binding) => binding.name === expectation.variable)
             ?.value,
         )
+      : expectation
   if (!Number.isSafeInteger(expected) || expected < 0) {
     throw new Error('Replay count variable must be a non-negative integer')
   }

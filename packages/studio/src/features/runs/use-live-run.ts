@@ -1,9 +1,15 @@
+import {
+  studioRunSnapshotSchema,
+  startedRunSchema,
+  studioRunStreamEventSchema,
+} from './run.schemas'
+import { studioRunReadinessSchema } from '../project/project.schemas'
+
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { type StudioApi, studioToken } from '../../lib/studio-api'
 import type {
   StudioRunReadiness,
   StudioRunRequest,
-  StudioRunSnapshot,
   StudioRunsIndex,
 } from '../../server/contracts'
 import { targetNewRun } from '../studio/command-palette-model'
@@ -13,7 +19,6 @@ import {
   hydrateLiveInspection,
   inspectLiveTimelineEntry,
   type LiveResultInspection,
-  type LiveStreamEvent,
   liveInspectionFromSnapshot,
   pauseLiveFollowing,
   pinLiveCell,
@@ -36,7 +41,7 @@ type UseLiveRunOptions = {
   activeProfileId?: string
   api: StudioApi
   onClearError: () => void
-  onError: (reason: unknown) => void
+  onError: (cause: unknown) => void
   onInspectResult: (location: ResultInspectionLocation) => void
   registerActiveRun: (runId: string) => void
   reloadRunsIndex: () => Promise<StudioRunsIndex>
@@ -63,7 +68,7 @@ async function restoreActiveRun(input: {
   activeRunIds: readonly string[]
   api: StudioApi
   cancelled: () => boolean
-  onError: (reason: unknown) => void
+  onError: (cause: unknown) => void
   setLive: SetValue<LiveResultInspection | undefined>
   setRunId: SetValue<string | undefined>
   specificationUri: string
@@ -71,7 +76,10 @@ async function restoreActiveRun(input: {
   try {
     const snapshots = await Promise.all(
       input.activeRunIds.map((runId) =>
-        input.api<StudioRunSnapshot>(`/api/runs/${encodeURIComponent(runId)}`),
+        input.api(
+          `/api/runs/${encodeURIComponent(runId)}`,
+          studioRunSnapshotSchema,
+        ),
       ),
     )
     if (input.cancelled()) return
@@ -97,10 +105,11 @@ function useRestoreActiveRun(input: {
   setRunId: SetValue<string | undefined>
   starting: boolean
 }): void {
-  useEffect(() => {
+  useEffect((): (() => void) | undefined => {
     const specificationUri = input.options.selectedSpecificationUri
-    if (input.runId || input.live || input.starting || !specificationUri) return
-    if (input.activeRunIds.length === 0) return
+    if (input.runId || input.live || input.starting || !specificationUri)
+      return undefined
+    if (input.activeRunIds.length === 0) return undefined
     let cancelled = false
     void restoreActiveRun({
       activeRunIds: input.activeRunIds,
@@ -135,15 +144,17 @@ function useLiveRunSocket(input: {
 }): void {
   const { api, onError, reloadRunsIndex } = input.options
   const { runId, setLive, setOrigin } = input
-  useEffect(() => {
-    if (!runId) return
+  useEffect((): (() => void) | undefined => {
+    if (!runId) return undefined
     let closedByClient = false
     const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:'
     const socket = new WebSocket(
       `${protocol}//${location.host}/api/runs/${runId}/events`,
     )
-    socket.onmessage = (message) => {
-      const event = JSON.parse(String(message.data)) as LiveStreamEvent
+    socket.addEventListener('message', (message) => {
+      const event = studioRunStreamEventSchema.parse(
+        JSON.parse(String(message.data)),
+      )
       setLive((current) =>
         current ? receiveLiveStreamEvent(current, event) : current,
       )
@@ -157,15 +168,15 @@ function useLiveRunSocket(input: {
           setLive,
         })
       }
-    }
-    socket.onclose = () => {
+    })
+    socket.addEventListener('close', () => {
       if (closedByClient) return
       setLive((current) =>
         current?.phase === 'running'
           ? disconnectLiveInspection(current, 'The live event stream closed.')
           : current,
       )
-    }
+    })
     return () => {
       closedByClient = true
       socket.close()
@@ -175,14 +186,15 @@ function useLiveRunSocket(input: {
 
 async function hydrateFinishedRun(input: {
   api: StudioApi
-  onError: (reason: unknown) => void
+  onError: (cause: unknown) => void
   reloadRunsIndex: () => Promise<StudioRunsIndex>
   runId: string
   setLive: SetValue<LiveResultInspection | undefined>
 }): Promise<void> {
   try {
-    const snapshot = await input.api<StudioRunSnapshot>(
+    const snapshot = await input.api(
       `/api/runs/${encodeURIComponent(input.runId)}`,
+      studioRunSnapshotSchema,
     )
     input.setLive((current) =>
       current ? hydrateLiveInspection(current, snapshot) : current,
@@ -225,7 +237,7 @@ function selectedResultFrom(
   live: LiveResultInspection | undefined,
   cells: readonly MatrixCell[],
 ): MatrixCell | undefined {
-  if (!live) return
+  if (!live) return undefined
   return cells.find(
     (cell) =>
       cell.scenarioId === live.location?.scenarioId &&
@@ -246,8 +258,9 @@ async function startLiveRun(
   setters.setOrigin(runOriginFromRequest(request))
   setters.setStarting(true)
   try {
-    const readiness = await options.api<StudioRunReadiness>(
+    const readiness = await options.api(
       '/api/run-readiness',
+      studioRunReadinessSchema,
       {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
@@ -256,7 +269,7 @@ async function startLiveRun(
     )
     setters.setReadinessAttempt({ readiness, request })
     if (!readiness.ready) throw new Error(readiness.reasons.join('\n'))
-    const started = await options.api<{ id: string }>('/api/runs', {
+    const started = await options.api('/api/runs', startedRunSchema, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify(request),
