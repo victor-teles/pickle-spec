@@ -12,7 +12,7 @@ import type {
 type MobileProfileSettingsProps = {
   api: StudioApi
   onChange: (profile: StudioMobileProfile) => void
-  onError: (message: string | undefined) => void
+  onError: (message?: string) => void
   profile: StudioMobileProfile
   profileId: string
 }
@@ -68,8 +68,8 @@ function MobileDiscovery({
   )
 }
 
-function reasonMessage(reason: unknown) {
-  return reason instanceof Error ? reason.message : String(reason)
+function reasonMessage(cause: unknown) {
+  return cause instanceof Error ? cause.message : String(cause)
 }
 
 function MobileTargetKindSelector(props: MobileProfileSettingsProps) {

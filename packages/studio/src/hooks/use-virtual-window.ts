@@ -30,9 +30,9 @@ export function useVirtualWindow<Element extends HTMLElement>(
     })
   }, [options.itemSize, scrollElement])
 
-  useEffect(() => {
+  useEffect((): (() => void) | undefined => {
     const element = scrollElement
-    if (!element) return
+    if (!element) return undefined
     measure()
     const resize = new ResizeObserver(measure)
     resize.observe(element)

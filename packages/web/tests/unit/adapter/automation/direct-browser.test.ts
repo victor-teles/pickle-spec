@@ -1,3 +1,4 @@
+import { mock } from 'vitest-mock-extended'
 import type { BrowserContext, Locator, Page } from '@browserbasehq/stagehand'
 import { describe, expect, test, vi } from 'vitest'
 import { createDirectBrowser } from '../../../../src/adapter/automation/direct-browser'
@@ -7,13 +8,7 @@ const literal = (value: string) => ({ segments: [{ literal: value }] })
 const target = { selector: literal('#target') }
 
 function browserFixture() {
-  const locator = {
-    first() {
-      return this
-    },
-    nth() {
-      return this
-    },
+  const locator = mock<Locator>({
     async count() {
       return 1
     },
@@ -26,20 +21,22 @@ function browserFixture() {
     async inputValue() {
       return 'alice@example.com'
     },
-  } as unknown as Locator
-  const page = {
+  })
+  locator.first.mockReturnValue(locator)
+  locator.nth.mockReturnValue(locator)
+  const page = mock<Page>({
     locator() {
       return locator
     },
     async url() {
       return 'https://example.test/account'
     },
-  } as unknown as Page
-  const context = {
+  })
+  const context = mock<BrowserContext>({
     async activePage() {
       return page
     },
-  } as unknown as BrowserContext
+  })
   return createDirectBrowser(context, {
     actionTimeoutMs: 100,
     navigationTimeoutMs: 100,
@@ -107,13 +104,7 @@ describe('direct web actions', () => {
     const type = vi.fn(async () => {})
     const hover = vi.fn(async () => {})
     const selectOption = vi.fn(async () => [])
-    const locator = {
-      first() {
-        return this
-      },
-      nth() {
-        return this
-      },
+    const locator = mock<Locator>({
       count: vi.fn(async () => 1),
       isVisible: vi.fn(async () => true),
       sendClickEvent,
@@ -121,13 +112,15 @@ describe('direct web actions', () => {
       type,
       hover,
       selectOption,
-    } as unknown as Locator
-    const page = {
+    })
+    locator.first.mockReturnValue(locator)
+    locator.nth.mockReturnValue(locator)
+    const page = mock<Page>({
       locator: vi.fn(() => locator),
-    } as unknown as Page
-    const context = {
+    })
+    const context = mock<BrowserContext>({
       activePage: vi.fn(async () => page),
-    } as unknown as BrowserContext
+    })
     const browser = createDirectBrowser(context, {
       actionTimeoutMs: 100,
       navigationTimeoutMs: 100,
@@ -159,26 +152,22 @@ describe('direct web actions', () => {
   test('waits for a locator to attach before filling', async () => {
     let counts = 0
     const fill = vi.fn(async () => {})
-    const locator = {
-      first() {
-        return this
-      },
-      nth() {
-        return this
-      },
+    const locator = mock<Locator>({
       count: vi.fn(async () => {
         counts++
         return counts >= 2 ? 1 : 0
       }),
       isVisible: vi.fn(async () => false),
       fill,
-    } as unknown as Locator
-    const page = {
+    })
+    locator.first.mockReturnValue(locator)
+    locator.nth.mockReturnValue(locator)
+    const page = mock<Page>({
       locator: vi.fn(() => locator),
-    } as unknown as Page
-    const context = {
+    })
+    const context = mock<BrowserContext>({
       activePage: vi.fn(async () => page),
-    } as unknown as BrowserContext
+    })
     const browser = createDirectBrowser(context, {
       actionTimeoutMs: 200,
       navigationTimeoutMs: 100,

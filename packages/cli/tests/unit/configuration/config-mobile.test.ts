@@ -1,3 +1,4 @@
+import type { z } from 'zod'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -14,7 +15,7 @@ afterEach(async () => {
   )
 })
 
-async function loadMobileConfig(mobile: Record<string, unknown>) {
+async function loadMobileConfig(mobile: Record<string, z.core.util.JSONType>) {
   const root = await mkdtemp(join(tmpdir(), 'pickle-mobile-config-'))
   directories.push(root)
   await Bun.write(

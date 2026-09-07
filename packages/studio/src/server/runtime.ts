@@ -39,7 +39,7 @@ function upgrade(
   request: Request,
   data: StudioSocketData,
 ): Response | undefined {
-  const serverRequest = request as ServerRequest
+  const serverRequest: ServerRequest = request
   const upgraded = serverRequest.runtime?.bun?.server?.upgrade(request, {
     data,
   })
@@ -73,11 +73,11 @@ function createFeatureHandlers(
 ): readonly StudioHttpHandler[] {
   return [
     createProjectRoutes({
-      loadProject: modules.project.load,
+      loadProject: () => modules.project.load(),
       management: options.management,
     }),
     createHistoryRoutes({
-      activeRunIds: modules.runEvents.activeRunIds,
+      activeRunIds: () => modules.runEvents.activeRunIds(),
       history: options.history,
     }),
     createExecutionCacheRoutes({ executionCache: options.executionCache }),
@@ -106,7 +106,7 @@ async function startResponse(
   return startApp.fetch(request, {
     context: {
       studio: {
-        loadProject: project.load,
+        loadProject: () => project.load(),
         async listRuns() {
           if (!options.history) {
             throw new Error('Test run history is unavailable')
@@ -136,7 +136,9 @@ export async function createStudioRuntime(
   const git = options.git ?? createGitWorkspace(options.project.root)
   const runEvents = createRunEventHub()
   const workspaceEvents = createWorkspaceEventHub()
-  const stopWatch = await documents.watch(workspaceEvents.publish)
+  const stopWatch = await documents.watch((event) =>
+    workspaceEvents.publish(event),
+  )
   const apiHandlers = createFeatureHandlers(options, {
     documents,
     git,

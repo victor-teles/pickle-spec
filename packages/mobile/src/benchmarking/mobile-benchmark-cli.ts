@@ -70,19 +70,24 @@ function parseArguments(args: readonly string[]): MobileBenchmarkCliOptions {
 async function loadModuleDriver(
   driverPath: string,
 ): Promise<NonNullable<MobileBenchmarkDriverModule['measureMobileBenchmark']>> {
-  const driver = (await import(
-    pathToFileURL(resolve(driverPath)).href
-  )) as MobileBenchmarkDriverModule
-  if (typeof driver.measureMobileBenchmark !== 'function') {
+  const result = z
+    .object({
+      measureMobileBenchmark: z.function({
+        input: [z.enum(['adaptive', 'replay'])],
+        output: z.union([z.number(), z.promise(z.number())]),
+      }),
+    })
+    .safeParse(await import(pathToFileURL(resolve(driverPath)).href))
+  if (!result.success) {
     throw new Error(
       'Mobile benchmark driver must export measureMobileBenchmark(mode)',
     )
   }
-  return driver.measureMobileBenchmark
+  return result.data.measureMobileBenchmark
 }
 
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error)
+function errorMessage(cause: unknown): string {
+  return cause instanceof Error ? cause.message : String(cause)
 }
 
 export async function runMobileBenchmarkCli(
@@ -99,8 +104,8 @@ export async function runMobileBenchmarkCli(
       measure = await loadModuleDriver(options.driverPath)
     } else {
       const controlled = await createControlledMobileBenchmarkDriver()
-      measure = controlled.measure
-      dispose = controlled.dispose
+      measure = (mode) => controlled.measure(mode)
+      dispose = () => controlled.dispose()
     }
     const result = await runMobilePerformanceBenchmark({
       samplePairs: options.samplePairs,

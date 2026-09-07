@@ -1,14 +1,18 @@
-export function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error)
+export function errorMessage(cause: unknown): string {
+  return cause instanceof Error ? cause.message : String(cause)
 }
 
 export function withRecoveryFailure(
-  primaryError: unknown,
+  primaryError: Error,
   recovery: string,
-  recoveryError: unknown,
+  cause: unknown,
 ): AggregateError {
   return new AggregateError(
-    [primaryError, recoveryError],
-    `${errorMessage(primaryError)}\n${recovery}: ${errorMessage(recoveryError)}`,
+    [primaryError, cause],
+    `${errorMessage(primaryError)}\n${recovery}: ${errorMessage(cause)}`,
   )
+}
+
+export function commandErrorFrom(cause: unknown): Error {
+  return cause instanceof Error ? cause : new Error(String(cause), { cause })
 }

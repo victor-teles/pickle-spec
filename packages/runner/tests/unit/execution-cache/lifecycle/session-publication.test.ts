@@ -1,3 +1,4 @@
+import type { TargetSessionCompletion } from '../../../../src/execution/run-scenario'
 import type { Scenario } from '@pickle-spec/spec'
 import { describe, expect, test, vi } from 'vitest'
 import type { ExecutionTargetAdapter, TargetSession } from '../../../../index'
@@ -67,18 +68,17 @@ describe('Execution cache lifecycle', () => {
             return { state: 'passed' as const, resolvedActions: [] }
           },
           async complete() {
-            return {
+            const completion: TargetSessionCompletion = {
               inferenceCount: input.mode === 'replay' ? 1 : 2,
-              ...(input.mode === 'adaptive'
-                ? {
-                    replayRepresentation: {
-                      cacheable: true as const,
-                      adapterPayload: { operations: completeOperations },
-                      requiredVariables: [],
-                    },
-                  }
-                : {}),
             }
+            if (input.mode === 'adaptive') {
+              completion.replayRepresentation = {
+                cacheable: true as const,
+                adapterPayload: { operations: completeOperations },
+                requiredVariables: [],
+              }
+            }
+            return completion
           },
           async close() {},
         }
@@ -287,9 +287,13 @@ describe('Execution cache lifecycle', () => {
 
   test('rejects a cache-capable session without any execution seam', async () => {
     const { store, writes } = memoryStore()
-    const invalidSession = {
+    const invalidSession: TargetSession = {
+      async executeStep() {
+        return { state: 'passed', resolvedActions: [] }
+      },
       async close() {},
-    } as unknown as TargetSession
+    }
+    Reflect.deleteProperty(invalidSession, 'executeStep')
 
     const adapter: ExecutionTargetAdapter = {
       executionCache,

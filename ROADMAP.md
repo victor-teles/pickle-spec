@@ -19,11 +19,11 @@ Studio does not yet provide live target video, web traces, visual diffing, built
 
 The market already treats natural-language tests, AI-assisted authoring, selector recovery, visual editing, and rich failure artifacts as baseline capabilities. Pickle Spec must meet that baseline without copying a competitor's product model.
 
-| Competitor signal | Documented baseline | Pickle Spec response |
-| --- | --- | --- |
-| [Momentic](https://momentic.ai/docs) | Local editor; modules; cache; selection; maintenance; quarantine; MCP | Match the workflow baseline. Lead with Gherkin, local evidence, provider choice, and deterministic Replay. |
-| [OpenQA](https://github.com/openqa-labs/openqa) | One-command setup; selector-free Gherkin; provider sessions; Playwright evidence | Make setup fast and provider-neutral. Preserve one source-controlled Specification. |
-| [Playwright Test Agents](https://playwright.dev/docs/test-agents) | Planner, generator, and healer roles; seed tests; plans; live validation | Separate planning, generation, validation, and repair. Link each accepted mutation to evidence. |
+| Competitor signal                                                 | Documented baseline                                                              | Pickle Spec response                                                                                       |
+| ----------------------------------------------------------------- | -------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| [Momentic](https://momentic.ai/docs)                              | Local editor; modules; cache; selection; maintenance; quarantine; MCP            | Match the workflow baseline. Lead with Gherkin, local evidence, provider choice, and deterministic Replay. |
+| [OpenQA](https://github.com/openqa-labs/openqa)                   | One-command setup; selector-free Gherkin; provider sessions; Playwright evidence | Make setup fast and provider-neutral. Preserve one source-controlled Specification.                        |
+| [Playwright Test Agents](https://playwright.dev/docs/test-agents) | Planner, generator, and healer roles; seed tests; plans; live validation         | Separate planning, generation, validation, and repair. Link each accepted mutation to evidence.            |
 
 These features are necessary, but they are not sufficient differentiation. Pickle Spec's advantage is one local-first evidence model across web and mobile, with explicit Adaptive and Replay behavior, portable runs, and observable autonomy.
 

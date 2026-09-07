@@ -15,8 +15,7 @@ export type WebBenchmarkSample = ReplayBenchmarkSample
 export type WebBenchmarkStatistics = ReplayBenchmarkStatistics
 export type WebPerformanceGate = ReplayBenchmarkGate
 
-export interface WebPerformanceBenchmarkResult
-  extends ReplayPerformanceBenchmarkResult {
+export interface WebPerformanceBenchmarkResult extends ReplayPerformanceBenchmarkResult {
   warmupPairsDiscarded: 3
 }
 
@@ -37,7 +36,7 @@ export function evaluateWebPerformanceGates(
     samples,
     budgets: webReplayBenchmarkBudgets,
   })
-  return result as WebPerformanceBenchmarkResult
+  return { ...result, warmupPairsDiscarded: 3 }
 }
 
 export async function runWebPerformanceBenchmark(
@@ -52,5 +51,5 @@ export async function runWebPerformanceBenchmark(
       return performance.now() - startedAt
     },
   })
-  return result as WebPerformanceBenchmarkResult
+  return { ...result, warmupPairsDiscarded: 3 }
 }

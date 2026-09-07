@@ -34,21 +34,17 @@ function isolatedAutomation(
   }
 }
 
-function mockProcess(
-  automation: WebAutomation | (() => WebAutomation),
-): WebBrowserProcess {
+function mockProcess(automation: WebAutomation | (() => WebAutomation)) {
   return {
     openContext: vi.fn(async () =>
-      typeof automation === 'function' ? automation() : automation,
+      'call' in automation ? automation() : automation,
     ),
     close: vi.fn(async () => {}),
   }
 }
 
 function mockFactory(process: WebBrowserProcess | (() => WebBrowserProcess)) {
-  const launch = vi.fn(async () =>
-    typeof process === 'function' ? process() : process,
-  )
+  const launch = vi.fn(async () => ('call' in process ? process() : process))
   const factory: WebAutomationFactory = { launch }
   return { factory, launch }
 }
@@ -59,7 +55,7 @@ async function cancellationOutcome(
   return Promise.race([
     operation.then(
       () => 'resolved',
-      (error: unknown) => (error instanceof Error ? error.name : 'rejected'),
+      (cause: unknown) => (cause instanceof Error ? cause.name : 'rejected'),
     ),
     Bun.sleep(25).then(() => 'still-pending'),
   ])
@@ -108,7 +104,7 @@ describe('WebProcessPool', () => {
   test('cancels context setup and closes resources that resolve late', async () => {
     const opened = Promise.withResolvers<WebAutomation>()
     const automation = isolatedAutomation()
-    const process: WebBrowserProcess = {
+    const process = {
       openContext: () => opened.promise,
       close: vi.fn(async () => {}),
     }

@@ -1,3 +1,4 @@
+import { z } from 'zod'
 import type {
   ExecutionTargetAdapter,
   OpenSessionInput,
@@ -61,9 +62,8 @@ export type MobileAdapterOptions =
   | AndroidMobileAdapterOptions
   | IosMobileAdapterOptions
 
-export interface MobileExecutionTargetAdapter
-  extends ExecutionTargetAdapter<ScenarioTargetSession> {
-  discoverTargets(): Promise<Array<AndroidTarget  >>
+export interface MobileExecutionTargetAdapter extends ExecutionTargetAdapter<ScenarioTargetSession> {
+  discoverTargets(): Promise<Array<AndroidTarget>>
 }
 
 export type MobileLiveViewportTarget = {
@@ -164,7 +164,7 @@ function openSessionRequest(
   const replayCache = input.executionCache
   const replayPayload = replayCache
     ? executionCache.parse(
-        replayCache.adapterPayload,
+        z.json().parse(replayCache.adapterPayload),
         replayCache.requiredVariables,
       )
     : undefined

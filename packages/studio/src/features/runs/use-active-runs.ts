@@ -58,8 +58,10 @@ class ActiveRunConnections {
       `${protocol}//${location.host}/api/runs/${encodeURIComponent(runId)}/events`,
     )
     this.sockets.push(socket)
-    socket.onmessage = (message) => this.receive(runId, message)
-    socket.onclose = () => this.disconnect(runId)
+    socket.addEventListener('message', (message) =>
+      this.receive(runId, message),
+    )
+    socket.addEventListener('close', () => this.disconnect(runId))
   }
 
   private receive(runId: string, message: MessageEvent): void {
@@ -93,11 +95,11 @@ class ActiveRunConnections {
   private update(runId: string, update: InspectionUpdate): void {
     this.setInspections((current) => {
       const existing = current.get(runId)
-      if (typeof update === 'function' && !existing) return current
+      if ('call' in update && !existing) return current
       const next = new Map(current)
       next.set(
         runId,
-        typeof update === 'function' ? update(requiredValue(existing)) : update,
+        'call' in update ? update(requiredValue(existing)) : update,
       )
       return next
     })
@@ -139,6 +141,6 @@ export function useActiveRuns(options: ActiveRunsOptions) {
   return inspections
 }
 
-function messageFrom(reason: unknown): string {
-  return reason instanceof Error ? reason.message : String(reason)
+function messageFrom(cause: unknown): string {
+  return cause instanceof Error ? cause.message : String(cause)
 }

@@ -1,6 +1,10 @@
 {
   "name": "@pickle-spec/web",
   "version": "1.0.2",
+  "files": [
+    "index.ts",
+    "src/**/*.ts"
+  ],
   "type": "module",
   "exports": {
     ".": "./index.ts"
@@ -8,10 +12,6 @@
   "publishConfig": {
     "access": "public"
   },
-  "files": [
-    "index.ts",
-    "src/**/*.ts"
-  ],
   "scripts": {
     "benchmark:replay": "bun src/benchmarking/web-benchmark-cli.ts",
     "typecheck": "tsc --noEmit",

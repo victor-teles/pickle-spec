@@ -89,19 +89,20 @@ async function createReleaseWorkspace(): Promise<string> {
       ),
       'src/**/*.ts',
     ]
+    const manifest = {
+      name,
+      version: '1.0.2',
+      type: 'module',
+      exports,
+      publishConfig: { access: 'public' },
+      files,
+      dependencies,
+    }
+    const cliManifest = { ...manifest, bin: { pickle: './src/cli.ts' } }
     await Bun.write(
       join(packageRoot, 'package.json'),
       `${JSON.stringify(
-        {
-          name,
-          version: '1.0.2',
-          type: 'module',
-          exports,
-          publishConfig: { access: 'public' },
-          files,
-          ...(directory === 'cli' ? { bin: { pickle: './src/cli.ts' } } : {}),
-          dependencies,
-        },
+        directory === 'cli' ? cliManifest : manifest,
         null,
         2,
       )}\n`,

@@ -1,3 +1,5 @@
+import { z } from 'zod'
+import { testResultSchema } from '@pickle-spec/runner'
 import { Database } from 'bun:sqlite'
 import { mkdir, mkdtemp, readdir, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -112,7 +114,14 @@ function reporterRecords(output: Uint8Array): ReporterRecord[] {
     .trim()
     .split('\n')
     .filter(Boolean)
-    .map((line) => JSON.parse(line) as ReporterRecord)
+    .map((line) =>
+      z
+        .object({
+          kind: z.string().optional(),
+          result: testResultSchema.optional(),
+        })
+        .parse(JSON.parse(line)),
+    )
 }
 
 function reporterResult(output: Uint8Array): TestResult {
@@ -134,10 +143,8 @@ interface PickleRunOptions {
   evaluationDelayMs?: number
 }
 
-function childEnvironment(
-  options: PickleRunOptions,
-): Record<string, string | undefined> {
-  const environment: Record<string, string | undefined> = {
+function childEnvironment(options: PickleRunOptions) {
+  const environment: NodeJS.ProcessEnv = {
     ...Bun.env,
     CI: 'true',
     PICKLE_CACHE_ROOT: options.cacheRoot,

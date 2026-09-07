@@ -1,7 +1,10 @@
+import {
+  deserializeExecutionCacheTerminalOutcome,
+  serializeExecutionCacheTerminalOutcome,
+} from '../execution-cache'
 import type {
   ExecutionCacheKey,
   ExecutionCacheLeaseWaitResult,
-  SerializedExecutionCacheTerminalOutcome,
 } from '../execution-cache'
 import type { LocalExecutionCacheDatabase } from './local-execution-cache-database'
 import {
@@ -106,18 +109,21 @@ async function releasedLeaseResult(
       digestKey,
     )?.revision
     const outcome = db
-      .query(
+      .query<LeaseOutcomeRow, [string, string]>(
         `SELECT terminal_outcome AS source FROM lease_outcomes
          WHERE key_digest = ? AND owner_token = ?`,
       )
-      .get(digestKey, input.ownerToken) as LeaseOutcomeRow | null
+      .get(digestKey, input.ownerToken)
     return { currentRevision, outcome }
   })
+  const outcome = released.outcome
+    ? deserializeExecutionCacheTerminalOutcome(released.outcome)
+    : undefined
   return {
     status: 'released',
     published: released.currentRevision !== input.baselineRevision,
-    terminalOutcome: released.outcome
-      ? (released.outcome as SerializedExecutionCacheTerminalOutcome)
+    terminalOutcome: outcome
+      ? serializeExecutionCacheTerminalOutcome(outcome)
       : undefined,
   }
 }

@@ -1,7 +1,10 @@
+import type { z } from 'zod'
 import { createInterface } from 'node:readline'
 import { AgentDeviceGateway } from '../agent-device/agent-device-gateway.ts'
 import {
   type MobileWorkerEvent,
+  type workerReadyMessageSchema,
+  type WorkerResponseMessage,
   mobileWorkerProtocolVersion,
   workerRequestMessageSchema,
 } from './worker-protocol.ts'
@@ -14,7 +17,9 @@ class WorkerOutput {
   private readonly viewportEvents = new Map<string, string>()
   private flushing = false
 
-  response(message: unknown): void {
+  response(
+    message: WorkerResponseMessage | z.infer<typeof workerReadyMessageSchema>,
+  ): void {
     this.responses.push(`${JSON.stringify(message)}\n`)
     void this.flush()
   }
@@ -35,13 +40,13 @@ class WorkerOutput {
     const response = this.responses.shift()
     if (response) return response
     const eventEntry = this.viewportEvents.entries().next().value
-    if (!eventEntry) return
+    if (!eventEntry) return undefined
     this.viewportEvents.delete(eventEntry[0])
     return eventEntry[1]
   }
 
   private write(message: string): Promise<void> | undefined {
-    if (process.stdout.write(message)) return
+    if (process.stdout.write(message)) return undefined
     return new Promise((resolve) => process.stdout.once('drain', resolve))
   }
 
@@ -68,8 +73,8 @@ const runtime = new MobileWorkerRuntime(
   new AgentDeviceGateway(undefined, (event) => output.event(event)),
 )
 
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error)
+function errorMessage(cause: unknown): string {
+  return cause instanceof Error ? cause.message : String(cause)
 }
 
 async function handleLine(line: string): Promise<void> {

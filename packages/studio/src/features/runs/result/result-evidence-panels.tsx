@@ -30,6 +30,8 @@ import {
 } from './result-evidence'
 import type { ResultInspectionLocation } from './result-inspection'
 
+type DiagnosticAvailabilityResult = { description: string; recovery?: string }
+
 const diagnosticLevels = [
   'debug',
   'info',
@@ -50,7 +52,7 @@ function hasDiagnosticFilters(filters: readonly unknown[]): boolean {
 
 function diagnosticAvailability(
   availability: readonly EvidenceAvailability[],
-): { description: string; recovery?: string } {
+): DiagnosticAvailabilityResult {
   const diagnostics = availability.find((item) => item.kind === 'diagnostics')
   const description = diagnostics?.message
     ? `${diagnostics.state} · ${diagnostics.message}`
@@ -673,7 +675,7 @@ type DiagnosticChoiceProps<Value extends string> = {
   label: string
   values: readonly Value[]
   selected?: Value
-  onSelect: (value: Value | undefined) => void
+  onSelect: (value?: Value) => void
 }
 
 function DiagnosticChoice<Value extends string>(

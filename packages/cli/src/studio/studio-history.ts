@@ -85,7 +85,7 @@ function createReportExporter(
             return Bun.file(outputPath).text()
           },
         )
-      case 'allure':
+      default:
         return createAllureResultsZip(manifest, {
           artifactsDirectory: join(
             resolveLocalProjectStorage(root).runsDirectory,

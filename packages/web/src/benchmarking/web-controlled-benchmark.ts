@@ -26,6 +26,8 @@ import {
   type WebPerformanceBenchmarkResult,
 } from './web-benchmark'
 
+type ExecuteControlledInstructionResult = { success: boolean; message?: string }
+
 export interface ControlledWebBenchmarkOptions {
   samplePairs: number
 }
@@ -62,9 +64,7 @@ function selectControlledAction(): WebObservedAction {
         index === evaluationCandidateCount - 1 ? '#settings' : `#${index}`,
     }),
   )
-  const parsed = JSON.parse(
-    JSON.stringify(candidates),
-  ) as ControlledActionCandidate[]
+  const parsed = structuredClone(candidates)
   const selected = parsed.find(
     (candidate) => candidate.selector === '#settings',
   )
@@ -83,9 +83,7 @@ function selectControlledAssertion(): WebAssertionDraft {
       selector: index === evaluationCandidateCount - 1 ? '#ready' : `#${index}`,
     }),
   )
-  const parsed = JSON.parse(
-    JSON.stringify(candidates),
-  ) as ControlledAssertionCandidate[]
+  const parsed = structuredClone(candidates)
   const selected = parsed.find((candidate) => candidate.selector === '#ready')
   if (!selected) throw new Error('Controlled assertion compilation failed')
   return selected
@@ -98,7 +96,7 @@ function boundValue(template: WebTemplate): string | undefined {
 function executeControlledInstruction(
   instruction: WebInstruction,
   page: ControlledPageState,
-): { success: boolean; message?: string } {
+): ExecuteControlledInstructionResult {
   const pageState = page
   if (instruction.kind === 'navigate') {
     pageState.currentUrl = boundValue(instruction.url)

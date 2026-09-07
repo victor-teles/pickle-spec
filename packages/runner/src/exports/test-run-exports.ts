@@ -66,14 +66,9 @@ async function loadFinalizedTestRun(
   if (!(await Bun.file(manifestPath).exists())) {
     throw new Error(`Test run "${input.runId}" must be finalized before export`)
   }
-  const manifest = parseTestRunManifest(
-    await Bun.file(manifestPath).json(),
-    (version): never => {
-      throw new Error(
-        `Test run storage schema version ${String(version)} is unsupported`,
-      )
-    },
-  )
+  const manifest = parseTestRunManifest((version): never => {
+    throw new Error(`Test run storage schema version ${version} is unsupported`)
+  })(await Bun.file(manifestPath).json())
   if (!manifest.finishedAt) {
     throw new Error(`Test run "${input.runId}" must be finalized before export`)
   }
@@ -149,8 +144,8 @@ async function writeExport(
   }
 }
 
-function failureMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error)
+function failureMessage(cause: unknown): string {
+  return cause instanceof Error ? cause.message : String(cause)
 }
 
 export async function publishTestRunExports(

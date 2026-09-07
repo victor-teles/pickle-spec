@@ -56,9 +56,9 @@ export async function createStartApp(): Promise<StartApp> {
     const { createDevelopmentApp } = await import('./start-development')
     return createDevelopmentApp(studioPackageRoot)
   }
-  startBuild ??= loadStartServerEntry().catch((error: unknown) => {
+  startBuild ??= loadStartServerEntry().catch((cause: unknown) => {
     startBuild = undefined
-    throw error
+    throw cause
   })
   const entry = await startBuild
   const assets = staticMiddleware({

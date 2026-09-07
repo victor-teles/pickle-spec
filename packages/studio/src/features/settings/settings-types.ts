@@ -31,5 +31,5 @@ export type SettingsProps<T extends ConfigurableProject> = {
   project: T
   api: StudioApi
   onProject: (project: T) => void
-  onError: (message: string | undefined) => void
+  onError: (message?: string) => void
 }

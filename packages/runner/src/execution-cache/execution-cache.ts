@@ -30,14 +30,15 @@ export interface ExecutionCachePayloadValidator<AdapterPayload = unknown> {
   adapterKind: string
   adapterCacheSchemaVersion: string
   parse(
-    payload: unknown,
+    payload: z.core.util.JSONType,
     requiredVariables: readonly string[],
   ): AdapterPayload | undefined
   prefixStepCount(payload: AdapterPayload): number
 }
 
-export interface ExecutionCacheAdapter<AdapterPayload = unknown>
-  extends ExecutionCachePayloadValidator<AdapterPayload> {
+export interface ExecutionCacheAdapter<
+  AdapterPayload = unknown,
+> extends ExecutionCachePayloadValidator<AdapterPayload> {
   targetConfigurationFingerprint: string
   prefixPolicy?: ExecutionCachePrefixPolicy
 }
@@ -48,8 +49,12 @@ export function prefixPolicyOf(
   return adapter.prefixPolicy ?? { mixedReplay: true, write: 'prefix' }
 }
 
-declare const serializedExecutionCacheEnvelope: unique symbol
-declare const serializedExecutionCacheTerminalOutcome: unique symbol
+const serializedExecutionCacheEnvelope = Symbol(
+  'serializedExecutionCacheEnvelope',
+)
+const serializedExecutionCacheTerminalOutcome = Symbol(
+  'serializedExecutionCacheTerminalOutcome',
+)
 
 export type SerializedExecutionCacheEnvelope = {
   readonly key: ExecutionCacheKey
@@ -105,8 +110,7 @@ export type ExecutionCacheLeaseWaitResult =
     }
   | { status: 'timed-out' | 'cancelled' }
 
-export interface ExecutionCacheLeasePublicationResult
-  extends ExecutionCacheWriteResult {
+export interface ExecutionCacheLeasePublicationResult extends ExecutionCacheWriteResult {
   published: boolean
 }
 
@@ -179,8 +183,7 @@ export interface ExecutionCacheWriteMetadata {
   evaluationInferenceCount: number
 }
 
-export interface ExecutionCacheEntryMetadata
-  extends ExecutionCacheWriteMetadata {
+export interface ExecutionCacheEntryMetadata extends ExecutionCacheWriteMetadata {
   key: ExecutionCacheKey
   createdAt: string
   lastUsedAt: string
@@ -240,15 +243,16 @@ export function serializeExecutionCacheTerminalOutcome(
   const parsed = executionCacheTerminalOutcomeSchema.parse(outcome)
   return Object.freeze({
     source: JSON.stringify(parsed),
-  }) as SerializedExecutionCacheTerminalOutcome
+    [serializedExecutionCacheTerminalOutcome]: true as const,
+  })
 }
 
 export function deserializeExecutionCacheTerminalOutcome(
-  serialized: SerializedExecutionCacheTerminalOutcome,
+  serialized: Pick<SerializedExecutionCacheTerminalOutcome, 'source'>,
 ): ExecutionCacheTerminalOutcome | undefined {
   try {
     return executionCacheTerminalOutcomeSchema.safeParse(
-      JSON.parse(serialized.source) as unknown,
+      JSON.parse(serialized.source),
     ).data
   } catch {
     return undefined
@@ -273,7 +277,10 @@ export function resolveExecutionCacheKey(
   const parsed = executionCacheKeyInputSchema.safeParse(input)
   if (!parsed.success) throw new Error(invalidKeyMessage(parsed.error))
   if (!parsed.data.applicationRevision?.trim()) return undefined
-  return parsed.data as ExecutionCacheKey
+  return {
+    ...parsed.data,
+    applicationRevision: parsed.data.applicationRevision,
+  }
 }
 
 function keysEqual(left: ExecutionCacheKey, right: ExecutionCacheKey): boolean {
@@ -306,18 +313,12 @@ function parseAdapterPayload<AdapterPayload>(
     return undefined
   }
   try {
-    return validator.parse(envelope.adapterPayload, envelope.requiredVariables)
+    const payload = z.json().safeParse(envelope.adapterPayload)
+    if (!payload.success) return undefined
+    return validator.parse(payload.data, envelope.requiredVariables)
   } catch {
     return undefined
   }
-}
-
-function parseEnvelope(value: unknown): ExecutionCacheEnvelope | undefined {
-  const parsed = executionCacheEnvelopeSchema.safeParse(value)
-  if (!parsed.success || !hasUniqueVariables(parsed.data.requiredVariables)) {
-    return undefined
-  }
-  return parsed.data
 }
 
 function validatedEnvelope<AdapterPayload>(
@@ -333,8 +334,8 @@ export function serializeExecutionCacheEnvelope<AdapterPayload>(
   envelope: ExecutionCacheEnvelope,
   payloadValidator: ExecutionCachePayloadValidator<AdapterPayload>,
 ): SerializedExecutionCacheEnvelope {
-  const parsed = parseEnvelope(envelope)
-  if (!parsed) {
+  const parsed = executionCacheEnvelopeSchema.safeParse(envelope).data
+  if (!parsed || !hasUniqueVariables(parsed.requiredVariables)) {
     throw new Error('Execution cache envelope is not cacheable')
   }
   const validated = validatedEnvelope(parsed, payloadValidator)
@@ -344,7 +345,8 @@ export function serializeExecutionCacheEnvelope<AdapterPayload>(
   return Object.freeze({
     key: Object.freeze({ ...validated.key }),
     source: JSON.stringify(validated),
-  }) as SerializedExecutionCacheEnvelope
+    [serializedExecutionCacheEnvelope]: true as const,
+  })
 }
 
 export function deserializeExecutionCacheEnvelope<AdapterPayload>(
@@ -352,12 +354,12 @@ export function deserializeExecutionCacheEnvelope<AdapterPayload>(
 ): ExecutionCacheEnvelope<AdapterPayload> | undefined {
   let value: unknown
   try {
-    value = JSON.parse(input.source) as unknown
+    value = JSON.parse(input.source)
   } catch {
     return undefined
   }
-  const parsed = parseEnvelope(value)
-  if (!parsed) return undefined
+  const parsed = executionCacheEnvelopeSchema.safeParse(value).data
+  if (!parsed || !hasUniqueVariables(parsed.requiredVariables)) return undefined
   const envelope = validatedEnvelope(parsed, input.payloadValidator)
   if (!envelope || !keysEqual(envelope.key, input.expectedKey)) return undefined
   return envelope

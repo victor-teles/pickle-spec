@@ -1,3 +1,4 @@
+import { z } from 'zod'
 import type {
   ExecutionCacheUncacheableReason,
   OpenSessionInput,
@@ -26,6 +27,8 @@ import {
 } from './web-execution-cache'
 import { errorMessage, promptFor } from './web-step'
 
+type CacheCompilationStatus = { reason?: ExecutionCacheUncacheableReason }
+
 type FinishStep = (
   execution: StepExecution,
   step: ScenarioStep,
@@ -46,9 +49,7 @@ class WebCacheTargetSession implements Omit<StepTargetSession, 'close'> {
     WebExecutionCachePayload['steps'][number] | undefined
   >
   private readonly inference = { count: 0 }
-  private readonly uncacheable: {
-    reason?: ExecutionCacheUncacheableReason
-  } = {}
+  private readonly uncacheable: CacheCompilationStatus = {}
   private readonly executor
   private readonly adaptive
   private fallbackStepIndex = 0
@@ -62,7 +63,7 @@ class WebCacheTargetSession implements Omit<StepTargetSession, 'close'> {
       []
     this.cachedPayload = input.executionCache
       ? parseWebExecutionCachePayload(
-          input.executionCache.adapterPayload,
+          z.json().parse(input.executionCache.adapterPayload),
           input.executionCache.requiredVariables,
         )
       : undefined

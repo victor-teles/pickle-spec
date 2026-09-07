@@ -1,3 +1,4 @@
+import { isResultInspectorTab } from '../runs/result/result-inspection'
 import { BrowserIcon } from '@hugeicons/core-free-icons'
 import { HugeiconsIcon } from '@hugeicons/react'
 import {
@@ -180,7 +181,7 @@ export function EvidenceDock(props: WorkbenchEvidenceProps) {
       <Tabs
         value={tab}
         onValueChange={(value) =>
-          props.onSelectInspectorTab(value as ResultInspectorTab)
+          isResultInspectorTab(value) && props.onSelectInspectorTab(value)
         }
         className="h-full min-h-0 gap-0 overflow-hidden"
       >

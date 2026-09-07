@@ -100,7 +100,7 @@ test('exports every Studio report format from a finalized Test run', async () =>
   expect(String(html)).toContain('<!DOCTYPE html>')
   expect(JSON.parse(String(archive)).manifest.id).toBe('run-1')
   if (!(allure instanceof Uint8Array)) throw new Error('Expected ZIP bytes')
-  expect(allure.slice(0, 4)).toEqual([0x50, 0x4b, 0x05, 0x06])
+  expect(Array.from(allure.slice(0, 4))).toEqual([0x50, 0x4b, 0x05, 0x06])
 })
 
 test('rejects Studio report export until the Test run is finalized', async () => {

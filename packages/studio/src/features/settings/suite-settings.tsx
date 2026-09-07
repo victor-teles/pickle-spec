@@ -12,8 +12,7 @@ const specificationStates = ['draft', 'active', 'deprecated'] as const
 
 function pathsText(paths: StudioSuite['paths']): string {
   if (!paths) return ''
-  if (typeof paths === 'string') return paths
-  return paths.join(', ')
+  return [paths].flat().join(', ')
 }
 
 function initialSuiteEditor(suites: readonly StudioSuite[] | undefined) {
@@ -28,12 +27,20 @@ function initialSuiteEditor(suites: readonly StudioSuite[] | undefined) {
 }
 
 function suiteConfiguration(suite: StudioSuite) {
-  return {
-    ...(suite.paths ? { paths: suite.paths } : {}),
-    ...(suite.tagExpression ? { tagExpression: suite.tagExpression } : {}),
-    ...(suite.states ? { states: suite.states } : {}),
-    ...(suite.scenarioName ? { scenarioName: suite.scenarioName } : {}),
+  const configuration: Omit<StudioSuite, 'name'> = {}
+  if (suite.paths) {
+    configuration.paths = suite.paths
   }
+  if (suite.tagExpression) {
+    configuration.tagExpression = suite.tagExpression
+  }
+  if (suite.states) {
+    configuration.states = suite.states
+  }
+  if (suite.scenarioName) {
+    configuration.scenarioName = suite.scenarioName
+  }
+  return configuration
 }
 
 function existingSuites(suites: readonly StudioSuite[] | undefined) {
@@ -51,16 +58,22 @@ function editedSuiteConfiguration(input: {
   const paths = commaSeparatedValues(input.paths)
   const states = commaSeparatedValues(input.states).filter(
     (state): state is (typeof specificationStates)[number] =>
-      specificationStates.includes(
-        state as (typeof specificationStates)[number],
-      ),
+      specificationStates.some((candidate) => candidate === state),
   )
-  return {
-    ...(paths.length ? { paths } : {}),
-    ...(input.tags.trim() ? { tagExpression: input.tags.trim() } : {}),
-    ...(states.length ? { states } : {}),
-    ...(input.scenario.trim() ? { scenarioName: input.scenario.trim() } : {}),
+  const configuration: Omit<StudioSuite, 'name'> = {}
+  if (paths.length) {
+    configuration.paths = paths
   }
+  if (input.tags.trim()) {
+    configuration.tagExpression = input.tags.trim()
+  }
+  if (states.length) {
+    configuration.states = states
+  }
+  if (input.scenario.trim()) {
+    configuration.scenarioName = input.scenario.trim()
+  }
+  return configuration
 }
 
 function SuiteSelector(props: {

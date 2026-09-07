@@ -79,7 +79,7 @@ describe('runScenario', () => {
         },
       ],
     })
-    expect(typeof run.result.scenario.id).toBe('string')
+    expect(run.result.scenario.id).toBeTypeOf('string')
     expect(run.result.durationMs).toBeGreaterThanOrEqual(0)
     expect(close).toHaveBeenCalledTimes(1)
   })

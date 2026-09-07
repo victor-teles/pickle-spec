@@ -61,7 +61,7 @@ export function createTestResult(
     throw new Error('A Test result requires at least one Scenario attempt')
   }
   const scenarioId = scenarioDefinitionId(input.specification, input.scenario)
-  return {
+  const testResult: TestResult = {
     schemaVersion: testRunSchemaVersion,
     specification: {
       name: input.specification.name,
@@ -74,8 +74,11 @@ export function createTestResult(
     finishedAt: final.finishedAt,
     durationMs: durationMs(first.startedAt, final.finishedAt),
     attempts,
-    ...(attempts.length > 1 && final.state === 'passed' ? { flaky: true } : {}),
   }
+  if (attempts.length > 1 && final.state === 'passed') {
+    testResult.flaky = true
+  }
+  return testResult
 }
 
 export function createSyntheticTestResult(
@@ -99,11 +102,13 @@ export function createSyntheticTestResult(
     steps: [],
     executionMode: mode,
     inferenceCount: 0,
-    ...(input.adapter.fidelityPolicy
-      ? { fidelityPolicy: input.adapter.fidelityPolicy }
-      : {}),
-    ...(message !== undefined ? { message } : {}),
     evidenceAvailability: attemptEvidence(attemptInput, []),
+  }
+  if (input.adapter.fidelityPolicy) {
+    attempt.fidelityPolicy = input.adapter.fidelityPolicy
+  }
+  if (message !== undefined) {
+    attempt.message = message
   }
   return createTestResult(attemptInput, [attempt])
 }

@@ -1,3 +1,5 @@
+import type { languages } from 'monaco-editor/editor/editor.api.js'
+
 export type GherkinCompletionKind = 'keyword' | 'tag' | 'step'
 
 export type GherkinCompletion = {
@@ -49,7 +51,7 @@ export const gherkinMonarch = {
       [/<[^>]+>/, 'placeholder'],
     ],
   },
-}
+} satisfies languages.IMonarchLanguage
 
 function uniqueSorted(values: readonly string[]): string[] {
   return [...new Set(values.filter((value) => value.length > 0))].toSorted(

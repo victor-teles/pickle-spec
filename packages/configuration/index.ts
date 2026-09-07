@@ -2,6 +2,6 @@ export {
   optionalBoolean,
   optionalPositiveInteger,
   optionalString,
-  parseConfiguration,
+  configurationParser,
   strictObject,
 } from './src/validation'

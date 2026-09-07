@@ -36,7 +36,7 @@ type UseLiveRunOptions = {
   activeProfileId?: string
   api: StudioApi
   onClearError: () => void
-  onError: (reason: unknown) => void
+  onError: (cause: unknown) => void
   onInspectResult: (location: ResultInspectionLocation) => void
   registerActiveRun: (runId: string) => void
   reloadRunsIndex: () => Promise<StudioRunsIndex>
@@ -63,7 +63,7 @@ async function restoreActiveRun(input: {
   activeRunIds: readonly string[]
   api: StudioApi
   cancelled: () => boolean
-  onError: (reason: unknown) => void
+  onError: (cause: unknown) => void
   setLive: SetValue<LiveResultInspection | undefined>
   setRunId: SetValue<string | undefined>
   specificationUri: string
@@ -97,10 +97,11 @@ function useRestoreActiveRun(input: {
   setRunId: SetValue<string | undefined>
   starting: boolean
 }): void {
-  useEffect(() => {
+  useEffect((): (() => void) | undefined => {
     const specificationUri = input.options.selectedSpecificationUri
-    if (input.runId || input.live || input.starting || !specificationUri) return
-    if (input.activeRunIds.length === 0) return
+    if (input.runId || input.live || input.starting || !specificationUri)
+      return undefined
+    if (input.activeRunIds.length === 0) return undefined
     let cancelled = false
     void restoreActiveRun({
       activeRunIds: input.activeRunIds,
@@ -135,14 +136,14 @@ function useLiveRunSocket(input: {
 }): void {
   const { api, onError, reloadRunsIndex } = input.options
   const { runId, setLive, setOrigin } = input
-  useEffect(() => {
-    if (!runId) return
+  useEffect((): (() => void) | undefined => {
+    if (!runId) return undefined
     let closedByClient = false
     const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:'
     const socket = new WebSocket(
       `${protocol}//${location.host}/api/runs/${runId}/events`,
     )
-    socket.onmessage = (message) => {
+    socket.addEventListener('message', (message) => {
       const event = JSON.parse(String(message.data)) as LiveStreamEvent
       setLive((current) =>
         current ? receiveLiveStreamEvent(current, event) : current,
@@ -157,15 +158,15 @@ function useLiveRunSocket(input: {
           setLive,
         })
       }
-    }
-    socket.onclose = () => {
+    })
+    socket.addEventListener('close', () => {
       if (closedByClient) return
       setLive((current) =>
         current?.phase === 'running'
           ? disconnectLiveInspection(current, 'The live event stream closed.')
           : current,
       )
-    }
+    })
     return () => {
       closedByClient = true
       socket.close()
@@ -175,7 +176,7 @@ function useLiveRunSocket(input: {
 
 async function hydrateFinishedRun(input: {
   api: StudioApi
-  onError: (reason: unknown) => void
+  onError: (cause: unknown) => void
   reloadRunsIndex: () => Promise<StudioRunsIndex>
   runId: string
   setLive: SetValue<LiveResultInspection | undefined>
@@ -225,7 +226,7 @@ function selectedResultFrom(
   live: LiveResultInspection | undefined,
   cells: readonly MatrixCell[],
 ): MatrixCell | undefined {
-  if (!live) return
+  if (!live) return undefined
   return cells.find(
     (cell) =>
       cell.scenarioId === live.location?.scenarioId &&

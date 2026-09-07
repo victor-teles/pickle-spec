@@ -82,7 +82,7 @@ const releasePackageNames = new Set(
   releasePackageDefinitions.map(({ name }) => name),
 )
 
-function assertRelease(condition: unknown, message: string): asserts condition {
+function assertRelease(condition: boolean, message: string): asserts condition {
   if (!condition) throw new Error(message)
 }
 
@@ -366,7 +366,10 @@ export async function validateReleasePackages(
     packages.push(validated.package)
   }
   await validateCliRelease(root)
-  assertRelease(releaseVersion, 'The release must contain at least one package')
+  assertRelease(
+    releaseVersion !== undefined && releaseVersion.length > 0,
+    'The release must contain at least one package',
+  )
 
   return { version: releaseVersion, packages }
 }

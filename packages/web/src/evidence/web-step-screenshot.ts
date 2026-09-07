@@ -21,16 +21,16 @@ export async function reuseActionCompletionScreenshot(
   const actionIndex = execution.resolvedActions.findLastIndex(
     (candidate) => candidate.evidence?.screenshots.after.state === 'available',
   )
-  if (actionIndex < 0) return
+  if (actionIndex < 0) return undefined
   const action = execution.resolvedActions[actionIndex]
   const evidence = action?.evidence
   const after = evidence?.screenshots.after
-  if (!action || !evidence || after?.state !== 'available') return
+  if (!action || !evidence || after?.state !== 'available') return undefined
   try {
     await mkdir(dirname(path), { recursive: true })
     await rename(after.artifact.path, path)
   } catch {
-    return
+    return undefined
   }
   const artifact = {
     ...after.artifact,

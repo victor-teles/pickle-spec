@@ -108,7 +108,11 @@ function stopServerProcess(child: ManagedApplicationProcess): void {
   try {
     process.kill(-child.pid, 'SIGTERM')
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== 'ESRCH') throw error
+    if (
+      (error instanceof Error && 'code' in error ? error.code : undefined) !==
+      'ESRCH'
+    )
+      throw error
   }
 }
 

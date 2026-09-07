@@ -23,6 +23,11 @@ export interface SpecificationMigrationPlan {
   files: SpecificationMigrationFile[]
 }
 
+type FileMigration = {
+  nextSource: string
+  changes: SpecificationMigrationChange[]
+}
+
 type SourceEdit = { type: 'insert-line'; beforeLine: number; text: string }
 
 function applyEdits(source: string, edits: readonly SourceEdit[]): string {
@@ -44,7 +49,7 @@ function tagLine(column: number, tags: readonly string[]): string {
 function migrateFile(
   file: SpecificationSourceFile,
   feature: Feature | undefined,
-): { nextSource: string; changes: SpecificationMigrationChange[] } {
+): FileMigration {
   if (!feature) return { nextSource: file.source, changes: [] }
   const featureNode = identityNodes(feature).find(
     (node) => node.kind === 'feature',

@@ -16,13 +16,14 @@ function createSpecification(
   scenarios: Scenario[],
   state?: SpecificationState,
 ): Specification {
-  return {
+  const specification: Specification = {
     name: uri,
     source: { uri, language: 'en' },
     tags: [],
     scenarios,
-    ...(state ? { state } : {}),
   }
+  if (state) specification.state = state
+  return specification
 }
 
 describe('selectScenarios', () => {

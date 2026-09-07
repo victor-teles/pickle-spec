@@ -79,9 +79,9 @@ function extensionProvidesAdapter(
       'adapter',
       sourceFile,
     ) ||
-      adaptersType
-        ?.getProperties()
-        .some((property) => property.name !== '__index'),
+    adaptersType
+      ?.getProperties()
+      .some((property) => property.name !== '__index'),
   )
 }
 

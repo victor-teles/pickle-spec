@@ -17,3 +17,9 @@ export type ResultInspectionLocation = {
   attempt: number
   tab?: ResultInspectorTab
 }
+
+export function isResultInspectorTab(
+  value: string,
+): value is ResultInspectorTab {
+  return resultInspectorTabs.some((tab) => tab === value)
+}

@@ -338,3 +338,5 @@ export type MobileWorkerRequest = z.infer<typeof mobileWorkerRequestSchema>
 export type MobileWorkerResponse = z.infer<typeof mobileWorkerResponseSchema>
 export type MobileWorkerEvent = z.infer<typeof mobileWorkerEventSchema>
 export type WorkerOutputMessage = z.infer<typeof workerOutputMessageSchema>
+
+export type WorkerResponseMessage = z.infer<typeof workerResponseMessageSchema>

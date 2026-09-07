@@ -48,8 +48,8 @@ function parseLinks(
   return links
 }
 
-function reasonMessage(reason: unknown) {
-  return reason instanceof Error ? reason.message : String(reason)
+function reasonMessage(cause: unknown) {
+  return cause instanceof Error ? cause.message : String(cause)
 }
 
 function LinkLabel(props: { link: ExternalLink; href?: string }) {
@@ -69,7 +69,7 @@ type SpecificationMetadataProps = {
   templates?: Readonly<Record<string, string>>
   api: StudioApi
   onChange: (source: string) => void
-  onError: (message: string | undefined) => void
+  onError: (message?: string) => void
 }
 
 export function SpecificationMetadataForm(props: SpecificationMetadataProps) {

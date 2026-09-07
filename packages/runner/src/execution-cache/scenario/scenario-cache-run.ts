@@ -77,7 +77,7 @@ export async function appendEvent(
     schemaVersion: testRunSchemaVersion,
     sequence: events.length + 1,
     occurredAt,
-  } as RunEvent
+  } satisfies RunEvent
   const versioned = withSharedEvidenceObservations(event)
   events.push(versioned)
   await input.onEvent?.(versioned)

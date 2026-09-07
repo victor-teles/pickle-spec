@@ -23,7 +23,7 @@ export interface RunReportingSession {
     exitStatus: TestRunExitStatus,
   ): void
   failure(): ReporterFailure | undefined
-  fail(error: unknown, durationMs: number): ReporterFailure | undefined
+  fail(cause: unknown, durationMs: number): ReporterFailure | undefined
 }
 
 export function createRunReportingSession(
@@ -41,7 +41,7 @@ export function createRunReportingSession(
   }
 
   return {
-    start: () => capture(reporter.start),
+    start: () => capture(() => reporter.start()),
     prepare: (schedule) => capture(() => reporter.prepare?.(schedule)),
     event: (event) => capture(() => reporter.event(event)),
     complete: (result) => capture(() => reporter.complete?.(result)),
@@ -49,10 +49,10 @@ export function createRunReportingSession(
     finish: (runs, durationMs, exitStatus) =>
       capture(() => reporter.finish(runs, durationMs, exitStatus)),
     failure: () => reporterFailure,
-    fail(error, durationMs) {
+    fail(error, durationMs): ReporterFailure | undefined {
       try {
         reporter.fail?.(error, durationMs)
-        return
+        return undefined
       } catch (reporterRecoveryError) {
         return { error: reporterRecoveryError }
       }

@@ -1,3 +1,4 @@
+import { z } from 'zod'
 import { requiredValue } from '../required-value'
 export interface InteractiveTerminalSurface {
   activate?(): void
@@ -14,7 +15,14 @@ type InteractiveTerminalSurfaceOptions = {
   rows?(): number | undefined
 }
 
-type TerminalWrite = (...args: never[]) => unknown
+type TerminalWriteCallback = (cause?: Error | null) => void
+function isWriteCallback(
+  value: BufferEncoding | TerminalWriteCallback | undefined,
+): value is TerminalWriteCallback {
+  return z.function().safeParse(value).success
+}
+
+type TerminalWrite = NodeJS.WriteStream['write']
 
 type TerminalOutputStream = {
   columns?: number
@@ -22,12 +30,10 @@ type TerminalOutputStream = {
   write: TerminalWrite
 }
 
-type TerminalWriteCall = (...args: unknown[]) => unknown
-
 type CapturedTerminalStream = {
   stream: TerminalOutputStream
   originalMethod: TerminalWrite
-  write: TerminalWriteCall
+  write: TerminalWrite
 }
 
 const clearLine = '\r\u001b[2K'
@@ -111,7 +117,7 @@ export function createInteractiveTerminalSurface(
   }
 
   return {
-    columns: options.columns,
+    columns: () => options.columns(),
     commit: writePermanent,
     finish: writePermanent,
     update(lines) {
@@ -124,14 +130,13 @@ export function createInteractiveTerminalSurface(
   }
 }
 
-function outputText(chunk: unknown): string {
-  if (typeof chunk === 'string') return chunk
+function outputText(chunk: string | Uint8Array): string {
   if (ArrayBuffer.isView(chunk)) {
     return new TextDecoder().decode(
       new Uint8Array(chunk.buffer, chunk.byteOffset, chunk.byteLength),
     )
   }
-  return String(chunk)
+  return chunk
 }
 
 function captureTerminalStreams(
@@ -140,7 +145,7 @@ function captureTerminalStreams(
   return streams.map((stream) => ({
     stream,
     originalMethod: stream.write,
-    write: stream.write.bind(stream) as TerminalWriteCall,
+    write: stream.write.bind(stream),
   }))
 }
 
@@ -176,13 +181,19 @@ export function createProcessTerminalSurface(
   }
 
   function interceptedWrite(captured: CapturedTerminalStream): TerminalWrite {
-    return ((...args: unknown[]) => {
+    return (
+      chunk,
+      encodingOrCallback?: BufferEncoding | ((cause?: Error | null) => void),
+      callback?: (cause?: Error | null) => void,
+    ) => {
       surface.update([])
-      const result = captured.write(...args)
-      externalLineOpen = !outputText(args[0]).endsWith('\n')
+      const result = isWriteCallback(encodingOrCallback)
+        ? captured.write(chunk, encodingOrCallback)
+        : captured.write(chunk, encodingOrCallback, callback)
+      externalLineOpen = !outputText(chunk).endsWith('\n')
       if (!externalLineOpen) surface.update(dynamicLines)
       return result
-    })
+    }
   }
 
   return {
@@ -194,8 +205,8 @@ export function createProcessTerminalSurface(
         captured.stream.write = interceptedWrite(captured)
       }
     },
-    columns: surface.columns,
-    rows: surface.rows,
+    columns: () => surface.columns(),
+    rows: () => surface.rows?.(),
     commit(lines) {
       finishExternalLine()
       dynamicLines = []

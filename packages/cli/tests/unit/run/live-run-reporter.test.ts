@@ -1,4 +1,4 @@
-import { finalScenarioAttempt } from '@pickle-spec/runner'
+import { finalScenarioAttempt, type RunEventScope } from '@pickle-spec/runner'
 import { expect, test } from 'vitest'
 import { requiredValue } from '../../../src/required-value'
 import { createRunReporter } from '../../../src/run/run-reporter'
@@ -15,12 +15,15 @@ function eventScope(
   executionTargetProfileId: string,
   stepIndex?: number,
 ) {
-  return {
+  const scope: RunEventScope = {
     scenarioId,
     executionTargetProfileId,
     attempt: 1,
-    ...(stepIndex === undefined ? {} : { stepIndex }),
   }
+  if (!(stepIndex === undefined)) {
+    scope.stepIndex = stepIndex
+  }
+  return scope
 }
 
 test('shows completed and running Gherkin steps beneath an active Scenario', () => {
@@ -233,12 +236,12 @@ test('updates active Specifications and commits each completed result once', () 
     scope: eventScope('scenario-a-one', 'web'),
   })
 
-  const initialFrame = terminal.operations.at(-1)
-  expect(initialFrame?.type).toBe('update')
-  expect(initialFrame?.lines.join('\n')).toContain('features/a.feature')
-  expect(initialFrame?.lines.join('\n')).toContain('0/4 Test results')
-  expect(initialFrame?.lines.join('\n')).toContain('First Scenario')
-  expect(initialFrame?.lines.join('\n')).not.toContain('Second Scenario')
+  const initialFrame = requiredValue(terminal.operations.at(-1))
+  expect(initialFrame.type).toBe('update')
+  expect(initialFrame.lines.join('\n')).toContain('features/a.feature')
+  expect(initialFrame.lines.join('\n')).toContain('0/4 Test results')
+  expect(initialFrame.lines.join('\n')).toContain('First Scenario')
+  expect(initialFrame.lines.join('\n')).not.toContain('Second Scenario')
 
   reporter.complete?.(requiredValue(runs[0]).result)
   reporter.event({
@@ -252,13 +255,13 @@ test('updates active Specifications and commits each completed result once', () 
     scope: eventScope('scenario-b', 'web'),
   })
 
-  const concurrentFrame = terminal.operations.at(-1)
-  expect(concurrentFrame?.type).toBe('update')
-  expect(concurrentFrame?.lines.join('\n')).not.toContain('features/a.feature')
-  expect(concurrentFrame?.lines.join('\n')).not.toContain('First Scenario')
-  expect(concurrentFrame?.lines.join('\n')).toContain('features/b.feature')
-  expect(concurrentFrame?.lines.join('\n')).toContain('0/1 Test result')
-  expect(concurrentFrame?.lines.join('\n')).toContain('Other active Scenario')
+  const concurrentFrame = requiredValue(terminal.operations.at(-1))
+  expect(concurrentFrame.type).toBe('update')
+  expect(concurrentFrame.lines.join('\n')).not.toContain('features/a.feature')
+  expect(concurrentFrame.lines.join('\n')).not.toContain('First Scenario')
+  expect(concurrentFrame.lines.join('\n')).toContain('features/b.feature')
+  expect(concurrentFrame.lines.join('\n')).toContain('0/1 Test result')
+  expect(concurrentFrame.lines.join('\n')).toContain('Other active Scenario')
   expect(
     terminal.operations
       .filter((operation) => operation.type === 'commit')

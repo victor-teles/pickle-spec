@@ -8,6 +8,10 @@ import { finalScenarioAttempt } from '../../../../src/execution/run-scenario'
 import { requiredValue } from '../../../../src/required-value'
 import { cacheRunInput, executionCache, memoryStore } from './fixtures'
 
+function contextHasPrefix(input: { executionCache?: unknown }) {
+  return input.executionCache !== undefined
+}
+
 describe('Execution cache lifecycle', () => {
   test('cache-only with a short prefix fails cache-miss without Adaptive', async () => {
     const { store } = memoryStore()
@@ -123,9 +127,7 @@ describe('Execution cache lifecycle', () => {
         }
       },
     }
-    function contextHasPrefix(input: { executionCache?: unknown }) {
-      return input.executionCache !== undefined
-    }
+
     const runInput = cacheRunInput({ adapter, store })
     await runScenario(runInput)
     const again = await runScenario({

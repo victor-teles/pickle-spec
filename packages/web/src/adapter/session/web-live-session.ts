@@ -1,3 +1,4 @@
+import { z } from 'zod'
 import type {
   OpenSessionInput,
   ResolvedAction,
@@ -52,14 +53,19 @@ function stepExecutionContext(
   )
 }
 
-function replayPayload(handle: unknown): Record<string, unknown> | undefined {
-  if (!handle || typeof handle !== 'object') return undefined
-  try {
-    return JSON.parse(JSON.stringify(handle)) as Record<string, unknown>
-  } catch {
-    return undefined
-  }
-}
+const replayPayloadSchema = z
+  .unknown()
+  .transform((value): ResolvedAction['replay'] => {
+    if (!(value instanceof Object)) return undefined
+    try {
+      return z
+        .record(z.string(), z.json())
+        .safeParse(JSON.parse(JSON.stringify(value))).data
+    } catch {
+      return undefined
+    }
+  })
+const replayPayload = replayPayloadSchema.parse.bind(replayPayloadSchema)
 
 async function ensureNavigation(
   state: WebLiveSessionState,
@@ -67,7 +73,7 @@ async function ensureNavigation(
   signal?: AbortSignal,
 ): Promise<ResolvedAction | undefined> {
   const sessionState = state
-  if (sessionState.navigated) return
+  if (sessionState.navigated) return undefined
   const description = `Navigate to ${sessionState.options.baseUrl}`
   const captured = await captureWebAction({
     automation: sessionState.automation,

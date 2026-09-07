@@ -7,12 +7,10 @@ function resultScenarioKey(result: TestResult): string {
   return `${result.specification.uri}::${result.scenario.name}`
 }
 
-export function historicalDurationsFrom(
-  results: readonly TestResult[],
-): Record<string, number> {
+export function historicalDurationsFrom(results: readonly TestResult[]) {
   const durations: Record<string, number> = {}
   for (const result of results) {
-    if (typeof result.durationMs !== 'number') continue
+    if (result.durationMs === undefined) continue
     const key = resultScenarioKey(result)
     const current = durations[key]
     if (current === undefined || result.durationMs > current) {

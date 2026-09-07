@@ -17,14 +17,14 @@ Pickle Spec keeps Specification parsing separate from execution-target automatio
 
 ## Package ownership
 
-| Package | Owns |
-| --- | --- |
-| `@pickle-spec/spec` | Gherkin parsing, identity, and selection. |
+| Package               | Owns                                                              |
+| --------------------- | ----------------------------------------------------------------- |
+| `@pickle-spec/spec`   | Gherkin parsing, identity, and selection.                         |
 | `@pickle-spec/runner` | Scheduling, retries, timeouts, cancellation, events, and results. |
-| `@pickle-spec/web` | Stagehand-backed browser sessions and web Replay instructions. |
-| `@pickle-spec/mobile` | Emulator and Simulator sessions through an isolated Node worker. |
-| `@pickle-spec/cli` | Commands, configuration, composition, persistence, and reporting. |
-| `@pickle-spec/studio` | The local UI for authoring and observing runs. |
+| `@pickle-spec/web`    | Stagehand-backed browser sessions and web Replay instructions.    |
+| `@pickle-spec/mobile` | Emulator and Simulator sessions through an isolated Node worker.  |
+| `@pickle-spec/cli`    | Commands, configuration, composition, persistence, and reporting. |
+| `@pickle-spec/studio` | The local UI for authoring and observing runs.                    |
 
 ## Adaptive execution and Replay
 

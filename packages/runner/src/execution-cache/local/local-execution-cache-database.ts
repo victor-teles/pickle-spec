@@ -1,3 +1,4 @@
+import { requiredValue } from '../../required-value'
 import { Database, SQLiteError } from 'bun:sqlite'
 import { randomUUID } from 'node:crypto'
 import { chmod, mkdir, rename } from 'node:fs/promises'
@@ -13,7 +14,6 @@ interface DatabaseOpenOptions {
 
 type CacheSchemaVersion = Record<'user_version', number>
 type CacheIntegrityCheck = Record<'quick_check', string>
-type FileSystemError = Error & { code?: string }
 type TableColumn = Record<'name', string>
 
 const cacheSchemaVersion = 5
@@ -21,9 +21,10 @@ const cacheSchemaVersion = 5
 class InvalidExecutionCacheDatabaseError extends Error {}
 
 function hasColumn(db: Database, table: string, column: string): boolean {
-  return (db.query(`PRAGMA table_info(${table})`).all() as TableColumn[]).some(
-    (item) => item.name === column,
-  )
+  return db
+    .query<TableColumn, []>(`PRAGMA table_info(${table})`)
+    .all()
+    .some((item) => item.name === column)
 }
 
 function addMissingColumn(
@@ -62,7 +63,9 @@ function migrateLegacyEntries(db: Database, version: number): void {
 }
 
 function migrate(db: Database): void {
-  const version = db.query('PRAGMA user_version').get() as CacheSchemaVersion
+  const version = requiredValue(
+    db.query<CacheSchemaVersion, []>('PRAGMA user_version').get(),
+  )
   if (version.user_version > cacheSchemaVersion) {
     throw new InvalidExecutionCacheDatabaseError(
       `Unsupported Execution cache schema version: ${version.user_version}`,
@@ -137,9 +140,9 @@ function openDatabase(
   try {
     db.run('PRAGMA busy_timeout = 5000')
     if (options.verifyIntegrity) {
-      const check = db
-        .query('PRAGMA quick_check(1)')
-        .get() as CacheIntegrityCheck
+      const check = requiredValue(
+        db.query<CacheIntegrityCheck, []>('PRAGMA quick_check(1)').get(),
+      )
       if (check.quick_check !== 'ok') {
         throw new InvalidExecutionCacheDatabaseError(
           `Execution cache integrity check failed: ${check.quick_check}`,
@@ -168,11 +171,11 @@ function withDatabase<Value>(
   }
 }
 
-function isRecoverableDatabaseError(error: unknown): boolean {
+function isRecoverableDatabaseError(cause: unknown): boolean {
   return (
-    error instanceof InvalidExecutionCacheDatabaseError ||
-    (error instanceof SQLiteError &&
-      (error.code === 'SQLITE_CORRUPT' || error.code === 'SQLITE_NOTADB'))
+    cause instanceof InvalidExecutionCacheDatabaseError ||
+    (cause instanceof SQLiteError &&
+      (cause.code === 'SQLITE_CORRUPT' || cause.code === 'SQLITE_NOTADB'))
   )
 }
 
@@ -183,7 +186,8 @@ async function moveIfPresent(
   try {
     await rename(source, destination)
   } catch (error) {
-    if ((error as FileSystemError).code !== 'ENOENT') throw error
+    if (!(error instanceof Error && 'code' in error && error.code === 'ENOENT'))
+      throw error
   }
 }
 
@@ -191,7 +195,8 @@ async function chmodIfPresent(path: string, mode: number): Promise<void> {
   try {
     await chmod(path, mode)
   } catch (error) {
-    if ((error as FileSystemError).code !== 'ENOENT') throw error
+    if (!(error instanceof Error && 'code' in error && error.code === 'ENOENT'))
+      throw error
   }
 }
 

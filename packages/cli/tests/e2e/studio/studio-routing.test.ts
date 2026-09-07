@@ -99,7 +99,9 @@ Feature: Search
       await page
         .getByRole('button', { name: 'Specifications', exact: true })
         .click()
-      await (await openSpecificationsRail(page))
+      await (
+        await openSpecificationsRail(page)
+      )
         .getByRole('button', { name: /Checkout/ })
         .click()
       await runSpecification(page)
@@ -249,7 +251,9 @@ Feature: Search
       )
       await liveResult.waitFor({ timeout: 20_000 })
 
-      await (await openSpecificationsRail(page))
+      await (
+        await openSpecificationsRail(page)
+      )
         .getByRole('button', { name: /Search/ })
         .click()
 
@@ -263,7 +267,9 @@ Feature: Search
       await workbenchRail(page).getByRole('tab', { name: 'Queue' }).click()
       await liveResult.waitFor()
 
-      await (await openSpecificationsRail(page))
+      await (
+        await openSpecificationsRail(page)
+      )
         .getByRole('button', { name: /^Checkout\s+\d+$/ })
         .click()
       await Bun.write(gate, 'continue')

@@ -68,14 +68,16 @@ export function createProjectRoutes(
   }
 
   return async function handleProjectRequest(request, url) {
-    const routes: Record<string, () => Promise<Response>> = {
-      'GET /api/project': async () =>
-        Response.json(await options.loadProject()),
-      'PUT /api/config': () => saveConfig(request),
-      'PUT /api/credentials': () => saveCredential(request),
-      'POST /api/run-readiness': () => runReadiness(request),
-      'GET /api/mobile-targets': mobileTargets,
-    }
-    return routes[routeKey(request, url)]?.() ?? null
+    const routes = new Map(
+      Object.entries({
+        'GET /api/project': async () =>
+          Response.json(await options.loadProject()),
+        'PUT /api/config': () => saveConfig(request),
+        'PUT /api/credentials': () => saveCredential(request),
+        'POST /api/run-readiness': () => runReadiness(request),
+        'GET /api/mobile-targets': mobileTargets,
+      }),
+    )
+    return routes.get(routeKey(request, url))?.() ?? null
   }
 }

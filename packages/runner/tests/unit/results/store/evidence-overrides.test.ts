@@ -12,6 +12,11 @@ import {
   withDiagnosticEvidence,
 } from './fixtures'
 
+const forProfile = (result: TestResult, id: string): TestResult => ({
+  ...withDiagnosticEvidence(result),
+  executionTargetProfile: { id },
+})
+
 test('issue 83: resolves Evidence persistence per profile with a run-wide default', async () => {
   const root = await tempRoot()
   const persistSource = join(root, 'persist.png')
@@ -32,10 +37,6 @@ test('issue 83: resolves Evidence persistence per profile with a run-wide defaul
     },
   })
   const run = await store.create()
-  const forProfile = (result: TestResult, id: string): TestResult => ({
-    ...withDiagnosticEvidence(result),
-    executionTargetProfile: { id },
-  })
 
   await run.append(
     scenarioFinished(

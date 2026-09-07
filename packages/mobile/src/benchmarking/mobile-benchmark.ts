@@ -15,8 +15,7 @@ export type MobileBenchmarkSample = ReplayBenchmarkSample
 export type MobileBenchmarkStatistics = ReplayBenchmarkStatistics
 export type MobilePerformanceGate = ReplayBenchmarkGate
 
-export interface MobilePerformanceBenchmarkResult
-  extends ReplayPerformanceBenchmarkResult {
+export interface MobilePerformanceBenchmarkResult extends ReplayPerformanceBenchmarkResult {
   warmupPairsDiscarded: 3
 }
 
@@ -37,7 +36,7 @@ export function evaluateMobilePerformanceGates(
     samples,
     budgets: mobileReplayBenchmarkBudgets,
   })
-  return result as MobilePerformanceBenchmarkResult
+  return { ...result, warmupPairsDiscarded: 3 }
 }
 
 export async function runMobilePerformanceBenchmark(
@@ -46,7 +45,7 @@ export async function runMobilePerformanceBenchmark(
   const result = await runReplayPerformanceBenchmark({
     samplePairs: input.samplePairs,
     budgets: mobileReplayBenchmarkBudgets,
-    measure: input.measure,
+    measure: (mode) => input.measure(mode),
   })
-  return result as MobilePerformanceBenchmarkResult
+  return { ...result, warmupPairsDiscarded: 3 }
 }

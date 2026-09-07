@@ -259,8 +259,8 @@ function useGitStatus(
       (value) => {
         if (!cancelled) setGit(value)
       },
-      (reason: unknown) => {
-        if (!cancelled) onError(reasonMessage(reason))
+      (cause: unknown) => {
+        if (!cancelled) onError(reasonMessage(cause))
       },
     )
     return () => {

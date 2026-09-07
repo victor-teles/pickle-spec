@@ -1,3 +1,4 @@
+import { configurationParser } from '@pickle-spec/configuration'
 import { z } from 'zod'
 import { testRunSchemaVersion } from '../../execution/run-scenario'
 import {
@@ -6,7 +7,6 @@ import {
 } from '../../results/public-results'
 import {
   parseRunEvent,
-  parseRunSchema,
   parseTestRunManifest,
 } from '../../results/test-run-schema'
 import type { RunArchive, RunArchiveArtifact } from '../archive'
@@ -25,21 +25,21 @@ const archiveEnvelopeSchema = z.object({
   artifacts: z.array(archiveArtifactSchema),
 })
 
-function incompatibleArchiveSchema(version: unknown): never {
+function incompatibleArchiveSchema(version: string): never {
   throw new Error(
-    `Run archive schema version ${String(version)} is unsupported. ` +
+    `Run archive schema version ${version} is unsupported. ` +
       'The archive was not changed; export it again with this Pickle version.',
   )
 }
 
-export function parseRunArchive(value: unknown): RunArchive {
-  const archive = parseRunSchema(archiveEnvelopeSchema, value, 'Run archive')
+function projectArchive(
+  archive: z.infer<typeof archiveEnvelopeSchema>,
+): RunArchive {
   if (archive.schemaVersion !== testRunSchemaVersion) {
-    incompatibleArchiveSchema(archive.schemaVersion)
+    incompatibleArchiveSchema(String(archive.schemaVersion))
   }
-  const manifest = parseTestRunManifest(
+  const manifest = parseTestRunManifest(incompatibleArchiveSchema)(
     archive.manifest,
-    incompatibleArchiveSchema,
   )
   return {
     schemaVersion: testRunSchemaVersion,
@@ -49,8 +49,13 @@ export function parseRunArchive(value: unknown): RunArchive {
       results: manifest.results.map(recordableTestResult),
     },
     events: archive.events.map((event) =>
-      publicRunEvent(parseRunEvent(event, incompatibleArchiveSchema)),
+      publicRunEvent(parseRunEvent(incompatibleArchiveSchema)(event)),
     ),
     artifacts: archive.artifacts,
   }
 }
+
+export const parseRunArchive = configurationParser(
+  archiveEnvelopeSchema.transform(projectArchive),
+  'Invalid Run archive',
+)

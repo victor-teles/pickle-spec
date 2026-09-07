@@ -1,23 +1,24 @@
 import { z } from 'zod'
 
-export function parseConfiguration<T>(
+export function configurationParser<T>(
   schema: z.ZodType<T>,
-  value: unknown,
   fallbackMessage: string,
-): T {
-  const result = schema.safeParse(value)
-  if (result.success) return result.data
-  throw new Error(result.error.issues[0]?.message ?? fallbackMessage)
+): z.ZodType<T>['parse'] {
+  return (value) => {
+    const result = schema.safeParse(value)
+    if (result.success) return result.data
+    throw new Error(result.error.issues[0]?.message ?? fallbackMessage)
+  }
 }
 
-export function strictObject<Shape extends z.ZodRawShape>(
+export function strictObject<Fields extends Record<string, z.ZodType>>(
   field: string,
-  shape: Shape,
+  fields: Fields,
 ) {
-  return z.strictObject(shape, {
+  return z.strictObject(fields, {
     error: (issue) => {
       if (issue.code === 'unrecognized_keys') {
-        const keys = 'keys' in issue ? (issue.keys) : []
+        const keys = issue.keys
         return keys.map((key) => `${field}.${key} is not supported`).join('\n')
       }
       return `${field} must be an object`

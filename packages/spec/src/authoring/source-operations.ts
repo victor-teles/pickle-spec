@@ -2,7 +2,7 @@ export type SourceLocation = { line?: number; column?: number }
 
 export type Replacement = { start: number; end: number; text: string }
 
-function splitSource(source: string): { lines: string[]; newline: string } {
+function splitSource(source: string) {
   const newline = source.includes('\r\n') ? '\r\n' : '\n'
   return { lines: source.split(newline), newline }
 }

@@ -1,10 +1,9 @@
-import './monaco-env'
+import { initializeMonacoEnvironment } from './monaco-env'
 import {
   type IDisposable,
   languages,
   editor as monacoEditor,
-} from 'monaco-editor/editor/editor.api.js'
-import 'monaco-editor/editor/editor.main.js'
+} from 'monaco-editor/editor/editor.main.js'
 import { type RefObject, useEffect, useRef } from 'react'
 import {
   catalogFromSource,
@@ -13,6 +12,8 @@ import {
   gherkinMonarch,
 } from './gherkin-language'
 import { oklchToMonacoHex } from './monaco-theme-color'
+
+initializeMonacoEnvironment()
 
 let languageReady = false
 
@@ -120,10 +121,7 @@ function registerGherkinLanguage(catalogRef: { current: GherkinCatalog }) {
     extensions: ['.feature'],
     aliases: ['Gherkin'],
   })
-  languages.setMonarchTokensProvider(
-    'gherkin',
-    gherkinMonarch as languages.IMonarchLanguage,
-  )
+  languages.setMonarchTokensProvider('gherkin', gherkinMonarch)
   languages.registerCompletionItemProvider('gherkin', {
     triggerCharacters: ['@', ' ', '\t'],
     provideCompletionItems(model, position) {
@@ -140,7 +138,7 @@ function registerGherkinLanguage(catalogRef: { current: GherkinCatalog }) {
 
 function useCreateGherkinEditor(input: {
   hostRef: RefObject<HTMLDivElement | null>
-  editorRef: RefObject<monacoEditor.IStandaloneCodeEditor | undefined>
+  editorRef: RefObject<monacoEditor.IStandaloneCodeEditor | null>
   catalogRef: RefObject<GherkinCatalog>
   onChangeRef: RefObject<(source: string) => void>
   emittedSource: RefObject<string>
@@ -154,9 +152,9 @@ function useCreateGherkinEditor(input: {
     emittedSource,
     initialSource,
   } = input
-  useEffect(() => {
+  useEffect((): (() => void) | undefined => {
     const host = hostRef.current
-    if (!host) return
+    if (!host) return undefined
     registerGherkinLanguage(catalogRef)
     const instance = monacoEditor.create(host, {
       value: initialSource.current,
@@ -191,7 +189,7 @@ function useCreateGherkinEditor(input: {
     return () => {
       subscription.dispose()
       instance.dispose()
-      editorRef.current = undefined
+      editorRef.current = null
     }
   }, [
     catalogRef,
@@ -209,8 +207,7 @@ export function GherkinEditor(props: {
   onChange: (source: string) => void
 }) {
   const hostRef = useRef<HTMLDivElement>(null)
-  const editorRef = useRef<monacoEditor.IStandaloneCodeEditor | undefined>(
-    )
+  const editorRef = useRef<monacoEditor.IStandaloneCodeEditor | null>(null)
   const catalogRef = useRef(props.catalog)
   const onChangeRef = useRef(props.onChange)
   const emittedSource = useRef(props.source)
@@ -227,7 +224,7 @@ export function GherkinEditor(props: {
     initialSource,
   })
 
-  useEffect(() => {
+  useEffect((): (() => void) | undefined => {
     const instance = editorRef.current
     if (!instance) return
     if (props.source === emittedSource.current) return

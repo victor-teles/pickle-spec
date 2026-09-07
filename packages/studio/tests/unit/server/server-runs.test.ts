@@ -6,6 +6,23 @@ import { requiredValue } from '../../../src/required-value'
 import { secureStudioResponse } from '../../../src/server/response-security'
 import { type StudioRunGateway, startStudio } from '../../../src/server/server'
 
+async function compiledScript(url: string) {
+  const origin = new URL(url).origin
+  const token = new URL(url).searchParams.get('token')
+  const headers = { Authorization: `Bearer ${token}` }
+  const page = await fetch(url)
+  expect(page.status).toBe(200)
+  const document = await page.text()
+  const scriptPath = document.match(/<script[^>]+src="([^"]+)"/)?.[1]
+  expect(scriptPath).toBeDefined()
+  const script = await fetch(new URL(requiredValue(scriptPath), origin), {
+    headers,
+  })
+  expect(script.status).toBe(200)
+  expect(script.headers.get('content-type')).not.toContain('text/html')
+  expect(await script.text()).not.toContain('<!doctype html>')
+}
+
 const directories: string[] = []
 const servers: Array<{ stop(): void }> = []
 
@@ -265,23 +282,6 @@ test('compiles the Studio UI once for concurrent servers', async () => {
     })
     servers.push(server)
     return server
-  }
-
-  async function compiledScript(url: string) {
-    const origin = new URL(url).origin
-    const token = new URL(url).searchParams.get('token')
-    const headers = { Authorization: `Bearer ${token}` }
-    const page = await fetch(url)
-    expect(page.status).toBe(200)
-    const document = await page.text()
-    const scriptPath = document.match(/<script[^>]+src="([^"]+)"/)?.[1]
-    expect(scriptPath).toBeDefined()
-    const script = await fetch(new URL(requiredValue(scriptPath), origin), {
-      headers,
-    })
-    expect(script.status).toBe(200)
-    expect(script.headers.get('content-type')).not.toContain('text/html')
-    expect(await script.text()).not.toContain('<!doctype html>')
   }
 
   const [first, second] = await Promise.all([serve(), serve()])

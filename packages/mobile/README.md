@@ -65,18 +65,18 @@ Text logs can be redacted before Pickle Spec persists them:
 
 ```ts
 createMobileAdapter({
-  executionTarget: 'ios-simulator',
+  executionTarget: "ios-simulator",
   application: {
-    id: 'com.example.checkout',
-    binaryPath: '/absolute/path/to/Checkout.app',
+    id: "com.example.checkout",
+    binaryPath: "/absolute/path/to/Checkout.app",
   },
-  artifactDirectory: '/absolute/path/to/test-artifacts',
-  artifacts: ['device-log'],
+  artifactDirectory: "/absolute/path/to/test-artifacts",
+  artifacts: ["device-log"],
   redactions: [
-    { match: 'secret-value' },
-    { match: 'customer@example.com', replacement: '[EMAIL]' },
+    { match: "secret-value" },
+    { match: "customer@example.com", replacement: "[EMAIL]" },
   ],
-})
+});
 ```
 
 Redaction matches literal text and defaults the replacement to `[REDACTED]`.

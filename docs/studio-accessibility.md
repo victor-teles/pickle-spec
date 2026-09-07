@@ -17,25 +17,25 @@ Chrome at desktop and 390 px widths.
 Verified on 2026-08-18 with Chrome on macOS, at 1440 x 900 and 390 x 844.
 
 - [x] Tab and Shift+Tab reach Studio navigation, Specification selection and
-  run controls, Runs actions, Cache refresh, Settings cache controls, fields,
-  and dialogs in a logical order.
+      run controls, Runs actions, Cache refresh, Settings cache controls, fields,
+      and dialogs in a logical order.
 - [x] Enter and Space activate links, buttons, checkboxes, and dialog actions;
-  Escape closes dialogs and returns focus to the trigger.
+      Escape closes dialogs and returns focus to the trigger.
 - [x] Every keyboard target has a visible focus indicator that is not obscured.
 - [x] Headings, landmarks, tables, lists, statuses, alerts, fields, and controls
-  expose a useful accessible name and role.
+      expose a useful accessible name and role.
 - [x] Text, controls, result states, and focus indicators remain distinguishable
-  without relying on color alone and meet AA contrast in light and dark themes.
+      without relying on color alone and meet AA contrast in light and dark themes.
 - [x] At 390 px, the page does not introduce document-level horizontal scroll;
-  wide Scenario and result data stays within labelled internal scroll regions.
+      wide Scenario and result data stays within labelled internal scroll regions.
 - [x] At 200% zoom, controls and result evidence remain operable without content
-  loss or overlap.
+      loss or overlap.
 - [x] With reduced motion enabled, Studio presents no animation or smooth
-  scrolling, while running state remains available as text.
+      scrolling, while running state remains available as text.
 - [x] New live results do not move the active control or reorder the attention
-  list while it contains keyboard focus.
+      list while it contains keyboard focus.
 - [x] Large Specification, run-history, and result collections remain reachable
-  with Home, End, arrow, and scroll keys while rendering a bounded DOM window.
+      with Home, End, arrow, and scroll keys while rendering a bounded DOM window.
 
 Record the browser, operating system, viewport, failed item, and reproduction
 steps here when a future release does not pass the checklist.

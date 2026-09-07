@@ -91,7 +91,7 @@ const diskWatchDebounceMs = 100
 const diskWatchPollMs = 200
 
 function globList(globs: string | readonly string[]): readonly string[] {
-  return typeof globs === 'string' ? [globs] : globs
+  return [globs].flat()
 }
 
 interface SpecificationWorkspaceState {

@@ -13,6 +13,22 @@ import {
   validateStudioMobileTargetCapabilities,
 } from '../../../src/studio/studio-mobile-targets'
 
+const createDiscoveryAdapter = (
+  options: MobileAdapterOptions,
+): MobileExecutionTargetAdapter => ({
+  async discoverTargets() {
+    if (options.executionTarget === 'ios-simulator') {
+      throw new Error('No iOS Simulator runtime is provisioned')
+    }
+    return []
+  },
+  async openSession() {
+    throw new Error('Discovery must not open a logical session')
+  },
+})
+
+const onLiveViewport = () => {}
+
 const config: PickleConfig = {
   schemaVersion: 1,
   executionTargetProfiles: {
@@ -55,7 +71,6 @@ test('forwards live viewport behavior to configured mobile adapters', () => {
       },
     }
   }
-  const onLiveViewport = () => {}
 
   configuredMobileAdapter(config, 'android', createAdapter, {
     onLiveViewport,
@@ -127,21 +142,9 @@ test('discovers Android Emulator and iOS Simulator targets per configured profil
 })
 
 test('keeps discovery failures scoped to their execution target profile', async () => {
-  const createAdapter = (
-    options: MobileAdapterOptions,
-  ): MobileExecutionTargetAdapter => ({
-    async discoverTargets() {
-      if (options.executionTarget === 'ios-simulator') {
-        throw new Error('No iOS Simulator runtime is provisioned')
-      }
-      return []
-    },
-    async openSession() {
-      throw new Error('Discovery must not open a logical session')
-    },
-  })
-
-  expect(await discoverStudioMobileTargets(config, createAdapter)).toEqual([
+  expect(
+    await discoverStudioMobileTargets(config, createDiscoveryAdapter),
+  ).toEqual([
     {
       profileId: 'android',
       executionTarget: 'android-emulator',

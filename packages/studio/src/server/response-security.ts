@@ -27,10 +27,9 @@ export async function secureStudioResponse(
   const htmlResponse = response.headers
     .get('content-type')
     ?.startsWith('text/html')
-  const body = htmlResponse ? await response.text() : response.body
-  const scriptHashes = htmlResponse
-    ? await inlineScriptHashes(body as string)
-    : []
+  const html = htmlResponse ? await response.text() : undefined
+  const body = html ?? response.body
+  const scriptHashes = html === undefined ? [] : await inlineScriptHashes(html)
   headers.set('cache-control', 'no-store')
   headers.set(
     'content-security-policy',

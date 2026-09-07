@@ -28,13 +28,15 @@ type DoctorCheck =
       detail: string
     }
 
-const diagnosticTitles: Readonly<Record<string, string>> = {
-  'web.local-browser': 'Local browser',
-  'web.browserbase': 'Browserbase configuration',
-  'web.cdp': 'CDP configuration',
-  'mobile.android-emulator': 'Android Emulator',
-  'mobile.ios-simulator': 'iOS Simulator',
-}
+const diagnosticTitles = new Map(
+  Object.entries({
+    'web.local-browser': 'Local browser',
+    'web.browserbase': 'Browserbase configuration',
+    'web.cdp': 'CDP configuration',
+    'mobile.android-emulator': 'Android Emulator',
+    'mobile.ios-simulator': 'iOS Simulator',
+  }),
+)
 
 function checkWord(count: number): string {
   return count === 1 ? 'check' : 'checks'
@@ -50,7 +52,7 @@ function profileLabel(profileIds: readonly string[]): string {
 }
 
 function diagnosticTitle(id: string): string {
-  return diagnosticTitles[id] ?? id
+  return diagnosticTitles.get(id) ?? id
 }
 
 function doctorChecks(report: ProjectEnvironmentReport): DoctorCheck[] {

@@ -1,3 +1,4 @@
+import type { z } from 'zod'
 import type {
   CacheOutcome,
   ExecutionCacheKey,
@@ -23,7 +24,7 @@ export const actionEvidenceVersion = 1 as const
 
 export interface ResolvedAction {
   description: string
-  replay?: Record<string, unknown>
+  replay?: Record<string, z.core.util.JSONType>
   evidence?: ActionEvidence
 }
 

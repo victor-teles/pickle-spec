@@ -1,4 +1,4 @@
-import type { Page, StagehandBrowser } from '@browserbasehq/stagehand'
+import type { StagehandBrowser } from '@browserbasehq/stagehand'
 import { z } from 'zod'
 import { requiredValue } from '../required-value'
 import type { BrowserOptions } from './configuration/web-options'
@@ -29,14 +29,16 @@ export type WebLiveViewportController = {
   close(): Promise<void>
 }
 
-type CdpResponse = {
-  id?: number
-  result?: unknown
-  error?: { message?: string }
-  method?: string
-  sessionId?: string
-  params?: unknown
-}
+const cdpResponseSchema = z.object({
+  id: z.number().optional(),
+  result: z.json().optional(),
+  error: z.object({ message: z.string().optional() }).optional(),
+  method: z.string().optional(),
+  sessionId: z.string().optional(),
+  params: z.json().optional(),
+})
+type CdpResponse = z.infer<typeof cdpResponseSchema>
+type CdpParameters = Record<string, z.core.util.JSONType>
 
 const attachedTargetSchema = z.object({ sessionId: z.string() })
 const screencastFrameSchema = z.object({
@@ -59,17 +61,14 @@ function browserbaseApiKey(options: BrowserOptions): string {
   )
 }
 
-type BrowserContextWithDebuggerUrl = {
-  rpcClient: {
-    browserWebSocketDebuggerUrl?: string
-  }
-}
+const debuggerContextSchema = z.object({
+  rpcClient: z.object({ browserWebSocketDebuggerUrl: z.string().min(1) }),
+})
 
 function browserDebuggerUrl(browser: StagehandBrowser): string {
-  const debuggerUrl = (browser.context as BrowserContextWithDebuggerUrl)
-    .rpcClient.browserWebSocketDebuggerUrl
-  if (!debuggerUrl) throw new Error('Browser does not expose a CDP endpoint')
-  return debuggerUrl
+  const result = debuggerContextSchema.safeParse(browser.context)
+  if (!result.success) throw new Error('Browser does not expose a CDP endpoint')
+  return result.data.rpcClient.browserWebSocketDebuggerUrl
 }
 
 function validateBrowserbaseLiveUrl(value: string): string {
@@ -112,7 +111,10 @@ class CdpConnection {
   private nextId = 1
   private readonly pending = new Map<
     number,
-    { resolve: (value: unknown) => void; reject: (error: Error) => void }
+    {
+      resolve: (value: CdpResponse['result']) => void
+      reject: (error: Error) => void
+    }
   >()
 
   private constructor(
@@ -158,18 +160,18 @@ class CdpConnection {
 
   async command(
     method: string,
-    params: Record<string, unknown> = {},
+    params: CdpParameters = {},
     sessionId?: string,
-  ): Promise<unknown> {
+  ): Promise<CdpResponse['result']> {
     const id = this.nextId++
-    const response = new Promise<unknown>((resolve, reject) => {
+    const response = new Promise<CdpResponse['result']>((resolve, reject) => {
       this.pending.set(id, { resolve, reject })
     })
     this.socket.send(JSON.stringify({ id, method, params, sessionId }))
     return response
   }
 
-  send(method: string, params: Record<string, unknown>, sessionId?: string) {
+  send(method: string, params: CdpParameters, sessionId?: string) {
     this.socket.send(
       JSON.stringify({ id: this.nextId++, method, params, sessionId }),
     )
@@ -185,7 +187,7 @@ class CdpConnection {
   private readonly handleMessage = (event: MessageEvent) => {
     let message: CdpResponse
     try {
-      message = JSON.parse(String(event.data)) as CdpResponse
+      message = cdpResponseSchema.parse(JSON.parse(String(event.data)))
     } catch {
       return
     }
@@ -214,13 +216,13 @@ class CdpConnection {
 }
 
 export async function startCdpScreencast(input: {
-  browser: StagehandBrowser
-  page: Page
+  debuggerUrl: string
+  pageId: string
   onViewport: (viewport: WebLiveViewport) => void
 }): Promise<WebLiveViewportController> {
   let attachedSessionId: string | undefined
   const connection = await CdpConnection.connect(
-    browserDebuggerUrl(input.browser),
+    input.debuggerUrl,
     (message) => {
       if (
         message.method !== 'Page.screencastFrame' ||
@@ -246,7 +248,7 @@ export async function startCdpScreencast(input: {
   try {
     const attached = attachedTargetSchema.parse(
       await connection.command('Target.attachToTarget', {
-        targetId: input.page.pageId,
+        targetId: input.pageId,
         flatten: true,
       }),
     )
@@ -305,8 +307,8 @@ export async function startStagehandLiveViewport(input: {
   const page = await input.browser.context.activePage()
   if (!page) throw new Error('No active browser page')
   return startCdpScreencast({
-    browser: input.browser,
-    page,
+    debuggerUrl: browserDebuggerUrl(input.browser),
+    pageId: page.pageId,
     onViewport: input.onViewport,
   })
 }

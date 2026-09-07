@@ -32,8 +32,6 @@ interface PreparedArchiveImport {
   preservedArchivePath: string
 }
 
-type NodeError = Error & { code?: string }
-
 async function prepareArchiveImport(
   input: ImportRunArchiveInput,
 ): Promise<PreparedArchiveImport> {
@@ -165,7 +163,9 @@ export async function importRunArchive(
     await rm(runDirectory, { recursive: true, force: true })
     if (preservedArchive) await rm(preservedArchivePath, { force: true })
     if (isAlreadyExists(error)) {
-      throw new Error(`Test run "${archive.manifest.id}" already exists`, { cause: error })
+      throw new Error(`Test run "${archive.manifest.id}" already exists`, {
+        cause: error,
+      })
     }
     throw error
   }
@@ -180,6 +180,9 @@ async function pathExists(path: string): Promise<boolean> {
   }
 }
 
-function isAlreadyExists(error: unknown): boolean {
-  return error instanceof Error && (error as NodeError).code === 'EEXIST'
+function isAlreadyExists(cause: unknown): boolean {
+  return (
+    cause instanceof Error &&
+    ('code' in cause ? cause.code : undefined) === 'EEXIST'
+  )
 }

@@ -41,11 +41,11 @@ const eventScope = {
 const payloadValidator: ExecutionCachePayloadValidator<TestPayload> = {
   adapterKind: 'contract-test',
   adapterCacheSchemaVersion: 'contract-test.1',
-  parse(payload, requiredVariables) {
+  parse(payload, requiredVariables): TestPayload | undefined {
     const parsed = payloadSchema.safeParse(payload)
-    if (!parsed.success) return
+    if (!parsed.success) return undefined
     if (!requiredVariables.includes(parsed.data.argument.variable)) {
-      return
+      return undefined
     }
     return parsed.data
   },
@@ -86,12 +86,10 @@ describe('Execution cache contract', () => {
   })
 
   test('rejects parameter bindings from the cache key contract', () => {
-    expect(() =>
-      resolveExecutionCacheKey({
-        ...keyInput,
-        bindings: { email: 'customer@example.com' },
-      } as typeof keyInput),
-    ).toThrow('bindings is not supported in an Execution cache key')
+    const input = { ...keyInput, bindings: { email: 'customer@example.com' } }
+    expect(() => resolveExecutionCacheKey(input)).toThrow(
+      'bindings is not supported in an Execution cache key',
+    )
   })
 
   test('round-trips a strictly validated, placeholder-only adapter payload', () => {
@@ -153,7 +151,9 @@ describe('Execution cache contract', () => {
       cacheEnvelope,
       payloadValidator,
     )
-    const parsed = JSON.parse(serialized.source) as Record<string, unknown>
+    const parsed = z
+      .record(z.string(), z.json())
+      .parse(JSON.parse(serialized.source))
 
     expect(
       deserializeExecutionCacheEnvelope({

@@ -78,12 +78,12 @@ Pickle keeps template variables separate from runtime values so cached instructi
 
 Use tags to select or control Scenarios:
 
-| Tag | Meaning |
-| --- | --- |
-| `@smoke` | A user-defined tag for suites or `--tag` selection. |
-| `@ignore` | Emit a skipped result for the Scenario. |
-| `@pickle:requires:<capability>` | Require a capability from every selected target. |
-| `@pickle:id:<value>` | Set an explicit durable identity. |
+| Tag                             | Meaning                                             |
+| ------------------------------- | --------------------------------------------------- |
+| `@smoke`                        | A user-defined tag for suites or `--tag` selection. |
+| `@ignore`                       | Emit a skipped result for the Scenario.             |
+| `@pickle:requires:<capability>` | Require a capability from every selected target.    |
+| `@pickle:id:<value>`            | Set an explicit durable identity.                   |
 
 IDs are optional. Pickle otherwise derives them from the file URI and Gherkin names.
 

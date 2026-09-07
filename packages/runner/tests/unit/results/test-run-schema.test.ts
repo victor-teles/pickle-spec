@@ -48,8 +48,8 @@ function manifest(): TestRunManifest {
   }
 }
 
-const incompatibleSchema = (version: unknown): never => {
-  throw new Error(`unsupported schema ${String(version)}`)
+const incompatibleSchema = (version: string): never => {
+  throw new Error(`unsupported schema ${version}`)
 }
 
 test('requires one availability entry for every evidence kind', () => {
@@ -58,7 +58,7 @@ test('requires one availability entry for every evidence kind', () => {
     requiredValue(input.results[0]).attempts[0],
   ).evidenceAvailability = []
 
-  expect(() => parseTestRunManifest(input, incompatibleSchema)).toThrow(
+  expect(() => parseTestRunManifest(incompatibleSchema)(input)).toThrow(
     'Evidence availability must include "screenshot"',
   )
 })
@@ -72,7 +72,7 @@ test('rejects duplicate evidence availability kinds', () => {
     state: 'not-requested',
   })
 
-  expect(() => parseTestRunManifest(input, incompatibleSchema)).toThrow(
+  expect(() => parseTestRunManifest(incompatibleSchema)(input)).toThrow(
     'Evidence availability kind "screenshot" must be unique',
   )
 })
@@ -86,7 +86,7 @@ test('requires available artifact evidence to match persisted artifacts', () => 
     state: 'available',
   }
 
-  expect(() => parseTestRunManifest(input, incompatibleSchema)).toThrow(
+  expect(() => parseTestRunManifest(incompatibleSchema)(input)).toThrow(
     'Available evidence for "screenshot" requires persisted evidence',
   )
 })
@@ -110,7 +110,7 @@ test('treats Diagnostic entries as persisted diagnostics evidence', () => {
     },
   ]
 
-  expect(() => parseTestRunManifest(input, incompatibleSchema)).not.toThrow()
+  expect(() => parseTestRunManifest(incompatibleSchema)(input)).not.toThrow()
 })
 
 test('retains the managed application stream on Diagnostic entries', () => {
@@ -129,7 +129,7 @@ test('retains the managed application stream on Diagnostic entries', () => {
   ]
 
   expect(
-    parseTestRunManifest(input, incompatibleSchema).results[0]?.attempts[0]
+    parseTestRunManifest(incompatibleSchema)(input).results[0]?.attempts[0]
       ?.diagnostics?.[0],
   ).toMatchObject({ origin: 'application', stream: 'stderr' })
 })
@@ -163,7 +163,7 @@ test('treats Pickle-native trace entries as persisted trace evidence', () => {
     },
   ]
 
-  expect(() => parseTestRunManifest(input, incompatibleSchema)).not.toThrow()
+  expect(() => parseTestRunManifest(incompatibleSchema)(input)).not.toThrow()
 })
 
 test('retains adapter-neutral Test artifact capture metadata', () => {
@@ -195,7 +195,7 @@ test('retains adapter-neutral Test artifact capture metadata', () => {
     },
   ]
 
-  const parsed = parseTestRunManifest(input, incompatibleSchema)
+  const parsed = parseTestRunManifest(incompatibleSchema)(input)
 
   expect(
     parsed.results[0]?.attempts[0]?.steps[0]?.artifacts?.[0],
@@ -209,7 +209,7 @@ test('retains adapter-neutral Test artifact capture metadata', () => {
 test('keeps action evidence optional for legacy schema-v2 manifests', () => {
   const input = manifest()
 
-  const parsed = parseTestRunManifest(input, incompatibleSchema)
+  const parsed = parseTestRunManifest(incompatibleSchema)(input)
 
   expect(parsed.schemaVersion).toBe(2)
   expect(parsed.results[0]?.attempts[0]?.steps).toEqual([])
@@ -217,50 +217,47 @@ test('keeps action evidence optional for legacy schema-v2 manifests', () => {
 
 test('parses the public action-finished evidence contract', () => {
   const occurredAt = '2026-08-22T12:00:00.010Z'
-  const parsed = parseRunEvent(
-    {
-      schemaVersion: 2,
-      sequence: 3,
-      occurredAt,
-      type: 'action-finished',
-      action: {
-        version: 1,
-        id: 'step-1-action-1',
-        ordinal: 1,
-        description: 'Submit the form',
-        startedAt: '2026-08-22T12:00:00.005Z',
-        finishedAt: occurredAt,
-        durationMs: 5,
-        state: 'passed',
-        source: {
-          uri: 'features/checkout.feature',
-          language: 'en',
-          line: 7,
-          column: 5,
-          excerpt: 'When I submit the form',
-        },
-        target: {
-          before: { format: 'summary', summary: 'Ready state: complete' },
-          after: { format: 'summary', summary: 'Ready state: complete' },
-        },
-        screenshots: {
-          before: { state: 'not-retained' },
-          after: { state: 'not-requested' },
-        },
-        diagnostics: [],
-        activity: [],
+  const parsed = parseRunEvent(incompatibleSchema)({
+    schemaVersion: 2,
+    sequence: 3,
+    occurredAt,
+    type: 'action-finished',
+    action: {
+      version: 1,
+      id: 'step-1-action-1',
+      ordinal: 1,
+      description: 'Submit the form',
+      startedAt: '2026-08-22T12:00:00.005Z',
+      finishedAt: occurredAt,
+      durationMs: 5,
+      state: 'passed',
+      source: {
+        uri: 'features/checkout.feature',
+        language: 'en',
+        line: 7,
+        column: 5,
+        excerpt: 'When I submit the form',
       },
-      scenario: { id: 'scenario-checkout', name: 'Checkout' },
-      executionTargetProfile: { id: 'web' },
-      scope: {
-        scenarioId: 'scenario-checkout',
-        executionTargetProfileId: 'web',
-        attempt: 2,
-        stepIndex: 0,
+      target: {
+        before: { format: 'summary', summary: 'Ready state: complete' },
+        after: { format: 'summary', summary: 'Ready state: complete' },
       },
+      screenshots: {
+        before: { state: 'not-retained' },
+        after: { state: 'not-requested' },
+      },
+      diagnostics: [],
+      activity: [],
     },
-    incompatibleSchema,
-  )
+    scenario: { id: 'scenario-checkout', name: 'Checkout' },
+    executionTargetProfile: { id: 'web' },
+    scope: {
+      scenarioId: 'scenario-checkout',
+      executionTargetProfileId: 'web',
+      attempt: 2,
+      stepIndex: 0,
+    },
+  })
 
   expect(parsed).toMatchObject({
     type: 'action-finished',
@@ -271,58 +268,55 @@ test('parses the public action-finished evidence contract', () => {
 
 test('parses run events with shared evidence observations', () => {
   const occurredAt = '2026-08-22T12:00:00.000Z'
-  const parsed = parseRunEvent(
-    {
-      schemaVersion: 2,
-      sequence: 1,
-      occurredAt,
-      type: 'cache-hit',
-      cacheKey: {
-        projectKey: 'project-1',
-        scenarioId: 'scenario-evidence',
-        scenarioRevision: 'revision-1',
-        executionTargetProfileId: 'web',
-        targetConfigurationFingerprint: 'target-config-1',
-        applicationRevision: 'app-1',
-        adapterKind: 'web',
-        adapterCacheSchemaVersion: '1',
-      },
-      scope: {
-        scenarioId: 'scenario-evidence',
-        executionTargetProfileId: 'web',
-        attempt: 1,
-      },
-      observations: [
-        {
-          version: 1,
-          kind: 'cache',
-          summary: 'Cache Hit',
-          timing: {
-            occurredAt,
-            precision: 'exact',
+  const parsed = parseRunEvent(incompatibleSchema)({
+    schemaVersion: 2,
+    sequence: 1,
+    occurredAt,
+    type: 'cache-hit',
+    cacheKey: {
+      projectKey: 'project-1',
+      scenarioId: 'scenario-evidence',
+      scenarioRevision: 'revision-1',
+      executionTargetProfileId: 'web',
+      targetConfigurationFingerprint: 'target-config-1',
+      applicationRevision: 'app-1',
+      adapterKind: 'web',
+      adapterCacheSchemaVersion: '1',
+    },
+    scope: {
+      scenarioId: 'scenario-evidence',
+      executionTargetProfileId: 'web',
+      attempt: 1,
+    },
+    observations: [
+      {
+        version: 1,
+        kind: 'cache',
+        summary: 'Cache Hit',
+        timing: {
+          occurredAt,
+          precision: 'exact',
+        },
+        versions: [
+          {
+            subject: 'contract',
+            label: 'run-event-schema',
+            value: '2',
           },
-          versions: [
-            {
-              subject: 'contract',
-              label: 'run-event-schema',
-              value: '2',
-            },
-            {
-              subject: 'scenario',
-              label: 'revision',
-              value: 'revision-1',
-            },
-          ],
-          execution: {
-            cacheDecision: {
-              type: 'cache-hit',
-            },
+          {
+            subject: 'scenario',
+            label: 'revision',
+            value: 'revision-1',
+          },
+        ],
+        execution: {
+          cacheDecision: {
+            type: 'cache-hit',
           },
         },
-      ],
-    },
-    incompatibleSchema,
-  )
+      },
+    ],
+  })
 
   expect(parsed).toMatchObject({
     type: 'cache-hit',

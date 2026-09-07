@@ -101,7 +101,8 @@ async function readSpecificationFiles(
       const reason = error instanceof Error ? error.message : String(error)
       throw new Error(
         `Invalid Specification ${uri}: ${reason}. ` +
-          'Correct the Specification and run pickle check again.', { cause: error },
+          'Correct the Specification and run pickle check again.',
+        { cause: error },
       )
     }
     files.push({ uri, source })

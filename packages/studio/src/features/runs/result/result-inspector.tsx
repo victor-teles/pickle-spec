@@ -1,3 +1,4 @@
+import { isResultInspectorTab } from './result-inspection'
 import type { TestResultState } from '@pickle-spec/runner'
 import { useEffect, useState } from 'react'
 import { LedgerLoadingSkeleton } from '../../../components/loading-skeletons'
@@ -58,8 +59,8 @@ type ResultInspectorProps = {
 function useFetchedRunSnapshot(props: ResultInspectorProps) {
   const [snapshot, setSnapshot] = useState<StudioRunSnapshot>()
   const [error, setError] = useState<string>()
-  useEffect(() => {
-    if (props.snapshot) return
+  useEffect((): (() => void) | undefined => {
+    if (props.snapshot) return undefined
     let cancelled = false
     setSnapshot(undefined)
     setError(undefined)
@@ -71,8 +72,8 @@ function useFetchedRunSnapshot(props: ResultInspectorProps) {
         (value) => {
           if (!cancelled) setSnapshot(value)
         },
-        (reason: unknown) => {
-          if (!cancelled) setError(reasonMessage(reason))
+        (cause: unknown) => {
+          if (!cancelled) setError(reasonMessage(cause))
         },
       )
     return () => {
@@ -220,7 +221,9 @@ function ResultInspectorTabs(props: ResultInspectorContentProps) {
   return (
     <Tabs
       value={props.activeTab}
-      onValueChange={(value) => props.onTabChange(value as ResultInspectorTab)}
+      onValueChange={(value) =>
+        isResultInspectorTab(value) && props.onTabChange(value)
+      }
     >
       <TabsList
         variant="line"

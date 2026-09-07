@@ -268,7 +268,7 @@ export function createCliProgram(
     .version(cliPackage.version)
     .allowExcessArguments(false)
     .configureOutput({
-      writeOut: output.write,
+      writeOut: (message) => output.write(message),
       writeErr: () => {},
     })
     .exitOverride()

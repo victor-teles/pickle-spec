@@ -1,4 +1,3 @@
-import type { Subprocess } from 'bun'
 import { describe, expect, test } from 'vitest'
 import {
   type ApplicationOutputLine,
@@ -6,7 +5,7 @@ import {
   startServer,
 } from '../../../src/server/server'
 
-function stream(...chunks: string[]): ReadableStream<Uint8Array> {
+function stream(...chunks: string[]): ReadableStream<Uint8Array<ArrayBuffer>> {
   const encoder = new TextEncoder()
   return new ReadableStream({
     start(controller) {
@@ -17,8 +16,8 @@ function stream(...chunks: string[]): ReadableStream<Uint8Array> {
 }
 
 function runtimeWithOutput(input: {
-  stdout: ReadableStream<Uint8Array>
-  stderr: ReadableStream<Uint8Array>
+  stdout: ReadableStream<Uint8Array<ArrayBuffer>>
+  stderr: ReadableStream<Uint8Array<ArrayBuffer>>
   spawnOptions: unknown[]
 }): ServerRuntime {
   return {
@@ -31,7 +30,7 @@ function runtimeWithOutput(input: {
         stdout: input.stdout,
         stderr: input.stderr,
         kill() {},
-      } as Subprocess
+      }
     },
   }
 }

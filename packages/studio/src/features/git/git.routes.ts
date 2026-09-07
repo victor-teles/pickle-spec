@@ -49,12 +49,14 @@ export function createGitRoutes(git: GitWorkspace): StudioHttpHandler {
   }
 
   return async function handleGitRequest(request, url) {
-    const routes: Record<string, () => Promise<Response>> = {
-      'GET /api/git': async () => Response.json(await git.status()),
-      'POST /api/git/stage': () => stage(request),
-      'POST /api/git/commit': () => commit(request),
-      'POST /api/git/pull-request': pullRequest,
-    }
-    return routes[routeKey(request, url)]?.() ?? null
+    const routes = new Map(
+      Object.entries({
+        'GET /api/git': async () => Response.json(await git.status()),
+        'POST /api/git/stage': () => stage(request),
+        'POST /api/git/commit': () => commit(request),
+        'POST /api/git/pull-request': pullRequest,
+      }),
+    )
+    return routes.get(routeKey(request, url))?.() ?? null
   }
 }

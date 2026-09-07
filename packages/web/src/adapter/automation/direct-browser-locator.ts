@@ -55,7 +55,7 @@ function reachedState(
       return !exists
     case 'visible':
       return visible
-    case 'hidden':
+    default:
       return !visible
   }
 }

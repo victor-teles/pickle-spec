@@ -28,11 +28,16 @@ function initialProfileEditor(profiles: readonly StudioProfile[] | undefined) {
 }
 
 function profileConfiguration(profile: StudioProfile) {
-  return {
+  const configuration: Omit<StudioProfile, 'id'> = {
     adapter: profile.adapter,
-    ...(profile.capabilities ? { capabilities: profile.capabilities } : {}),
-    ...(profile.mobile ? { mobile: profile.mobile } : {}),
   }
+  if (profile.capabilities) {
+    configuration.capabilities = profile.capabilities
+  }
+  if (profile.mobile) {
+    configuration.mobile = profile.mobile
+  }
+  return configuration
 }
 
 function existingProfiles(profiles: readonly StudioProfile[] | undefined) {
@@ -55,19 +60,20 @@ function editedProfileConfiguration(
     id: mobileProfile.application.id.trim(),
     binaryPath: mobileProfile.application.binaryPath?.trim() || undefined,
   }
-  return {
+  const configuration: Omit<StudioProfile, 'id'> = {
     adapter: selectedAdapter,
-    ...(nextCapabilities.length ? { capabilities: nextCapabilities } : {}),
-    ...(selectedAdapter === 'mobile'
-      ? {
-          mobile: {
-            ...mobileProfile,
-            targetId: mobileProfile.targetId?.trim() || undefined,
-            application,
-          },
-        }
-      : {}),
   }
+  if (nextCapabilities.length) {
+    configuration.capabilities = nextCapabilities
+  }
+  if (selectedAdapter === 'mobile') {
+    configuration.mobile = {
+      ...mobileProfile,
+      targetId: mobileProfile.targetId?.trim() || undefined,
+      application,
+    }
+  }
+  return configuration
 }
 
 function MobileAdapterConfiguration(props: {
@@ -76,7 +82,7 @@ function MobileAdapterConfiguration(props: {
   mobileProfile: StudioMobileProfile
   profileId: string
   onChange: (profile: StudioMobileProfile) => void
-  onError: (message: string | undefined) => void
+  onError: (message?: string) => void
 }) {
   if (props.adapter.trim() !== 'mobile') return null
   return (

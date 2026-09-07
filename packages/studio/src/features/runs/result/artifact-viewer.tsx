@@ -35,8 +35,8 @@ const maximumRenderedLogLines = 1_000
 const oversizedLogDetail =
   'This log is larger than the 10 MiB inline-view limit. Download it to inspect the complete file.'
 
-function errorMessage(reason: unknown): string {
-  return reason instanceof Error ? reason.message : String(reason)
+function errorMessage(cause: unknown): string {
+  return cause instanceof Error ? cause.message : String(cause)
 }
 
 function failedResponse(response: Response): TextLoadState {
@@ -149,7 +149,7 @@ function VideoArtifact(props: ArtifactViewerProps) {
   const [state, setState] = useState<
     'idle' | 'loaded' | { failure: ArtifactLoadFailure }
   >('idle')
-  if (typeof state === 'object') {
+  if (state instanceof Object) {
     return (
       <ArtifactFailure
         failure={state.failure}
@@ -198,7 +198,7 @@ function VideoArtifact(props: ArtifactViewerProps) {
 function TextArtifact(props: ArtifactViewerProps) {
   const [loadState, setLoadState] = useState<TextLoadState>({ kind: 'idle' })
   const [query, setQuery] = useState('')
-  const request = useRef<AbortController | undefined>()
+  const request = useRef<AbortController | null>(null)
   useEffect(
     () => () => {
       request.current?.abort()

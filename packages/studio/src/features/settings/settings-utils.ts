@@ -1,5 +1,5 @@
-export function reasonMessage(reason: unknown): string {
-  return reason instanceof Error ? reason.message : String(reason)
+export function reasonMessage(cause: unknown): string {
+  return cause instanceof Error ? cause.message : String(cause)
 }
 
 export function commaSeparatedValues(value: string): string[] {

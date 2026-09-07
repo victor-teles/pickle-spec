@@ -1,3 +1,4 @@
+import { requiredValue } from '../../required-value'
 import type { Database } from 'bun:sqlite'
 import { createHash } from 'node:crypto'
 import type {
@@ -108,11 +109,11 @@ export function readExecutionCacheEntrySnapshot(
   digestKey: string,
 ): ExecutionCacheEntrySnapshot | undefined {
   const row = db
-    .query(
+    .query<ExecutionCacheEntrySnapshot, [string]>(
       `SELECT serialized_envelope AS source, revision
        FROM entries WHERE key_digest = ?`,
     )
-    .get(digestKey) as ExecutionCacheEntrySnapshot | null
+    .get(digestKey)
   return row ?? undefined
 }
 
@@ -239,24 +240,26 @@ export function evictLeastRecentlyUsed(
   projectKey: string,
   maxBytes: number,
 ): number {
-  const total = db
-    .query(
-      `SELECT COALESCE(SUM(size_bytes), 0) AS bytes
+  const total = requiredValue(
+    db
+      .query<StoredBytesRow, [string]>(
+        `SELECT COALESCE(SUM(size_bytes), 0) AS bytes
        FROM entries WHERE project_key = ?`,
-    )
-    .get(projectKey) as StoredBytesRow
+      )
+      .get(projectKey),
+  )
   let retainedBytes = total.bytes
   let evictedEntries = 0
   while (retainedBytes > maxBytes) {
     const oldest = db
-      .query(
+      .query<StoredEntrySize, [string]>(
         `SELECT key_digest AS keyDigest, size_bytes AS sizeBytes
          FROM entries
          WHERE project_key = ?
          ORDER BY last_used_at, created_at, key_digest
          LIMIT 1`,
       )
-      .get(projectKey) as StoredEntrySize | null
+      .get(projectKey)
     if (!oldest) break
     db.run('DELETE FROM entries WHERE key_digest = ?', [oldest.keyDigest])
     retainedBytes -= oldest.sizeBytes
@@ -270,7 +273,9 @@ export function executionCacheEntryIsRetained(
   key: ExecutionCacheKey,
 ): boolean {
   const retained = db
-    .query('SELECT 1 AS retained FROM entries WHERE key_digest = ?')
-    .get(executionCacheKeyDigest(key)) as RetainedEntryRow | null
+    .query<RetainedEntryRow, [string]>(
+      'SELECT 1 AS retained FROM entries WHERE key_digest = ?',
+    )
+    .get(executionCacheKeyDigest(key))
   return retained !== null
 }

@@ -2,7 +2,7 @@ import { join, resolve } from 'node:path'
 import {
   optionalPositiveInteger,
   optionalString,
-  parseConfiguration,
+  configurationParser,
   strictObject,
 } from '@pickle-spec/configuration'
 import type { MobileAdapterOptions } from '@pickle-spec/mobile'
@@ -277,39 +277,40 @@ const projectProfileSchema = strictObject('executionTargetProfiles', {
       'executionTargetProfiles.mobile.nodePath',
     ),
   }).optional(),
-})
-  .superRefine((profile, context) => {
-    if (profile.adapter === 'mobile' && !profile.mobile) {
-      context.addIssue({
-        code: 'custom',
-        message:
-          'executionTargetProfiles.mobile is required when adapter is "mobile"',
-      })
-    }
-    if (
-      profile.mobile?.executionTarget === 'ios-simulator' ||
-      profile.mobile?.executionTarget === 'android-emulator'
-    ) {
-      return
-    }
-    if (profile.mobile) {
-      context.addIssue({
-        code: 'custom',
-        message:
-          'executionTargetProfiles.mobile.executionTarget is required for mobile profiles',
-      })
-    }
-  })
-  .transform((profile) => profile as ProjectExecutionTargetProfile)
-
-const pickleConfigSchema = strictObject('configuration', {
-  schemaVersion: z.number().superRefine((value, context) => {
-    if (value === 1) return
+}).superRefine((profile, context) => {
+  if (profile.adapter === 'mobile' && !profile.mobile) {
     context.addIssue({
       code: 'custom',
-      message: `Unsupported configuration schemaVersion: ${String(value)}`,
+      message:
+        'executionTargetProfiles.mobile is required when adapter is "mobile"',
     })
-  }),
+  }
+  if (
+    profile.mobile?.executionTarget === 'ios-simulator' ||
+    profile.mobile?.executionTarget === 'android-emulator'
+  ) {
+    return
+  }
+  if (profile.mobile) {
+    context.addIssue({
+      code: 'custom',
+      message:
+        'executionTargetProfiles.mobile.executionTarget is required for mobile profiles',
+    })
+  }
+})
+
+const pickleConfigSchema = strictObject('configuration', {
+  schemaVersion: z
+    .number()
+    .superRefine((value, context) => {
+      if (value === 1) return
+      context.addIssue({
+        code: 'custom',
+        message: `Unsupported configuration schemaVersion: ${String(value)}`,
+      })
+    })
+    .transform(() => 1 as const),
   language: optionalString('language'),
   specifications: z
     .union([
@@ -384,16 +385,14 @@ const pickleConfigSchema = strictObject('configuration', {
         })
       }
       if (server.url !== undefined) {
-        try {
-          new URL(server.url)
-        } catch {
+        if (!URL.canParse(server.url)) {
           context.addIssue({
             code: 'custom',
             message: 'server.url must be a valid URL',
           })
         }
       }
-      if (typeof server.port === 'number' && server.port > 65_535) {
+      if (server.port !== undefined && server.port > 65_535) {
         context.addIssue({
           code: 'custom',
           message: 'server.port must be less than or equal to 65535',
@@ -444,11 +443,12 @@ const pickleConfigSchema = strictObject('configuration', {
       }),
     )
     .optional(),
-}).transform((config) => config as PickleConfig)
+})
 
-function validateConfig(value: unknown): PickleConfig {
-  return parseConfiguration(pickleConfigSchema, value, 'Invalid configuration')
-}
+const validateConfig = configurationParser(
+  pickleConfigSchema,
+  'Invalid configuration',
+)
 
 function quotedJsonEnd(source: string, start: number): number {
   let escaped = false
@@ -496,8 +496,12 @@ function removeJsonComments(source: string): string {
   return result
 }
 
-function parseJsonc(source: string): unknown {
-  return JSON.parse(removeJsonComments(source).replaceAll(/,(\s*[}\]])/g, '$1'))
+function parseJsonc(source: string) {
+  return z
+    .json()
+    .parse(
+      JSON.parse(removeJsonComments(source).replaceAll(/,(\s*[}\]])/g, '$1')),
+    )
 }
 
 export async function loadConfig(
@@ -523,7 +527,8 @@ export async function loadConfig(
   } catch (error) {
     const reason = error instanceof Error ? error.message : String(error)
     throw new Error(
-      `Invalid configuration ${selectedPath}: ${reason}. Correct the value and run pickle check again.`, { cause: error },
+      `Invalid configuration ${selectedPath}: ${reason}. Correct the value and run pickle check again.`,
+      { cause: error },
     )
   }
 }

@@ -1,21 +1,23 @@
+import { z } from 'zod'
+import { testRunManifestSchema } from '@pickle-spec/runner'
+import packageManifest from '../../../package.json'
 import { chmod, mkdir, mkdtemp, realpath, rm, symlink } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve, sep } from 'node:path'
 import {
   openTestRunStore,
   resolveLocalProjectStorage,
-  type TestRunManifest,
 } from '@pickle-spec/runner'
 import { afterAll, beforeAll, describe, expect, test } from 'vitest'
 import { requiredValue } from '../../../src/required-value'
 
+function runsDirectory(project: string): string {
+  return resolveLocalProjectStorage(project).runsDirectory
+}
+
 describe('public CLI workspace seam', () => {
   let workspace: string
   let pickleCommand: string
-
-  function runsDirectory(project: string): string {
-    return resolveLocalProjectStorage(project).runsDirectory
-  }
 
   interface CheckProjectFixture {
     config: unknown
@@ -87,11 +89,6 @@ Feature: Example
   beforeAll(async () => {
     workspace = await mkdtemp(join(tmpdir(), 'pickle-spec-workspace-'))
     const packageDirectory = resolve(import.meta.dir, '../../..')
-    const packageManifest = (await Bun.file(
-      join(packageDirectory, 'package.json'),
-    ).json()) as {
-      bin: { pickle: string }
-    }
     pickleCommand = join(workspace, 'node_modules', '.bin', 'pickle')
     await mkdir(join(workspace, 'node_modules', '.bin'), { recursive: true })
     await symlink(
@@ -400,14 +397,11 @@ Feature: Release acceptance
     ]
     expect(manifests).toHaveLength(1)
     const runId = dirname(requiredValue(manifests[0]))
-    const manifest = (await Bun.file(
-      join(runsDirectory(project), requiredValue(manifests[0])),
-    ).json()) as {
-      id: string
-      finishedAt?: string
-      state: string
-      results: Array<{ scenario: { name: string }; state: string }>
-    }
+    const manifest = testRunManifestSchema.parse(
+      await Bun.file(
+        join(runsDirectory(project), requiredValue(manifests[0])),
+      ).json(),
+    )
     expect(manifest).toMatchObject({
       id: runId,
       state: 'passed',
@@ -434,17 +428,21 @@ Feature: Release acceptance
     })
     expect(archive.stderr.toString()).toBe('')
     expect(archive.exitCode).toBe(0)
-    const exportedArchive = (await Bun.file(archivePath).json()) as {
-      schemaVersion: number
-      kind: string
-      manifest: { schemaVersion: number; id: string; state: string }
-      events: Array<{
-        schemaVersion: number
-        sequence: number
-        type: string
-        run?: { id: string }
-      }>
-    }
+    const exportedArchive = z
+      .object({
+        schemaVersion: z.number(),
+        kind: z.string(),
+        manifest: testRunManifestSchema,
+        events: z.array(
+          z.object({
+            schemaVersion: z.number(),
+            sequence: z.number(),
+            type: z.string(),
+            run: z.object({ id: z.string() }).optional(),
+          }),
+        ),
+      })
+      .parse(await Bun.file(archivePath).json())
     expect(exportedArchive).toMatchObject({
       schemaVersion: 2,
       kind: 'run-archive',
@@ -1538,9 +1536,9 @@ export default {
     expect(manifestPaths).toHaveLength(1)
     const runId = dirname(requiredValue(manifestPaths[0]))
     const runDirectory = join(storage.runsDirectory, runId)
-    const manifest = (await Bun.file(
-      join(runDirectory, 'manifest.json'),
-    ).json()) as TestRunManifest
+    const manifest = testRunManifestSchema.parse(
+      await Bun.file(join(runDirectory, 'manifest.json')).json(),
+    )
 
     expect(manifest.schemaVersion).toBe(2)
     expect(manifest.id).toBe(runId)
@@ -1598,10 +1596,10 @@ export default {
       (artifact) => artifact.name === 'step-02-failed.png',
     )
     expect(screenshot?.kind).toBe('screenshot')
-    expect(typeof screenshot?.path).toBe('string')
+    expect(screenshot?.path).toBeTypeOf('string')
     expect(screenshot?.mediaType).toBe('image/png')
     expect(screenshot?.name).toMatch(/\.png$/)
-    expect(typeof screenshot?.sizeBytes).toBe('number')
+    expect(screenshot?.sizeBytes).toBeTypeOf('number')
     expect(screenshot?.capturedAt).toMatch(/^\d{4}-\d{2}-\d{2}T/)
     expect(attempt.evidenceAvailability).toContainEqual({
       kind: 'screenshot',
@@ -2290,14 +2288,11 @@ Feature: Purchase
       }),
     ]
     expect(manifests).toHaveLength(1)
-    const manifest = (await Bun.file(
-      join(runsDirectory(project), requiredValue(manifests[0])),
-    ).json()) as {
-      schemaVersion: number
-      id: string
-      state: string
-      results: Array<{ state: string; scenario: { name: string } }>
-    }
+    const manifest = testRunManifestSchema.parse(
+      await Bun.file(
+        join(runsDirectory(project), requiredValue(manifests[0])),
+      ).json(),
+    )
     expect(manifest).toMatchObject({
       schemaVersion: 2,
       state: 'passed',
@@ -2505,12 +2500,9 @@ export default {
     const rerunManifestPath = requiredValue(
       manifests.find((path) => dirname(path) !== sourceId),
     )
-    const rerunManifest = (await Bun.file(
-      join(runsDirectory(project), rerunManifestPath),
-    ).json()) as {
-      sourceRunId?: string
-      results: Array<{ scenario: { name: string }; state: string }>
-    }
+    const rerunManifest = testRunManifestSchema.parse(
+      await Bun.file(join(runsDirectory(project), rerunManifestPath)).json(),
+    )
     expect(rerunManifest.sourceRunId).toBe(sourceId)
     expect(rerunManifest.results).toHaveLength(1)
     expect(rerunManifest.results[0]).toMatchObject({
@@ -2850,9 +2842,8 @@ Feature: Slow checkout
     Then the purchase succeeds`,
     )
 
-    const { openTestRunStore: openLocalTestRunStore } = await import(
-      '@pickle-spec/runner'
-    )
+    const { openTestRunStore: openLocalTestRunStore } =
+      await import('@pickle-spec/runner')
     const store = openLocalTestRunStore({
       root: project,
       createId: () => 'prior-run',

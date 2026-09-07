@@ -55,7 +55,7 @@ export function runnerDiagnostic(
 
 export function recordExecutionError(
   progress: AttemptProgress,
-  error: unknown,
+  cause: unknown,
   bindings: readonly ScenarioVariableBinding[],
   input: ScenarioAttemptInput,
   occurredAt: string,
@@ -63,12 +63,12 @@ export function recordExecutionError(
   stepIndex?: number,
 ): void {
   const attemptProgress = progress
-  const rawMessage = errorMessage(error)
+  const rawMessage = errorMessage(cause)
   attemptProgress.runtimeValueExposed ||= stringContainsBinding(
     rawMessage,
     bindings,
   )
-  attemptProgress.state = isCancellation(error, signal)
+  attemptProgress.state = isCancellation(cause, signal)
     ? 'cancelled'
     : 'infrastructure-error'
   attemptProgress.message = redactString(rawMessage, bindings)

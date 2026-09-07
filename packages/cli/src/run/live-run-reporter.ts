@@ -4,7 +4,10 @@ import type {
   TestResult,
 } from '@pickle-spec/runner'
 import { requiredValue } from '../required-value'
-import { withRecoveryFailure } from '../terminal/command-error'
+import {
+  commandErrorFrom,
+  withRecoveryFailure,
+} from '../terminal/command-error'
 import {
   availableTerminalRows,
   type InteractiveTerminalSurface,
@@ -32,6 +35,10 @@ import {
   scheduledEventMatches,
 } from './run-schedule'
 import type { TestRunExitStatus } from './test-run-exit-status'
+
+type CollectPagedBlocksResult = { blockLines: string[][]; usedRows: number }
+
+type PagedBlocksResult = { blockLines: string[][]; overflowLines: string[] }
 
 type LiveRunReporterOptions = {
   terminal: InteractiveTerminalSurface
@@ -200,7 +207,7 @@ export function createLiveRunReporter(
     allBlockLines: readonly string[][],
     frameIndex: number,
     maxRows: number,
-  ): { blockLines: string[][]; overflowLines: string[] } {
+  ): PagedBlocksResult {
     const { blockLines, usedRows } = collectPagedBlocks(
       activeBlocks,
       allBlockLines,
@@ -224,7 +231,7 @@ export function createLiveRunReporter(
     allBlockLines: readonly string[][],
     frameIndex: number,
     maxRows: number,
-  ): { blockLines: string[][]; usedRows: number } {
+  ): CollectPagedBlocksResult {
     const firstIndex = frameIndex % activeBlocks.length
     const blockLines: string[][] = []
     let usedRows = 0
@@ -314,9 +321,9 @@ export function createLiveRunReporter(
   function finishFailure(
     results: readonly TestResult[],
     durationMs: number,
-    error: unknown,
+    cause: unknown,
   ): void {
-    const message = error instanceof Error ? error.message : String(error)
+    const message = cause instanceof Error ? cause.message : String(cause)
     finishOutput(
       results,
       durationMs,
@@ -439,7 +446,7 @@ export function createLiveRunReporter(
           finishWithoutOutput()
         } catch (restoreError) {
           throw withRecoveryFailure(
-            renderError,
+            commandErrorFrom(renderError),
             'Failed to restore terminal output',
             restoreError,
           )

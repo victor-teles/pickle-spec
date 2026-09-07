@@ -13,7 +13,7 @@ const ignoredDirectories = new Set(['.git', '.turbo', 'dist', 'node_modules'])
 const sourceFilePattern = /\.[cm]?[jt]sx?$/
 const legacyImport = ['bun', 'test'].join(':')
 const legacyCommand = ['bun', 'test'].join(' ')
-const expectedCatalog: DependencyMap = {
+const expectedCatalog = {
   vitest: '5.0.0',
   'vitest-mock-extended': '5.1.1',
 }

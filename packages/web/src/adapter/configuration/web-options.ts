@@ -3,7 +3,7 @@ import {
   optionalBoolean,
   optionalPositiveInteger,
   optionalString,
-  parseConfiguration,
+  configurationParser,
   strictObject,
 } from '@pickle-spec/configuration'
 import { z } from 'zod'
@@ -23,6 +23,7 @@ export function cdpEndpointOrigin(value: string): string | undefined {
       return url.origin
     }
   } catch {}
+  return undefined
 }
 
 const cdpUrlSchema = optionalString('web.browser.cdpUrl').superRefine(
@@ -134,8 +135,7 @@ export const webAdapterOptionsSchema = strictObject('web', {
     .refine(
       (value) => {
         try {
-          new URL(value)
-          return true
+          return Boolean(new URL(value))
         } catch {
           return false
         }
@@ -181,10 +181,7 @@ export function resolveBrowserConnection(
   return { kind: options?.environment ?? 'local' }
 }
 
-export function validateWebAdapterOptions(value: unknown): WebAdapterOptions {
-  return parseConfiguration(
-    webAdapterOptionsSchema,
-    value,
-    'Invalid web options',
-  )
-}
+export const validateWebAdapterOptions = configurationParser(
+  webAdapterOptionsSchema,
+  'Invalid web options',
+)

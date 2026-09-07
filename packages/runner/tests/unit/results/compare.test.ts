@@ -26,7 +26,7 @@ function result(
   const finishedAt = new Date(
     Date.parse(fixtureStartedAt) + durationMs,
   ).toISOString()
-  return {
+  const testResult: TestResult = {
     schemaVersion: 2,
     specification: {
       name: 'Checkout',
@@ -71,8 +71,11 @@ function result(
         ...options.attempt,
       },
     ],
-    ...(options.flaky ? { flaky: true } : {}),
   }
+  if (options.flaky) {
+    testResult.flaky = true
+  }
+  return testResult
 }
 
 const baseline: TestRunManifest = {

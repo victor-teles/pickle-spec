@@ -96,7 +96,7 @@ export function buildCommandPaletteItems(
 
 export function targetNewRun(
   request: StudioRunRequest,
-  profileId: string | undefined,
+  profileId?: string,
 ): StudioRunRequest {
   return {
     ...request,

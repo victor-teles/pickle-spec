@@ -12,15 +12,15 @@ user's machine or CI runner by default.
 
 Each scoped package owns one public boundary.
 
-| Package | Responsibility |
-| --- | --- |
-| `@pickle-spec/configuration` | Provide shared strict configuration validation rules. |
-| `@pickle-spec/spec` | Parse Specifications and select Scenarios. |
-| `@pickle-spec/runner` | Schedule Scenarios and produce run events and test results. |
-| `@pickle-spec/web` | Adapt Stagehand operations to the runner contract. |
-| `@pickle-spec/mobile` | Adapt Android Emulator and iOS Simulator operations through an isolated Node worker. |
-| `@pickle-spec/studio` | Provide the local Studio installed for `pickle studio`. |
-| `@pickle-spec/cli` | Install the `pickle` executable and compose product commands. |
+| Package                      | Responsibility                                                                       |
+| ---------------------------- | ------------------------------------------------------------------------------------ |
+| `@pickle-spec/configuration` | Provide shared strict configuration validation rules.                                |
+| `@pickle-spec/spec`          | Parse Specifications and select Scenarios.                                           |
+| `@pickle-spec/runner`        | Schedule Scenarios and produce run events and test results.                          |
+| `@pickle-spec/web`           | Adapt Stagehand operations to the runner contract.                                   |
+| `@pickle-spec/mobile`        | Adapt Android Emulator and iOS Simulator operations through an isolated Node worker. |
+| `@pickle-spec/studio`        | Provide the local Studio installed for `pickle studio`.                              |
+| `@pickle-spec/cli`           | Install the `pickle` executable and compose product commands.                        |
 
 The `apps/example` workspace contains sample Specifications.
 
@@ -77,8 +77,8 @@ Create `pickle.config.jsonc` in the project root:
     "smoke": {
       "paths": ["features/checkout/**"],
       "tagExpression": "@smoke",
-      "states": ["active"]
-    }
+      "states": ["active"],
+    },
   },
   "executionTargetProfiles": {
     "web": {
@@ -89,24 +89,24 @@ Create `pickle.config.jsonc` in the project root:
         "browser": {
           "environment": "local",
           "modelName": "anthropic/claude-sonnet-4-6",
-          "headless": true
+          "headless": true,
         },
         "screenshots": {
-          "mode": "on-failure"
-        }
-      }
-    }
+          "mode": "on-failure",
+        },
+      },
+    },
   },
   "applicationRevision": "git:HEAD",
   "cache": {
-    "maxBytes": 104857600
+    "maxBytes": 104857600,
   },
   "execution": {
     "infrastructureRetries": 1,
     "scenarioTimeoutMs": 30000,
-    "stepTimeoutMs": 10000
+    "stepTimeoutMs": 10000,
   },
-  "concurrency": 3
+  "concurrency": 3,
 }
 ```
 
@@ -130,10 +130,10 @@ reinstall the application before launch.
     "android": {
       "adapter": "mobile",
       "mobile": {
-        "application": { "id": "com.example.checkout" }
-      }
-    }
-  }
+        "application": { "id": "com.example.checkout" },
+      },
+    },
+  },
 }
 ```
 
@@ -322,28 +322,28 @@ history manager, categories configuration, or runtime dependency.
 Create `pickle.extensions.ts` when a project needs a custom execution-target adapter:
 
 ```ts
-import type { ExecutionTargetAdapter } from '@pickle-spec/runner'
+import type { ExecutionTargetAdapter } from "@pickle-spec/runner";
 
 const adapter: ExecutionTargetAdapter = {
-  capabilities: ['filesystem'],
+  capabilities: ["filesystem"],
   async openSession() {
     return {
       async executeStep(step) {
         return {
-          state: 'passed',
+          state: "passed",
           resolvedActions: [{ description: `Execute: ${step.text}` }],
-        }
+        };
       },
       async close() {},
-    }
+    };
   },
-}
+};
 
 export default {
   adapters: {
     custom: adapter,
   },
-}
+};
 ```
 
 Declare the profile in `pickle.config.jsonc` and import the adapter explicitly. Pickle Spec does not discover plugins dynamically.
@@ -354,9 +354,9 @@ Declare the profile in `pickle.config.jsonc` and import the adapter explicitly. 
   "executionTargetProfiles": {
     "custom": {
       "adapter": "custom",
-      "capabilities": ["filesystem"]
-    }
-  }
+      "capabilities": ["filesystem"],
+    },
+  },
 }
 ```
 

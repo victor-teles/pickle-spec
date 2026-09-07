@@ -135,14 +135,16 @@ export function createDocumentRoutes(
     if (request.method === 'GET' && url.pathname === '/api/workspace/events') {
       return options.upgrade(request)
     }
-    const routes: Record<string, () => Promise<Response>> = {
-      'GET /api/documents': () => readDocument(options, url),
-      'GET /api/documents/completions': async () =>
-        Response.json(await options.documents.completions()),
-      'POST /api/documents/preview': () => previewDocument(options, request),
-      'PUT /api/documents': () => writeDocument(options, request),
-      'POST /api/documents/propose': () => proposeDocument(options, request),
-    }
-    return routes[routeKey(request, url)]?.() ?? null
+    const routes = new Map(
+      Object.entries({
+        'GET /api/documents': () => readDocument(options, url),
+        'GET /api/documents/completions': async () =>
+          Response.json(await options.documents.completions()),
+        'POST /api/documents/preview': () => previewDocument(options, request),
+        'PUT /api/documents': () => writeDocument(options, request),
+        'POST /api/documents/propose': () => proposeDocument(options, request),
+      }),
+    )
+    return routes.get(routeKey(request, url))?.() ?? null
   }
 }

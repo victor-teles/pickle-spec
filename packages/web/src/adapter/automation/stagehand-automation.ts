@@ -1,3 +1,4 @@
+import { parseObservedActionPayload } from '../../execution-cache/web-cache-compilation'
 import type {
   BrowserContext,
   Stagehand,
@@ -34,6 +35,12 @@ import type {
   WebScreenshotCapture,
 } from './web-automation'
 
+function requiredObservedAction(action: WebObservedAction) {
+  const parsed = parseObservedActionPayload(action.handle)
+  if (!parsed) throw new Error('Invalid observed browser action')
+  return parsed
+}
+
 const verificationSchema = z.object({
   meetsExpectation: z
     .boolean()
@@ -68,9 +75,9 @@ async function readStagehandIsolation(
   const cookieCount = (await context.cookies()).length
   const page = await context.activePage()
   const storageKeyCount = page
-    ? ((await page.evaluate(
+    ? await page.evaluate<number>(
         '(() => { try { return localStorage.length } catch { return 0 } })()',
-      )) as number)
+      )
     : 0
   return { cookieCount, storageKeyCount }
 }
@@ -131,12 +138,12 @@ class StagehandAutomation implements WebAutomation {
 
   async summarizeTarget() {
     const page = await activePage(this.browser.context)
-    const snapshot = (await page.evaluate(`(() => ({
+    const snapshot = await page.evaluate<WebTargetSnapshot>(`(() => ({
       location: location.href,
       readyState: document.readyState,
       activeElementTag: document.activeElement?.tagName?.toLowerCase(),
       activeElementRole: document.activeElement?.getAttribute('role') ?? undefined
-    }))()`)) as WebTargetSnapshot
+    }))()`)
     const activeElement = [
       snapshot.activeElementTag,
       snapshot.activeElementRole ? `role=${snapshot.activeElementRole}` : '',
@@ -188,9 +195,12 @@ class StagehandAutomation implements WebAutomation {
   async act(action: WebObservedAction, signal?: AbortSignal) {
     await this.instrumentPages()
     const result = await withAbort(
-      this.stagehand.act(action.handle as Parameters<Stagehand['act']>[0], {
-        timeout: this.timeouts.actTimeoutMs,
-      }),
+      this.stagehand.act(
+        { ...requiredObservedAction(action), description: action.description },
+        {
+          timeout: this.timeouts.actTimeoutMs,
+        },
+      ),
       signal,
     )
     return {

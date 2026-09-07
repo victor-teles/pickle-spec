@@ -1,6 +1,11 @@
 {
   "name": "@pickle-spec/studio",
   "version": "1.0.2",
+  "files": [
+    "dist",
+    "index.ts",
+    "src"
+  ],
   "type": "module",
   "exports": {
     ".": "./index.ts"
@@ -8,11 +13,6 @@
   "publishConfig": {
     "access": "public"
   },
-  "files": [
-    "dist",
-    "index.ts",
-    "src"
-  ],
   "scripts": {
     "build": "NODE_ENV=production rsbuild build",
     "prepack": "bun run build",
@@ -42,7 +42,8 @@
     "srvx": "^0.12.7",
     "tailwind-merge": "^3.3.1",
     "tailwindcss": "^4.1.12",
-    "tw-animate-css": "^1.3.8"
+    "tw-animate-css": "^1.3.8",
+    "zod": "catalog:"
   },
   "devDependencies": {
     "@rsbuild/core": "^2.2.1",

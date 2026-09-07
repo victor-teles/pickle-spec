@@ -1,10 +1,9 @@
+import { z } from 'zod'
+import { requiredValue } from '../../required-value'
+import { cacheOutcomeSchema } from '../schema/run-schema-primitives'
 import { Database } from 'bun:sqlite'
-import type {
-  ExecutionMode,
-  TestResultState,
-} from '../../execution/run-scenario'
+import type { TestResultState } from '../../execution/run-scenario'
 import { finalScenarioAttempt } from '../../execution/run-scenario'
-import type { CacheOutcome } from '../../execution-cache/execution-cache'
 import type { TestRunManifest, TestRunSummary } from './test-run-store-types'
 
 interface IndexedRun {
@@ -24,30 +23,44 @@ interface IndexedRun {
   inferenceCount: number | null
 }
 
-function testRunSummaryFrom(row: unknown): TestRunSummary {
-  const indexed = row as IndexedRun
-  const executionModes = JSON.parse(indexed.executionModes) as ExecutionMode[]
-  const cacheOutcomes = JSON.parse(indexed.cacheOutcomes) as CacheOutcome[]
-  return {
+function testRunSummaryFrom(indexed: IndexedRun): TestRunSummary {
+  const executionModes = z
+    .array(z.enum(['adaptive', 'replay']))
+    .parse(JSON.parse(indexed.executionModes))
+  const cacheOutcomes = z
+    .array(cacheOutcomeSchema)
+    .parse(JSON.parse(indexed.cacheOutcomes))
+  const summary: TestRunSummary = {
     id: indexed.id,
     startedAt: indexed.startedAt,
-    ...(indexed.finishedAt ? { finishedAt: indexed.finishedAt } : {}),
-    ...(indexed.sourceRunId ? { sourceRunId: indexed.sourceRunId } : {}),
-    ...(indexed.suite ? { suite: indexed.suite } : {}),
-    executionTargetProfileIds: JSON.parse(
-      indexed.executionTargetProfileIds,
-    ) as string[],
-    specificationUris: JSON.parse(indexed.specificationUris) as string[],
-    ...(indexed.applicationRevision
-      ? { applicationRevision: indexed.applicationRevision }
-      : {}),
-    ...(indexed.durationMs !== null ? { durationMs: indexed.durationMs } : {}),
+    executionTargetProfileIds: z
+      .array(z.string())
+      .parse(JSON.parse(indexed.executionTargetProfileIds)),
+    specificationUris: z
+      .array(z.string())
+      .parse(JSON.parse(indexed.specificationUris)),
     state: indexed.state,
     resultCount: indexed.resultCount,
     executionModes: executionModes.length > 0 ? executionModes : undefined,
     cacheOutcomes: cacheOutcomes.length > 0 ? cacheOutcomes : undefined,
     inferenceCount: indexed.inferenceCount ?? undefined,
   }
+  if (indexed.finishedAt) {
+    summary.finishedAt = indexed.finishedAt
+  }
+  if (indexed.sourceRunId) {
+    summary.sourceRunId = indexed.sourceRunId
+  }
+  if (indexed.suite) {
+    summary.suite = indexed.suite
+  }
+  if (indexed.applicationRevision) {
+    summary.applicationRevision = indexed.applicationRevision
+  }
+  if (indexed.durationMs !== null) {
+    summary.durationMs = indexed.durationMs
+  }
+  return summary
 }
 
 type IndexColumn = { name: string }
@@ -75,9 +88,9 @@ function openIndex(path: string): Database {
   `)
   const columns = new Set(
     db
-      .query('PRAGMA table_info(runs)')
+      .query<IndexColumn, []>('PRAGMA table_info(runs)')
       .all()
-      .map((row) => (row as IndexColumn).name),
+      .map((row) => row.name),
   )
   const additions = [
     ['source_run_id', 'TEXT'],
@@ -111,7 +124,9 @@ export function withIndex<Value>(
 
 export function indexVersion(path: string): number {
   return withIndex(path, (db) => {
-    const row = db.query('PRAGMA user_version').get() as IndexedSchemaVersion
+    const row = requiredValue(
+      db.query<IndexedSchemaVersion, []>('PRAGMA user_version').get(),
+    )
     return row.user_version
   })
 }
@@ -200,7 +215,7 @@ export function upsertRun(db: Database, manifest: TestRunManifest): void {
 
 export function listRuns(db: Database): TestRunSummary[] {
   return db
-    .query(
+    .query<IndexedRun, []>(
       `SELECT id, started_at AS startedAt, finished_at AS finishedAt,
         source_run_id AS sourceRunId, suite,
         execution_target_profile_ids AS executionTargetProfileIds,
@@ -218,9 +233,9 @@ export function listRuns(db: Database): TestRunSummary[] {
 
 export function listRunIds(db: Database): string[] {
   return db
-    .query('SELECT id FROM runs ORDER BY id')
+    .query<Pick<IndexedRun, 'id'>, []>('SELECT id FROM runs ORDER BY id')
     .all()
-    .map((row) => (row as Pick<IndexedRun, 'id'>).id)
+    .map((row) => row.id)
 }
 
 export function sameStrings(

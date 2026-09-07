@@ -1,6 +1,12 @@
 {
   "name": "@pickle-spec/runner",
   "version": "1.0.2",
+  "files": [
+    "benchmarking.ts",
+    "index.ts",
+    "testing.ts",
+    "src/**/*.ts"
+  ],
   "type": "module",
   "exports": {
     ".": "./index.ts",
@@ -10,12 +16,6 @@
   "publishConfig": {
     "access": "public"
   },
-  "files": [
-    "benchmarking.ts",
-    "index.ts",
-    "testing.ts",
-    "src/**/*.ts"
-  ],
   "scripts": {
     "typecheck": "tsc --noEmit",
     "test": "bunx --bun vitest run --configLoader runner --experimental.viteModuleRunner=false --experimental.nodeLoader=false --config ../../vitest.package.config.ts"
@@ -25,12 +25,12 @@
     "@pickle-spec/spec": "workspace:*",
     "zod": "catalog:"
   },
-  "peerDependencies": {
-    "vitest": "^5.0.0"
-  },
   "devDependencies": {
     "@types/bun": "catalog:",
     "typescript": "catalog:",
     "vitest": "catalog:"
+  },
+  "peerDependencies": {
+    "vitest": "^5.0.0"
   }
 }

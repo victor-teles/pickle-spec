@@ -1,6 +1,8 @@
 import type { ComponentProps, CSSProperties } from 'react'
 import { cn } from '../../lib/utils'
 
+type PixelStyle = CSSProperties & { '--pixel-delay': string }
+
 const chevron = Array.from({ length: 9 }, (_, index) => {
   const row = Math.floor(index / 3)
   const column = index % 3
@@ -18,16 +20,15 @@ function Spinner({ className, ...props }: ComponentProps<'span'>) {
       {chevron.map((delay, index) => {
         const row = Math.floor(index / 3)
         const column = index % 3
+        const style: PixelStyle = {
+          opacity: 0.15,
+          '--pixel-delay': `${delay}ms`,
+        }
         return (
           <span
             key={`${row}:${column}`}
             className="pixel-spinner-cell size-1 rounded-px bg-current"
-            style={
-              {
-                opacity: 0.15,
-                '--pixel-delay': `${delay}ms`,
-              } as CSSProperties
-            }
+            style={style}
           />
         )
       })}

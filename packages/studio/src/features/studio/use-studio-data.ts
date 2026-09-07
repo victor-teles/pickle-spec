@@ -5,7 +5,7 @@ import { reasonMessage } from '../runs/result/result-presentation'
 import { getStudioRuns } from '../runs/runs.functions'
 
 interface InitialStudioDataInput {
-  reportError: (reason: unknown) => void
+  reportError: (cause: unknown) => void
   setProject: (project: StudioProject) => void
   setRunsIndex: (runs: StudioRunsIndex) => void
 }
@@ -20,8 +20,8 @@ function useInitialStudioData(input: InitialStudioDataInput): void {
         setProject(projectValue)
         setRunsIndex(runsValue)
       },
-      (reason: unknown) => {
-        if (!cancelled) reportError(reason)
+      (cause: unknown) => {
+        if (!cancelled) reportError(cause)
       },
     )
     return () => {
@@ -37,8 +37,8 @@ export function useStudioData() {
 
   const clearError = useCallback(() => setError(undefined), [])
 
-  const reportError = useCallback((reason: unknown) => {
-    setError(reasonMessage(reason))
+  const reportError = useCallback((cause: unknown) => {
+    setError(reasonMessage(cause))
   }, [])
 
   const reloadProject = useCallback(async () => {

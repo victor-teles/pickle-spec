@@ -1,3 +1,12 @@
+const paymentOutline = (rows: string) => `Feature: Pay
+  Scenario Outline: Pay
+    When the customer pays with <method>
+    Then the payment succeeds
+
+    Examples:
+      | method |
+${rows}`
+
 import { describe, expect, test } from 'vitest'
 import { parseSpecification } from '../../../index'
 
@@ -526,25 +535,17 @@ Feature: Checkout
   })
 
   test('derives examples row identifiers from row values so reordering keeps identity', () => {
-    const outline = (rows: string) => `Feature: Pay
-  Scenario Outline: Pay
-    When the customer pays with <method>
-    Then the payment succeeds
-
-    Examples:
-      | method |
-${rows}`
     const cardFirst = parseSpecification({
       uri: 'features/pay.feature',
-      source: outline('      | card   |\n      | cash   |'),
+      source: paymentOutline('      | card   |\n      | cash   |'),
     })
     const cashFirst = parseSpecification({
       uri: 'features/pay.feature',
-      source: outline('      | cash   |\n      | card   |'),
+      source: paymentOutline('      | cash   |\n      | card   |'),
     })
     const visa = parseSpecification({
       uri: 'features/pay.feature',
-      source: outline('      | visa   |\n      | cash   |'),
+      source: paymentOutline('      | visa   |\n      | cash   |'),
     })
     const cardId = cardFirst.scenarios.find((scenario) =>
       scenario.steps.some((step) => step.text.includes('card')),

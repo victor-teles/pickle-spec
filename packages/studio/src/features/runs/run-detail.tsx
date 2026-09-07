@@ -35,8 +35,8 @@ type RunDetailProps = {
 function useFetchedRunSnapshot(props: RunDetailProps) {
   const [snapshot, setSnapshot] = useState<StudioRunSnapshot>()
   const [error, setError] = useState<string>()
-  useEffect(() => {
-    if (props.live?.snapshot) return
+  useEffect((): (() => void) | undefined => {
+    if (props.live?.snapshot) return undefined
     let cancelled = false
     setSnapshot(undefined)
     setError(undefined)
@@ -46,8 +46,8 @@ function useFetchedRunSnapshot(props: RunDetailProps) {
         (value) => {
           if (!cancelled) setSnapshot(value)
         },
-        (reason: unknown) => {
-          if (!cancelled) setError(reasonMessage(reason))
+        (cause: unknown) => {
+          if (!cancelled) setError(reasonMessage(cause))
         },
       )
     return () => {

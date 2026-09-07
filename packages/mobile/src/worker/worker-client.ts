@@ -64,8 +64,8 @@ export function assertSupportedNodeVersion(version: string): void {
   }
 }
 
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error)
+function errorMessage(cause: unknown): string {
+  return cause instanceof Error ? cause.message : String(cause)
 }
 
 class NodeWorkerClient implements MobileWorkerClient {
@@ -230,14 +230,17 @@ class NodeWorkerClient implements MobileWorkerClient {
       assertSupportedNodeVersion(message.nodeVersion)
       onReady()
     } catch (error) {
-      throw new Error(`Invalid mobile worker message: ${errorMessage(error)}`, { cause: error })
+      throw new Error(`Invalid mobile worker message: ${errorMessage(error)}`, {
+        cause: error,
+      })
     }
   }
 
   private handleResponse(line: string): void {
     const message = workerOutputMessageSchema.parse(JSON.parse(line))
     if (message.type === 'event') {
-      for (const listener of [...this.listeners]) listener(message.payload)
+      const currentListeners = [...this.listeners]
+      for (const listener of currentListeners) listener(message.payload)
       return
     }
     const pending = this.pending.get(message.id)

@@ -205,13 +205,14 @@ function mapStep(
 ): ScenarioStep {
   const info = infoByAstNodeId.get(step.astNodeIds[0] ?? '')
   const argument = mapArgument(step)
-  return {
+  const mapped: ScenarioStep = {
     keyword: info?.keyword ?? '',
     text: step.text,
     type: info?.type ?? 'context',
-    ...(info?.source ? { source: { ...info.source } } : {}),
-    ...(argument ? { argument } : {}),
   }
+  if (info?.source) mapped.source = { ...info.source }
+  if (argument) mapped.argument = argument
+  return mapped
 }
 
 function templateStep(
@@ -286,7 +287,7 @@ export function parseSpecification(
     mapScenario(pickle, context),
   )
 
-  return {
+  const specification: Specification = {
     name: feature.name,
     source: {
       uri: input.uri,
@@ -295,8 +296,9 @@ export function parseSpecification(
     tags: featureTags,
     scenarios,
     id: resolveSpecificationId(input.uri, feature.name, featureTags),
-    ...(featureIdentity.state ? { state: featureIdentity.state } : {}),
   }
+  if (featureIdentity.state) specification.state = featureIdentity.state
+  return specification
 }
 
 interface ScenarioMappingContext {

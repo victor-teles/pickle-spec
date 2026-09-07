@@ -13,14 +13,21 @@ type ResponseOf<Type extends MobileWorkerResponseType> = Extract<
   { type: Type }
 >
 
+function hasResponseType<Type extends MobileWorkerResponseType>(
+  response: MobileWorkerResponse,
+  type: Type,
+): response is ResponseOf<Type> {
+  return response.type === type
+}
+
 export function expectWorkerResponse<Type extends MobileWorkerResponseType>(
   response: MobileWorkerResponse,
   type: Type,
 ): ResponseOf<Type> {
-  if (response.type !== type) {
+  if (!hasResponseType(response, type)) {
     throw new Error(`Unexpected mobile worker response: ${response.type}`)
   }
-  return response as ResponseOf<Type>
+  return response
 }
 
 export class MobileWorkerSession implements ScenarioTargetSession {

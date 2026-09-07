@@ -2,10 +2,10 @@ export function abortError(): DOMException {
   return new DOMException('Scenario cancelled', 'AbortError')
 }
 
-export function isAbortError(error: unknown, signal?: AbortSignal): boolean {
+export function isAbortError(cause: unknown, signal?: AbortSignal): boolean {
   return (
     signal?.aborted === true ||
-    (error instanceof Error && error.name === 'AbortError')
+    (cause instanceof Error && cause.name === 'AbortError')
   )
 }
 

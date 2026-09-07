@@ -1,6 +1,7 @@
+import type { StudioRequestContext } from '../../start-context'
 import { createServerFn } from '@tanstack/react-start'
-import '../../start-context'
 
 export const getStudioRuns = createServerFn({ method: 'GET' }).handler(
-  ({ context }) => context.studio.listRuns(),
+  ({ context }): ReturnType<StudioRequestContext['studio']['listRuns']> =>
+    context.studio.listRuns(),
 )

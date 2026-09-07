@@ -39,6 +39,7 @@ function requestToken(request: Request): string | undefined {
     const [name, ...rest] = part.trim().split('=')
     if (name === sessionCookie) return decodeURIComponent(rest.join('='))
   }
+  return undefined
 }
 
 class StudioRequestRouter {

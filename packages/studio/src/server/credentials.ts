@@ -17,9 +17,9 @@ export function createDirectoryCredentialStore(
     return Bun.file(join(directory, encodeURIComponent(account)))
   }
 
-  async function get(account: string) {
+  async function get(account: string): Promise<string | undefined> {
     const file = fileFor(account)
-    if (!(await file.exists())) return
+    if (!(await file.exists())) return undefined
     const value = (await file.text()).trim()
     return value || undefined
   }
@@ -38,7 +38,7 @@ export function createDirectoryCredentialStore(
 
 function keychainStore(): CredentialStore {
   return {
-    async get(account) {
+    async get(account): Promise<string | undefined> {
       const result = Bun.spawnSync({
         cmd: [
           'security',
@@ -52,7 +52,7 @@ function keychainStore(): CredentialStore {
         stdout: 'pipe',
         stderr: 'pipe',
       })
-      if (result.exitCode !== 0) return
+      if (result.exitCode !== 0) return undefined
       const value = result.stdout.toString().trim()
       return value || undefined
     },

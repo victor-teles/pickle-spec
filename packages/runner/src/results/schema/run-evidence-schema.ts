@@ -73,7 +73,7 @@ export const actionEvidenceSchema = z
 
 export const resolvedActionSchema = z.object({
   description: z.string(),
-  replay: z.record(z.string(), z.unknown()).optional(),
+  replay: z.record(z.string(), z.json()).optional(),
   evidence: actionEvidenceSchema.optional(),
 })
 

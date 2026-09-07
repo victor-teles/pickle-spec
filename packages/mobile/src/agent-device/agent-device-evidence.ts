@@ -13,7 +13,6 @@ type MobileArtifact = NonNullable<WorkerStepExecution['artifacts']>[number]
 export type MobileEvidenceAvailability = NonNullable<
   WorkerStepExecution['evidenceAvailability']
 >[number]
-type NodeError = Error & { code?: string }
 
 export interface AgentDeviceEvidenceSession {
   artifactDirectory?: string
@@ -42,22 +41,25 @@ interface CapturedEvidence {
 
 const screenshotResultSchema = z.object({ path: z.string().min(1) })
 
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error)
+function errorMessage(cause: unknown): string {
+  return cause instanceof Error ? cause.message : String(cause)
 }
 
 function unavailableEvidence(
   kind: MobileArtifactKind,
-  error: unknown,
+  cause: unknown,
 ): MobileEvidenceAvailability {
-  if (error instanceof Error && (error as NodeError).code === 'ENOENT') {
+  if (
+    cause instanceof Error &&
+    ('code' in cause ? cause.code : undefined) === 'ENOENT'
+  ) {
     return {
       kind,
       state: 'missing',
       message: `Captured ${kind} file is missing`,
     }
   }
-  return { kind, state: 'capture-failed', message: errorMessage(error) }
+  return { kind, state: 'capture-failed', message: errorMessage(cause) }
 }
 
 function redactText(

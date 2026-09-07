@@ -1,3 +1,4 @@
+import type { AgentDeviceDevice } from '../../../src/agent-device/agent-device-client'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -10,7 +11,7 @@ import {
 import { AgentDeviceGateway } from '../../../src/agent-device/agent-device-gateway'
 import { requiredValue } from '../../../src/required-value'
 
-const androidEmulator = {
+const androidEmulator: AgentDeviceDevice = {
   platform: 'android',
   target: 'mobile',
   kind: 'emulator',
@@ -21,7 +22,7 @@ const androidEmulator = {
   android: { serial: 'emulator-5554' },
 }
 
-const iosSimulator = {
+const iosSimulator: AgentDeviceDevice = {
   platform: 'ios',
   target: 'mobile',
   kind: 'simulator',

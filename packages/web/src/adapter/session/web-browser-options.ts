@@ -7,17 +7,23 @@ import {
   type WebAdapterOptions,
 } from '../configuration/web-options'
 
-const providerApiKeyEnvNames: Record<string, string[]> = {
-  openai: ['OPENAI_API_KEY'],
-  anthropic: ['ANTHROPIC_API_KEY'],
-  google: ['GOOGLE_GENERATIVE_AI_API_KEY', 'GOOGLE_API_KEY', 'GEMINI_API_KEY'],
-  groq: ['GROQ_API_KEY'],
-  cerebras: ['CEREBRAS_API_KEY'],
-}
+const providerApiKeyEnvNames = new Map(
+  Object.entries({
+    openai: ['OPENAI_API_KEY'],
+    anthropic: ['ANTHROPIC_API_KEY'],
+    google: [
+      'GOOGLE_GENERATIVE_AI_API_KEY',
+      'GOOGLE_API_KEY',
+      'GEMINI_API_KEY',
+    ],
+    groq: ['GROQ_API_KEY'],
+    cerebras: ['CEREBRAS_API_KEY'],
+  }),
+)
 
 function apiKeyEnvNames(modelName: string | undefined): string[] {
   const provider = requiredValue((modelName ?? defaultModelName).split('/')[0])
-  return providerApiKeyEnvNames[provider] ?? []
+  return providerApiKeyEnvNames.get(provider) ?? []
 }
 
 function modelApiKey(browser: BrowserOptions | undefined): string | undefined {
@@ -27,6 +33,7 @@ function modelApiKey(browser: BrowserOptions | undefined): string | undefined {
     const value = process.env[name]?.trim()
     if (value) return value
   }
+  return undefined
 }
 
 interface ResolveBrowserOptionsInput {

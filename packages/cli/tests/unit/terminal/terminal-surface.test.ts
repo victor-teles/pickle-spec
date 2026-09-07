@@ -82,13 +82,13 @@ test('moves unrelated process output above the live region without erasing it', 
   const stream = {
     columns: 80,
     rows: 24,
-    write(chunk: string) {
+    write(this: void, chunk: string) {
       output.push(chunk)
       return true
     },
   }
   const errorStream = {
-    write(chunk: string) {
+    write(this: void, chunk: string) {
       output.push(chunk)
       return true
     },
@@ -122,7 +122,7 @@ test('restores process streams and terminal state when final rendering throws', 
   const output: string[] = []
   const stream = {
     columns: 80,
-    write(chunk: string) {
+    write(this: void, chunk: string) {
       output.push(chunk)
       if (chunk === 'summary\n') throw new Error('terminal write failed')
       return true

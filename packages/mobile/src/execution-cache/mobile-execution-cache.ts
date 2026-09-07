@@ -90,7 +90,7 @@ export function mobileReplayVariableName(name: string): string {
   return `PICKLE_VAR_${createHash('sha256').update(name).digest('hex').toUpperCase()}`
 }
 
-function hasSupportedScriptShape(
+function supportsScenarioScript(
   script: string,
   platform: MobilePlatform,
   applicationId: string,
@@ -180,29 +180,29 @@ export function createMobileExecutionCache(
     targetConfigurationFingerprint: fingerprint(input),
     prefixPolicy: mobilePrefixPolicy(),
     prefixStepCount: mobilePrefixStepCount,
-    parse(payload, requiredVariables) {
+    parse(payload, requiredVariables): MobileExecutionCachePayload | undefined {
       const parsed = mobileExecutionCachePayloadSchema.safeParse(payload)
-      if (!parsed.success) return
-      if (!hasValidRanges(parsed.data.stepRanges)) return
+      if (!parsed.success) return undefined
+      if (!hasValidRanges(parsed.data.stepRanges)) return undefined
       if (
         !rangesMatchScenarioOperations(
           parsed.data.script,
           parsed.data.stepRanges,
         )
       ) {
-        return
+        return undefined
       }
       if (
-        !hasSupportedScriptShape(
+        !supportsScenarioScript(
           parsed.data.script,
           input.platform,
           input.applicationId,
         )
       ) {
-        return
+        return undefined
       }
       if (!hasExactVariables(parsed.data.script, requiredVariables)) {
-        return
+        return undefined
       }
       return parsed.data
     },

@@ -1,3 +1,4 @@
+import { z } from 'zod'
 import type {
   ReplayCacheInput,
   StepEvaluation,
@@ -87,8 +88,10 @@ export function cachedStepPrefixFrom(
   scenarioStepCount: number,
   adapter: PrefixCapableValidator,
 ): CachedStepPrefix | undefined {
+  const serializedPayload = z.json().safeParse(envelope.adapterPayload)
+  if (!serializedPayload.success) return undefined
   const payload = adapter.parse(
-    envelope.adapterPayload,
+    serializedPayload.data,
     envelope.requiredVariables,
   )
   if (payload === undefined) return undefined
@@ -121,7 +124,7 @@ export function sealCachedStepPrefix(
   )
 }
 
-export function gapCursor(prefix: CachedStepPrefix | undefined): GapCursor {
+export function gapCursor(prefix?: CachedStepPrefix): GapCursor {
   return { replayUntil: prefix?.stepCount ?? 0 }
 }
 

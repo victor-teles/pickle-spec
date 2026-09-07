@@ -27,18 +27,28 @@ export type PersistedStepEvidence = {
   captureFailures: EvidenceCaptureFailure[]
 }
 
+function withoutScreenshotFile(
+  screenshot: Extract<
+    RunEventPayload,
+    { type: 'action-finished' }
+  >['action']['screenshots']['before'],
+): Extract<
+  RunEventPayload,
+  { type: 'action-finished' }
+>['action']['screenshots']['before'] {
+  return screenshot.state === 'available'
+    ? { state: 'not-retained' }
+    : screenshot
+}
+
 export function withoutProvisionalActionEvidence(
   action: Extract<RunEventPayload, { type: 'action-finished' }>['action'],
 ): Extract<RunEventPayload, { type: 'action-finished' }>['action'] {
-  const withoutFile = (
-    screenshot: typeof action.screenshots.before,
-  ): typeof action.screenshots.before =>
-    screenshot.state === 'available' ? { state: 'not-retained' } : screenshot
   return {
     ...action,
     screenshots: {
-      before: withoutFile(action.screenshots.before),
-      after: withoutFile(action.screenshots.after),
+      before: withoutScreenshotFile(action.screenshots.before),
+      after: withoutScreenshotFile(action.screenshots.after),
     },
     diagnostics: [],
     activity: [],
@@ -50,15 +60,13 @@ function withoutActionEvidenceFiles(step: TestStepResult): TestStepResult {
     ...step,
     resolvedActions: step.resolvedActions.map((action) => {
       if (!action.evidence) return action
-      const unavailable = (state: typeof action.evidence.screenshots.before) =>
-        state.state === 'available' ? { state: 'not-retained' as const } : state
       return {
         ...action,
         evidence: {
           ...action.evidence,
           screenshots: {
-            before: unavailable(action.evidence.screenshots.before),
-            after: unavailable(action.evidence.screenshots.after),
+            before: withoutScreenshotFile(action.evidence.screenshots.before),
+            after: withoutScreenshotFile(action.evidence.screenshots.after),
           },
           diagnostics: [],
           activity: [],
@@ -268,7 +276,7 @@ export function artifactDestination(
 
 function captureFailedStep(
   step: TestStepResult,
-  error: unknown,
+  cause: unknown,
 ): PersistedStepEvidence {
   const { artifacts: _artifacts, ...stepWithoutArtifacts } = step
   return {
@@ -276,13 +284,13 @@ function captureFailedStep(
     publishedPaths: [],
     captureFailures: (step.artifacts ?? []).map((artifact) => ({
       kind: artifact.kind,
-      message: `${artifact.path}: ${errorMessage(error)}`,
+      message: `${artifact.path}: ${errorMessage(cause)}`,
     })),
   }
 }
 
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error)
+function errorMessage(cause: unknown): string {
+  return cause instanceof Error ? cause.message : String(cause)
 }
 
 async function pathExists(path: string): Promise<boolean> {

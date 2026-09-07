@@ -74,7 +74,7 @@ function materializedResult(group: MaterializedResultGroup): TestResult {
   if (!first || !final) {
     throw new Error('A Test result requires at least one Scenario attempt')
   }
-  return {
+  const testResult: TestResult = {
     schemaVersion: testRunSchemaVersion,
     specification: group.specification,
     scenario: group.scenario,
@@ -87,8 +87,11 @@ function materializedResult(group: MaterializedResultGroup): TestResult {
       Date.parse(final.finishedAt) - Date.parse(first.startedAt),
     ),
     attempts,
-    ...(attempts.length > 1 && final.state === 'passed' ? { flaky: true } : {}),
   }
+  if (attempts.length > 1 && final.state === 'passed') {
+    testResult.flaky = true
+  }
+  return testResult
 }
 
 export function materializeTestResults(

@@ -195,13 +195,13 @@ by itself. An efficient team may need to watch fewer runs.
 
 These are recommendations for the next roadmap revision, not new delivery dates.
 
-| Milestone | Work to include | Exit evidence |
-| --- | --- | --- |
-| 1. Trust the release | Reconcile status, support matrix, installation, setup recovery, evidence availability | Exact release installed outside the monorepo; every advertised target has recorded real-target proof |
+| Milestone               | Work to include                                                                                                                                           | Exit evidence                                                                                                     |
+| ----------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| 1. Trust the release    | Reconcile status, support matrix, installation, setup recovery, evidence availability                                                                     | Exact release installed outside the monorepo; every advertised target has recorded real-target proof              |
 | 2. Complete the QA loop | Meaningful assertions, authenticated example, isolated data, failure explanation, manual execution-plan maintenance, selective rerun, export and basic CI | External users repair a changed interaction through a validated plan revision; a seeded regression remains failed |
-| 3. Grow useful coverage | Templates, needed shared setup, manual Specification health, smallest draft/review/validate flow | A user adds a second independent journey and can explain its expected results |
-| 4. Reduce maintenance | Compatible visual comparison, evidenced classification, visible quarantine, AI-assisted and policy-controlled autonomous plan repair | Known app regressions remain failures; every accepted change has source and validation evidence |
-| 5. Scale proven usage | Trends, PR annotations, shard merging, agent workflows, change-impact experiments | Returning projects demonstrate a specific bottleneck and the change improves it |
+| 3. Grow useful coverage | Templates, needed shared setup, manual Specification health, smallest draft/review/validate flow                                                          | A user adds a second independent journey and can explain its expected results                                     |
+| 4. Reduce maintenance   | Compatible visual comparison, evidenced classification, visible quarantine, AI-assisted and policy-controlled autonomous plan repair                      | Known app regressions remain failures; every accepted change has source and validation evidence                   |
+| 5. Scale proven usage   | Trends, PR annotations, shard merging, agent workflows, change-impact experiments                                                                         | Returning projects demonstrate a specific bottleneck and the change improves it                                   |
 
 Continue using the current shared runner and evidence contracts throughout.
 Read-and-run MCP can move earlier if active coding-agent users demonstrate that
@@ -220,19 +220,19 @@ completion, elapsed time, and blockers for each task. The following thresholds
 are proposed planning gates, not measured product performance or statistical
 proof of market readiness.
 
-| Task | Acceptance check |
-| --- | --- |
-| Install and connect | Four of five reach a ready target without maintainer intervention; report total setup time and all failed attempts |
-| Write and run | Four of five create a real assertion and explain why it passed; record time separately from example completion |
-| Detect a regression | A seeded incorrect application outcome fails every time in the test fixture; no fallback weakens the assertion |
-| Diagnose | Four of five identify the seeded cause within five minutes from persisted evidence without rerunning |
-| Repeat | Eligible scenarios Replay without inference; misses, partial prefixes, and divergence are explained accurately |
-| Maintain interactions | Four of five locate and edit a changed interaction without raw cache editing, validate the Scenario with unchanged assertions, and activate the revision; record time and assistance |
-| Preserve ownership | A validated manual change survives cache eviction; refresh exposes conflicts rather than overwriting it; rollback restores the previous plan revision |
-| Reject an unsafe repair | A candidate that skips or weakens the failed assertion cannot be activated as an interaction repair; failed validation leaves the active revision unchanged |
-| Recover | An invalid credential or disconnected target gives a usable recovery path without losing edits |
-| Hand off | A second person opens the exported failure and identifies the failed expectation without the author's help |
-| Return | At least three projects run again on a different day within seven days; assisted and unassisted returns stay separate |
+| Task                    | Acceptance check                                                                                                                                                                     |
+| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Install and connect     | Four of five reach a ready target without maintainer intervention; report total setup time and all failed attempts                                                                   |
+| Write and run           | Four of five create a real assertion and explain why it passed; record time separately from example completion                                                                       |
+| Detect a regression     | A seeded incorrect application outcome fails every time in the test fixture; no fallback weakens the assertion                                                                       |
+| Diagnose                | Four of five identify the seeded cause within five minutes from persisted evidence without rerunning                                                                                 |
+| Repeat                  | Eligible scenarios Replay without inference; misses, partial prefixes, and divergence are explained accurately                                                                       |
+| Maintain interactions   | Four of five locate and edit a changed interaction without raw cache editing, validate the Scenario with unchanged assertions, and activate the revision; record time and assistance |
+| Preserve ownership      | A validated manual change survives cache eviction; refresh exposes conflicts rather than overwriting it; rollback restores the previous plan revision                                |
+| Reject an unsafe repair | A candidate that skips or weakens the failed assertion cannot be activated as an interaction repair; failed validation leaves the active revision unchanged                          |
+| Recover                 | An invalid credential or disconnected target gives a usable recovery path without losing edits                                                                                       |
+| Hand off                | A second person opens the exported failure and identifies the failed expectation without the author's help                                                                           |
+| Return                  | At least three projects run again on a different day within seven days; assisted and unassisted returns stay separate                                                                |
 
 Run the core journey with keyboard alone, at 200% zoom, and at a narrow viewport.
 Inspect long names, large histories, unavailable artifacts, and concurrent events.

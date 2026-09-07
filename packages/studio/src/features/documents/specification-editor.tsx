@@ -100,22 +100,22 @@ type DocumentConflictPayload = {
 
 const emptyCatalog: GherkinCatalog = { tags: [], steps: [] }
 
-function reasonMessage(reason: unknown) {
-  return reason instanceof Error ? reason.message : String(reason)
+function reasonMessage(cause: unknown) {
+  return cause instanceof Error ? cause.message : String(cause)
 }
 
-function conflictFromReason(reason: unknown): ConflictState | undefined {
-  if (!(reason instanceof Error)) return
+function conflictFromReason(cause: unknown): ConflictState | undefined {
+  if (!(cause instanceof Error)) return undefined
   try {
-    const payload = JSON.parse(reason.message) as DocumentConflictPayload
-    if (payload.code !== 'conflict') return
+    const payload = JSON.parse(cause.message) as DocumentConflictPayload
+    if (payload.code !== 'conflict') return undefined
     return {
       diskSource: payload.diskSource,
       revision: payload.revision,
       diff: payload.diff,
     }
   } catch {
-    return
+    return undefined
   }
 }
 
@@ -127,7 +127,7 @@ type SpecificationEditorProps = {
   api: StudioApi
   onCatalogChange: () => Promise<void>
   onCreated?: (uri: string) => void
-  onError: (message: string | undefined) => void
+  onError: (message?: string) => void
   onModeChange?: (mode: 'view' | 'edit') => void
 }
 
@@ -359,8 +359,8 @@ function synchronizeEditorDocument(
 ) {
   controller.current.setMode(initialMode)
   let cancelled = false
-  void controller.current.load(uri).catch((reason: unknown) => {
-    if (!cancelled) error.current(reasonMessage(reason))
+  void controller.current.load(uri).catch((cause: unknown) => {
+    if (!cancelled) error.current(reasonMessage(cause))
   })
   return () => {
     cancelled = true
@@ -378,18 +378,21 @@ function watchEditorDocument(
   const socket = new WebSocket(
     `${protocol}//${location.host}/api/workspace/events`,
   )
-  socket.onmessage = (message) => {
+  socket.addEventListener('message', (message) => {
     const event = JSON.parse(String(message.data)) as DiskChangedEvent
     if (event.type !== 'disk-changed') return
     void onCatalogChange.current()
     if (event.uri !== uri) return
-    if (!dirty.current) return void controller.current.load(uri)
+    if (!dirty.current) {
+      void controller.current.load(uri)
+      return
+    }
     setConflict({
       diskSource: event.source,
       revision: event.revision,
       diff: '',
     })
-  }
+  })
   return () => socket.close()
 }
 
@@ -540,7 +543,7 @@ function ReviewDialog(
   const confirm = () =>
     void review
       ?.onConfirm()
-      .catch((reason: unknown) => props.onError(reasonMessage(reason)))
+      .catch((cause: unknown) => props.onError(reasonMessage(cause)))
   return (
     <Dialog
       open={Boolean(review)}

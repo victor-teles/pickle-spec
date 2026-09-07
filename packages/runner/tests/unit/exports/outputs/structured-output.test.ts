@@ -5,8 +5,8 @@ import {
   publicRunEvent,
   publicTestResult,
 } from '../../../../index'
-import type { RunEvent } from '../../../../src/execution/run-scenario'
-import type { TestRunManifest } from '../../../../src/results/test-run-store'
+import { runEventSchema } from '../../../../src/results/schema/run-event-schema'
+import { testRunManifestSchema } from '../../../../src/results/schema/test-result-schema'
 import {
   canonicalEvents,
   canonicalManifest,
@@ -33,13 +33,13 @@ test('formats NDJSON from the versioned run-event schema', () => {
 
 test('projects canonical schema-v2 Test evidence to exact JSON', () => {
   expect(
-    JSON.parse(formatJson(canonicalManifest as unknown as TestRunManifest)),
+    JSON.parse(formatJson(testRunManifestSchema.parse(canonicalManifest))),
   ).toEqual(canonicalManifest)
 })
 
 test('projects canonical schema-v2 Run events to exact NDJSON', () => {
   expect(
-    formatNdjson(canonicalEvents as unknown as RunEvent[])
+    formatNdjson(runEventSchema.array().parse(canonicalEvents))
       .trim()
       .split('\n')
       .map((line) => JSON.parse(line)),
@@ -118,7 +118,7 @@ test('public event boundaries whitelist non-result event fields', () => {
       startedAt: '2026-08-15T12:00:00.000Z',
       privateValue: 'private-bound-value',
     },
-  } as unknown as RunEvent
+  } as const
 
   const source = JSON.stringify(publicRunEvent(malicious))
   expect(source).toBe(

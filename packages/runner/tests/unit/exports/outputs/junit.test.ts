@@ -24,9 +24,8 @@ test('formats JUnit XML with cache metadata, stable states, flaky, and error cla
       ...manifest.results.slice(2),
     ],
   }
-  expect(
-    formatJunit(junitManifest),
-  ).toBe(`<?xml version="1.0" encoding="UTF-8"?>
+  expect(formatJunit(junitManifest))
+    .toBe(`<?xml version="1.0" encoding="UTF-8"?>
 <testsuites id="run-ci" name="run-ci" tests="7" failures="1" errors="2" skipped="1">
   <testsuite name="Checkout" tests="7" failures="1" errors="2" skipped="1">
     <testcase name="Complete a purchase" classname="features/checkout.feature">

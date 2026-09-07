@@ -87,7 +87,7 @@ function conformanceWorker(): MobileWorkerClient {
             type: 'session-closed',
             sessionId: request.sessionId,
           }
-        case 'cancel-session':
+        default:
           sessions.delete(request.sessionId)
           return {
             version: 6,

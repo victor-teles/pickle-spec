@@ -170,12 +170,14 @@ async function handleRunRequest(
   request: Request,
   url: URL,
 ) {
-  const exactRoutes: Record<string, () => Promise<Response>> = {
-    'POST /api/runs': () => startRun(options, request),
-    'GET /api/artifact': () => readArtifact(options, request, url),
-    'HEAD /api/artifact': () => readArtifact(options, request, url),
-  }
-  const exact = exactRoutes[routeKey(request, url)]
+  const exactRoutes = new Map(
+    Object.entries({
+      'POST /api/runs': () => startRun(options, request),
+      'GET /api/artifact': () => readArtifact(options, request, url),
+      'HEAD /api/artifact': () => readArtifact(options, request, url),
+    }),
+  )
+  const exact = exactRoutes.get(routeKey(request, url))
   return exact ? exact() : handleRunResource(options, request, url)
 }
 
