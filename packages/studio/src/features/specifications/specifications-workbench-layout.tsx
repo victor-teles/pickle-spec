@@ -21,6 +21,8 @@ type WorkbenchLayoutProps = {
 }
 
 export function WorkbenchLayout(props: WorkbenchLayoutProps) {
+  const stackedDetails =
+    props.orientation === 'vertical' && props.visibility.right
   return (
     <ResizablePanelGroup
       key={`${props.orientation}-${visibilityKey(props.visibility)}`}
@@ -36,7 +38,11 @@ export function WorkbenchLayout(props: WorkbenchLayoutProps) {
           <ResizableHandle withHandle />
         </>
       ) : null}
-      <ResizablePanel id="workbench-main" defaultSize="60%" minSize="30%">
+      <ResizablePanel
+        id="workbench-main"
+        defaultSize={stackedDetails ? '40%' : '60%'}
+        minSize="30%"
+      >
         <ResizablePanelGroup
           id="specifications-workbench-main"
           orientation="vertical"
@@ -66,7 +72,11 @@ export function WorkbenchLayout(props: WorkbenchLayoutProps) {
       {props.visibility.right ? (
         <>
           <ResizableHandle withHandle />
-          <ResizablePanel id="workbench-right" defaultSize="20%" minSize="15%">
+          <ResizablePanel
+            id="workbench-right"
+            defaultSize={stackedDetails ? '40%' : '20%'}
+            minSize="15%"
+          >
             {props.right}
           </ResizablePanel>
         </>

@@ -1,3 +1,4 @@
+import { stat } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import { describe, expect, test } from 'vitest'
 
@@ -51,6 +52,40 @@ function markdownAnchors(markdown: string): Set<string> {
   return anchors
 }
 
+function expectCompleteTargetMatrix(table: MarkdownTable): void {
+  expect(table.header).toEqual(['QA task', ...targetColumns])
+  expect(
+    table.rows.length,
+    `${table.heading} must contain task rows`,
+  ).toBeGreaterThan(0)
+  for (const row of table.rows) {
+    expect(row).toHaveLength(6)
+    for (const cell of row.slice(1)) {
+      expect(cell).toMatch(new RegExp(`\\b(?:${allowedStatuses.join('|')})\\b`))
+      expect(cell).toMatch(/\[[^\]]+\]\([^)]+\)/)
+    }
+  }
+}
+
+async function expectLocalLinkResolves(link: string): Promise<void> {
+  const [relativePath, fragment] = link.split('#')
+  const targetPath = relativePath
+    ? resolve(repositoryRoot, 'docs', decodeURIComponent(relativePath))
+    : inventoryPath
+
+  await expect(
+    stat(targetPath),
+    `missing link target ${link}`,
+  ).resolves.toBeDefined()
+  if (!fragment) return
+
+  const target = await Bun.file(targetPath).text()
+  expect(
+    markdownAnchors(target).has(decodeURIComponent(fragment)),
+    `missing anchor ${link}`,
+  ).toBe(true)
+}
+
 describe('ENG-01 capability inventory acceptance', () => {
   test('records a full source revision and two five-target task matrices', async () => {
     const inventory = await Bun.file(inventoryPath).text()
@@ -61,17 +96,7 @@ describe('ENG-01 capability inventory acceptance', () => {
     ]
 
     expect(revision).toMatch(/^[0-9a-f]{40}$/)
-    for (const table of tables) {
-      expect(table.header).toEqual(['QA task', ...targetColumns])
-      expect(table.rows.length, `${table.heading} must contain task rows`).toBeGreaterThan(0)
-      for (const row of table.rows) {
-        expect(row).toHaveLength(6)
-        for (const cell of row.slice(1)) {
-          expect(cell).toMatch(new RegExp(`\\b(?:${allowedStatuses.join('|')})\\b`))
-          expect(cell).toMatch(/\[[^\]]+\]\([^\)]+\)/)
-        }
-      }
-    }
+    for (const table of tables) expectCompleteTargetMatrix(table)
 
     const tasks = tables.flatMap((table) => table.rows.map(([task]) => task))
     for (const category of [
@@ -85,7 +110,10 @@ describe('ENG-01 capability inventory acceptance', () => {
       /execution plan before running/i,
       /Edit, validate, activate, or roll back a durable plan/i,
     ]) {
-      expect(tasks.some((task) => category.test(task)), `missing task ${category}`).toBe(true)
+      expect(
+        tasks.some((task) => category.test(task)),
+        `missing task ${category}`,
+      ).toBe(true)
     }
   })
 
@@ -97,16 +125,7 @@ describe('ENG-01 capability inventory acceptance', () => {
 
     for (const link of links) {
       if (/^(?:https?:|mailto:)/.test(link)) continue
-      const [relativePath, fragment] = link.split('#')
-      const targetPath = relativePath
-        ? resolve(repositoryRoot, 'docs', decodeURIComponent(relativePath))
-        : inventoryPath
-
-      expect(await Bun.file(targetPath).exists(), `missing link target ${link}`).toBe(true)
-      if (fragment) {
-        const target = await Bun.file(targetPath).text()
-        expect(markdownAnchors(target).has(decodeURIComponent(fragment)), `missing anchor ${link}`).toBe(true)
-      }
+      await expectLocalLinkResolves(link)
     }
   })
 
@@ -117,7 +136,9 @@ describe('ENG-01 capability inventory acceptance', () => {
     expect(roadmap).toMatch(/^- \[ \] Concurrent target filmstrip:/m)
     expect(roadmap).toMatch(/^- \[ \] Picture-in-picture:/m)
     expect(roadmap).not.toContain('Follow mode and picture-in-picture')
-    expect(roadmap).not.toContain('Studio does not yet provide live target video')
+    expect(roadmap).not.toContain(
+      'Studio does not yet provide live target video',
+    )
     expect(roadmap).not.toMatch(/\b(?:Bone|teal|oxide|amber)\b/)
     expect(roadmap).toMatch(/\[DESIGN\.md\]\(DESIGN\.md\)/)
   })

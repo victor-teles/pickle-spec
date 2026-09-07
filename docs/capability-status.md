@@ -26,6 +26,17 @@ separate roadmap entries, and the design reference. These are document-contract
 checks. They do not turn an implemented capability into a verified live-target
 claim. The source and behavioral evidence below support those distinctions.
 
+Acceptance recheck on 2026-09-04:
+
+| Command | Result |
+| --- | --- |
+| `bun run test` | Passed. All 14 script tests ran, including 3 ENG-01 acceptance tests. The 7 package tasks reused Turbo results. |
+| `bun run typecheck` | Passed, 8 cached tasks. |
+| `bun run lint` | Passed with 27 existing warnings. |
+| `cd packages/studio && bunx --bun vitest run --configLoader runner --experimental.viteModuleRunner=false --experimental.nodeLoader=false --config ../../vitest.package.config.ts tests/unit/runs/result/live-result-inspection.test.ts tests/unit/runs/result/result-inspector.test.tsx tests/unit/runs/result/time-travel-inspection.test.ts` | Fresh pass, 27 tests for live projection, follow/pin, viewport markup, and time-travel evidence. |
+| `bun run --cwd packages/web test:unit` | Fresh pass, 110 controlled adapter tests. |
+| `bun run --cwd packages/mobile test:unit` | Fresh pass, 50 controlled adapter and worker tests. |
+
 ## Evidence status
 
 | Status | Meaning in this inventory |
@@ -65,7 +76,7 @@ applicable cache entry. It does not need model inference.
 | Inspect screenshots and action evidence | Implemented. Artifact policy controls capture. [Web evidence](#web-evidence) | Implemented through shared capture; live fidelity unverified. [Web evidence](#web-evidence) | Implemented through shared capture; live fidelity unverified. [Web evidence](#web-evidence) | Implemented. Gateway screenshots and resolved-action evidence. [Mobile evidence](#mobile-evidence) | Implemented. Gateway screenshots and resolved-action evidence. [Mobile evidence](#mobile-evidence) |
 | Inspect recordings, traces, and diagnostics | Implemented. Structured activity, instrumented console/network, optional MP4. [Web evidence](#web-evidence) | Implemented through shared instrumentation; pre-attachment activity is not guaranteed. [Web evidence](#web-evidence) | Implemented through shared instrumentation; not a Browserbase recording import. [Web evidence](#web-evidence) | Implemented. Device logs, recordings, and traces depend on gateway support and policy. [Mobile evidence](#mobile-evidence) | Implemented. Device logs, recordings, and traces depend on gateway support and policy. [Mobile evidence](#mobile-evidence) |
 | Inspect a readable execution plan before running | Unsupported. Cache metadata and executed evidence only. [Plan boundary](#execution-plan-boundary) | Unsupported. Same boundary. [Plan boundary](#execution-plan-boundary) | Unsupported. Same boundary. [Plan boundary](#execution-plan-boundary) | Unsupported. Same boundary. [Plan boundary](#execution-plan-boundary) | Unsupported. Same boundary. [Plan boundary](#execution-plan-boundary) |
-| Edit, validate, activate, or roll back a durable plan | Unsupported. ENG-03 through ENG-08. [Plan boundary](#execution-plan-boundary) | Unsupported. ENG-03 through ENG-08. [Plan boundary](#execution-plan-boundary) | Unsupported. ENG-03 through ENG-08. [Plan boundary](#execution-plan-boundary) | Unsupported. ENG-17 extends approved maintenance to mobile. [Plan boundary](#execution-plan-boundary) | Unsupported. ENG-17 extends approved maintenance to mobile. [Plan boundary](#execution-plan-boundary) |
+| Edit, validate, activate, or roll back a durable plan | Implemented, verified by controlled CLI/web tests; validation and activation remain unsupported until ENG-07/08. [Editing evidence](execution-plan-editing.md) | Implemented through the shared web draft path; live attachment workflow unverified. Validation and activation remain unsupported. [Editing evidence](execution-plan-editing.md) | Implemented through the shared web draft path; remote workflow unverified. Validation and activation remain unsupported. [Editing evidence](execution-plan-editing.md) | Unsupported. ENG-17 extends maintenance to mobile. [Plan boundary](#execution-plan-boundary) | Unsupported. ENG-17 extends maintenance to mobile. [Plan boundary](#execution-plan-boundary) |
 
 Live frames are transient. A completed run retains recorded evidence under its
 artifact policy, not a replayable history of every streamed viewport frame.

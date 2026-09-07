@@ -139,6 +139,54 @@ export {
   defaultExecutionCacheMaxBytes,
   openLocalExecutionCache,
 } from './src/execution-cache/local-execution-cache'
+export { requiredVariablesAreValid } from './src/execution-cache/scenario/scenario-cache-run'
+export type {
+  ExecutionPlanApplicability,
+  ExecutionPlanDisplay,
+  ExecutionPlanDraftDisplay,
+  ExecutionPlanOperationDisplay,
+  ExecutionPlanStepDisplay,
+  ExecutionPlanTargetDisplay,
+  ExecutionPlanTemplateDisplay,
+  ExecutionPlanTemplateSegment,
+  ExecutionPlanUnavailableReason,
+  ExecutionPlanUncachedStep,
+} from './src/execution-plans/execution-plan-display'
+export {
+  canonicalJson,
+  createPlanRevision,
+  parsePlanRevision,
+  parsePlanSelection,
+  parseUniqueKeyJson,
+  planDigest,
+  planSlotId,
+  selectionDigest,
+  serializePlanDocument,
+} from './src/execution-plans/execution-plan-json'
+export type {
+  Actor,
+  Digest,
+  PlanOrigin,
+  PlanResult,
+  PlanRevision,
+  PlanRevisionContent,
+  PlanScope,
+  PlanSelection,
+  PlanUnavailableReason,
+  RunReference,
+  StepIdentity,
+} from './src/execution-plans/execution-plan-revision'
+export type {
+  LocalExecutionPlanStore,
+  LocalExecutionPlanStoreOptions,
+  PlanRevisionHistory,
+  PlanSelectionInspection,
+  PlanSelectionRecord,
+  UnavailablePlanRevision,
+  WritePlanSelectionInput,
+  WritePlanSelectionResult,
+} from './src/execution-plans/local-execution-plan-store'
+export { openLocalExecutionPlanStore } from './src/execution-plans/local-execution-plan-store'
 export type {
   AllureArchiveOptions,
   AllureAttachment,

@@ -10,6 +10,10 @@ export type {
   StudioCredential,
   StudioExecutionCacheGateway,
   StudioExecutionCacheInspection,
+  StudioExecutionPlanDraftResult,
+  StudioExecutionPlanEditRequest,
+  StudioExecutionPlanGateway,
+  StudioExecutionPlanRequest,
   StudioExternalLink,
   StudioHistory,
   StudioHistoryGateway,
@@ -34,6 +38,7 @@ export type {
   StudioServer,
   StudioSpecification,
   StudioSuite,
+  StudioWebLocator,
 } from './src/server/contracts'
 export type { CredentialStore } from './src/server/credentials'
 export {

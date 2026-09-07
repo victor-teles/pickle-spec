@@ -92,6 +92,7 @@ export function SpecificationsScreen(props: SpecificationsScreenProps) {
         selectedScenario={props.selection.currentScenario}
         selectedSpecificationId={props.selection.selected?.id}
         selectedSpecification={props.selection.selected}
+        profiles={props.project.profiles}
         running={props.run.running}
       />
     </div>

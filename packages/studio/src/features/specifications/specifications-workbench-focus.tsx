@@ -1,5 +1,6 @@
 import { BrowserIcon } from '@hugeicons/core-free-icons'
 import { HugeiconsIcon } from '@hugeicons/react'
+import { useState } from 'react'
 import {
   Accordion,
   AccordionContent,
@@ -27,6 +28,10 @@ import type {
   StudioScenario,
   StudioSpecification,
 } from '../../server/contracts'
+import {
+  ExecutionPlanPanel,
+  ScenarioExecutionPlan,
+} from '../execution-plans/execution-plan-panel'
 import { ArtifactViewer } from '../runs/result/artifact-viewer'
 import {
   artifactDownloadUrl,
@@ -59,6 +64,8 @@ export type WorkbenchEvidenceProps = {
   onPauseFollowing: () => void
   onResumeFollowing: () => void
   onSelectInspectorTab: (tab: ResultInspectorTab) => void
+  scenarioId?: string
+  profiles?: readonly string[]
 }
 
 type WorkbenchPreviewContentProps = {
@@ -174,13 +181,19 @@ export function WorkbenchPreview(props: {
 
 export function EvidenceDock(props: WorkbenchEvidenceProps) {
   const focus = props.model.kind === 'batch' ? props.model.focus : undefined
-  const tab = evidenceTab(focus?.activeTab)
+  const [browseTab, setBrowseTab] = useState<ResultInspectorTab>('timeline')
+  const tab = evidenceDockTab(focus, browseTab)
   return (
     <section className="min-h-0 min-w-0 overflow-hidden">
       <Tabs
         value={tab}
         onValueChange={(value) =>
-          props.onSelectInspectorTab(value as ResultInspectorTab)
+          selectEvidenceDockTab(
+            focus,
+            value as ResultInspectorTab,
+            props.onSelectInspectorTab,
+            setBrowseTab,
+          )
         }
         className="h-full min-h-0 gap-0 overflow-hidden"
       >
@@ -191,6 +204,7 @@ export function EvidenceDock(props: WorkbenchEvidenceProps) {
               Artifacts {focus?.artifacts.length ?? 0}
             </TabsTrigger>
             <TabsTrigger value="diagnostics">Diagnostics</TabsTrigger>
+            <TabsTrigger value="plan">Plan</TabsTrigger>
           </TabsList>
           <label
             htmlFor="workbench-follow"
@@ -226,8 +240,66 @@ export function EvidenceDock(props: WorkbenchEvidenceProps) {
         <TabsContent value="diagnostics" className="min-h-0 overflow-auto p-3">
           <CompactDiagnostics model={props.model} />
         </TabsContent>
+        <TabsContent value="plan" className="min-h-0 overflow-auto">
+          <PlanDock
+            model={props.model}
+            profiles={props.profiles ?? []}
+            scenarioId={props.scenarioId}
+          />
+        </TabsContent>
       </Tabs>
     </section>
+  )
+}
+
+function evidenceDockTab(
+  focus: BatchWorkbenchModel['focus'],
+  browseTab: ResultInspectorTab,
+): ResultInspectorTab {
+  if (focus) return evidenceTab(focus.activeTab)
+  return browseTab
+}
+
+function selectEvidenceDockTab(
+  focus: BatchWorkbenchModel['focus'],
+  tab: ResultInspectorTab,
+  onSelectInspectorTab: (tab: ResultInspectorTab) => void,
+  setBrowseTab: (tab: ResultInspectorTab) => void,
+): void {
+  if (focus) {
+    onSelectInspectorTab(tab)
+    return
+  }
+  setBrowseTab(tab)
+}
+
+function PlanDock(props: {
+  model: SpecificationsWorkbenchModel
+  profiles: readonly string[]
+  scenarioId?: string
+}) {
+  if (props.model.kind === 'batch' && props.model.location) {
+    return (
+      <ExecutionPlanPanel
+        scenarioId={props.model.location.scenarioId}
+        profileId={props.model.location.profileId}
+        focusStep={failedStepIndex(props.model)}
+      />
+    )
+  }
+  if (props.scenarioId) {
+    return (
+      <ScenarioExecutionPlan
+        key={props.scenarioId}
+        scenarioId={props.scenarioId}
+        profiles={props.profiles}
+      />
+    )
+  }
+  return (
+    <p className="p-4 text-sm text-muted-foreground">
+      Select a Scenario to inspect its execution plan.
+    </p>
   )
 }
 
@@ -396,6 +468,7 @@ export type WorkbenchDetailsProps = {
   running: boolean
   selectedScenario?: StudioScenario
   selectedSpecification?: StudioSpecification
+  profiles: readonly string[]
 }
 
 export function WorkbenchDetails(props: WorkbenchDetailsProps) {
@@ -627,7 +700,22 @@ function EvidenceCount(props: { label: string; value: number }) {
 }
 
 function evidenceTab(tab: ResultInspectorTab | undefined) {
-  return tab === 'artifacts' || tab === 'diagnostics' ? tab : 'timeline'
+  return tab === 'artifacts' || tab === 'diagnostics' || tab === 'plan'
+    ? tab
+    : 'timeline'
+}
+
+function failedStepIndex(model: BatchWorkbenchModel) {
+  const failed = model.focus?.inspected.attempt.steps.find(
+    (step) => step.state === 'failed' || step.state === 'infrastructure-error',
+  )
+  return failed
+    ? {
+        index: failed.index,
+        keyword: failed.step.keyword,
+        text: failed.step.text,
+      }
+    : undefined
 }
 
 function viewportLabel(model: BatchWorkbenchModel): string {

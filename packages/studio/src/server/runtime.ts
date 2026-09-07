@@ -120,6 +120,7 @@ async function startResponse(
             activeRunIds: [...runEvents.activeRunIds()].sort(),
           }
         },
+        executionPlans: options.executionPlans,
       },
     },
   })
