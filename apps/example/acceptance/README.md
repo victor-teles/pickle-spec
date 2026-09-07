@@ -5,11 +5,11 @@ ENG-02. One [Scenario](checkout.feature) runs against three variants of
 [the same application](index.html). The expected quantity, total, and completed
 order count stay unchanged.
 
-| Variant | Interaction target | Order total | Expected result |
-| --- | --- | --- | --- |
-| `original` | Original checkout target | $29.99 | Pass |
-| `changed-target` | Renamed checkout target | $29.99 | Fail at checkout with the original interaction; pass after changing only that target |
-| `business-regression` | Renamed checkout target | $39.99 | Fail the original $29.99 assertion after the same interaction repair |
+| Variant               | Interaction target       | Order total | Expected result                                                                      |
+| --------------------- | ------------------------ | ----------- | ------------------------------------------------------------------------------------ |
+| `original`            | Original checkout target | $29.99      | Pass                                                                                 |
+| `changed-target`      | Renamed checkout target  | $29.99      | Fail at checkout with the original interaction; pass after changing only that target |
+| `business-regression` | Renamed checkout target  | $39.99      | Fail the original $29.99 assertion after the same interaction repair                 |
 
 The repair belongs to the acceptance test's controlled action compiler. It does
 not edit the Scenario or implement durable execution-plan editing.

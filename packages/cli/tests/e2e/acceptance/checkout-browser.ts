@@ -27,10 +27,13 @@ type AssertionCompilation = Awaited<
 >
 type ScreenshotCapture = Parameters<WebAutomation['screenshot']>[0]
 
-const actions: Record<
-  string,
-  { method?: string; selector: string; arguments?: string[] }
-> = {
+type AcceptanceAction = {
+  method?: string
+  selector: string
+  arguments?: string[]
+}
+
+const actions = {
   'I sign in with the valid acceptance account': {
     selector: '#username',
     method: 'fill',
@@ -44,9 +47,9 @@ const actions: Record<
   'submit sign in': { selector: '#login-form button[type="submit"]' },
   'I add the backpack to the basket': { selector: '#add-backpack' },
   'I place the order': { selector: '#place-order' },
-}
+} satisfies Record<string, AcceptanceAction>
 
-const assertions: Record<string, AssertionCompilation> = {
+const assertions = {
   'the product catalog is visible': {
     kind: 'visible',
     selector: '#catalog-view',
@@ -65,6 +68,14 @@ const assertions: Record<string, AssertionCompilation> = {
     selector: '#order-count',
     expected: '1',
   },
+} satisfies Record<string, AssertionCompilation>
+
+function findAction(description: string): AcceptanceAction | undefined {
+  return Object.entries(actions).find(([key]) => key === description)?.[1]
+}
+
+function findAssertion(prompt: string): AssertionCompilation | undefined {
+  return Object.entries(assertions).find(([key]) => key === prompt)?.[1]
 }
 
 export function digest(value: string): string {
@@ -159,7 +170,11 @@ class AcceptanceAutomation implements WebAutomation {
         'I sign in with the valid acceptance account',
         'sign in password',
         'submit sign in',
-      ].map((key) => ({ description: key, handle: actions[key] }))
+      ].map((key) => {
+        const handle = findAction(key)
+        if (!handle) throw new Error(`No controlled action for: ${key}`)
+        return { description: key, handle }
+      })
     }
     if (action === 'I start checkout') {
       return [
@@ -174,7 +189,7 @@ class AcceptanceAutomation implements WebAutomation {
         },
       ]
     }
-    const payload = actions[action]
+    const payload = findAction(action)
     return payload ? [{ description: action, handle: payload }] : []
   }
 
@@ -189,7 +204,7 @@ class AcceptanceAutomation implements WebAutomation {
   async compileAssertion(prompt: string): Promise<AssertionCompilation> {
     if (this.mode === 'replay')
       throw new Error('Replay attempted assertion inference')
-    const assertion = assertions[prompt]
+    const assertion = findAssertion(prompt)
     if (!assertion) throw new Error(`No controlled assertion for: ${prompt}`)
     return assertion
   }

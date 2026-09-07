@@ -11,27 +11,105 @@
         background: #f6f7f9;
         color: #18202a;
       }
-      * { box-sizing: border-box; }
-      body { margin: 0; }
-      main { width: min(100% - 2rem, 38rem); margin: 0 auto; padding: 2rem 0; }
-      header, section { background: white; border: 1px solid #c8ced8; border-radius: 0.5rem; padding: 1rem; }
-      header { display: flex; align-items: center; justify-content: space-between; gap: 1rem; margin-bottom: 1rem; }
-      h1, h2, p { margin-block: 0 1rem; }
-      form, .actions { display: grid; gap: 0.75rem; }
-      label { display: grid; gap: 0.25rem; font-weight: 600; }
-      input, button { min-height: 2.75rem; border: 1px solid #657184; border-radius: 0.35rem; padding: 0.65rem; font: inherit; }
-      button { background: #193f75; color: white; cursor: pointer; font-weight: 700; }
-      button.secondary { background: white; color: #193f75; }
-      button:disabled { background: #d7dbe2; color: #596272; cursor: default; }
-      button:focus-visible, input:focus-visible { outline: 3px solid #193f75; outline-offset: 2px; }
-      [hidden] { display: none; }
-      .error { color: #a11a1a; font-weight: 700; }
-      .summary { border-collapse: collapse; width: 100%; margin-bottom: 1rem; }
-      .summary th, .summary td { border-bottom: 1px solid #d7dbe2; padding: 0.65rem 0; text-align: left; }
-      .summary td:last-child, .summary th:last-child { text-align: right; }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+      }
+      main {
+        width: min(100% - 2rem, 38rem);
+        margin: 0 auto;
+        padding: 2rem 0;
+      }
+      header,
+      section {
+        background: white;
+        border: 1px solid #c8ced8;
+        border-radius: 0.5rem;
+        padding: 1rem;
+      }
+      header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 1rem;
+        margin-bottom: 1rem;
+      }
+      h1,
+      h2,
+      p {
+        margin-block: 0 1rem;
+      }
+      form,
+      .actions {
+        display: grid;
+        gap: 0.75rem;
+      }
+      label {
+        display: grid;
+        gap: 0.25rem;
+        font-weight: 600;
+      }
+      input,
+      button {
+        min-height: 2.75rem;
+        border: 1px solid #657184;
+        border-radius: 0.35rem;
+        padding: 0.65rem;
+        font: inherit;
+      }
+      button {
+        background: #193f75;
+        color: white;
+        cursor: pointer;
+        font-weight: 700;
+      }
+      button.secondary {
+        background: white;
+        color: #193f75;
+      }
+      button:disabled {
+        background: #d7dbe2;
+        color: #596272;
+        cursor: default;
+      }
+      button:focus-visible,
+      input:focus-visible {
+        outline: 3px solid #193f75;
+        outline-offset: 2px;
+      }
+      [hidden] {
+        display: none;
+      }
+      .error {
+        color: #a11a1a;
+        font-weight: 700;
+      }
+      .summary {
+        border-collapse: collapse;
+        width: 100%;
+        margin-bottom: 1rem;
+      }
+      .summary th,
+      .summary td {
+        border-bottom: 1px solid #d7dbe2;
+        padding: 0.65rem 0;
+        text-align: left;
+      }
+      .summary td:last-child,
+      .summary th:last-child {
+        text-align: right;
+      }
       @media (max-width: 360px) {
-        main { width: min(100% - 1rem, 38rem); padding: 0.5rem 0; }
-        header { align-items: stretch; flex-direction: column; }
+        main {
+          width: min(100% - 1rem, 38rem);
+          padding: 0.5rem 0;
+        }
+        header {
+          align-items: stretch;
+          flex-direction: column;
+        }
       }
     </style>
   </head>
@@ -42,16 +120,33 @@
           <strong>Pickle Market</strong>
           <div>Basket: <output id="basket-count">0</output></div>
         </div>
-        <button id="reset" class="secondary" type="button">Reset acceptance data</button>
+        <button id="reset" class="secondary" type="button">
+          Reset acceptance data
+        </button>
       </header>
 
       <section id="login-view" aria-labelledby="login-heading">
         <h1 id="login-heading">Sign in</h1>
         <form id="login-form">
-          <label>Username <input id="username" autocomplete="username" aria-describedby="login-error" /></label>
-          <label>Password <input id="password" type="password" autocomplete="current-password" aria-describedby="login-error" /></label>
+          <label
+            >Username
+            <input
+              id="username"
+              autocomplete="username"
+              aria-describedby="login-error"
+          /></label>
+          <label
+            >Password
+            <input
+              id="password"
+              type="password"
+              autocomplete="current-password"
+              aria-describedby="login-error"
+          /></label>
           <button type="submit">Sign in</button>
-          <p id="login-error" class="error" role="alert" hidden>Use acceptance_user with pickle_pass, then sign in again.</p>
+          <p id="login-error" class="error" role="alert" hidden>
+            Use acceptance_user with pickle_pass, then sign in again.
+          </p>
         </form>
       </section>
 
@@ -60,7 +155,9 @@
         <h2>Acceptance Backpack</h2>
         <p>One deterministic test product.</p>
         <div class="actions">
-          <button id="add-backpack" class="secondary" type="button">Add backpack — $29.99</button>
+          <button id="add-backpack" class="secondary" type="button">
+            Add backpack — $29.99
+          </button>
           <button id="start-checkout" type="button" disabled>Checkout</button>
         </div>
       </section>
@@ -68,92 +165,142 @@
       <section id="checkout-view" aria-labelledby="checkout-heading" hidden>
         <h1 id="checkout-heading" tabindex="-1">Review order</h1>
         <table class="summary">
-          <thead><tr><th>Item</th><th>Quantity</th></tr></thead>
-          <tbody><tr><td>Acceptance Backpack</td><td id="summary-count">0</td></tr></tbody>
-          <tfoot><tr><th>Total</th><th id="order-total">$29.99</th></tr></tfoot>
+          <thead>
+            <tr>
+              <th>Item</th>
+              <th>Quantity</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Acceptance Backpack</td>
+              <td id="summary-count">0</td>
+            </tr>
+          </tbody>
+          <tfoot>
+            <tr>
+              <th>Total</th>
+              <th id="order-total">$29.99</th>
+            </tr>
+          </tfoot>
         </table>
         <button id="place-order" type="button">Place order</button>
       </section>
 
-      <section id="confirmation-view" aria-labelledby="confirmation-heading" hidden>
+      <section
+        id="confirmation-view"
+        aria-labelledby="confirmation-heading"
+        hidden
+      >
         <h1 id="confirmation-heading" tabindex="-1">Order confirmed</h1>
         <p>Completed orders: <output id="order-count">0</output></p>
       </section>
     </main>
     <script>
       const variants = {
-        original: { checkoutId: 'start-checkout', total: '$29.99' },
-        'changed-target': { checkoutId: 'review-order', total: '$29.99' },
-        'business-regression': { checkoutId: 'review-order', total: '$39.99' },
-      }
-      const requestedVariant = new URLSearchParams(location.search).get('variant') ?? 'original'
-      const variant = variants[requestedVariant] ?? variants.original
-      const stateKey = 'pickle-acceptance-checkout'
-      const emptyState = () => ({ authenticated: false, basketCount: 0, orderCount: 0, view: 'login' })
+        original: { checkoutId: "start-checkout", total: "$29.99" },
+        "changed-target": { checkoutId: "review-order", total: "$29.99" },
+        "business-regression": { checkoutId: "review-order", total: "$39.99" },
+      };
+      const requestedVariant =
+        new URLSearchParams(location.search).get("variant") ?? "original";
+      const variant = variants[requestedVariant] ?? variants.original;
+      const stateKey = "pickle-acceptance-checkout";
+      const emptyState = () => ({
+        authenticated: false,
+        basketCount: 0,
+        orderCount: 0,
+        view: "login",
+      });
       const readState = () => {
-        try { return { ...emptyState(), ...JSON.parse(sessionStorage.getItem(stateKey) ?? '{}') } }
-        catch { return emptyState() }
-      }
-      let state = readState()
-      const elements = {
-        login: document.querySelector('#login-view'),
-        catalog: document.querySelector('#catalog-view'),
-        checkout: document.querySelector('#checkout-view'),
-        confirmation: document.querySelector('#confirmation-view'),
-      }
-      const save = () => sessionStorage.setItem(stateKey, JSON.stringify(state))
-      const render = () => {
-        if (!state.authenticated) state.view = 'login'
-        for (const [name, element] of Object.entries(elements)) element.hidden = state.view !== name
-        document.querySelector('#basket-count').value = String(state.basketCount)
-        document.querySelector('#summary-count').textContent = String(state.basketCount)
-        document.querySelector('#order-count').value = String(state.orderCount)
-        document.querySelector('#order-total').textContent = variant.total
-        checkoutButton.disabled = state.basketCount !== 1
-        save()
-      }
-      const checkoutButton = document.querySelector('#start-checkout')
-      checkoutButton.id = variant.checkoutId
-      document.querySelector('#login-form').addEventListener('submit', (event) => {
-        event.preventDefault()
-        const valid = document.querySelector('#username').value === 'acceptance_user' && document.querySelector('#password').value === 'pickle_pass'
-        document.querySelector('#login-error').hidden = valid
-        document.querySelector('#username').setAttribute('aria-invalid', String(!valid))
-        document.querySelector('#password').setAttribute('aria-invalid', String(!valid))
-        if (!valid) {
-          document.querySelector('#username').focus()
-          return
+        try {
+          return {
+            ...emptyState(),
+            ...JSON.parse(sessionStorage.getItem(stateKey) ?? "{}"),
+          };
+        } catch {
+          return emptyState();
         }
-        state = { ...state, authenticated: true, view: 'catalog' }
-        render()
-        document.querySelector('#catalog-heading').focus()
-      })
-      document.querySelector('#add-backpack').addEventListener('click', () => {
-        state = { ...state, basketCount: 1 }
-        render()
-      })
-      checkoutButton.addEventListener('click', () => {
-        if (state.basketCount !== 1) return
-        state = { ...state, view: 'checkout' }
-        render()
-        document.querySelector('#checkout-heading').focus()
-      })
-      document.querySelector('#place-order').addEventListener('click', () => {
-        if (state.basketCount !== 1) return
-        state = { ...state, basketCount: 0, orderCount: state.orderCount + 1, view: 'confirmation' }
-        render()
-        document.querySelector('#confirmation-heading').focus()
-      })
-      document.querySelector('#reset').addEventListener('click', () => {
-        state = emptyState()
-        document.querySelector('#login-form').reset()
-        document.querySelector('#login-error').hidden = true
-        document.querySelector('#username').removeAttribute('aria-invalid')
-        document.querySelector('#password').removeAttribute('aria-invalid')
-        render()
-        document.querySelector('#username').focus()
-      })
-      render()
+      };
+      let state = readState();
+      const elements = {
+        login: document.querySelector("#login-view"),
+        catalog: document.querySelector("#catalog-view"),
+        checkout: document.querySelector("#checkout-view"),
+        confirmation: document.querySelector("#confirmation-view"),
+      };
+      const save = () =>
+        sessionStorage.setItem(stateKey, JSON.stringify(state));
+      const render = () => {
+        if (!state.authenticated) state.view = "login";
+        for (const [name, element] of Object.entries(elements))
+          element.hidden = state.view !== name;
+        document.querySelector("#basket-count").value = String(
+          state.basketCount,
+        );
+        document.querySelector("#summary-count").textContent = String(
+          state.basketCount,
+        );
+        document.querySelector("#order-count").value = String(state.orderCount);
+        document.querySelector("#order-total").textContent = variant.total;
+        checkoutButton.disabled = state.basketCount !== 1;
+        save();
+      };
+      const checkoutButton = document.querySelector("#start-checkout");
+      checkoutButton.id = variant.checkoutId;
+      document
+        .querySelector("#login-form")
+        .addEventListener("submit", (event) => {
+          event.preventDefault();
+          const valid =
+            document.querySelector("#username").value === "acceptance_user" &&
+            document.querySelector("#password").value === "pickle_pass";
+          document.querySelector("#login-error").hidden = valid;
+          document
+            .querySelector("#username")
+            .setAttribute("aria-invalid", String(!valid));
+          document
+            .querySelector("#password")
+            .setAttribute("aria-invalid", String(!valid));
+          if (!valid) {
+            document.querySelector("#username").focus();
+            return;
+          }
+          state = { ...state, authenticated: true, view: "catalog" };
+          render();
+          document.querySelector("#catalog-heading").focus();
+        });
+      document.querySelector("#add-backpack").addEventListener("click", () => {
+        state = { ...state, basketCount: 1 };
+        render();
+      });
+      checkoutButton.addEventListener("click", () => {
+        if (state.basketCount !== 1) return;
+        state = { ...state, view: "checkout" };
+        render();
+        document.querySelector("#checkout-heading").focus();
+      });
+      document.querySelector("#place-order").addEventListener("click", () => {
+        if (state.basketCount !== 1) return;
+        state = {
+          ...state,
+          basketCount: 0,
+          orderCount: state.orderCount + 1,
+          view: "confirmation",
+        };
+        render();
+        document.querySelector("#confirmation-heading").focus();
+      });
+      document.querySelector("#reset").addEventListener("click", () => {
+        state = emptyState();
+        document.querySelector("#login-form").reset();
+        document.querySelector("#login-error").hidden = true;
+        document.querySelector("#username").removeAttribute("aria-invalid");
+        document.querySelector("#password").removeAttribute("aria-invalid");
+        render();
+        document.querySelector("#username").focus();
+      });
+      render();
     </script>
   </body>
 </html>

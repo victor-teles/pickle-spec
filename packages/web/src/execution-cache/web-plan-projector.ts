@@ -5,6 +5,7 @@ import type {
 } from '@pickle-spec/runner'
 import { planDigest } from '@pickle-spec/runner'
 import type { ScenarioStep } from '@pickle-spec/spec'
+import { z } from 'zod'
 import { validInstructionsForStep } from './web-cache-instructions'
 import type {
   WebExecutionCachePayload,
@@ -245,10 +246,12 @@ function aggregateCheckDisplay(
       check: instruction.kind,
     }
   }
-  const segments =
-    typeof instruction.expected === 'number'
-      ? [{ kind: 'literal' as const, value: String(instruction.expected) }]
-      : [{ kind: 'variable' as const, name: instruction.expected.variable }]
+  const expectedVariable = z
+    .strictObject({ variable: z.string() })
+    .safeParse(instruction.expected)
+  const segments = expectedVariable.success
+    ? [{ kind: 'variable' as const, name: expectedVariable.data.variable }]
+    : [{ kind: 'literal' as const, value: String(instruction.expected) }]
   return {
     kind: instruction.kind,
     summary: 'Check count',

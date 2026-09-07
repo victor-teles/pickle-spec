@@ -3,6 +3,11 @@ import type { ExecutionCacheKey } from '../execution-cache/execution-cache'
 
 export type Digest = string
 export type PlanScope = Readonly<Omit<ExecutionCacheKey, 'projectKey'>>
+export type JsonPrimitive = boolean | null | number | string
+export type JsonValue =
+  | JsonPrimitive
+  | JsonValue[]
+  | { [key: string]: JsonValue }
 
 export interface Actor {
   kind: 'human' | 'agent'

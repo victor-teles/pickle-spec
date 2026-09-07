@@ -23,12 +23,12 @@ When no authored selection exists, the current cache behavior remains intact.
 When an authored selection exists but cannot run, execution stops with a named
 reason. It does not silently choose an older cache entry or invoke a model.
 
-| Alternative | Benefit | Decision |
-| --- | --- | --- |
-| One JSON document containing all revisions and its active pointer | One atomic replacement and one read | Rejected. Every edit rewrites history, and branch merges mix immutable payloads with mutable selection |
-| Immutable revision files plus one selection file per Scenario/profile/adapter | Independent drafts, small selection conflicts, stable provenance | Chosen. Unreferenced revisions can remain; garbage collection is not part of this delivery |
-| Cache-first execution, with authored plans used only after a miss | Reuses current cache lookup | Rejected. A stale cache could override an accepted repair because the existing key has no authored revision dimension |
-| Add plan identity to the existing cache key | Separates materializations | Deferred. Direct Replay makes this cache migration unnecessary |
+| Alternative                                                                   | Benefit                                                          | Decision                                                                                                              |
+| ----------------------------------------------------------------------------- | ---------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| One JSON document containing all revisions and its active pointer             | One atomic replacement and one read                              | Rejected. Every edit rewrites history, and branch merges mix immutable payloads with mutable selection                |
+| Immutable revision files plus one selection file per Scenario/profile/adapter | Independent drafts, small selection conflicts, stable provenance | Chosen. Unreferenced revisions can remain; garbage collection is not part of this delivery                            |
+| Cache-first execution, with authored plans used only after a miss             | Reuses current cache lookup                                      | Rejected. A stale cache could override an accepted repair because the existing key has no authored revision dimension |
+| Add plan identity to the existing cache key                                   | Separates materializations                                       | Deferred. Direct Replay makes this cache migration unnecessary                                                        |
 
 ## Existing contracts that constrain the decision
 
@@ -68,135 +68,144 @@ validate unknown input before producing these types. Digests are lowercase
 SHA-256 strings validated at the boundary. IDs and indices are not client-trusted.
 
 ```ts
-import type { ExecutionCacheKey } from '@pickle-spec/runner'
-import type { WebLocator } from '@pickle-spec/web'
+import type { ExecutionCacheKey } from "@pickle-spec/runner";
+import type { WebLocator } from "@pickle-spec/web";
 
-type Digest = string
-type PlanScope = Readonly<Omit<ExecutionCacheKey, 'projectKey'>>
-type Actor = { kind: 'human' | 'agent'; id: string }
-type RunReference = { projectKey: string; runId: string; resultDigest: Digest }
-type StepIdentity = { scenarioRevision: string; index: number }
+type Digest = string;
+type PlanScope = Readonly<Omit<ExecutionCacheKey, "projectKey">>;
+type Actor = { kind: "human" | "agent"; id: string };
+type RunReference = { projectKey: string; runId: string; resultDigest: Digest };
+type StepIdentity = { scenarioRevision: string; index: number };
 
 type PlanOrigin =
-  | { kind: 'capture'; sourceRun: RunReference; payloadDigest: Digest }
-  | { kind: 'cache-capture'; payloadDigest: Digest }
-  | { kind: 'revision'; revisionId: Digest }
+  | { kind: "capture"; sourceRun: RunReference; payloadDigest: Digest }
+  | { kind: "cache-capture"; payloadDigest: Digest }
+  | { kind: "revision"; revisionId: Digest };
 
 type PlanRevision = {
-  formatVersion: 1
-  id: Digest
-  scope: PlanScope
-  origin: PlanOrigin
-  author: Actor
-  createdAt: string
-  requiredVariables: readonly string[]
-  steps: readonly StepIdentity[]
-  adapterPayload: unknown
-  assertionBaselineRevisionId: Digest | null
-}
+  formatVersion: 1;
+  id: Digest;
+  scope: PlanScope;
+  origin: PlanOrigin;
+  author: Actor;
+  createdAt: string;
+  requiredVariables: readonly string[];
+  steps: readonly StepIdentity[];
+  adapterPayload: unknown;
+  assertionBaselineRevisionId: Digest | null;
+};
 
 type IntentReview = {
-  reviewer: { kind: 'human'; id: string }
-  candidateId: Digest
-  baselineId: Digest
-  scenarioRevision: string
-  decision: 'preserves-specification'
-  rationale: string
-  evidenceRunIds: readonly string[]
-}
+  reviewer: { kind: "human"; id: string };
+  candidateId: Digest;
+  baselineId: Digest;
+  scenarioRevision: string;
+  decision: "preserves-specification";
+  rationale: string;
+  evidenceRunIds: readonly string[];
+};
 
 type ValidationReceipt = {
-  id: Digest
-  revisionId: Digest
-  key: ExecutionCacheKey
-  inputSnapshotDigest: Digest
-  assertionDigest: Digest
-  intentReviewDigest: Digest
-  validationRun: RunReference
-  adapterValidatorVersion: string
-  validatedAt: string
-  result: 'passed'
-  inferenceCount: 0
-}
+  id: Digest;
+  revisionId: Digest;
+  key: ExecutionCacheKey;
+  inputSnapshotDigest: Digest;
+  assertionDigest: Digest;
+  intentReviewDigest: Digest;
+  validationRun: RunReference;
+  adapterValidatorVersion: string;
+  validatedAt: string;
+  result: "passed";
+  inferenceCount: 0;
+};
 
 type PlanSelection = {
-  formatVersion: 1
-  generation: number
-  active: { revisionId: Digest } | null
-  createdAt: string
-  previousSelectionDigest: Digest | null
-  actor: Actor
-  reason: 'activate' | 'rollback' | 'deactivate'
-}
+  formatVersion: 1;
+  generation: number;
+  active: { revisionId: Digest } | null;
+  createdAt: string;
+  previousSelectionDigest: Digest | null;
+  actor: Actor;
+  reason: "activate" | "rollback" | "deactivate";
+};
 
 type PlanAdmission = {
-  selectionDigest: Digest
-  validationId: Digest
-}
+  selectionDigest: Digest;
+  validationId: Digest;
+};
 
 type ValidationHead = {
-  basisDigest: Digest
-  generation: number
-  run: RunReference
-  outcome: 'passed' | 'failed' | 'cancelled'
-  receiptId: Digest | null
-}
+  basisDigest: Digest;
+  generation: number;
+  run: RunReference;
+  outcome: "passed" | "failed" | "cancelled";
+  receiptId: Digest | null;
+};
 
 type PlanState =
   | {
-      state: 'selected-unavailable'
-      revision: PlanRevision | null
-      selection: PlanSelection | null
-      reason: PlanUnavailableReason
-      message: string
+      state: "selected-unavailable";
+      revision: PlanRevision | null;
+      selection: PlanSelection | null;
+      reason: PlanUnavailableReason;
+      message: string;
     }
-  | { state: 'draft'; revision: PlanRevision }
-  | { state: 'validated'; revision: PlanRevision; receipt: ValidationReceipt }
+  | { state: "draft"; revision: PlanRevision }
+  | { state: "validated"; revision: PlanRevision; receipt: ValidationReceipt }
   | {
-      state: 'active'
-      revision: PlanRevision
-      receipt: ValidationReceipt
-      selection: PlanSelection
-    }
+      state: "active";
+      revision: PlanRevision;
+      receipt: ValidationReceipt;
+      selection: PlanSelection;
+    };
 
 type PlanUnavailableReason =
-  | 'unsupported-format' | 'unsupported-adapter' | 'invalid-payload'
-  | 'missing-revision' | 'inapplicable' | 'incomplete-plan'
-  | 'assertion-change' | 'specification-review-required'
-  | 'validation-required' | 'stale-validation' | 'write-conflict'
-  | 'refresh-conflicts-with-active-plan' | 'validation-failed' | 'cancelled'
+  | "unsupported-format"
+  | "unsupported-adapter"
+  | "invalid-payload"
+  | "missing-revision"
+  | "inapplicable"
+  | "incomplete-plan"
+  | "assertion-change"
+  | "specification-review-required"
+  | "validation-required"
+  | "stale-validation"
+  | "write-conflict"
+  | "refresh-conflicts-with-active-plan"
+  | "validation-failed"
+  | "cancelled";
 
 type PlanResult<T> =
   | { ok: true; value: T }
-  | { ok: false; reason: PlanUnavailableReason; message: string }
+  | { ok: false; reason: PlanUnavailableReason; message: string };
 
 type ReplaceWebInteractionTarget = {
-  step: StepIdentity
-  instructionIndex: number
-  expectedInstructionDigest: Digest
-  locator: WebLocator
-}
+  step: StepIdentity;
+  instructionIndex: number;
+  expectedInstructionDigest: Digest;
+  locator: WebLocator;
+};
 
 type ActivationRequest = {
-  revisionId: Digest
-  validationId: Digest
-  expectedSelectionDigest: Digest | null
-  expectedValidationHeadDigest: Digest
-  actor: Actor
-  reason: 'activate' | 'rollback'
-}
+  revisionId: Digest;
+  validationId: Digest;
+  expectedSelectionDigest: Digest | null;
+  expectedValidationHeadDigest: Digest;
+  actor: Actor;
+  reason: "activate" | "rollback";
+};
 
 type PlanUse = {
-  revisionId: Digest
-  selectionDigest: Digest | null
-  key: ExecutionCacheKey
-  payloadDigest: Digest
-  author: Actor
-  origin: PlanOrigin
+  revisionId: Digest;
+  selectionDigest: Digest | null;
+  key: ExecutionCacheKey;
+  payloadDigest: Digest;
+  author: Actor;
+  origin: PlanOrigin;
 } & (
-  | { purpose: 'validation'; validationId: null }
-  | { purpose: 'active'; validationId: Digest }
-)
+  | { purpose: "validation"; validationId: null }
+  | { purpose: "active"; validationId: Digest }
+);
 ```
 
 `PlanState` is a projection, not a mutable field in an immutable revision.
@@ -280,19 +289,19 @@ These are proposed domain operations, not new HTTP endpoints. The CLI binds
 them to one project root. Studio's feature-local transport passes typed requests
 and displays typed results. No operation accepts arbitrary filesystem paths.
 
-| Operation | Input and result | Required behavior |
-| --- | --- | --- |
-| `inspectPlans` | Optional slot and revision IDs → selected state, revision history, adapter projection, and local review/validation references | Return absent or explicit unavailable reasons; never expose raw secrets or require Studio to read files |
-| `captureDraft` | Verified source run or current cache snapshot, scope, actor → revision | Capture exact parsed bytes and origin digest. Never claim that current cache metadata proves an older run used those bytes. A cache-only capture uses `cache-capture` origin, never an invented source run; explicit baseline review is required |
-| `deriveDraft` | Parent revision ID, desired scope, actor → revision | Preserve payload and assertion baseline. Rebinding scope invalidates all prior validation |
-| `replaceWebInteractionTarget` | Parent ID, `ReplaceWebInteractionTarget`, actor → new revision | Check parent and instruction digests. Change one supported locator, preserve all other instruction bytes and order |
-| `reviewIntent` | `IntentReview` → local review digest | Require explicit human Specification review. Bind review to candidate, baseline, Scenario revision, and evidence |
-| `validateCandidate` | Revision ID, review digest, resolved input selection, cancellation signal → receipt or failure | Run complete candidate through Replay in isolation with zero inference. Preserve failed/cancelled run evidence but issue no passing receipt |
-| `activate` | `ActivationRequest` → selection and local admission or conflict | Recheck receipt, source snapshot, applicability, and expected selection under the write lock |
-| `admitSelection` | Current selection digest, receipt ID, validation-head digest → local admission | Apply all activation checks to the already selected revision without changing repository files |
-| `deactivate` | Expected selection digest and actor → selection with `active: null` | Explicitly restore ordinary cache policy. Never delete history |
-| `rollback` | Prior revision ID and fresh matching receipt through `ActivationRequest` → new selection | Apply the same checks as activation. No mutation of prior revisions or old runs |
-| `resolveForRun` | Resolved run input and project-bound selection → pinned `PlanUse` and parsed payload, absent, or reason | Distinguish absent from unavailable. Hold one immutable selection for the whole run |
+| Operation                     | Input and result                                                                                                              | Required behavior                                                                                                                                                                                                                                |
+| ----------------------------- | ----------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `inspectPlans`                | Optional slot and revision IDs → selected state, revision history, adapter projection, and local review/validation references | Return absent or explicit unavailable reasons; never expose raw secrets or require Studio to read files                                                                                                                                          |
+| `captureDraft`                | Verified source run or current cache snapshot, scope, actor → revision                                                        | Capture exact parsed bytes and origin digest. Never claim that current cache metadata proves an older run used those bytes. A cache-only capture uses `cache-capture` origin, never an invented source run; explicit baseline review is required |
+| `deriveDraft`                 | Parent revision ID, desired scope, actor → revision                                                                           | Preserve payload and assertion baseline. Rebinding scope invalidates all prior validation                                                                                                                                                        |
+| `replaceWebInteractionTarget` | Parent ID, `ReplaceWebInteractionTarget`, actor → new revision                                                                | Check parent and instruction digests. Change one supported locator, preserve all other instruction bytes and order                                                                                                                               |
+| `reviewIntent`                | `IntentReview` → local review digest                                                                                          | Require explicit human Specification review. Bind review to candidate, baseline, Scenario revision, and evidence                                                                                                                                 |
+| `validateCandidate`           | Revision ID, review digest, resolved input selection, cancellation signal → receipt or failure                                | Run complete candidate through Replay in isolation with zero inference. Preserve failed/cancelled run evidence but issue no passing receipt                                                                                                      |
+| `activate`                    | `ActivationRequest` → selection and local admission or conflict                                                               | Recheck receipt, source snapshot, applicability, and expected selection under the write lock                                                                                                                                                     |
+| `admitSelection`              | Current selection digest, receipt ID, validation-head digest → local admission                                                | Apply all activation checks to the already selected revision without changing repository files                                                                                                                                                   |
+| `deactivate`                  | Expected selection digest and actor → selection with `active: null`                                                           | Explicitly restore ordinary cache policy. Never delete history                                                                                                                                                                                   |
+| `rollback`                    | Prior revision ID and fresh matching receipt through `ActivationRequest` → new selection                                      | Apply the same checks as activation. No mutation of prior revisions or old runs                                                                                                                                                                  |
+| `resolveForRun`               | Resolved run input and project-bound selection → pinned `PlanUse` and parsed payload, absent, or reason                       | Distinguish absent from unavailable. Hold one immutable selection for the whole run                                                                                                                                                              |
 
 Initial web editing supports locator replacement for `click`, `fill`, `type`,
 `hover`, and `select-option` in non-outcome steps. Method, values, variables,
@@ -348,14 +357,14 @@ propose edits, but this contract does not grant agents human review authority.
 
 ## Selection, refresh, and no-inference execution
 
-| Condition | Plan-aware runner behavior |
-| --- | --- |
-| No selection, or explicitly deactivated | Preserve current `prefer-cache`, `refresh`, and `cache-only` behavior |
-| Supported, applicable, complete active revision | Pin its payload and use the existing adapter Replay executor. Do not consult or write shared SQLite entries |
-| Active revision plus `refresh` | Return `refresh-conflicts-with-active-plan`. The user can explicitly deactivate or start a separately reviewed draft from a new Adaptive run |
-| Selected partial, invalid, incompatible, or unsupported revision | Stop before execution with the corresponding reason. Preserve its files and active selection |
-| Plan validation | Bypass global cache reads, writes, leases, self-healing, and inference. No retries with Adaptive mode. Missing bindings or unsupported instructions stop before launch |
-| Replay divergence or business assertion failure | Fail and retain evidence. Do not repair, replace, deactivate, or fall back automatically |
+| Condition                                                        | Plan-aware runner behavior                                                                                                                                             |
+| ---------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| No selection, or explicitly deactivated                          | Preserve current `prefer-cache`, `refresh`, and `cache-only` behavior                                                                                                  |
+| Supported, applicable, complete active revision                  | Pin its payload and use the existing adapter Replay executor. Do not consult or write shared SQLite entries                                                            |
+| Active revision plus `refresh`                                   | Return `refresh-conflicts-with-active-plan`. The user can explicitly deactivate or start a separately reviewed draft from a new Adaptive run                           |
+| Selected partial, invalid, incompatible, or unsupported revision | Stop before execution with the corresponding reason. Preserve its files and active selection                                                                           |
+| Plan validation                                                  | Bypass global cache reads, writes, leases, self-healing, and inference. No retries with Adaptive mode. Missing bindings or unsupported instructions stop before launch |
+| Replay divergence or business assertion failure                  | Fail and retain evidence. Do not repair, replace, deactivate, or fall back automatically                                                                               |
 
 No new action executor is introduced. The runner routes an immutable adapter
 payload through the current Replay session mechanism. Construct an in-memory
@@ -472,13 +481,15 @@ the proposed plan APIs exist. Step indices below are zero-based.
 ```ts
 const checkoutEdit: ReplaceWebInteractionTarget = {
   step: {
-    scenarioRevision: '55c3d154230326e99a1d15d455136e1791323ff0b49724b4ec25a4129a267cd9',
+    scenarioRevision:
+      "55c3d154230326e99a1d15d455136e1791323ff0b49724b4ec25a4129a267cd9",
     index: 5,
   },
   instructionIndex: 0,
-  expectedInstructionDigest: 'e6723e634a9f7512e0d7b29f6a533953887a663589f20c063e8cd714b1caca41',
-  locator: { selector: { segments: [{ literal: '#review-order' }] } },
-}
+  expectedInstructionDigest:
+    "e6723e634a9f7512e0d7b29f6a533953887a663589f20c063e8cd714b1caca41",
+  locator: { selector: { segments: [{ literal: "#review-order" }] } },
+};
 ```
 
 The instruction digest is SHA-256 of the canonical baseline instruction
@@ -487,21 +498,21 @@ The service recomputes it from captured bytes before accepting the edit. The edi
 changes only that locator. Step 6 still checks quantity 1 and total $29.99;
 step 8 still checks one completed order.
 
-| Acceptance case | Required result | Delivery owner |
-| --- | --- | --- |
-| Inspect original, repaired, and partial payloads | Adapter-owned operations grouped by exact template step identity; partial tail explained | ENG-04 |
-| Save competing drafts; clear and evict cache | Immutable drafts and selected revision survive; no mutation of parent | ENG-05 |
-| Change `#start-checkout` to `#review-order` in changed-target scope | New draft; intent review required; original assertions preserved | ENG-06 |
-| Remove a check, change $29.99 to $39.99, change a check target, or add bypass navigation | Reject repair before validation | ENG-06, ENG-07 |
-| Validate a complete repaired candidate | Same Scenario passes through Replay with no model key or inference; receipt created, selection unchanged | ENG-07 |
-| Validate against ENG-02 business-regression scope with the identical repair | Quantity passes, $39.99 fails the original $29.99 assertion; no receipt or activation | ENG-07 |
-| Validate partial web payload or unsupported mobile plan | Explain unavailable complete Replay before target launch; zero inference | ENG-07, ENG-17 |
-| Validate, then alter config, Examples input, application revision, candidate, or review | Activation rejects stale validation | ENG-07, ENG-08 |
-| Two activations share an expected selection; failed validation races activation | One selection writer wins; stale or invalidated receipt cannot publish | ENG-08 |
-| Branch switch, clone, merge conflict, missing blob, future format, or validator upgrade | Re-resolve identity and proof; explicit unavailable state; preserve files | ENG-05, ENG-08 |
-| Roll back while another run is in flight | New runs use the newly selected validated revision; in-flight and historical results retain their original basis | ENG-08 |
-| Existing cache has a different payload under the same eight-field key | Authored selection wins; cache refresh cannot replace it | ENG-08 |
-| Inspect finalized version-2 history after plan adoption | Historical result bytes unchanged; no invented plan provenance | ENG-04, ENG-08 |
+| Acceptance case                                                                          | Required result                                                                                                  | Delivery owner |
+| ---------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- | -------------- |
+| Inspect original, repaired, and partial payloads                                         | Adapter-owned operations grouped by exact template step identity; partial tail explained                         | ENG-04         |
+| Save competing drafts; clear and evict cache                                             | Immutable drafts and selected revision survive; no mutation of parent                                            | ENG-05         |
+| Change `#start-checkout` to `#review-order` in changed-target scope                      | New draft; intent review required; original assertions preserved                                                 | ENG-06         |
+| Remove a check, change $29.99 to $39.99, change a check target, or add bypass navigation | Reject repair before validation                                                                                  | ENG-06, ENG-07 |
+| Validate a complete repaired candidate                                                   | Same Scenario passes through Replay with no model key or inference; receipt created, selection unchanged         | ENG-07         |
+| Validate against ENG-02 business-regression scope with the identical repair              | Quantity passes, $39.99 fails the original $29.99 assertion; no receipt or activation                            | ENG-07         |
+| Validate partial web payload or unsupported mobile plan                                  | Explain unavailable complete Replay before target launch; zero inference                                         | ENG-07, ENG-17 |
+| Validate, then alter config, Examples input, application revision, candidate, or review  | Activation rejects stale validation                                                                              | ENG-07, ENG-08 |
+| Two activations share an expected selection; failed validation races activation          | One selection writer wins; stale or invalidated receipt cannot publish                                           | ENG-08         |
+| Branch switch, clone, merge conflict, missing blob, future format, or validator upgrade  | Re-resolve identity and proof; explicit unavailable state; preserve files                                        | ENG-05, ENG-08 |
+| Roll back while another run is in flight                                                 | New runs use the newly selected validated revision; in-flight and historical results retain their original basis | ENG-08         |
+| Existing cache has a different payload under the same eight-field key                    | Authored selection wins; cache refresh cannot replace it                                                         | ENG-08         |
+| Inspect finalized version-2 history after plan adoption                                  | Historical result bytes unchanged; no invented plan provenance                                                   | ENG-04, ENG-08 |
 
 Proposed module ownership follows existing package boundaries. The runner owns
 `execution-plans` contracts, selection, validation admission, and local storage.
@@ -518,12 +529,12 @@ not verification of future lifecycle APIs.
 
 - Extracted both TypeScript blocks into a temporary file extending the CLI
   TypeScript configuration. `bunx --bun tsc --noEmit -p
-  packages/cli/.eng03-contract-check/tsconfig.json` passed; temporary files removed.
+packages/cli/.eng03-contract-check/tsconfig.json` passed; temporary files removed.
 - From `packages/runner`, `bun run test
-  tests/unit/execution-cache/cached-step-prefix.test.ts
-  tests/unit/results/store/immutability-and-concurrency.test.ts` passed 9 tests.
+tests/unit/execution-cache/cached-step-prefix.test.ts
+tests/unit/results/store/immutability-and-concurrency.test.ts` passed 9 tests.
 - From `packages/web`, `bun run test:unit
-  tests/unit/execution-cache/web-public-replay.test.ts` passed 3 tests.
+tests/unit/execution-cache/web-public-replay.test.ts` passed 3 tests.
 - Checked all local Markdown links and computed the example instruction's
   SHA-256 from its canonical bytes.
 - Root `bun run lint` passed with 27 existing warnings; `bun run typecheck`

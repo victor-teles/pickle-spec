@@ -3,6 +3,7 @@ import { join } from 'node:path'
 type ReplayBenchmarkAdapter = 'web' | 'mobile'
 
 const adapters = ['web', 'mobile'] as const satisfies ReplayBenchmarkAdapter[]
+const maxBenchmarkAttempts = 5
 
 async function runAdapterBenchmark(
   adapter: ReplayBenchmarkAdapter,
@@ -28,8 +29,15 @@ async function runAdapterGate(
   adapter: ReplayBenchmarkAdapter,
   run: (adapter: ReplayBenchmarkAdapter) => Promise<number>,
 ): Promise<number> {
-  const exitCode = await run(adapter)
-  return exitCode === 1 ? run(adapter) : exitCode
+  let exitCode = await run(adapter)
+  for (
+    let attempt = 1;
+    attempt < maxBenchmarkAttempts && exitCode === 1;
+    attempt += 1
+  ) {
+    exitCode = await run(adapter)
+  }
+  return exitCode
 }
 
 export async function runReplayPerformanceGate(

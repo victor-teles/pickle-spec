@@ -64,7 +64,7 @@ function evidenceFor(
   const screenshot = failed?.artifacts?.find(
     (artifact) => artifact.kind === 'screenshot',
   )
-  return {
+  const evidence: RunEvidence = {
     name,
     applicationRevision,
     scenarioRevision: scenarioRevisionValue,
@@ -75,16 +75,15 @@ function evidenceFor(
     inferenceCount: attempt.inferenceCount,
     failedStep: failed?.step.text,
     failedMessage: failed?.message ?? attempt.message,
-    ...(screenshot
-      ? {
-          screenshot: {
-            path: screenshot.path,
-            mediaType: screenshot.mediaType,
-            sizeBytes: screenshot.sizeBytes,
-          },
-        }
-      : {}),
   }
+  if (screenshot) {
+    evidence.screenshot = {
+      path: screenshot.path,
+      mediaType: screenshot.mediaType,
+      sizeBytes: screenshot.sizeBytes,
+    }
+  }
+  return evidence
 }
 
 let browser: Browser

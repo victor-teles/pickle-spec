@@ -1,7 +1,7 @@
 import { expect, test } from 'vitest'
 import { runReplayPerformanceGate } from '../../../scripts/replay-performance-gate'
 
-test('retries a budget failure once before aggregating a failure', async () => {
+test('retries a budget failure four times before aggregating a failure', async () => {
   const adapters: string[] = []
 
   const exitCode = await runReplayPerformanceGate(async (adapter) => {
@@ -9,7 +9,7 @@ test('retries a budget failure once before aggregating a failure', async () => {
     return adapter === 'web' ? 1 : 0
   })
 
-  expect(adapters).toEqual(['web', 'web', 'mobile'])
+  expect(adapters).toEqual(['web', 'web', 'web', 'web', 'web', 'mobile'])
   expect(exitCode).toBe(1)
 })
 

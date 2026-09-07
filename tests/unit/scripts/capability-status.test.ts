@@ -24,7 +24,7 @@ function tableUnderHeading(markdown: string, heading: string): MarkdownTable {
     new RegExp(`^## ${heading}\\n([\\s\\S]*?)(?=^## |$(?![\\s\\S]))`, 'm'),
   )?.[1]
   const lines = section?.split('\n') ?? []
-  const tableStart = lines.findIndex((line) => line.startsWith('| QA task |'))
+  const tableStart = lines.findIndex((line) => /^\|\s*QA task\s*\|/.test(line))
   const tableLines = lines
     .slice(tableStart)
     .filter((line) => line.startsWith('|'))
@@ -41,7 +41,9 @@ function tableUnderHeading(markdown: string, heading: string): MarkdownTable {
 function markdownAnchors(markdown: string): Set<string> {
   const anchors = new Set<string>()
   for (const match of markdown.matchAll(/^#{1,6} (.+)$/gm)) {
-    const anchor = match[1]
+    const heading = match[1]
+    if (heading === undefined) continue
+    const anchor = heading
       .toLowerCase()
       .replace(/[`*_~]/g, '')
       .replace(/[^\p{L}\p{N} -]/gu, '')
@@ -98,7 +100,9 @@ describe('ENG-01 capability inventory acceptance', () => {
     expect(revision).toMatch(/^[0-9a-f]{40}$/)
     for (const table of tables) expectCompleteTargetMatrix(table)
 
-    const tasks = tables.flatMap((table) => table.rows.map(([task]) => task))
+    const tasks = tables.flatMap((table) =>
+      table.rows.flatMap(([task]) => (task === undefined ? [] : [task])),
+    )
     for (const category of [
       /setup/i,
       /assertions/i,
@@ -119,9 +123,9 @@ describe('ENG-01 capability inventory acceptance', () => {
 
   test('resolves every local inventory link and Markdown anchor', async () => {
     const inventory = await Bun.file(inventoryPath).text()
-    const links = [...inventory.matchAll(/(?<!!)\[[^\]]+\]\(([^)]+)\)/g)].map(
-      (match) => match[1],
-    )
+    const links = [
+      ...inventory.matchAll(/(?<!!)\[[^\]]+\]\(([^)]+)\)/g),
+    ].flatMap((match) => (match[1] === undefined ? [] : [match[1]]))
 
     for (const link of links) {
       if (/^(?:https?:|mailto:)/.test(link)) continue

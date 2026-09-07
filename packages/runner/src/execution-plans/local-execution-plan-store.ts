@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { realpath, rename } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
+import { z } from 'zod'
 import {
   canonicalJson,
   createPlanRevision,
@@ -98,8 +99,8 @@ export interface LocalExecutionPlanStoreOptions {
   lockWaitMs?: number
 }
 
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error)
+function errorMessage(cause: unknown): string {
+  return cause instanceof Error ? cause.message : String(cause)
 }
 
 function unavailableReason(
@@ -107,12 +108,11 @@ function unavailableReason(
 ): 'unsupported-format' | 'invalid-payload' {
   try {
     const decoded = parseUniqueKeyJson(source)
-    if (
-      typeof decoded === 'object' &&
-      decoded !== null &&
-      'formatVersion' in decoded &&
-      (decoded as Record<string, unknown>).formatVersion !== 1
-    ) {
+    const versioned = z
+      .object({ formatVersion: z.number() })
+      .passthrough()
+      .safeParse(decoded)
+    if (versioned.success && versioned.data.formatVersion !== 1) {
       return 'unsupported-format'
     }
   } catch {
@@ -121,10 +121,9 @@ function unavailableReason(
   return 'invalid-payload'
 }
 
-function failure(
-  reason: PlanUnavailableReason,
-  message: string,
-): { ok: false; reason: PlanUnavailableReason; message: string } {
+type PlanFailure = Extract<PlanResult<never>, { ok: false }>
+
+function failure(reason: PlanUnavailableReason, message: string): PlanFailure {
   return { ok: false, reason, message }
 }
 
@@ -248,8 +247,9 @@ class FilesystemExecutionPlanStore implements LocalExecutionPlanStore {
     if (source === undefined)
       return failure('invalid-payload', 'Revision disappeared')
     const parsed = this.parseRevisionSource(revision.id, source)
-    if (!parsed.ok || parsed.value === null)
-      return parsed as PlanResult<PlanRevision>
+    if (!parsed.ok) return parsed
+    if (parsed.value === null)
+      return failure('invalid-payload', 'Revision disappeared')
     if (source !== expectedSource) {
       return failure(
         'invalid-payload',
@@ -265,10 +265,10 @@ class FilesystemExecutionPlanStore implements LocalExecutionPlanStore {
   ): PlanResult<PlanRevision | null> {
     try {
       return { ok: true, value: parsePlanRevision(source, id) }
-    } catch (error) {
+    } catch (cause) {
       return failure(
         unavailableReason(source),
-        `Revision ${id} is unavailable: ${errorMessage(error)}`,
+        `Revision ${id} is unavailable: ${errorMessage(cause)}`,
       )
     }
   }
@@ -486,11 +486,11 @@ class FilesystemExecutionPlanStore implements LocalExecutionPlanStore {
     }
   }
 
-  private boundaryFailure<T>(error: unknown): PlanResult<T> {
-    if (error instanceof PlanStorageBoundaryError) {
-      return failure('invalid-payload', error.message)
+  private boundaryFailure<T>(cause: unknown): PlanResult<T> {
+    if (cause instanceof PlanStorageBoundaryError) {
+      return failure('invalid-payload', cause.message)
     }
-    throw error
+    throw cause
   }
 }
 

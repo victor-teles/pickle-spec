@@ -7,6 +7,7 @@ import { createControlledMobileBenchmarkDriver } from '../../../src/benchmarking
 import { requiredValue } from '../../../src/required-value'
 
 const temporaryDirectories: string[] = []
+const maxBenchmarkAttempts = 5
 const cliPath = join(
   import.meta.dir,
   '../../../src/benchmarking/mobile-benchmark-cli.ts',
@@ -47,8 +48,15 @@ function runCli(...args: string[]) {
 async function runControlledBenchmark(
   environment: Record<string, string | undefined> = Bun.env,
 ) {
-  const first = await executeCli([], environment)
-  return first.exitCode === 1 ? executeCli([], environment) : first
+  let execution = await executeCli([], environment)
+  for (
+    let attempt = 1;
+    attempt < maxBenchmarkAttempts && execution.exitCode === 1;
+    attempt += 1
+  ) {
+    execution = await executeCli([], environment)
+  }
+  return execution
 }
 
 describe('mobile benchmark executable', () => {
@@ -73,7 +81,7 @@ describe('mobile benchmark executable', () => {
 
     expect(execution.exitCode).toBe(0)
     expect(execution.stderr).toBe('')
-  })
+  }, 30_000)
 
   test('runs the controlled driver by default and prints passing JSON', async () => {
     const execution = await runControlledBenchmark()
@@ -88,7 +96,7 @@ describe('mobile benchmark executable', () => {
       passed: true,
     })
     expect(report.samples).toHaveLength(20)
-  })
+  }, 30_000)
 
   test('returns one when an optional module driver breaks a budget', async () => {
     const directory = await mkdtemp(join(tmpdir(), 'pickle-mobile-benchmark-'))

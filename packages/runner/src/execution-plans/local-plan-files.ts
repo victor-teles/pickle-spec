@@ -20,8 +20,6 @@ import {
 import type { Digest } from './execution-plan-revision'
 import { isDigest } from './execution-plan-revision'
 
-type NodeError = Error & { code?: string }
-
 export interface PlanStorePaths {
   projectRoot: string
   revisionsDirectory: string
@@ -50,8 +48,8 @@ const lockRecordSchema = z.strictObject({
 
 export class PlanStorageBoundaryError extends Error {}
 
-export function hasCode(error: unknown, code: string): boolean {
-  return error instanceof Error && (error as NodeError).code === code
+export function hasCode(cause: unknown, code: string): boolean {
+  return cause instanceof Error && 'code' in cause && cause.code === code
 }
 
 async function pathKind(

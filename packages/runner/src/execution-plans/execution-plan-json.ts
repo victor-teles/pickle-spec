@@ -1,6 +1,8 @@
 import { createHash } from 'node:crypto'
 import type {
   Digest,
+  JsonPrimitive,
+  JsonValue,
   PlanRevision,
   PlanRevisionContent,
   PlanScope,
@@ -12,15 +14,12 @@ import {
   planSelectionSchema,
 } from './execution-plan-revision'
 
-type JsonPrimitive = boolean | null | number | string
-type JsonValue = JsonPrimitive | JsonValue[] | { [key: string]: JsonValue }
-
 class UniqueKeyJsonParser {
   private offset = 0
 
   constructor(private readonly source: string) {}
 
-  parse(): unknown {
+  parse(): JsonValue {
     const value = this.parseValue()
     this.skipWhitespace()
     if (this.offset !== this.source.length)
@@ -28,7 +27,7 @@ class UniqueKeyJsonParser {
     return value
   }
 
-  private parseValue(): unknown {
+  private parseValue(): JsonValue {
     this.skipWhitespace()
     const token = this.source[this.offset]
     if (token === '{') return this.parseObject()
@@ -50,9 +49,9 @@ class UniqueKeyJsonParser {
     return this.fail('Expected a JSON value')
   }
 
-  private parseObject(): Record<string, unknown> {
+  private parseObject(): { [key: string]: JsonValue } {
     this.offset += 1
-    const result: Record<string, unknown> = Object.create(null)
+    const result: { [key: string]: JsonValue } = Object.create(null)
     const keys = new Set<string>()
     this.skipWhitespace()
     if (this.source[this.offset] === '}') {
@@ -66,7 +65,7 @@ class UniqueKeyJsonParser {
   }
 
   private parseObjectProperty(
-    result: Record<string, unknown>,
+    result: { [key: string]: JsonValue },
     keys: Set<string>,
   ) {
     this.skipWhitespace()
@@ -97,9 +96,9 @@ class UniqueKeyJsonParser {
     return false
   }
 
-  private parseArray(): unknown[] {
+  private parseArray(): JsonValue[] {
     this.offset += 1
-    const result: unknown[] = []
+    const result: JsonValue[] = []
     this.skipWhitespace()
     if (this.source[this.offset] === ']') {
       this.offset += 1
@@ -159,26 +158,32 @@ function isJsonWhitespace(value: string | undefined): boolean {
   return value === ' ' || value === '\n' || value === '\r' || value === '\t'
 }
 
-function jsonValue(value: unknown, ancestors: Set<object>): JsonValue {
-  if (
-    value === null ||
-    typeof value === 'string' ||
-    typeof value === 'boolean'
-  ) {
-    return value
+type JsonCandidate = JsonPrimitive | object
+type JsonObjectCandidate = object
+
+function jsonValue<T>(value: T, ancestors: Set<object>): JsonValue {
+  if (value === undefined) throw new TypeError('Value is not JSON-compatible')
+  const candidate = value as JsonCandidate
+  if (candidate === null) return candidate
+  const tag = Object.prototype.toString.call(candidate)
+  if (tag === '[object String]' && candidate === String(candidate)) {
+    return String(candidate)
   }
-  if (typeof value === 'number') return jsonNumber(value)
-  if (typeof value !== 'object')
-    throw new TypeError('Value is not JSON-compatible')
-  if (ancestors.has(value))
+  if (tag === '[object Boolean]' && candidate === Boolean(candidate)) {
+    return Boolean(candidate)
+  }
+  if (tag === '[object Number]' && candidate === Number(candidate)) {
+    return jsonNumber(Number(candidate))
+  }
+  if (Array.isArray(candidate)) return jsonArray(candidate, ancestors)
+  const objectValue = candidate as JsonObjectCandidate
+  if (ancestors.has(objectValue))
     throw new TypeError('Cyclic values are not JSON-compatible')
-  ancestors.add(value)
+  ancestors.add(objectValue)
   try {
-    return Array.isArray(value)
-      ? jsonArray(value, ancestors)
-      : jsonObject(value, ancestors)
+    return jsonObject(objectValue, ancestors)
   } finally {
-    ancestors.delete(value)
+    ancestors.delete(objectValue)
   }
 }
 
@@ -191,7 +196,10 @@ function jsonNumber(value: number): number {
   return value
 }
 
-function jsonArray(value: unknown[], ancestors: Set<object>): JsonValue[] {
+function jsonArray<T>(
+  value: readonly T[],
+  ancestors: Set<object>,
+): JsonValue[] {
   for (let index = 0; index < value.length; index += 1) {
     if (!(index in value))
       throw new TypeError('Sparse arrays are not JSON-compatible')
@@ -199,10 +207,10 @@ function jsonArray(value: unknown[], ancestors: Set<object>): JsonValue[] {
   return value.map((item) => jsonValue(item, ancestors))
 }
 
-function jsonObject(
-  value: object,
+function jsonObject<T>(
+  value: T,
   ancestors: Set<object>,
-): Record<string, JsonValue> {
+): { [key: string]: JsonValue } {
   const prototype = Object.getPrototypeOf(value)
   if (prototype !== Object.prototype && prototype !== null) {
     throw new TypeError('Only plain objects are JSON-compatible')
@@ -210,7 +218,7 @@ function jsonObject(
   if (Object.getOwnPropertySymbols(value).length > 0) {
     throw new TypeError('Symbol keys are not JSON-compatible')
   }
-  const record = value as Record<string, unknown>
+  const record = value as Record<string, T>
   return Object.fromEntries(
     Object.keys(record)
       .toSorted()
@@ -218,15 +226,15 @@ function jsonObject(
   )
 }
 
-export function parseUniqueKeyJson(source: string): unknown {
+export function parseUniqueKeyJson(source: string): JsonValue {
   return new UniqueKeyJsonParser(source).parse()
 }
 
-export function canonicalJson(value: unknown): string {
+export function canonicalJson<T>(value: T): string {
   return JSON.stringify(jsonValue(value, new Set()))
 }
 
-export function planDigest(value: unknown): Digest {
+export function planDigest<T>(value: T): Digest {
   return createHash('sha256').update(canonicalJson(value), 'utf8').digest('hex')
 }
 
@@ -272,6 +280,6 @@ export function selectionDigest(selection: PlanSelection): Digest {
   return planDigest(planSelectionSchema.parse(selection))
 }
 
-export function serializePlanDocument(value: unknown): string {
+export function serializePlanDocument<T>(value: T): string {
   return `${canonicalJson(value)}\n`
 }

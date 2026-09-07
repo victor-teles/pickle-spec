@@ -449,9 +449,11 @@ function invalidEnvelope(
   envelope: ExecutionCacheEnvelope<WebExecutionCachePayload> | undefined,
   scenario: Scenario,
 ): boolean {
-  return (!envelope ||
+  return (
+    !envelope ||
     envelope.adapterPayload.steps.length > scenario.steps.length ||
-    !requiredVariablesAreValid(envelope.requiredVariables, scenario))
+    !requiredVariablesAreValid(envelope.requiredVariables, scenario)
+  )
 }
 
 async function projectSelectedPlan(
@@ -618,7 +620,7 @@ function revisionApplies(
 ): boolean {
   const options = webOptions(project.config, context.profile)
   if (!options) return false
-  const expectedScope: PlanScope = {
+  const expectedScope = {
     ...revisionScope,
     scenarioId: context.scenarioId,
     scenarioRevision: context.scenarioRevision,
@@ -630,9 +632,9 @@ function revisionApplies(
     }),
     adapterKind: 'web',
     adapterCacheSchemaVersion: '1',
-    ...(context.applicationRevision
-      ? { applicationRevision: context.applicationRevision }
-      : {}),
+  }
+  if (context.applicationRevision !== undefined) {
+    expectedScope.applicationRevision = context.applicationRevision
   }
   return canonicalJson(revisionScope) === canonicalJson(expectedScope)
 }
@@ -685,8 +687,21 @@ async function editDraft(
       'inapplicable',
     )
   }
+  const payloadSource = z.json().safeParse(parent.value.adapterPayload)
+  const payload = payloadSource.success
+    ? parseWebExecutionCachePayload(
+        payloadSource.data,
+        parent.value.requiredVariables,
+      )
+    : undefined
+  if (!payload) {
+    return draftFailure(
+      'The parent draft payload is invalid',
+      'invalid-payload',
+    )
+  }
   const edited = replaceWebInteractionTarget(
-    parent.value.adapterPayload,
+    payload,
     parent.value.steps,
     parent.value.requiredVariables,
     {

@@ -16,16 +16,16 @@ All rows use the same unchanged [Scenario](checkout.feature). `Failed` below
 means the intended application failure was observed and the acceptance test
 passed.
 
-| Case | Application revision label | Observed result | Evidence |
-| --- | --- | --- | --- |
-| Original cold run | `original` | Passed; Adaptive, cache miss | All nine steps passed, including quantity 1, $29.99, and one completed order |
-| Original repeat | `original` | Passed; Replay, cache hit, inference count 0 | Fresh browser context completes exactly one independent order; Replay rejects compiler calls and model credentials |
-| Revision-only cache miss | `original-unseeded-revision` | Failed with `cache-miss`; inference count 0 | Same original application, URL, Scenario, and cache; only the declared revision changes. No adapter browser launch occurs |
-| Changed target with original interaction | `changed-target` | Failed at `I start checkout` | `No element matches #start-checkout`; real PNG screenshot retained |
-| Changed target with repaired interaction | `changed-target` | Passed; Adaptive, cache miss | Only the checkout selector changes to `#review-order`; all assertions remain fixed |
-| Repaired target repeat | `changed-target` | Passed; Replay, cache hit, inference count 0 | Reuses the repaired path from its own revision's cache |
-| Business regression with the same repair | `business-regression` | Failed at the order-summary assertion | Quantity is 1, but the actual total is $39.99. The expected $29.99 is unchanged; PNG signature and artifact metadata verified |
-| Authentication, persistence, reset, and isolation | `original` | Passed | Invalid login rejected; completed order survives reload; another live browser context starts signed out with an empty basket; reset returns the first context to signed-out, empty state |
+| Case                                              | Application revision label   | Observed result                              | Evidence                                                                                                                                                                                 |
+| ------------------------------------------------- | ---------------------------- | -------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Original cold run                                 | `original`                   | Passed; Adaptive, cache miss                 | All nine steps passed, including quantity 1, $29.99, and one completed order                                                                                                             |
+| Original repeat                                   | `original`                   | Passed; Replay, cache hit, inference count 0 | Fresh browser context completes exactly one independent order; Replay rejects compiler calls and model credentials                                                                       |
+| Revision-only cache miss                          | `original-unseeded-revision` | Failed with `cache-miss`; inference count 0  | Same original application, URL, Scenario, and cache; only the declared revision changes. No adapter browser launch occurs                                                                |
+| Changed target with original interaction          | `changed-target`             | Failed at `I start checkout`                 | `No element matches #start-checkout`; real PNG screenshot retained                                                                                                                       |
+| Changed target with repaired interaction          | `changed-target`             | Passed; Adaptive, cache miss                 | Only the checkout selector changes to `#review-order`; all assertions remain fixed                                                                                                       |
+| Repaired target repeat                            | `changed-target`             | Passed; Replay, cache hit, inference count 0 | Reuses the repaired path from its own revision's cache                                                                                                                                   |
+| Business regression with the same repair          | `business-regression`        | Failed at the order-summary assertion        | Quantity is 1, but the actual total is $39.99. The expected $29.99 is unchanged; PNG signature and artifact metadata verified                                                            |
+| Authentication, persistence, reset, and isolation | `original`                   | Passed                                       | Invalid login rejected; completed order survives reload; another live browser context starts signed out with an empty basket; reset returns the first context to signed-out, empty state |
 
 The controlled compiler's `CompilerTarget` selects one checkout locator. It
 cannot select a different assertion map. Separate temporary caches keep stale
@@ -38,11 +38,11 @@ The application revision is SHA-256 of the HTML bytes, a NUL separator, and the
 revision label. The special `original-unseeded-revision` label tests cache-key
 applicability; it does not claim a fourth application variant.
 
-| Revision label | SHA-256 |
-| --- | --- |
-| `original` | `f3895e362b555f8474eaf39bc0a7220cb61e5cf60feec752105b7a3c486dcd8a` |
-| `changed-target` | `823df939d288487d7e2195235d7618eeb43293433bbd76219b118f3805d1a71c` |
-| `business-regression` | `47263b8773df3cb386a190dc9da584367f1948135cfb48314356ac58ed7fb532` |
+| Revision label               | SHA-256                                                            |
+| ---------------------------- | ------------------------------------------------------------------ |
+| `original`                   | `f3895e362b555f8474eaf39bc0a7220cb61e5cf60feec752105b7a3c486dcd8a` |
+| `changed-target`             | `823df939d288487d7e2195235d7618eeb43293433bbd76219b118f3805d1a71c` |
+| `business-regression`        | `47263b8773df3cb386a190dc9da584367f1948135cfb48314356ac58ed7fb532` |
 | `original-unseeded-revision` | `530f9c7e76dc415165a579f9e9f1f2e7bba9adc0be4a026a726885f3603062bb` |
 
 The shared Scenario revision, computed by the public `scenarioRevision` API, is
@@ -60,15 +60,15 @@ sizes and PNG signatures.
 
 ## Verification commands
 
-| Command | Result |
-| --- | --- |
-| `bun run --cwd packages/cli test:e2e tests/e2e/acceptance/checkout-acceptance.test.ts` | Five tests passed; repeated with fresh temporary caches. Final focused run: 15.31 seconds |
-| `PICKLE_ENG02_OUTPUT_DIR="$PWD/.audit/eng02-repeat" bun run --cwd packages/cli test:e2e tests/e2e/acceptance/checkout-acceptance.test.ts` | Five tests passed; separate report and PNGs retained |
-| `bun run test` | Passed: 14 script tests and seven package tasks; six package tasks used the Turborepo cache |
-| `bun run typecheck` | Passed: eight package tasks; seven used the Turborepo cache |
-| `bun run lint` | Passed with 27 existing file-length warnings; no new warnings |
-| `bun run test:e2e` | Final rerun: all five ENG-02 tests passed; CLI total 129 passed, 1 failed, 2 skipped. Existing Studio editor test timed out; downstream mobile command was not reached |
-| `git diff --check` | Passed |
+| Command                                                                                                                                   | Result                                                                                                                                                                 |
+| ----------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `bun run --cwd packages/cli test:e2e tests/e2e/acceptance/checkout-acceptance.test.ts`                                                    | Five tests passed; repeated with fresh temporary caches. Final focused run: 15.31 seconds                                                                              |
+| `PICKLE_ENG02_OUTPUT_DIR="$PWD/.audit/eng02-repeat" bun run --cwd packages/cli test:e2e tests/e2e/acceptance/checkout-acceptance.test.ts` | Five tests passed; separate report and PNGs retained                                                                                                                   |
+| `bun run test`                                                                                                                            | Passed: 14 script tests and seven package tasks; six package tasks used the Turborepo cache                                                                            |
+| `bun run typecheck`                                                                                                                       | Passed: eight package tasks; seven used the Turborepo cache                                                                                                            |
+| `bun run lint`                                                                                                                            | Passed with 27 existing file-length warnings; no new warnings                                                                                                          |
+| `bun run test:e2e`                                                                                                                        | Final rerun: all five ENG-02 tests passed; CLI total 129 passed, 1 failed, 2 skipped. Existing Studio editor test timed out; downstream mobile command was not reached |
+| `git diff --check`                                                                                                                        | Passed                                                                                                                                                                 |
 
 The first full E2E run exposed a 30-second limit on the new test that performs
 both cold and Replay Scenarios. Both Scenarios eventually passed, but the test
@@ -100,14 +100,14 @@ summary, confirmation, and reset. It uses native HTML, system fonts, and a
 light theme. Repository AGENTS.md and [DESIGN.md](../../../DESIGN.md) were
 inspected; DESIGN.md governs Studio, whose components are outside this fixture.
 
-| Domain | Evidence inspected | Result |
-| --- | --- | --- |
-| Accessibility | Keyboard-only login, recovery, add, checkout, and order; focus movement; accessibility trees; axe WCAG A/AA checks across rendered states | Clear for inspected checks |
-| Layout | Screenshots and DOM widths at 320px and 1280px; 200% CSS zoom and RTL login layout | Clear; no horizontal overflow in inspected states |
-| Writing | Labels, invalid-login recovery instructions, reset action, product and order summaries | Clear |
-| Typography | Rendered 16px inputs, heading hierarchy, wrapping at narrow width and magnification | Clear |
-| Colors | Rendered text/control contrast checks through axe, visible focus, explicit disabled treatment | Clear |
-| UI polish | Empty, disabled, focused, error, checkout, and completed states; no animation or color-only status | Clear |
+| Domain        | Evidence inspected                                                                                                                        | Result                                            |
+| ------------- | ----------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------- |
+| Accessibility | Keyboard-only login, recovery, add, checkout, and order; focus movement; accessibility trees; axe WCAG A/AA checks across rendered states | Clear for inspected checks                        |
+| Layout        | Screenshots and DOM widths at 320px and 1280px; 200% CSS zoom and RTL login layout                                                        | Clear; no horizontal overflow in inspected states |
+| Writing       | Labels, invalid-login recovery instructions, reset action, product and order summaries                                                    | Clear                                             |
+| Typography    | Rendered 16px inputs, heading hierarchy, wrapping at narrow width and magnification                                                       | Clear                                             |
+| Colors        | Rendered text/control contrast checks through axe, visible focus, explicit disabled treatment                                             | Clear                                             |
+| UI polish     | Empty, disabled, focused, error, checkout, and completed states; no animation or color-only status                                        | Clear                                             |
 
 No actionable interface findings remain in the inspected flow. The review
 corrected low-contrast focus styling, added login recovery and focus transfer,

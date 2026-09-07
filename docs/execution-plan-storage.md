@@ -26,17 +26,17 @@ symlinks, traversal-like IDs, and non-JSON adapter payloads. The store accepts n
 binding map and preserves payload values verbatim; adapter-owned capture and
 confidentiality checks must keep resolved credentials out of those values.
 
-| Concern | Status | Evidence |
-| --- | --- | --- |
-| Draft creation and structural revision validation | Implemented, verified | `createRevision` and the runner execution-plan unit suite |
-| Immutable, idempotent revision history | Implemented, verified | Restart and repeated-content assertions in `local-execution-plan-store.test.ts` |
-| Stale concurrent selection writes | Implemented, verified | Two store instances race on one expected digest; one succeeds and one returns `write-conflict` |
-| Malformed files and path confinement | Implemented, verified | Duplicate-key, malformed-file, traversal, symlink, and byte-preservation assertions |
-| Dead-owner lock recovery | Implemented, verified | Live lock conflict and proven-dead PID recovery assertions |
-| Interrupted publication recovery | Implemented, partially verified | Flushed temp plus atomic hard-link/rename protocol and ignored temporary-file assertion; injected filesystem faults remain unverified |
-| Cache eviction and clear independence | Implemented, verified | The store uses only `<project-root>/.pickle`; the focused suite proves both cache clear and LRU eviction leave authored files |
-| Validation receipts, admissions, activation, and plan-aware execution | Unsupported in ENG-05 | Deliberately owned by ENG-07/08 under the approved contract |
-| CLI or Studio mutation transport | Unsupported in ENG-05 | Persistence remains outside presentation; composition is added with editing transport in ENG-06 |
+| Concern                                                               | Status                          | Evidence                                                                                                                              |
+| --------------------------------------------------------------------- | ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| Draft creation and structural revision validation                     | Implemented, verified           | `createRevision` and the runner execution-plan unit suite                                                                             |
+| Immutable, idempotent revision history                                | Implemented, verified           | Restart and repeated-content assertions in `local-execution-plan-store.test.ts`                                                       |
+| Stale concurrent selection writes                                     | Implemented, verified           | Two store instances race on one expected digest; one succeeds and one returns `write-conflict`                                        |
+| Malformed files and path confinement                                  | Implemented, verified           | Duplicate-key, malformed-file, traversal, symlink, and byte-preservation assertions                                                   |
+| Dead-owner lock recovery                                              | Implemented, verified           | Live lock conflict and proven-dead PID recovery assertions                                                                            |
+| Interrupted publication recovery                                      | Implemented, partially verified | Flushed temp plus atomic hard-link/rename protocol and ignored temporary-file assertion; injected filesystem faults remain unverified |
+| Cache eviction and clear independence                                 | Implemented, verified           | The store uses only `<project-root>/.pickle`; the focused suite proves both cache clear and LRU eviction leave authored files         |
+| Validation receipts, admissions, activation, and plan-aware execution | Unsupported in ENG-05           | Deliberately owned by ENG-07/08 under the approved contract                                                                           |
+| CLI or Studio mutation transport                                      | Unsupported in ENG-05           | Persistence remains outside presentation; composition is added with editing transport in ENG-06                                       |
 
 Verification run on this revision:
 

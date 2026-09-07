@@ -247,10 +247,9 @@ function EditablePlanView(props: EditablePlanViewProps) {
 }
 
 function useExecutionPlan(props: ExecutionPlanPanelProps) {
-  const [request, setRequest] = useState(() => ({
+  const [request, setRequest] = useState<StudioExecutionPlanRequest>(() => ({
     scenarioId: props.scenarioId,
     profileId: props.profileId,
-    applicationRevision: undefined as string | undefined,
   }))
   const [result, setResult] = useState<
     | { state: 'loading' }

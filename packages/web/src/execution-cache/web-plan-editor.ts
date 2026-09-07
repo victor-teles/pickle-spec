@@ -164,20 +164,19 @@ function validateEdit(
 
 /** Replace one action locator while preserving the rest of the web payload. */
 export function replaceWebInteractionTarget(
-  payload: unknown,
+  payload: WebExecutionCachePayload,
   steps: readonly StepIdentity[],
   requiredVariables: readonly string[],
   edit: ReplaceWebInteractionTarget,
 ): PlanResult<WebExecutionCachePayload> {
-  const parsed = webExecutionCachePayloadSchema.safeParse(payload)
-  if (!parsed.success) {
-    return failure('invalid-payload', 'The web plan payload is invalid')
-  }
-  const validated = validateEdit(parsed.data, steps, requiredVariables, edit)
+  const validated = validateEdit(payload, steps, requiredVariables, edit)
   if (!validated.ok) return validated
-  const stepsCopy = parsed.data.steps.slice()
+  const stepsCopy = payload.steps.slice()
   const instructionsCopy = validated.value.step.instructions.slice()
-  const locatorInstruction = validated.value.instruction as LocatorInstruction
+  if (!('locator' in validated.value.instruction)) {
+    return failure('invalid-payload', 'The edited instruction has no locator')
+  }
+  const locatorInstruction = validated.value.instruction
   const replacement: LocatorInstruction = {
     ...locatorInstruction,
     locator: edit.locator,
@@ -185,7 +184,7 @@ export function replaceWebInteractionTarget(
   instructionsCopy[edit.instructionIndex] = replacement
   stepsCopy[edit.step.index] = { instructions: instructionsCopy }
   const result = webExecutionCachePayloadSchema.safeParse({
-    ...parsed.data,
+    ...payload,
     steps: stepsCopy,
   })
   return result.success

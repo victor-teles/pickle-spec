@@ -28,17 +28,17 @@ unsupported in this slice. The UI names those limits instead of exposing raw
 JSON repair. The next validation and activation operations remain ENG-07 and
 ENG-08.
 
-| Requirement | Status | Evidence |
-| --- | --- | --- |
-| Replace exactly one web interaction locator | Implemented, verified | `packages/web/tests/unit/execution-cache/web-plan-projector.test.ts` |
-| Preserve checks, values, variables, order, and parent bytes | Implemented, verified | Web transformer assertions and CLI draft persistence test |
-| Reject stale instruction and unknown locator variables | Implemented, verified | Web transformer conflict and invalid-variable assertions |
-| Reject assertion, wait, and unsupported operation edits | Implemented, verified | Protected instruction assertions and adapter kind guard |
-| Capture and save immutable drafts | Implemented, verified | `packages/cli/tests/unit/studio/studio-execution-plans.test.ts` |
-| Keep active selection unchanged | Implemented, verified | CLI test inspects the plan slot after capture and edit |
-| Expose the plan beside Diagnostics in the Specifications bottom dock | Implemented, verified | `packages/studio/src/features/specifications/specifications-workbench-focus.tsx` and attached Studio preview; the right details rail no longer duplicates the plan |
-| Render a contextual editor with discard and save controls | Implemented, verified | `packages/studio/src/features/execution-plans/execution-plan-editor.tsx`, `packages/studio/tests/unit/execution-plans/execution-plan-panel.test.tsx`, and attached Studio preview capture |
-| Validate a candidate or activate it | Unsupported in ENG-06 | ENG-07 and ENG-08 own Replay validation and selection writes |
+| Requirement                                                          | Status                | Evidence                                                                                                                                                                                  |
+| -------------------------------------------------------------------- | --------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Replace exactly one web interaction locator                          | Implemented, verified | `packages/web/tests/unit/execution-cache/web-plan-projector.test.ts`                                                                                                                      |
+| Preserve checks, values, variables, order, and parent bytes          | Implemented, verified | Web transformer assertions and CLI draft persistence test                                                                                                                                 |
+| Reject stale instruction and unknown locator variables               | Implemented, verified | Web transformer conflict and invalid-variable assertions                                                                                                                                  |
+| Reject assertion, wait, and unsupported operation edits              | Implemented, verified | Protected instruction assertions and adapter kind guard                                                                                                                                   |
+| Capture and save immutable drafts                                    | Implemented, verified | `packages/cli/tests/unit/studio/studio-execution-plans.test.ts`                                                                                                                           |
+| Keep active selection unchanged                                      | Implemented, verified | CLI test inspects the plan slot after capture and edit                                                                                                                                    |
+| Expose the plan beside Diagnostics in the Specifications bottom dock | Implemented, verified | `packages/studio/src/features/specifications/specifications-workbench-focus.tsx` and attached Studio preview; the right details rail no longer duplicates the plan                        |
+| Render a contextual editor with discard and save controls            | Implemented, verified | `packages/studio/src/features/execution-plans/execution-plan-editor.tsx`, `packages/studio/tests/unit/execution-plans/execution-plan-panel.test.tsx`, and attached Studio preview capture |
+| Validate a candidate or activate it                                  | Unsupported in ENG-06 | ENG-07 and ENG-08 own Replay validation and selection writes                                                                                                                              |
 
 Verification run on this revision:
 
@@ -59,14 +59,14 @@ The review used the available `better-interface` domain skills, the existing
 Mira primitives, [DESIGN.md](../DESIGN.md), source inspection, the editor SSR
 test, and the attached Studio preview.
 
-| Domain | Evidence inspected | Result |
-| --- | --- | --- |
+| Domain        | Evidence inspected                                                                                    | Result                                                             |
+| ------------- | ----------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------ |
 | Accessibility | Native Mira buttons and inputs, labels, field errors, focus styles, and the Studio accessibility tree | Clear for inspected states; live editor keyboard walk not verified |
-| Layout | Responsive editor classes and attached preview resized to 320px | Clear; document and body scroll widths stayed at 320px |
-| Writing | Draft, protection, error, save, and discard copy | Clear; unsupported operations and recovery action are explicit |
-| Typography | DESIGN.md hierarchy, Mira typography, and responsive locator inputs | Clear; locator inputs use 16px on narrow viewports |
-| Color | DESIGN.md semantic tokens and neutral Mira variants | Clear; no new color tokens or saturated accents |
-| UI polish | Mira Card, Button, Input, Label, Badge primitives and compact spacing | Clear; no actionable findings in the inspected flow |
+| Layout        | Responsive editor classes and attached preview resized to 320px                                       | Clear; document and body scroll widths stayed at 320px             |
+| Writing       | Draft, protection, error, save, and discard copy                                                      | Clear; unsupported operations and recovery action are explicit     |
+| Typography    | DESIGN.md hierarchy, Mira typography, and responsive locator inputs                                   | Clear; locator inputs use 16px on narrow viewports                 |
+| Color         | DESIGN.md semantic tokens and neutral Mira variants                                                   | Clear; no new color tokens or saturated accents                    |
+| UI polish     | Mira Card, Button, Input, Label, Badge primitives and compact spacing                                 | Clear; no actionable findings in the inspected flow                |
 
 The attached preview had a current web cache entry. It verified the `Plan` tab
 immediately to the right of `Diagnostics`, the profile inspection flow at

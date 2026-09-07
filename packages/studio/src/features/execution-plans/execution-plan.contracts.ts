@@ -19,8 +19,7 @@ export type StudioWebLocator = {
   nth?: number
 }
 
-export interface StudioExecutionPlanEditRequest
-  extends StudioExecutionPlanRequest {
+export interface StudioExecutionPlanEditRequest extends StudioExecutionPlanRequest {
   parentRevisionId: Digest
   step: StepIdentity
   instructionIndex: number

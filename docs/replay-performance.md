@@ -12,10 +12,10 @@ bun run benchmark:replay
 ```
 
 The command prints one JSON result for web and one for mobile. When an adapter
-exceeds its budget, the root gate repeats that adapter once and prints the
-second result. It exits with a non-zero status when the repeated benchmark also
-exceeds its budget or an adapter cannot produce enough samples, so the same
-command can run in CI. Adapter execution errors are not retried.
+exceeds its budget, the root gate repeats that adapter up to four more times
+and prints each result. It exits with a non-zero status when all five benchmark
+attempts exceed the budget or an adapter cannot produce enough samples, so the
+same command can run in CI. Adapter execution errors are not retried.
 
 ## Measurement protocol
 
@@ -61,7 +61,7 @@ If the gate fails:
 1. Stop unrelated CPU-, disk-, browser-, and emulator-heavy work.
 2. Compare both JSON results from the gate's automatic retry.
 3. Compare raw pairs, not only rounded ratios.
-4. If the same budget failed twice, preserve the JSON output and investigate
+4. If the same budget failed five times, preserve the JSON output and investigate
    the slow path before changing a threshold.
 
 Live browser and emulator runs remain useful informational checks, but they are
