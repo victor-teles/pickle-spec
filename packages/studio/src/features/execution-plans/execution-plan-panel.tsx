@@ -1,10 +1,8 @@
 import type {
   ExecutionPlanDisplay,
   ExecutionPlanDraftDisplay,
-  ExecutionPlanTemplateDisplay,
 } from '@pickle-spec/runner'
-import { useEffect, useRef, useState } from 'react'
-import { Badge } from '../../components/ui/badge'
+import { type ComponentProps, useEffect, useState } from 'react'
 import { Button } from '../../components/ui/button'
 import {
   Card,
@@ -14,6 +12,11 @@ import {
   CardHeader,
   CardTitle,
 } from '../../components/ui/card'
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from '../../components/ui/collapsible'
 import type {
   StudioExecutionPlanDraftResult,
   StudioExecutionPlanEditRequest,
@@ -25,17 +28,20 @@ import {
   getExecutionPlan,
 } from './execution-plan.functions'
 import { ExecutionPlanEditor } from './execution-plan-editor'
+import { PlanOperation, type PlanStepFocus, PlanSteps } from './plan-steps'
 
 type ExecutionPlanPanelProps = {
   scenarioId: string
   profileId: string
-  focusStep?: { index: number; keyword: string; text: string }
+  focusStep?: PlanStepFocus
 }
 
-export function ScenarioExecutionPlan(props: {
+interface ScenarioExecutionPlanProps {
   scenarioId: string
   profiles: readonly string[]
-}) {
+}
+
+export function ScenarioExecutionPlan(props: ScenarioExecutionPlanProps) {
   const [profileId, setProfileId] = useState<string>()
   return (
     <section
@@ -78,16 +84,6 @@ export function ScenarioExecutionPlan(props: {
       )}
     </section>
   )
-}
-
-function templateText(template: ExecutionPlanTemplateDisplay): string {
-  return template.segments
-    .map((segment) => {
-      if (segment.kind === 'literal') return segment.value
-      if (segment.kind === 'variable') return `<${segment.name}>`
-      return '<redacted>'
-    })
-    .join('')
 }
 
 export function ExecutionPlanPanel(props: ExecutionPlanPanelProps) {
@@ -203,35 +199,36 @@ async function saveDraft(
   request: StudioExecutionPlanEditRequest,
   setDraft: (value: ExecutionPlanDraftDisplay) => void,
 ) {
-  try {
-    const result = await editExecutionPlan({ data: request })
-    if (!result.ok) return { ok: false as const, message: result.message }
-    setDraft(result.value)
-    return { ok: true as const, value: result.value }
-  } catch {
-    return {
-      ok: false as const,
-      message: 'Unable to save this draft. Check the connection and try again.',
-    }
-  }
+  const result = await editExecutionPlan({ data: request })
+  if (!result.ok) return { ok: false as const, message: result.message }
+  setDraft(result.value)
+  return { ok: true as const, value: result.value }
 }
 
-function EditablePlanView(props: {
+interface EditablePlanViewProps {
   plan: Extract<ExecutionPlanDisplay, { state: 'available' }>
   focusStep?: ExecutionPlanPanelProps['focusStep']
   draft?: ExecutionPlanDraftDisplay
   captureError?: string
   capturing: boolean
   onCapture(): void
-  onSave(request: StudioExecutionPlanEditRequest): Promise<
-    | {
-        ok: true
-        value: ExecutionPlanDraftDisplay
-      }
-    | { ok: false; message: string }
-  >
+  onSave: ComponentProps<typeof ExecutionPlanEditor>['onSave']
   onDiscard(): void
-}) {
+}
+
+function EditablePlanView(props: EditablePlanViewProps) {
+  if (props.draft) {
+    return (
+      <ExecutionPlanEditor
+        draft={props.draft}
+        focusStep={props.focusStep}
+        onSave={props.onSave}
+        onDiscard={props.onDiscard}
+      >
+        <PlanCacheDetails plan={props.plan} />
+      </ExecutionPlanEditor>
+    )
+  }
   return (
     <>
       <AvailableExecutionPlan
@@ -244,13 +241,6 @@ function EditablePlanView(props: {
         <p role="alert" className="px-3 text-sm text-destructive">
           {props.captureError}
         </p>
-      ) : null}
-      {props.draft ? (
-        <ExecutionPlanEditor
-          draft={props.draft}
-          onSave={props.onSave}
-          onDiscard={props.onDiscard}
-        />
       ) : null}
     </>
   )
@@ -298,7 +288,12 @@ function useExecutionPlan(props: ExecutionPlanPanelProps) {
   }
 }
 
-function PlanLoadError(props: { message: string; onRetry: () => void }) {
+interface PlanLoadErrorProps {
+  message: string
+  onRetry(): void
+}
+
+function PlanLoadError(props: PlanLoadErrorProps) {
   return (
     <div className="space-y-3 p-4">
       <p role="alert" className="text-sm text-destructive">
@@ -311,229 +306,113 @@ function PlanLoadError(props: { message: string; onRetry: () => void }) {
   )
 }
 
-function PlanCacheHeader(props: {
-  plan: Extract<ExecutionPlanDisplay, { state: 'available' }>
-  onStartDraft?: () => void
-  capturing?: boolean
-}) {
+type AvailablePlan = Extract<ExecutionPlanDisplay, { state: 'available' }>
+
+interface AvailableExecutionPlanProps {
+  plan: AvailablePlan
+  focusStep?: PlanStepFocus
+  onStartDraft(): void
+  capturing: boolean
+}
+
+function PlanCacheDetails({ plan }: { plan: AvailablePlan }) {
+  return (
+    <div className="min-w-0 space-y-2 break-all text-xs text-muted-foreground">
+      <p>Profile {plan.cacheKey.executionTargetProfileId}</p>
+      <p>
+        {plan.applicability.state === 'applicable'
+          ? 'Applicable'
+          : 'Deployment unverified'}
+      </p>
+      <p>
+        Application{' '}
+        <span className="font-mono">{plan.cacheKey.applicationRevision}</span>
+      </p>
+      <p>Published by run {plan.publication.sourceRunId}</p>
+      <dl className="grid min-w-0 gap-2">
+        <div>
+          <dt>Project</dt>
+          <dd className="font-mono">{plan.cacheKey.projectKey}</dd>
+        </div>
+        <div>
+          <dt>Scenario revision</dt>
+          <dd className="font-mono">{plan.cacheKey.scenarioRevision}</dd>
+        </div>
+        <div>
+          <dt>Target fingerprint</dt>
+          <dd className="font-mono">
+            {plan.cacheKey.targetConfigurationFingerprint}
+          </dd>
+        </div>
+        <div>
+          <dt>Adapter schema</dt>
+          <dd className="font-mono">
+            {plan.cacheKey.adapterKind} /{' '}
+            {plan.cacheKey.adapterCacheSchemaVersion}
+          </dd>
+        </div>
+        <div>
+          <dt>Cache revision</dt>
+          <dd className="font-mono">{plan.cacheRevision}</dd>
+        </div>
+      </dl>
+    </div>
+  )
+}
+
+function AvailableExecutionPlan(props: AvailableExecutionPlanProps) {
   const { plan } = props
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Current cached plan</CardTitle>
-        <CardDescription>{plan.sourceNotice}</CardDescription>
-        {props.onStartDraft ? (
-          <CardAction className="col-span-2 col-start-1 row-start-3 w-full justify-self-stretch">
+    <section
+      className="min-w-0 space-y-3 p-3"
+      aria-label="Readable execution plan"
+    >
+      <Card size="sm">
+        <CardHeader>
+          <CardTitle>Current cached plan</CardTitle>
+          <CardDescription>{plan.sourceNotice}</CardDescription>
+          <CardAction className="col-span-2 col-start-1 row-start-3 justify-self-start">
             <Button
               type="button"
               size="sm"
-              className="h-auto min-h-7 w-full max-w-full justify-start whitespace-normal text-left leading-snug"
               onClick={props.onStartDraft}
               disabled={props.capturing}
             >
               {props.capturing ? 'Starting draft…' : 'Start draft from cache'}
             </Button>
           </CardAction>
-        ) : null}
-      </CardHeader>
-      <CardContent className="flex flex-wrap gap-2 text-xs">
-        <Badge className="h-auto min-h-5 max-w-full whitespace-normal break-all">
-          Profile {plan.cacheKey.executionTargetProfileId}
-        </Badge>
-        <Badge>
-          {plan.applicability.state === 'applicable'
-            ? 'Applicable'
-            : 'Deployment unverified'}
-        </Badge>
-        <p className="w-full min-w-0 break-all text-muted-foreground">
-          Application{' '}
-          <span className="font-mono">{plan.cacheKey.applicationRevision}</span>
-        </p>
-        <span className="text-muted-foreground">
-          Published by run {plan.publication.sourceRunId}
-        </span>
-        <details className="w-full min-w-0 text-muted-foreground">
-          <summary className="cursor-pointer">Applicability details</summary>
-          <dl className="mt-2 grid min-w-0 gap-2 break-all font-mono">
-            <div>
-              <dt>Project</dt>
-              <dd>{plan.cacheKey.projectKey}</dd>
-            </div>
-            <div>
-              <dt>Scenario revision</dt>
-              <dd>{plan.cacheKey.scenarioRevision}</dd>
-            </div>
-            <div>
-              <dt>Target fingerprint</dt>
-              <dd>{plan.cacheKey.targetConfigurationFingerprint}</dd>
-            </div>
-            <div>
-              <dt>Adapter schema</dt>
-              <dd>
-                {plan.cacheKey.adapterKind} /{' '}
-                {plan.cacheKey.adapterCacheSchemaVersion}
-              </dd>
-            </div>
-            <div>
-              <dt>Cache revision</dt>
-              <dd>{plan.cacheRevision}</dd>
-            </div>
-          </dl>
-        </details>
-      </CardContent>
-    </Card>
-  )
-}
-
-function AvailableExecutionPlan(props: {
-  plan: Extract<ExecutionPlanDisplay, { state: 'available' }>
-  focusStep?: ExecutionPlanPanelProps['focusStep']
-  onStartDraft?: () => void
-  capturing?: boolean
-}) {
-  const { plan } = props
-  const focusedStepRef = useRef<HTMLDivElement>(null)
-  const { focusedPlanStep, focusedUncachedStep, focusUnavailable } =
-    focusedGroups(plan, props.focusStep)
-  const focusedIndex = focusedPlanStep?.index ?? focusedUncachedStep?.index
-  useEffect(() => {
-    if (focusedIndex === undefined) return
-    focusedStepRef.current?.scrollIntoView({ block: 'nearest' })
-    focusedStepRef.current?.focus({ preventScroll: true })
-  }, [focusedIndex])
-  return (
-    <section className="space-y-3 p-3" aria-label="Readable execution plan">
-      {focusUnavailable ? <UnavailableFocus /> : null}
-      <PlanCacheHeader
-        plan={plan}
-        onStartDraft={props.onStartDraft}
-        capturing={props.capturing}
+        </CardHeader>
+        <CardContent>
+          <Collapsible>
+            <CollapsibleTrigger
+              render={<Button type="button" size="sm" variant="ghost" />}
+            >
+              Applicability details
+            </CollapsibleTrigger>
+            <CollapsibleContent className="pt-2">
+              <PlanCacheDetails plan={plan} />
+            </CollapsibleContent>
+          </Collapsible>
+        </CardContent>
+      </Card>
+      <PlanSteps
+        steps={plan.steps}
+        uncachedTail={plan.uncachedTail}
+        focusStep={props.focusStep}
+        renderOperation={(operation) => <PlanOperation operation={operation} />}
       />
-      {plan.steps.map((step) => {
-        const focused = step === focusedPlanStep
-        return (
-          <Card
-            key={step.index}
-            ref={focused ? focusedStepRef : undefined}
-            tabIndex={focused ? -1 : undefined}
-            data-state={focused ? 'selected' : undefined}
-            className="outline-none focus-visible:ring-2 focus-visible:ring-ring data-[state=selected]:ring-2 data-[state=selected]:ring-ring"
-          >
-            <CardHeader>
-              <CardTitle>
-                {step.keyword.trim()} {step.text}
-              </CardTitle>
-              <CardDescription>
-                Step {step.index + 1}
-                {focused ? ' · Recorded failed step' : ''}
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <ol className="space-y-3">
-                {step.operations.map((operation) => (
-                  <PlanOperation key={operation.index} operation={operation} />
-                ))}
-              </ol>
-            </CardContent>
-          </Card>
-        )
-      })}
-      {plan.uncachedTail.length > 0 ? (
-        <Card
-          ref={focusedUncachedStep ? focusedStepRef : undefined}
-          tabIndex={focusedUncachedStep ? -1 : undefined}
-          data-state={focusedUncachedStep ? 'selected' : undefined}
-          className="outline-none focus-visible:ring-2 focus-visible:ring-ring data-[state=selected]:ring-2 data-[state=selected]:ring-ring"
-        >
-          <CardHeader>
-            <CardTitle>Uncached tail</CardTitle>
-            <CardDescription>
-              Run Replay cannot complete these remaining Gherkin steps from this
-              cache entry.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <ol className="space-y-1 text-sm">
-              {plan.uncachedTail.map((step) => (
-                <li key={step.index}>
-                  {step.keyword.trim()} {step.text}
-                  {step === focusedUncachedStep
-                    ? ' · Recorded failed step'
-                    : ''}
-                </li>
-              ))}
-            </ol>
-          </CardContent>
-        </Card>
-      ) : null}
     </section>
   )
 }
 
-function focusedGroups(
-  plan: Extract<ExecutionPlanDisplay, { state: 'available' }>,
-  focus: ExecutionPlanPanelProps['focusStep'],
-) {
-  const matches = (step: { index: number; keyword: string; text: string }) =>
-    Boolean(
-      focus &&
-        step.index === focus.index &&
-        step.keyword === focus.keyword &&
-        step.text === focus.text,
-    )
-  const focusedPlanStep = plan.steps.find(matches)
-  const focusedUncachedStep = plan.uncachedTail.find(matches)
-  return {
-    focusedPlanStep,
-    focusedUncachedStep,
-    focusUnavailable: Boolean(
-      focus && !focusedPlanStep && !focusedUncachedStep,
-    ),
-  }
-}
-
-function UnavailableFocus() {
-  return (
-    <p role="status" className="text-sm text-muted-foreground">
-      The recorded failed step does not match the current Gherkin plan, so
-      failed-step focus is unavailable.
-    </p>
-  )
-}
-
-function PlanOperation(props: {
-  operation: Extract<
-    ExecutionPlanDisplay,
-    { state: 'available' }
-  >['steps'][number]['operations'][number]
-}) {
-  const { operation } = props
-  const match = operation.target?.nth
-  return (
-    <li className="space-y-1 text-sm">
-      <p className="font-medium">{operation.summary}</p>
-      {operation.target ? (
-        <p className="break-all text-muted-foreground">
-          Target {templateText(operation.target.selector)}
-          {match === undefined ? '' : ` · match ${match + 1}`}
-        </p>
-      ) : null}
-      {operation.value ? (
-        <p className="break-all text-muted-foreground">
-          Value {templateText(operation.value)}
-        </p>
-      ) : null}
-      {operation.check ? <Badge>Check {operation.check}</Badge> : null}
-    </li>
-  )
-}
-
-function PlanNotice(props: {
+interface PlanNoticeProps {
   title: string
   message: string
   revisions?: readonly string[]
   onSelectRevision?: (revision: string) => void
-}) {
+}
+
+function PlanNotice(props: PlanNoticeProps) {
   return (
     <Card className="m-3">
       <CardHeader>

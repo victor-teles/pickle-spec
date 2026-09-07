@@ -52,6 +52,7 @@ const locator = (literal: string) => ({
 
 const inputStep = {
   instructions: [
+    { kind: 'hover' as const, locator: locator('#account-help') },
     {
       kind: 'fill' as const,
       locator: locator('#password'),

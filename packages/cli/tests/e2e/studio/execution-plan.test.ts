@@ -1,83 +1,22 @@
 import { mkdir } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import AxeBuilder from '@axe-core/playwright'
-import type { Locator, Page, Response } from 'playwright'
+import type { Response } from 'playwright'
 import { afterAll, beforeAll, describe, expect, test } from 'vitest'
+import {
+  evidenceDirectory,
+  inspectScenario,
+  showDetails,
+  tabTo,
+  waitForStudio,
+  workbenchRail,
+} from '../support/execution-plan-browser'
 import { createExecutionPlanBrowserProject } from '../support/execution-plan-fixture'
 import { StudioBrowserFixture } from '../support/studio-browser-fixture'
 
 const fixture = new StudioBrowserFixture()
-const evidenceDirectory = resolve(
-  import.meta.dir,
-  '../../../../../.audit/eng04/browser-screenshots',
-)
-
-function workbenchRail(page: Page): Locator {
-  return page
-    .getByRole('tablist', { name: 'Specifications workbench rail' })
-    .locator('xpath=ancestor::aside')
-}
-
-async function showDetails(page: Page): Promise<void> {
-  const hidden = page.getByRole('button', { name: 'Show Right sidebar' })
-  if (await hidden.isVisible()) await hidden.click()
-}
-
-async function inspectScenario(
-  page: Page,
-  scenarioName: string,
-  profile = 'browser',
-): Promise<Locator> {
-  await page
-    .getByRole('button', { name: 'Specifications', exact: true })
-    .click()
-  const showLeft = page.getByRole('button', { name: 'Show Left sidebar' })
-  if (await showLeft.isVisible()) await showLeft.click()
-  await workbenchRail(page)
-    .getByRole('button', { name: scenarioName, exact: true })
-    .click()
-  await showDetails(page)
-  await page.getByText('Readable execution plan', { exact: true }).waitFor()
-  const inspect = page.getByRole('button', {
-    name: `Inspect ${profile}`,
-    exact: true,
-  })
-  if ((await inspect.count()) === 0) {
-    const labels = await page.locator('button').allTextContents()
-    throw new Error(
-      `Missing Inspect ${profile}. Buttons: ${labels.join(' | ')}`,
-    )
-  }
-  await inspect.click()
-  return page.getByRole('region', { name: 'Readable execution plan' }).last()
-}
-
 async function responseText(response: Response): Promise<string> {
   return response.text().catch(() => '')
-}
-
-async function tabTo(page: Page, target: Locator): Promise<void> {
-  for (let index = 0; index < 100; index += 1) {
-    await page.keyboard.press('Tab')
-    if (await target.evaluate((element) => element.matches(':focus'))) return
-  }
-  throw new Error('Keyboard focus did not reach the requested control')
-}
-
-async function waitForStudio(
-  page: Page,
-  projectName: string,
-  browserErrors: readonly string[] = [],
-): Promise<void> {
-  try {
-    await page
-      .getByRole('button', { name: 'Specifications', exact: true })
-      .waitFor({ timeout: 10_000 })
-  } catch {
-    throw new Error(
-      `Studio did not render ${projectName} at ${page.url()}. ${browserErrors.join(' | ')} ${await page.content()}`,
-    )
-  }
 }
 
 beforeAll(async () => {
@@ -149,6 +88,9 @@ describe('ENG04 readable execution plan browser acceptance', () => {
       expect(await complete.textContent()).toContain(
         'https://example.test/account?access_token=%3Credacted%3E',
       )
+      await complete
+        .getByRole('button', { name: 'Applicability details' })
+        .click()
       const applicationBadge = complete.getByText(
         `Application 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef`,
         { exact: true },
@@ -235,8 +177,20 @@ describe('ENG04 readable execution plan browser acceptance', () => {
       })
       await tabTo(page, scenario)
       await page.keyboard.press('Enter')
-      const showRight = page.getByRole('button', { name: 'Show Right sidebar' })
-      await tabTo(page, showRight)
+      const showBottom = page.getByRole('button', { name: 'Show Bottom panel' })
+      await tabTo(page, showBottom)
+      await page.keyboard.press('Enter')
+      const planTab = page.getByRole('tab', { name: 'Plan', exact: true })
+      await tabTo(
+        page,
+        page.getByRole('tab', { name: 'Timeline', exact: true }),
+      )
+      await page.keyboard.press('ArrowRight')
+      await page.keyboard.press('ArrowRight')
+      await page.keyboard.press('ArrowRight')
+      expect(
+        await planTab.evaluate((element) => element.matches(':focus')),
+      ).toBe(true)
       await page.keyboard.press('Enter')
       const inspect = page.getByRole('button', {
         name: 'Inspect browser',
@@ -310,6 +264,30 @@ describe('ENG04 readable execution plan browser acceptance', () => {
       expect(
         await focused.evaluate((element) => element.matches(':focus')),
       ).toBe(true)
+      await plan.getByRole('button', { name: 'Start draft from cache' }).click()
+      const draft = page.getByRole('region', {
+        name: 'Execution plan draft editor',
+      })
+      const draftFocus = draft.locator('[data-state="selected"]')
+      await expect
+        .poll(() => draftFocus.evaluate((element) => element.matches(':focus')))
+        .toBe(true)
+      expect(await draftFocus.textContent()).toContain('Then I see the account')
+      expect(await plan.count()).toBe(0)
+      await draft.getByRole('button', { name: 'Edit locator' }).first().click()
+      await draft.getByLabel('Locator', { exact: true }).fill('#help-repaired')
+      await draft.getByRole('button', { name: 'Cancel', exact: true }).click()
+      await draft.getByRole('button', { name: 'Edit locator' }).first().click()
+      await draft.getByLabel('Locator', { exact: true }).fill('#help-repaired')
+      await draft
+        .getByRole('button', { name: 'Save change', exact: true })
+        .click()
+      await draft
+        .getByRole('status')
+        .filter({ hasText: 'Saved to draft' })
+        .waitFor()
+      await draft.getByRole('button', { name: 'Close draft' }).click()
+      await plan.getByText('Current cached plan').waitFor()
       await page.screenshot({
         path: resolve(evidenceDirectory, 'failed-step-focus.png'),
         fullPage: true,
