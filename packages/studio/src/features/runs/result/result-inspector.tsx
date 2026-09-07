@@ -26,6 +26,7 @@ import {
 import type { StudioApi } from '../../../lib/studio-api'
 import { cn } from '../../../lib/utils'
 import type { StudioRunSnapshot } from '../../../server/contracts'
+import { ExecutionPlanPanel } from '../../execution-plans/execution-plan-panel'
 import type { StudioLiveViewport } from '../live-viewport'
 import {
   type FocusedAttemptProjection,
@@ -224,6 +225,9 @@ function ResultTimeline(props: ResultInspectorContentProps) {
 
 function ResultInspectorTabs(props: ResultInspectorContentProps) {
   const { inspected } = props.projection
+  const failedStep = inspected.attempt.steps.find(
+    (step) => step.state === 'failed' || step.state === 'infrastructure-error',
+  )
   return (
     <Tabs
       value={props.activeTab}
@@ -240,6 +244,7 @@ function ResultInspectorTabs(props: ResultInspectorContentProps) {
         <TabsTrigger value="timeline">Timeline</TabsTrigger>
         <TabsTrigger value="artifacts">Artifacts</TabsTrigger>
         <TabsTrigger value="diagnostics">Diagnostics</TabsTrigger>
+        <TabsTrigger value="plan">Plan</TabsTrigger>
         <TabsTrigger value="viewport">Viewport</TabsTrigger>
       </TabsList>
       <TabsContent value="overview">
@@ -275,6 +280,21 @@ function ResultInspectorTabs(props: ResultInspectorContentProps) {
           availability={inspected.attempt.evidenceAvailability}
           applicationOutputAvailability={
             inspected.attempt.applicationOutputAvailability
+          }
+        />
+      </TabsContent>
+      <TabsContent value="plan">
+        <ExecutionPlanPanel
+          scenarioId={props.location.scenarioId}
+          profileId={props.location.profileId}
+          focusStep={
+            failedStep
+              ? {
+                  index: failedStep.index,
+                  keyword: failedStep.step.keyword,
+                  text: failedStep.step.text,
+                }
+              : undefined
           }
         />
       </TabsContent>

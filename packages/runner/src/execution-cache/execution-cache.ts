@@ -1,5 +1,7 @@
 import { z } from 'zod'
 
+type JsonCachePayload = z.core.util.JSONType
+
 export interface ExecutionCacheKeyInput {
   projectKey: string
   scenarioId: string
@@ -15,7 +17,7 @@ export interface ExecutionCacheKey extends ExecutionCacheKeyInput {
   applicationRevision: string
 }
 
-export interface ExecutionCacheEnvelope<AdapterPayload = unknown> {
+export interface ExecutionCacheEnvelope<AdapterPayload = JsonCachePayload> {
   schemaVersion: 1
   key: ExecutionCacheKey
   requiredVariables: string[]
@@ -26,7 +28,9 @@ export type ExecutionCachePrefixPolicy =
   | { readonly mixedReplay: true; readonly write: 'prefix' }
   | { readonly mixedReplay: false; readonly write: 'complete-scenario-only' }
 
-export interface ExecutionCachePayloadValidator<AdapterPayload = unknown> {
+export interface ExecutionCachePayloadValidator<
+  AdapterPayload = JsonCachePayload,
+> {
   adapterKind: string
   adapterCacheSchemaVersion: string
   parse(
@@ -37,7 +41,7 @@ export interface ExecutionCachePayloadValidator<AdapterPayload = unknown> {
 }
 
 export interface ExecutionCacheAdapter<
-  AdapterPayload = unknown,
+  AdapterPayload = JsonCachePayload,
 > extends ExecutionCachePayloadValidator<AdapterPayload> {
   targetConfigurationFingerprint: string
   prefixPolicy?: ExecutionCachePrefixPolicy
@@ -225,7 +229,7 @@ const executionCacheEnvelopeSchema = z.strictObject({
   schemaVersion: z.literal(1),
   key: executionCacheKeySchema,
   requiredVariables: z.array(variableName),
-  adapterPayload: z.unknown(),
+  adapterPayload: z.json(),
 })
 
 const executionCacheTerminalOutcomeSchema = z.strictObject({
@@ -313,9 +317,7 @@ function parseAdapterPayload<AdapterPayload>(
     return undefined
   }
   try {
-    const payload = z.json().safeParse(envelope.adapterPayload)
-    if (!payload.success) return undefined
-    return validator.parse(payload.data, envelope.requiredVariables)
+    return validator.parse(envelope.adapterPayload, envelope.requiredVariables)
   } catch {
     return undefined
   }

@@ -35,5 +35,6 @@ test('opens the queue with immediate feedback while a run is starting', () => {
   )
 
   expect(markup).toContain('Starting run…')
+  expect(markup.indexOf('Diagnostics')).toBeLessThan(markup.indexOf('Plan'))
   expect(markup).not.toContain('Cancel run')
 })

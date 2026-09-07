@@ -4,8 +4,9 @@ Created on 2026-09-04. This backlog translates the
 [QA and UX review](roadmap-qa-ux-review.md) and
 [launch and growth plan](launch-and-growth.md) into assignable engineering tasks.
 It includes the QA request to inspect, manually edit, and autonomously repair
-AI-generated execution plans. All tasks are pending. This document does not
-certify features, authorize publication, or start implementation.
+AI-generated execution plans. Task status is recorded in the backlog below.
+This document does not certify features, authorize publication, or start
+implementation.
 
 ## Delivery outcome
 
@@ -57,12 +58,12 @@ contracts are settled. No delivery dates or effort estimates are assumed.
 
 | Done | ID     | Priority | Task                                             | Depends on                     |
 | ---- | ------ | -------- | ------------------------------------------------ | ------------------------------ |
-| [ ]  | ENG-01 | P0       | Reconcile capability status and release evidence | None                           |
-| [ ]  | ENG-02 | P0       | Create a repeatable QA acceptance fixture        | ENG-01                         |
-| [ ]  | ENG-03 | P0       | Decide execution-plan ownership and contracts    | ENG-01                         |
+| [x]  | ENG-01 | P0       | Reconcile capability status and release evidence | None                           |
+| [x]  | ENG-02 | P0       | Create a repeatable QA acceptance fixture        | ENG-01                         |
+| [x]  | ENG-03 | P0       | Decide execution-plan ownership and contracts    | ENG-01                         |
 | [ ]  | ENG-04 | P0       | Expose a readable execution plan                 | ENG-03                         |
-| [ ]  | ENG-05 | P0       | Persist durable drafts and revisions             | ENG-03                         |
-| [ ]  | ENG-06 | P0       | Add manual web interaction editing               | ENG-04, ENG-05                 |
+| [x]  | ENG-05 | P0       | Persist durable drafts and revisions             | ENG-03                         |
+| [x]  | ENG-06 | P0       | Add manual web interaction editing               | ENG-04, ENG-05                 |
 | [ ]  | ENG-07 | P0       | Validate a candidate without activating it       | ENG-02, ENG-05, ENG-06         |
 | [ ]  | ENG-08 | P0       | Activate, roll back, and preserve edited plans   | ENG-07                         |
 | [ ]  | ENG-09 | P0       | Explain failures and Replay divergence           | ENG-01, ENG-02                 |
@@ -77,9 +78,10 @@ contracts are settled. No delivery dates or effort estimates are assumed.
 | [ ]  | ENG-18 | P1       | Close second-journey authoring gaps              | ENG-14, pilot feedback         |
 | [ ]  | ENG-19 | P2       | Scope later capabilities from observed demand    | ENG-14, return-use evidence    |
 
-Start with ENG-01, then ENG-02 and ENG-03. The critical maintenance path is
-ENG-03 through ENG-08. Diagnosis, onboarding, and CI work can advance alongside
-that path without inventing alternative plan contracts.
+ENG-01 through ENG-03, ENG-05, and ENG-06 are complete. ENG-04's remaining native
+viewport verification is tracked separately. The remaining
+critical maintenance path runs through ENG-08. Diagnosis, onboarding, and CI work can advance
+alongside that path without inventing alternative plan contracts.
 
 ## P0 task details
 
@@ -103,6 +105,15 @@ Done when every advertised capability has a supported scope and evidence status.
 No feature implementation belongs in this inventory task. Turn discovered gaps
 into the relevant task below or a separately scoped follow-up.
 
+Completed on 2026-09-04. The [capability and release evidence inventory](capability-status.md)
+records the audited revision, five-target task matrices, source and test
+evidence, exact verification results, and follow-up ownership. README, roadmap,
+and release policy now distinguish implemented behavior from live verification.
+The [four-criterion acceptance map](capability-status.md#eng-01-acceptance)
+links each requirement to its delivered result and evidence.
+Live-target, published-package, and rendered accessibility evidence remain
+unverified; inventory completion does not close those later release gates.
+
 ### ENG-02: Create a repeatable QA acceptance fixture
 
 Entry points: `apps/example`, existing web/runner test fixtures, and the documented
@@ -122,7 +133,22 @@ expected place, and the business-regression variant stays failed after an
 interaction-only repair. Record application and Scenario revisions for each.
 Prove two runs do not contaminate each other's data.
 
+Completed on 2026-09-04. The [synthetic checkout fixture](../apps/example/acceptance/README.md)
+adds executable application code and real Chrome acceptance tests. The original
+journey passes cold and cache-only; a stale checkout target fails at the
+interaction; changing only that target restores the journey; the incorrect
+business total still fails the unchanged assertion. Reset and independent
+browser contexts prevent order data from leaking between runs.
+The [acceptance record](../apps/example/acceptance/verification.md) pins application
+and Scenario revisions, results, failure screenshots, verification limits, and
+the interface review. The compiler is controlled for repeatability; this does
+not certify provider inference, Stagehand execution, or later plan-editing APIs.
+
 ### ENG-03: Decide execution-plan ownership and contracts
+
+[Contract revision 1](execution-plan-ownership.md#approval-record) was explicitly
+approved by the requesting user on 2026-09-04. ENG-03 is complete. Runtime
+implementation follows in ENG-04 through ENG-08.
 
 Read [cache contracts](../packages/runner/src/execution-cache/execution-cache.ts),
 [web instruction schema](../packages/web/src/execution-cache/web-cache-schema.ts),
@@ -156,6 +182,13 @@ representations and the smallest shared contract the actual callers require.
 
 ### ENG-04: Expose a readable execution plan
 
+Implemented in code, with functional acceptance verified on 2026-09-04. See
+[readable execution plans](execution-plan-inspection.md) for usage, ownership,
+revision, and test evidence. The checklist remains open for native 200% browser
+zoom verification: the rendered interface review resolved its findings, but
+native computer automation could not start. Do not treat 320px reflow as proof
+of native browser zoom.
+
 Entry points: `packages/studio/src/features/execution-cache`,
 `packages/studio/src/features/runs/result`, the CLI Studio gateway, and adapter
 cache parsers. Follow ENG-03's approved ownership.
@@ -173,6 +206,11 @@ without reading raw payloads. Verify complete and partial web paths, unsupported
 payloads, and secrets in inputs. This task adds no mutation endpoint.
 
 ### ENG-05: Persist durable drafts and revisions
+
+Implemented in runner storage on 2026-09-06. See [durable execution-plan
+storage](execution-plan-storage.md) for the storage contract, status register,
+and verification evidence. Validation receipts, admission, activation, and
+editing remain in their owning follow-up tasks.
 
 Entry points: the approved domain owner from ENG-03, runner cache coordination,
 and CLI project composition. Keep storage outside presentation components.
@@ -197,8 +235,9 @@ Entry points: the execution-plan feature from ENG-04/05 and web cache schema.
 
 Work:
 
-- Add contextual fields for supported navigation, locator, and input operations.
-  Support insertion, deletion, and reordering where the approved semantics allow.
+- Add a contextual locator editor for the approved web action operations. The
+  first slice keeps navigation, waits, values, insertion, deletion, and
+  reordering protected until their semantics have an approved contract.
 - Show the candidate diff beside its Gherkin step and original checks.
 - Keep assertion changes outside interaction repair. Explain unsupported edits.
 - Preserve unsaved work and provide discard and save-draft actions. Saving a
@@ -207,6 +246,8 @@ Work:
 Done when the ENG-02 changed-target interaction can be edited without model
 credentials or raw cache editing. Verify invalid locators/variables, protected
 checks, keyboard interaction, and navigation with unsaved changes.
+
+Implementation evidence: [manual web interaction editing](execution-plan-editing.md).
 
 ### ENG-07: Validate a candidate without activating it
 
@@ -325,6 +366,9 @@ Entry points: [Release validation](releasing.md), existing package tests,
 Work:
 
 - Run focused regression tests, then required repository and release gates.
+- Verify the ENG-01 workflow follow-up on the release revision. The corrected
+  loop includes all seven packages and runs integration/E2E before publication;
+  actual publication and clean installation still require release evidence.
 - Verify the installable artifacts outside the monorepo. Verify the exact public
   package after publication is separately authorized and performed.
 - Run the full fixture on real advertised targets and capture revision, OS,

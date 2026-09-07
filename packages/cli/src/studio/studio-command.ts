@@ -18,6 +18,7 @@ import {
 } from '../run/execute-run'
 import { errorMessage } from '../terminal/command-error'
 import { createStudioExecutionCacheGateway } from './studio-cache'
+import { createStudioExecutionPlanGateway } from './studio-execution-plans'
 import { createStudioHistoryGateway } from './studio-history'
 import {
   discoverStudioMobileTargets,
@@ -52,6 +53,28 @@ interface StudioCommandContext {
   extensions: Awaited<ReturnType<typeof loadExtensions>>
   project: Parameters<typeof loadStudioProject>[0]
   root: string
+}
+
+function executionPlanOverrides(
+  extensions: StudioCommandContext['extensions'],
+) {
+  return {
+    adapterIds: new Set(Object.keys(extensions.adapters ?? {})),
+    hasDefaultAdapter: Boolean(extensions.adapter),
+  }
+}
+
+function executionPlanGateway(
+  root: string,
+  args: StudioCommandInput,
+  extensions: StudioCommandContext['extensions'],
+) {
+  return createStudioExecutionPlanGateway(
+    root,
+    args.configPath,
+    process.env.PICKLE_CACHE_ROOT,
+    executionPlanOverrides(extensions),
+  )
 }
 
 function studioManagementGateway(
@@ -192,12 +215,12 @@ export async function runStudioCommand(
     credentials,
   }
   const config = await loadConfig(args.configPath, root)
+  const extensions = await loadExtensions(args.extensionsPath, root)
   const specificationGlobs = config.specifications ?? defaultSpecificationGlob
   const model = authoringModel(config.web?.browser?.modelName)
   async function loadProject() {
     return loadStudioProject(project)
   }
-  const extensions = await loadExtensions(args.extensionsPath, root)
   const controller = new AbortController()
   const activeRuns = new Map<string, AbortController>()
   const context: StudioCommandContext = {
@@ -221,6 +244,7 @@ export async function runStudioCommand(
       const current = await loadConfig(args.configPath, root)
       return current.cache ?? {}
     }),
+    executionPlans: executionPlanGateway(root, args, extensions),
     history: createStudioHistoryGateway(root, async () => {
       const current = await loadConfig(args.configPath, root)
       return {

@@ -1,5 +1,10 @@
 # SauceDemo example
 
+For deterministic failure and Replay checks without model credentials, use the
+[QA acceptance fixture](acceptance/README.md). It runs locally through the
+repository's browser tests and includes a changed target and an incorrect order
+total.
+
 This project exercises the public [SauceDemo](https://www.saucedemo.com/)
 practice storefront through one focused customer journey:
 

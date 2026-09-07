@@ -20,6 +20,7 @@ import type {
   TestResultState,
   TraceEntry,
 } from './run-evidence-types'
+import type { z } from 'zod'
 
 export interface ExecutionTargetProfile {
   id: string
@@ -51,7 +52,7 @@ export interface StepExecutionContext {
 export type TargetSessionReplayRepresentation =
   | {
       cacheable: true
-      adapterPayload: unknown
+      adapterPayload: z.core.util.JSONType
       requiredVariables: readonly string[]
     }
   | {
@@ -92,7 +93,7 @@ export interface ScenarioTargetSession extends TargetSessionLifecycle {
 export type TargetSession = StepTargetSession | ScenarioTargetSession
 
 export interface ReplayCacheInput {
-  adapterPayload: unknown
+  adapterPayload: z.core.util.JSONType
   requiredVariables: readonly string[]
 }
 

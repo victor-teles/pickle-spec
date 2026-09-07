@@ -47,4 +47,10 @@ export type {
   WebLocator,
   WebTemplate,
 } from './src/execution-cache/web-execution-cache'
-export { parseWebExecutionCachePayload } from './src/execution-cache/web-execution-cache'
+export {
+  parseWebExecutionCachePayload,
+  webTargetConfigurationFingerprint,
+} from './src/execution-cache/web-execution-cache'
+export type { ReplaceWebInteractionTarget } from './src/execution-cache/web-plan-editor'
+export { replaceWebInteractionTarget } from './src/execution-cache/web-plan-editor'
+export { projectWebExecutionPlan } from './src/execution-cache/web-plan-projector'

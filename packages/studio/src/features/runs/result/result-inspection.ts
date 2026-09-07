@@ -3,6 +3,7 @@ export const resultInspectorTabs = [
   'timeline',
   'artifacts',
   'diagnostics',
+  'plan',
   'viewport',
 ] as const
 

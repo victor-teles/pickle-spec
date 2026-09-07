@@ -58,6 +58,7 @@ type SpecificationsWorkbenchProps = {
   selectedScenario?: StudioScenario
   selectedSpecificationId?: string
   selectedSpecification?: StudioSpecification
+  profiles?: readonly string[]
   running: boolean
 }
 
@@ -138,6 +139,8 @@ function WorkbenchPanels(props: WorkbenchPanelsProps) {
           onPauseFollowing={props.onPauseFollowing}
           onResumeFollowing={props.onResumeFollowing}
           onSelectInspectorTab={props.onSelectInspectorTab}
+          scenarioId={props.selectedScenario?.id}
+          profiles={props.profiles}
         />
       }
       right={
@@ -149,6 +152,7 @@ function WorkbenchPanels(props: WorkbenchPanelsProps) {
           running={props.running}
           selectedScenario={props.selectedScenario}
           selectedSpecification={props.selectedSpecification}
+          profiles={props.profiles ?? []}
         />
       }
     />
