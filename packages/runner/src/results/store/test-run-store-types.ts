@@ -4,7 +4,7 @@ import type {
   RunEventPayload,
   TestResult,
   TestResultState,
-  testRunSchemaVersion,
+  TestRunSchemaVersion,
 } from '../../execution/run-scenario'
 import type { CacheOutcome } from '../../execution-cache/execution-cache'
 import type {
@@ -25,7 +25,7 @@ export interface TestRunStoreOptions {
 }
 
 export interface TestRunManifest {
-  schemaVersion: typeof testRunSchemaVersion
+  schemaVersion: TestRunSchemaVersion
   id: string
   startedAt: string
   finishedAt?: string

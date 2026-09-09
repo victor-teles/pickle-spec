@@ -1,6 +1,9 @@
 import { configurationParser } from '@pickle-spec/configuration'
 import { z } from 'zod'
-import { testRunSchemaVersion } from '../execution/run-scenario'
+import {
+  authoredPlanRunSchemaVersion,
+  testRunSchemaVersion,
+} from '../execution/run-scenario'
 import { runEventSchema } from './schema/run-event-schema'
 import {
   testResultSchema,
@@ -19,7 +22,10 @@ function versionedRunParser<T>(schema: z.ZodType<T>, label: string) {
   return (incompatible: IncompatibleSchema) => {
     const parser = z.unknown().transform((value) => {
       const envelope = parseSchemaVersion(value)
-      if (envelope.schemaVersion !== testRunSchemaVersion) {
+      if (
+        envelope.schemaVersion !== testRunSchemaVersion &&
+        envelope.schemaVersion !== authoredPlanRunSchemaVersion
+      ) {
         incompatible(String(envelope.schemaVersion))
       }
       return parse(value)

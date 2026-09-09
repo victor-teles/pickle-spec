@@ -25,8 +25,8 @@ intact. Save draft creates another revision and never activates it.
 Navigation, waits, assertion locators and predicates, value changes, insertion,
 deletion, reordering, mobile payloads, and sensitive input bindings are
 unsupported in this slice. The UI names those limits instead of exposing raw
-JSON repair. The next validation and activation operations remain ENG-07 and
-ENG-08.
+JSON repair. [Candidate validation](execution-plan-validation.md) is owned by
+ENG-07; activation remains ENG-08.
 
 | Requirement                                                          | Status                | Evidence                                                                                                                                                                                  |
 | -------------------------------------------------------------------- | --------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |

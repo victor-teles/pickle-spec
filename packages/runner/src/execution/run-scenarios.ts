@@ -8,6 +8,7 @@ import type {
   ExecutionTargetProfile,
   RunEvent,
   ScenarioExecutionCache,
+  AuthoredReplayExecution,
   ScenarioRun,
   TestResult,
 } from './run-scenario-types'
@@ -48,6 +49,8 @@ export interface RunScenariosInput extends ExecutionPolicy {
   executionTargetProfile?: ExecutionTargetProfile
   adapter?: ExecutionTargetAdapter
   executionCache?: ScenarioExecutionCache
+  authoredReplay?: AuthoredReplayExecution
+  projectKey?: string
   cachePolicy?: ExecutionCachePolicy
   applicationRevision?: string
   concurrency?: number
@@ -177,6 +180,8 @@ export async function runScenarios(
         executionTargetProfile: target.executionTargetProfile,
         adapter: target.adapter,
         executionCache: input.executionCache,
+        authoredReplay: input.authoredReplay,
+        projectKey: input.projectKey,
         cachePolicy: input.cachePolicy,
         applicationRevision: input.applicationRevision,
         now: input.now,

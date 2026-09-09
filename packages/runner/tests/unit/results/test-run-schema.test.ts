@@ -332,3 +332,43 @@ test('parses run events with shared evidence observations', () => {
     ],
   })
 })
+
+test('requires Plan use on schema-v3 Scenario lifecycle events', () => {
+  const event = {
+    schemaVersion: 3,
+    sequence: 1,
+    occurredAt: '2026-08-22T12:00:00.000Z',
+    type: 'scenario-started',
+    scenario: { id: 'scenario-evidence', name: 'Capture evidence' },
+    executionTargetProfile: { id: 'web' },
+    scope: {
+      scenarioId: 'scenario-evidence',
+      executionTargetProfileId: 'web',
+      attempt: 1,
+    },
+  }
+
+  expect(() => parseRunEvent(incompatibleSchema)(event)).toThrow(
+    'Schema-v3 Scenario lifecycle events require Plan use',
+  )
+})
+
+test('allows schema-v3 intermediate events without repeated Plan use', () => {
+  const parsed = parseRunEvent(incompatibleSchema)({
+    schemaVersion: 3,
+    sequence: 2,
+    occurredAt: '2026-08-22T12:00:00.001Z',
+    type: 'step-started',
+    step: { keyword: 'When ', text: 'I continue', type: 'action' },
+    scenario: { id: 'scenario-evidence', name: 'Capture evidence' },
+    executionTargetProfile: { id: 'web' },
+    scope: {
+      scenarioId: 'scenario-evidence',
+      executionTargetProfileId: 'web',
+      attempt: 1,
+      stepIndex: 0,
+    },
+  })
+
+  expect(parsed).toMatchObject({ schemaVersion: 3, type: 'step-started' })
+})

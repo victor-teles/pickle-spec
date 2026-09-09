@@ -5,7 +5,11 @@ import type {
   ScenarioRun,
   TestResult,
 } from '@pickle-spec/runner'
-import { openLocalExecutionCache, runScenarios } from '@pickle-spec/runner'
+import {
+  localProjectKey,
+  openLocalExecutionCache,
+  runScenarios,
+} from '@pickle-spec/runner'
 import { type PreparedRunSelection, selectionMatchesResult } from './selection'
 import type { ResolvedProjectRunConfiguration } from './targets'
 import type { ProjectRunOptions, StartProjectRunInput } from './types'
@@ -70,6 +74,24 @@ export async function executePreparedRun(
 ): Promise<ScenarioRun[]> {
   const { args, configuration, input, onEvent, root, selection, testRun } =
     context
+  if (input.executionPlanValidation) {
+    return runScenarios({
+      selections: selection.selections,
+      targets: configuration.targets,
+      concurrency: 1,
+      retry: undefined,
+      timeout: configuration.timeout,
+      applicationRevision: configuration.applicationRevision,
+      signal: input.signal,
+      onEvent,
+      authoredReplay: input.executionPlanValidation.authoredReplay,
+      projectKey: localProjectKey(root),
+      onResult: input.onResult
+        ? (completion: ScenarioCompletion) =>
+            input.onResult?.(completion.result)
+        : undefined,
+    })
+  }
   const executionCache = await configuredExecutionCache(
     input,
     root,

@@ -1,7 +1,6 @@
 import { mkdir } from 'node:fs/promises'
 import { dirname, join, resolve } from 'node:path'
-import type { RunEvent } from '../execution/run-scenario'
-import { testRunSchemaVersion } from '../execution/run-scenario'
+import type { RunEvent, TestRunSchemaVersion } from '../execution/run-scenario'
 import { parseTestRunManifest } from '../results/test-run-schema'
 import {
   openTestRunStore,
@@ -31,7 +30,7 @@ export interface RunArchiveArtifact {
 }
 
 export interface RunArchive {
-  schemaVersion: typeof testRunSchemaVersion
+  schemaVersion: TestRunSchemaVersion
   kind: 'run-archive'
   manifest: TestRunManifest
   events: RunEvent[]
@@ -115,7 +114,7 @@ export async function writeRunArchive(
   }
 
   const archive: RunArchive = {
-    schemaVersion: testRunSchemaVersion,
+    schemaVersion: manifest.schemaVersion,
     kind: 'run-archive',
     manifest: {
       ...manifest,

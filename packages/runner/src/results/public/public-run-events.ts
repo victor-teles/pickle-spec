@@ -3,7 +3,6 @@ import {
   type RunEventPayload,
   type ScenarioAttempt,
   type TestStepResult,
-  testRunSchemaVersion,
 } from '../../execution/run-scenario'
 import {
   publicActionEvidence,
@@ -33,6 +32,7 @@ function publicScenarioStartedEvent(
       event.executionTargetProfile,
     ),
     scope: publicEventScope(event.scope),
+    planUse: event.planUse,
   }
 }
 
@@ -213,7 +213,7 @@ export function publicRunEvent(event: RunEvent): RunEvent {
       step: withoutPrivateStepResultData,
       attempt: withoutPrivateScenarioAttemptData,
     }),
-    schemaVersion: testRunSchemaVersion,
+    schemaVersion: event.schemaVersion,
     sequence: event.sequence,
     occurredAt: event.occurredAt,
   }

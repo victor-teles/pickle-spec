@@ -4,10 +4,11 @@ import type {
   ExecutionCacheUncacheableReason,
 } from '../../execution-cache/execution-cache'
 import type { ExecutionTargetProfile } from './execution-target-types'
+import type { PlanUse } from '../../execution-plans/execution-plan-revision'
 import type {
   ActionEvidence,
   SharedEvidenceObservation,
-  testRunSchemaVersion,
+  TestRunSchemaVersion,
 } from './run-evidence-types'
 import type {
   ScenarioAttempt,
@@ -16,7 +17,7 @@ import type {
 } from './test-result-types'
 
 interface RunEventEnvelope {
-  schemaVersion: typeof testRunSchemaVersion
+  schemaVersion: TestRunSchemaVersion
   sequence: number
   occurredAt: string
 }
@@ -50,6 +51,7 @@ export type RunEventPayload =
       scenario: TestResult['scenario']
       executionTargetProfile: ExecutionTargetProfile
       scope: RunEventScope
+      planUse?: PlanUse
     }>
   | RunEventWithObservations<{
       type: 'step-started'

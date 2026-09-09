@@ -4,6 +4,7 @@ import type { WebExecutionCachePayload } from '../../../index'
 import {
   projectWebExecutionPlan,
   replaceWebInteractionTarget,
+  validateWebExecutionPlanCandidate,
 } from '../../../index'
 
 const steps = [
@@ -298,5 +299,90 @@ describe('web execution plan editing', () => {
       ok: false,
       reason: 'assertion-change',
     })
+  })
+})
+
+describe('web execution plan validation', () => {
+  const scenarioSteps = [
+    { keyword: 'When ', text: 'I buy one item', type: 'action' as const },
+    { keyword: 'Then ', text: 'the total is $29.99', type: 'outcome' as const },
+  ]
+  const validationSteps = scenarioSteps.map((_, index) => ({
+    scenarioRevision: 'scenario-1',
+    index,
+  }))
+  const baseline: WebExecutionCachePayload = {
+    schemaVersion: 1,
+    steps: [
+      {
+        instructions: [
+          {
+            kind: 'click',
+            locator: { selector: { segments: [{ literal: '#buy' }] } },
+          },
+        ],
+      },
+      {
+        instructions: [
+          {
+            kind: 'text-equals',
+            locator: { selector: { segments: [{ literal: '#total' }] } },
+            expected: { segments: [{ literal: '$29.99' }] },
+          },
+        ],
+      },
+    ],
+  }
+
+  test('accepts only a complete locator repair and retains the assertion basis', () => {
+    const candidate: WebExecutionCachePayload = structuredClone(baseline)
+    const action = candidate.steps[0]
+    if (!action) throw new Error('Missing action fixture')
+    action.instructions[0] = {
+      kind: 'click',
+      locator: { selector: { segments: [{ literal: '#buy-now' }] } },
+    }
+    const result = validateWebExecutionPlanCandidate({
+      baselinePayload: baseline,
+      candidatePayload: candidate,
+      steps: validationSteps,
+      scenarioRevision: 'scenario-1',
+      scenarioSteps,
+      requiredVariables: [],
+    })
+    expect(result).toMatchObject({ ok: true, value: { payload: candidate } })
+    if (!result.ok) throw new Error(result.message)
+    expect(result.value.assertionDigest).toMatch(/^[0-9a-f]{64}$/)
+  })
+
+  test('rejects a business assertion change and an incomplete candidate', () => {
+    const changedAssertion: WebExecutionCachePayload = structuredClone(baseline)
+    const outcome = changedAssertion.steps[1]
+    if (!outcome) throw new Error('Missing outcome fixture')
+    outcome.instructions[0] = {
+      kind: 'text-equals',
+      locator: { selector: { segments: [{ literal: '#total' }] } },
+      expected: { segments: [{ literal: '$39.99' }] },
+    }
+    expect(
+      validateWebExecutionPlanCandidate({
+        baselinePayload: baseline,
+        candidatePayload: changedAssertion,
+        steps: validationSteps,
+        scenarioRevision: 'scenario-1',
+        scenarioSteps,
+        requiredVariables: [],
+      }),
+    ).toMatchObject({ ok: false, reason: 'assertion-change' })
+    expect(
+      validateWebExecutionPlanCandidate({
+        baselinePayload: baseline,
+        candidatePayload: { ...baseline, steps: baseline.steps.slice(0, 1) },
+        steps: validationSteps,
+        scenarioRevision: 'scenario-1',
+        scenarioSteps,
+        requiredVariables: [],
+      }),
+    ).toMatchObject({ ok: false, reason: 'incomplete-plan' })
   })
 })

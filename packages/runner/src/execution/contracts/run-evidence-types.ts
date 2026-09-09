@@ -19,6 +19,10 @@ export function isEvidenceState(state: TestResultState): boolean {
 export type ExecutionMode = 'adaptive' | 'replay'
 
 export const testRunSchemaVersion = 2 as const
+export const authoredPlanRunSchemaVersion = 3 as const
+export type TestRunSchemaVersion =
+  | typeof testRunSchemaVersion
+  | typeof authoredPlanRunSchemaVersion
 export const sharedEvidenceObservationVersion = 1 as const
 export const actionEvidenceVersion = 1 as const
 

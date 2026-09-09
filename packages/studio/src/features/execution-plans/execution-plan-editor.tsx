@@ -17,6 +17,7 @@ import {
   CollapsibleTrigger,
 } from '../../components/ui/collapsible'
 import { LocatorForm } from './locator-form'
+import { PlanValidation } from './plan-validation'
 import { PlanOperation, type PlanStepFocus, PlanSteps } from './plan-steps'
 import {
   hasChanges,
@@ -153,6 +154,11 @@ export function ExecutionPlanEditor(props: ExecutionPlanEditorProps) {
       >
         {props.children}
       </DraftHeader>
+      <PlanValidation
+        key={props.draft.revisionId}
+        revisionId={props.draft.revisionId}
+        disabled={Boolean(editor.editing)}
+      />
       <PlanSteps
         steps={props.draft.steps}
         uncachedTail={props.draft.uncachedTail}

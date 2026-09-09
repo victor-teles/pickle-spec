@@ -5,8 +5,10 @@ import type {
   TestRunManifest,
 } from '@pickle-spec/runner'
 import type { StudioLiveViewportEvent } from './live-viewport'
+import type { StudioPlanValidationRequest } from '../execution-plans/execution-plan.contracts'
 
 export interface StudioRunRequest {
+  planValidation?: StudioPlanValidationRequest
   suite?: string
   profiles?: readonly string[]
   paths?: readonly string[]

@@ -1,7 +1,10 @@
 import { appendFile, rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { RunEvent, RunEventPayload } from '../../execution/run-scenario'
-import { testRunSchemaVersion } from '../../execution/run-scenario'
+import {
+  authoredPlanRunSchemaVersion,
+  testRunSchemaVersion,
+} from '../../execution/run-scenario'
 import { recordableRunEventPayloadData } from '../public-results'
 import { parseRunEvent, parseTestRunManifest } from '../test-run-schema'
 import {
@@ -71,8 +74,15 @@ async function appendPersistedEvent(
   const profileId =
     'scope' in recordable ? recordable.scope.executionTargetProfileId : ''
   const policy = state.evidencePersistenceFor(profileId)
+  const carriesPlanUse =
+    ('planUse' in recordable && recordable.planUse !== undefined) ||
+    (recordable.type === 'scenario-finished' &&
+      recordable.attempt.planUse !== undefined)
+  let schemaVersion =
+    'schemaVersion' in event ? event.schemaVersion : testRunSchemaVersion
+  if (carriesPlanUse) schemaVersion = authoredPlanRunSchemaVersion
   const envelope = {
-    schemaVersion: testRunSchemaVersion,
+    schemaVersion,
     sequence: current.length + 1,
     occurredAt:
       'occurredAt' in event ? event.occurredAt : state.now().toISOString(),
@@ -107,7 +117,11 @@ async function materializePersistedRun(
   const recorded = await readEvents(state.eventsPath, state.incompatibleSchema)
   const results = materializeTestResults(recorded)
   const manifest: TestRunManifest = {
-    schemaVersion: testRunSchemaVersion,
+    schemaVersion: recorded.some(
+      (event) => event.schemaVersion === authoredPlanRunSchemaVersion,
+    )
+      ? authoredPlanRunSchemaVersion
+      : testRunSchemaVersion,
     id: state.id,
     startedAt: startedAtFrom(recorded, state.startedAt),
     state: aggregateTestResultState(results),

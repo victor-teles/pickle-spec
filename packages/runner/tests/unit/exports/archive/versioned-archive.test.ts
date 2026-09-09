@@ -1,7 +1,7 @@
 import { rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import { expect, test } from 'vitest'
-import { readRunArchive } from '../../../../index'
+import { type PlanUse, readRunArchive } from '../../../../index'
 import { requiredValue } from '../../../../src/required-value'
 import {
   emptyArchive,
@@ -14,6 +14,85 @@ import {
   tempRoot,
   writeRunArchive,
 } from './fixtures'
+
+test('preserves authored validation provenance through persistence and archive import', async () => {
+  const sourceRoot = await tempRoot()
+  const targetRoot = await tempRoot()
+  const planUse: PlanUse = {
+    revisionId: 'a'.repeat(64),
+    selectionDigest: null,
+    key: {
+      projectKey: 'source-project',
+      scenarioId: 'scnpurchasebbbbbb',
+      scenarioRevision: 'b'.repeat(64),
+      executionTargetProfileId: 'deterministic',
+      targetConfigurationFingerprint: 'target-configuration',
+      applicationRevision: 'app-revision',
+      adapterKind: 'web',
+      adapterCacheSchemaVersion: '1',
+    },
+    payloadDigest: 'c'.repeat(64),
+    author: { kind: 'human', id: 'reviewer' },
+    origin: { kind: 'cache-capture', payloadDigest: 'd'.repeat(64) },
+    purpose: 'validation',
+    validationId: null,
+  }
+  try {
+    const store = openTestRunStore({ root: sourceRoot })
+    const run = await store.create()
+    const result = passedResult()
+    result.schemaVersion = 3
+    const attempt = requiredValue(result.attempts[0])
+    attempt.planUse = planUse
+    delete attempt.cacheOutcome
+    await run.append(scenarioFinished(result))
+    const manifest = await run.materialize()
+    expect(manifest.schemaVersion).toBe(3)
+    expect(manifest.results[0]).toMatchObject({
+      schemaVersion: 3,
+      attempts: [{ planUse }],
+    })
+    const reopened = await store.open(run.id)
+    expect(await reopened.materialize()).toEqual(manifest)
+    expect((await reopened.events()).at(-1)).toMatchObject({
+      schemaVersion: 3,
+      attempt: { planUse },
+    })
+    const archivePath = join(sourceRoot, 'validation.archive.json')
+    await writeRunArchive({
+      root: sourceRoot,
+      runId: run.id,
+      outputPath: archivePath,
+    })
+    const archive = await readRunArchive(archivePath)
+    expect(archive.schemaVersion).toBe(3)
+    expect(archive.manifest).toEqual(manifest)
+    expect(archive.events[0]?.schemaVersion).toBe(2)
+    expect(archive.events.at(-1)?.schemaVersion).toBe(3)
+    const imported = await importRunArchive({ root: targetRoot, archivePath })
+    expect(imported.manifest).toEqual(manifest)
+    expect(
+      imported.manifest.results[0]?.attempts[0]?.cacheOutcome,
+    ).toBeUndefined()
+    expect(imported.manifest.results[0]?.attempts[0]?.planUse).toEqual(planUse)
+    expect(
+      (
+        await (
+          await openTestRunStore({ root: targetRoot }).open(run.id)
+        ).events()
+      ).at(-1),
+    ).toMatchObject({
+      schemaVersion: 3,
+      attempt: { planUse },
+    })
+  } finally {
+    await Promise.all(
+      [sourceRoot, targetRoot].map((root) =>
+        rm(root, { recursive: true, force: true }),
+      ),
+    )
+  }
+})
 
 test('issue 77: exports and imports a schema-v2 archive with contained artifact paths', async () => {
   const sourceRoot = await tempRoot()

@@ -8,22 +8,27 @@ import {
   testRunManifestSchema,
 } from '@pickle-spec/runner/schemas'
 import { z } from 'zod'
+import { planValidationRequestSchema } from '../execution-plans/validation.schemas'
 import type {
   StudioRunRequest,
   StudioRunSnapshot,
   StudioRunStreamEvent,
 } from './run.contracts'
 
-export const studioRunRequestSchema: z.ZodType<StudioRunRequest> = z.object({
-  suite: z.string().optional(),
-  profiles: z.array(z.string()).optional(),
-  paths: z.array(z.string()).optional(),
-  scenarioName: z.string().optional(),
-  scenarioId: z.string().optional(),
-  rerunId: z.string().optional(),
-  failures: z.boolean().optional(),
-  refreshCache: z.boolean().optional(),
-})
+export const studioRunRequestSchema: z.ZodType<StudioRunRequest> = z.union([
+  z.strictObject({ planValidation: planValidationRequestSchema }),
+  z.object({
+    planValidation: z.never().optional(),
+    suite: z.string().optional(),
+    profiles: z.array(z.string()).optional(),
+    paths: z.array(z.string()).optional(),
+    scenarioName: z.string().optional(),
+    scenarioId: z.string().optional(),
+    rerunId: z.string().optional(),
+    failures: z.boolean().optional(),
+    refreshCache: z.boolean().optional(),
+  }),
+])
 const scheduledResultSchema = z.object({
   specification: specificationIdentitySchema,
   scenario: scenarioIdentitySchema,

@@ -124,6 +124,14 @@ async function runProjectWork(context: ProjectRunWorkInput) {
       onLiveViewport: input.onLiveViewport,
     })
     validateTargetSelection(selection.selections, configuration.targets)
+    if (
+      input.executionPlanValidation &&
+      (selection.selections.length !== 1 || configuration.targets.length !== 1)
+    ) {
+      throw new Error(
+        'Execution plan validation requires exactly one Scenario and one target profile',
+      )
+    }
     await publishRunSchedule(input, selection, configuration)
     const application = await startApplicationDiagnostics(
       input,

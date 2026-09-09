@@ -1,5 +1,6 @@
 import type { MobileLiveViewportUpdate } from '@pickle-spec/mobile'
 import type {
+  AuthoredReplayExecution,
   EvidencePersistencePolicy,
   RunEvent,
   ScenarioRun,
@@ -64,4 +65,7 @@ export type StartProjectRunInput = {
     schedule: readonly ScheduledTestResult[],
   ) => void | Promise<void>
   onResult?: (result: TestResult) => void | Promise<void>
+  executionPlanValidation?: {
+    authoredReplay: AuthoredReplayExecution
+  }
 }

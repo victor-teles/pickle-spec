@@ -54,3 +54,8 @@ export {
 export type { ReplaceWebInteractionTarget } from './src/execution-cache/web-plan-editor'
 export { replaceWebInteractionTarget } from './src/execution-cache/web-plan-editor'
 export { projectWebExecutionPlan } from './src/execution-cache/web-plan-projector'
+export type { ValidatedWebExecutionPlan } from './src/execution-cache/web-plan-validator'
+export {
+  validateWebExecutionPlanCandidate,
+  webPlanValidatorVersion,
+} from './src/execution-cache/web-plan-validator'

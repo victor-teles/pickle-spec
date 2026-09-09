@@ -4,7 +4,10 @@ import type {
   TestResult,
   TestResultState,
 } from '../../execution/run-scenario'
-import { testRunSchemaVersion } from '../../execution/run-scenario'
+import {
+  authoredPlanRunSchemaVersion,
+  testRunSchemaVersion,
+} from '../../execution/run-scenario'
 
 const stateRank: Record<TestResultState, number> = {
   skipped: 0,
@@ -75,7 +78,9 @@ function materializedResult(group: MaterializedResultGroup): TestResult {
     throw new Error('A Test result requires at least one Scenario attempt')
   }
   const testResult: TestResult = {
-    schemaVersion: testRunSchemaVersion,
+    schemaVersion: attempts.some((attempt) => attempt.planUse !== undefined)
+      ? authoredPlanRunSchemaVersion
+      : testRunSchemaVersion,
     specification: group.specification,
     scenario: group.scenario,
     executionTargetProfile: group.executionTargetProfile,
