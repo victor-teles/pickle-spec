@@ -1,4 +1,4 @@
-import { mkdir } from 'node:fs/promises'
+import { mkdir, rm } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import AxeBuilder from '@axe-core/playwright'
 import { openLocalExecutionPlanStore } from '@pickle-spec/runner'
@@ -254,6 +254,83 @@ test('edits locators inline with recovery, revision chaining, keyboard focus, an
     expect(await seeded.cache.inspect()).toEqual(before)
   } finally {
     releaseSave()
+    await context.close()
+    child.kill()
+    await child.exited
+  }
+}, 60_000)
+
+test('requires validation review and resets it after saving a new revision', async () => {
+  const project = await fixture.createProject('plan-validation-review')
+  const seeded = await createExecutionPlanBrowserProject(
+    project,
+    fixture.workspace,
+  )
+  await rm(resolve(project, 'pickle.extensions.ts'), { force: true })
+  const { child, url } = await fixture.start(project, {
+    PICKLE_CACHE_ROOT: seeded.cacheRoot,
+    PICKLE_HOME: seeded.pickleHome,
+  })
+  const context = await fixture.browser.newContext({
+    viewport: { width: 1440, height: 1000 },
+  })
+  const page = await context.newPage()
+  try {
+    await page.goto(url)
+    await waitForStudio(page, 'plan-validation-review')
+    const cached = await inspectScenario(page, 'Complete cached plan')
+    await expandPlanDock(page)
+    await cached.getByRole('button', { name: 'Start draft from cache' }).click()
+    const draft = page.getByRole('region', {
+      name: 'Execution plan draft editor',
+    })
+    await draft.waitFor()
+    await draft.getByText('Validate candidate', { exact: true }).waitFor()
+    await draft.getByText('Validation runs every Scenario action').waitFor()
+    await draft.getByText('The active plan and cache stay unchanged').waitFor()
+    await draft.getByRole('button', { name: 'Review for validation' }).click()
+    await draft.getByText('Compare baseline and candidate').waitFor()
+    await draft.getByText('Baseline · original expectations').waitFor()
+    await draft.getByText('Candidate · saved revision').waitFor()
+    const validate = draft.getByRole('button', {
+      name: 'Validate candidate',
+      exact: true,
+    })
+    await expect.poll(() => validate.isDisabled()).toBe(true)
+    await draft
+      .getByLabel(/Why does this target preserve/)
+      .fill('The repaired locator preserves the Scenario intent.')
+    await draft
+      .getByRole('checkbox', {
+        name: /I compared the candidate with the baseline/,
+      })
+      .check()
+    await expect.poll(() => validate.isDisabled()).toBe(true)
+    await draft
+      .getByRole('checkbox', { name: /I reset the application/ })
+      .check()
+    await expect.poll(() => validate.isEnabled()).toBe(true)
+
+    const edit = draft
+      .getByRole('button', { name: 'Edit locator', exact: true })
+      .first()
+    await edit.click()
+    await draft.getByLabel('Locator', { exact: true }).fill('#eng07-review')
+    await draft
+      .getByRole('button', { name: 'Save change', exact: true })
+      .click()
+    await draft
+      .getByRole('status')
+      .filter({ hasText: 'Saved to draft' })
+      .waitFor()
+    await draft.getByRole('button', { name: 'Review for validation' }).waitFor()
+    expect(
+      await draft.getByText('Compare baseline and candidate').count(),
+    ).toBe(0)
+    expect(
+      await draft.getByLabel(/Why does this target preserve/).count(),
+    ).toBe(0)
+  } finally {
     await context.close()
     child.kill()
     await child.exited

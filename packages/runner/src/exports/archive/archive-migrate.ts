@@ -1,6 +1,9 @@
 import { configurationParser } from '@pickle-spec/configuration'
 import { z } from 'zod'
-import { testRunSchemaVersion } from '../../execution/run-scenario'
+import {
+  authoredPlanRunSchemaVersion,
+  testRunSchemaVersion,
+} from '../../execution/run-scenario'
 import {
   publicRunEvent,
   recordableTestResult,
@@ -35,22 +38,33 @@ function incompatibleArchiveSchema(version: string): never {
 function projectArchive(
   archive: z.infer<typeof archiveEnvelopeSchema>,
 ): RunArchive {
-  if (archive.schemaVersion !== testRunSchemaVersion) {
+  if (
+    archive.schemaVersion !== testRunSchemaVersion &&
+    archive.schemaVersion !== authoredPlanRunSchemaVersion
+  ) {
     incompatibleArchiveSchema(String(archive.schemaVersion))
   }
+  const schemaVersion = archive.schemaVersion
   const manifest = parseTestRunManifest(incompatibleArchiveSchema)(
     archive.manifest,
   )
+  if (schemaVersion !== manifest.schemaVersion) {
+    throw new Error('Run archive and manifest schema versions must match')
+  }
+  const events = archive.events.map((event) =>
+    publicRunEvent(parseRunEvent(incompatibleArchiveSchema)(event)),
+  )
+  if (events.some((event) => event.schemaVersion > schemaVersion)) {
+    throw new Error('Run event schema version exceeds its archive version')
+  }
   return {
-    schemaVersion: testRunSchemaVersion,
+    schemaVersion,
     kind: 'run-archive',
     manifest: {
       ...manifest,
       results: manifest.results.map(recordableTestResult),
     },
-    events: archive.events.map((event) =>
-      publicRunEvent(parseRunEvent(incompatibleArchiveSchema)(event)),
-    ),
+    events,
     artifacts: archive.artifacts,
   }
 }

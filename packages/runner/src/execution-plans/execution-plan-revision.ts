@@ -43,6 +43,50 @@ export interface PlanRevision {
   assertionBaselineRevisionId: Digest | null
 }
 
+export interface IntentReview {
+  reviewer: { kind: 'human'; id: string }
+  candidateId: Digest
+  baselineId: Digest
+  scenarioRevision: string
+  decision: 'preserves-specification'
+  rationale: string
+  evidenceRunIds: readonly string[]
+}
+
+export interface ValidationReceipt {
+  id: Digest
+  revisionId: Digest
+  key: ExecutionCacheKey
+  inputSnapshotDigest: Digest
+  assertionDigest: Digest
+  intentReviewDigest: Digest
+  validationRun: RunReference
+  adapterValidatorVersion: string
+  validatedAt: string
+  result: 'passed'
+  inferenceCount: 0
+}
+
+export interface ValidationHead {
+  basisDigest: Digest
+  generation: number
+  run: RunReference
+  outcome: 'passed' | 'failed' | 'cancelled'
+  receiptId: Digest | null
+}
+
+export type PlanUse = {
+  revisionId: Digest
+  selectionDigest: Digest | null
+  key: ExecutionCacheKey
+  payloadDigest: Digest
+  author: Actor
+  origin: PlanOrigin
+} & (
+  | { purpose: 'validation'; validationId: null }
+  | { purpose: 'active'; validationId: Digest }
+)
+
 export type PlanRevisionContent = Omit<PlanRevision, 'id'>
 
 export interface PlanSelection {
@@ -115,6 +159,59 @@ const planScopeSchema = z.strictObject({
   adapterKind: nonemptyString,
   adapterCacheSchemaVersion: nonemptyString,
 })
+
+const planUseBaseSchema = z.strictObject({
+  revisionId: digestSchema,
+  selectionDigest: digestSchema.nullable(),
+  key: planScopeSchema.extend({ projectKey: nonemptyString }),
+  payloadDigest: digestSchema,
+  author: actorSchema,
+  origin: planOriginSchema,
+})
+
+export const intentReviewSchema: z.ZodType<IntentReview> = z.strictObject({
+  reviewer: z.strictObject({ kind: z.literal('human'), id: nonemptyString }),
+  candidateId: digestSchema,
+  baselineId: digestSchema,
+  scenarioRevision: nonemptyString,
+  decision: z.literal('preserves-specification'),
+  rationale: nonemptyString,
+  evidenceRunIds: z.array(nonemptyString),
+})
+
+export const validationReceiptSchema: z.ZodType<ValidationReceipt> =
+  z.strictObject({
+    id: digestSchema,
+    revisionId: digestSchema,
+    key: planUseBaseSchema.shape.key,
+    inputSnapshotDigest: digestSchema,
+    assertionDigest: digestSchema,
+    intentReviewDigest: digestSchema,
+    validationRun: runReferenceSchema,
+    adapterValidatorVersion: nonemptyString,
+    validatedAt: nonemptyString,
+    result: z.literal('passed'),
+    inferenceCount: z.literal(0),
+  })
+
+export const validationHeadSchema: z.ZodType<ValidationHead> = z.strictObject({
+  basisDigest: digestSchema,
+  generation: z.number().int().positive().safe(),
+  run: runReferenceSchema,
+  outcome: z.enum(['passed', 'failed', 'cancelled']),
+  receiptId: digestSchema.nullable(),
+})
+
+export const planUseSchema = z.discriminatedUnion('purpose', [
+  planUseBaseSchema.extend({
+    purpose: z.literal('validation'),
+    validationId: z.null(),
+  }),
+  planUseBaseSchema.extend({
+    purpose: z.literal('active'),
+    validationId: digestSchema,
+  }),
+])
 
 const stepIdentitySchema = z.strictObject({
   scenarioRevision: nonemptyString,

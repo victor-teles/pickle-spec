@@ -27,6 +27,7 @@ import {
   traceEntrySchema,
   validateTiming,
 } from './run-schema-primitives'
+import { planUseSchema } from '../../execution-plans/execution-plan-revision'
 
 export const testStepResultSchema: z.ZodType<TestStepResult> = z
   .object({
@@ -194,6 +195,7 @@ export const scenarioAttemptSchema: z.ZodType<ScenarioAttempt> = z
       .array(applicationOutputEvidenceAvailabilitySchema)
       .optional(),
     diagnostics: z.array(diagnosticEntrySchema).optional(),
+    planUse: planUseSchema.optional(),
   })
   .superRefine((attempt, context) => {
     validateTiming(attempt, context)
@@ -203,7 +205,7 @@ export const scenarioAttemptSchema: z.ZodType<ScenarioAttempt> = z
 
 export const testResultSchema: z.ZodType<TestResult> = z
   .object({
-    schemaVersion: z.literal(testRunSchemaVersion),
+    schemaVersion: z.union([z.literal(testRunSchemaVersion), z.literal(3)]),
     specification: specificationIdentitySchema,
     scenario: scenarioIdentitySchema,
     executionTargetProfile: executionTargetProfileSchema,
@@ -214,11 +216,20 @@ export const testResultSchema: z.ZodType<TestResult> = z
     attempts: z.array(scenarioAttemptSchema).min(1),
     flaky: z.boolean().optional(),
   })
-  .superRefine(validateTiming)
+  .superRefine((result, context) => {
+    validateTiming(result, context)
+    const hasPlanUse = result.attempts.some((attempt) => attempt.planUse)
+    if ((result.schemaVersion === 3) !== hasPlanUse) {
+      context.addIssue({
+        code: 'custom',
+        message: 'Plan use requires run evidence schema version 3',
+      })
+    }
+  })
 
 export const testRunManifestSchema: z.ZodType<TestRunManifest> = z
   .object({
-    schemaVersion: z.literal(testRunSchemaVersion),
+    schemaVersion: z.union([z.literal(testRunSchemaVersion), z.literal(3)]),
     id: z.string(),
     startedAt: timestampSchema,
     finishedAt: timestampSchema.optional(),

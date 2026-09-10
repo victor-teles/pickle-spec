@@ -11,7 +11,6 @@ import {
   type TestArtifact,
   type TestResult,
   type TestStepResult,
-  testRunSchemaVersion,
 } from '../../execution/run-scenario'
 import type { ExecutionCacheKey } from '../../execution-cache/execution-cache'
 
@@ -240,6 +239,7 @@ function projectAttempt(
       (availability) => ({ ...availability }),
     ),
     diagnostics: attempt.diagnostics?.map((entry) => ({ ...entry })),
+    planUse: attempt.planUse,
   }
 }
 
@@ -252,12 +252,14 @@ export function withoutPrivateScenarioAttemptData(
 export function recordableScenarioAttempt(
   attempt: ScenarioAttempt,
 ): ScenarioAttempt {
-  return {
+  const projected = {
     ...withoutPrivateScenarioAttemptData(attempt),
     executionMode: attempt.executionMode ?? 'adaptive',
-    cacheOutcome: attempt.cacheOutcome ?? 'uncacheable',
     inferenceCount: attempt.inferenceCount ?? 0,
   }
+  return attempt.planUse
+    ? projected
+    : { ...projected, cacheOutcome: attempt.cacheOutcome ?? 'uncacheable' }
 }
 
 function projectTestResult(
@@ -265,7 +267,7 @@ function projectTestResult(
   projectAttemptData: AttemptProjection,
 ): TestResult {
   return {
-    schemaVersion: testRunSchemaVersion,
+    schemaVersion: result.schemaVersion,
     specification: {
       name: result.specification.name,
       uri: result.specification.uri,

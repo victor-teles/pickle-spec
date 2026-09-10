@@ -12,6 +12,7 @@ import type {
   TestStepResult,
 } from '../run-scenario-types'
 import { testRunSchemaVersion } from '../run-scenario-types'
+import { authoredPlanRunSchemaVersion } from '../run-scenario-types'
 import { recordExecutionError } from './scenario-diagnostics'
 import {
   type AttemptProgress,
@@ -85,6 +86,7 @@ async function finishAttempt(
       context.progress.diagnostics.length > 0
         ? context.progress.diagnostics
         : undefined,
+    planUse: context.input.authoredReplay?.planUse,
     evidenceAvailability: attemptEvidence(
       context.input,
       context.steps,
@@ -115,7 +117,9 @@ function createAttemptEmitter(
   return async (event, occurredAt = now().toISOString()) => {
     const versionedEvent = withSharedEvidenceObservations({
       ...event,
-      schemaVersion: testRunSchemaVersion,
+      schemaVersion: input.authoredReplay
+        ? authoredPlanRunSchemaVersion
+        : testRunSchemaVersion,
       sequence: ++sequence,
       occurredAt,
     })
@@ -145,12 +149,14 @@ function openAttemptSession(
     specification: input.specification,
     scenario: input.scenario,
     mode: input.mode,
-    executionCache: input.cacheEntry
-      ? {
-          adapterPayload: input.cacheEntry.adapterPayload,
-          requiredVariables: input.cacheEntry.requiredVariables,
-        }
-      : undefined,
+    executionCache:
+      input.authoredReplay?.replay ??
+      (input.cacheEntry
+        ? {
+            adapterPayload: input.cacheEntry.adapterPayload,
+            requiredVariables: input.cacheEntry.requiredVariables,
+          }
+        : undefined),
     scenarioTemplate: input.scenario.template,
     runtimeBindings: input.scenario.runtimeBindings,
     signal: input.signal,
@@ -202,6 +208,7 @@ async function startScenarioAttempt(
   const started = await emit({
     type: 'scenario-started',
     ...attemptIdentity(input),
+    planUse: input.authoredReplay?.planUse,
   })
   return started.occurredAt
 }

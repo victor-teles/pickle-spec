@@ -33,6 +33,7 @@ export type {
   EvidenceKind,
   ExecutionCachePolicy,
   ExecutionMode,
+  AuthoredReplayExecution,
   ExecutionPolicy,
   ExecutionTargetAdapter,
   ExecutionTargetProfile,
@@ -175,7 +176,28 @@ export type {
   PlanUnavailableReason,
   RunReference,
   StepIdentity,
+  IntentReview,
+  ValidationReceipt,
+  ValidationHead,
+  PlanUse,
 } from './src/execution-plans/execution-plan-revision'
+export {
+  planUseSchema,
+  intentReviewSchema,
+  validationHeadSchema,
+  validationReceiptSchema,
+} from './src/execution-plans/execution-plan-revision'
+export type {
+  InputSnapshotDigester,
+  LocalPlanValidationStore,
+  PublishValidationInput,
+  PublishedValidation,
+  ValidationInputSnapshot,
+} from './src/execution-plans/local-plan-validation-store'
+export {
+  openLocalPlanValidationStore,
+  validationBasisDigest,
+} from './src/execution-plans/local-plan-validation-store'
 export type {
   LocalExecutionPlanStore,
   LocalExecutionPlanStoreOptions,

@@ -24,9 +24,10 @@ import {
   scenarioAttemptSchema,
   testStepResultSchema,
 } from './test-result-schema'
+import { planUseSchema } from '../../execution-plans/execution-plan-revision'
 
 const eventEnvelope = {
-  schemaVersion: z.literal(testRunSchemaVersion),
+  schemaVersion: z.union([z.literal(testRunSchemaVersion), z.literal(3)]),
   sequence: positiveIntegerSchema,
   occurredAt: timestampSchema,
   observations: z.array(sharedEvidenceObservationSchema).optional(),
@@ -56,9 +57,15 @@ const cacheEventSchemas = cacheEventTypes.map((type) =>
   }),
 )
 
-export const runEventSchema: z.ZodType<RunEvent> = z.discriminatedUnion(
-  'type',
-  [
+function eventPlanUse(event: RunEvent) {
+  let planUse
+  if (event.type === 'scenario-started') planUse = event.planUse
+  if (event.type === 'scenario-finished') planUse = event.attempt.planUse
+  return planUse
+}
+
+export const runEventSchema: z.ZodType<RunEvent> = z
+  .discriminatedUnion('type', [
     z.object({
       ...eventEnvelope,
       type: z.literal('run-started'),
@@ -75,6 +82,7 @@ export const runEventSchema: z.ZodType<RunEvent> = z.discriminatedUnion(
       ...eventEnvelope,
       ...scopedEvent,
       type: z.literal('scenario-started'),
+      planUse: planUseSchema.optional(),
     }),
     z.object({
       ...eventEnvelope,
@@ -115,5 +123,21 @@ export const runEventSchema: z.ZodType<RunEvent> = z.discriminatedUnion(
       attempt: scenarioAttemptSchema,
       scheduleIndex: nonNegativeIntegerSchema.optional(),
     }),
-  ],
-)
+  ])
+  .superRefine((event, context) => {
+    const planUse = eventPlanUse(event)
+    const lifecycleEvent =
+      event.type === 'scenario-started' || event.type === 'scenario-finished'
+    if (event.schemaVersion === 2 && planUse) {
+      context.addIssue({
+        code: 'custom',
+        message: 'Plan use requires run evidence schema version 3',
+      })
+    }
+    if (event.schemaVersion === 3 && lifecycleEvent && !planUse) {
+      context.addIssue({
+        code: 'custom',
+        message: 'Schema-v3 Scenario lifecycle events require Plan use',
+      })
+    }
+  })

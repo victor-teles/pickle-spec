@@ -16,8 +16,9 @@ import type {
   TestArtifact,
   TestResultState,
   TraceEntry,
-  testRunSchemaVersion,
+  TestRunSchemaVersion,
 } from './run-evidence-types'
+import type { PlanUse } from '../../execution-plans/execution-plan-revision'
 
 export interface ScenarioIdentity {
   name: string
@@ -58,10 +59,11 @@ export interface ScenarioAttempt {
   evidenceAvailability: EvidenceAvailability[]
   applicationOutputAvailability?: ApplicationOutputEvidenceAvailability[]
   diagnostics?: DiagnosticEntry[]
+  planUse?: PlanUse
 }
 
 export interface TestResult {
-  schemaVersion: typeof testRunSchemaVersion
+  schemaVersion: TestRunSchemaVersion
   specification: {
     name: string
     uri: string

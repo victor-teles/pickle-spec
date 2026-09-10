@@ -4,12 +4,14 @@ import type {
   ExecutionCacheStore,
 } from '../execution-cache/execution-cache'
 import type {
+  ReplayCacheInput,
   ExecutionTargetAdapter,
   ExecutionTargetProfile,
   TargetSessionCompletion,
 } from './contracts/execution-target-types'
 import type { RunEvent } from './contracts/run-event-types'
 import type { ExecutionMode } from './contracts/run-evidence-types'
+import type { PlanUse } from '../execution-plans/execution-plan-revision'
 import type { ScenarioAttempt, TestResult } from './contracts/test-result-types'
 
 export * from './contracts/execution-target-types'
@@ -45,12 +47,19 @@ export interface ScenarioExecutionCache {
   sourceRunId: string
 }
 
+export interface AuthoredReplayExecution {
+  replay: ReplayCacheInput
+  planUse: PlanUse
+}
+
 export interface RunScenarioInput extends ExecutionPolicy {
   specification: Specification
   scenario: Scenario
   executionTargetProfile: ExecutionTargetProfile
   adapter: ExecutionTargetAdapter
   executionCache?: ScenarioExecutionCache
+  authoredReplay?: AuthoredReplayExecution
+  projectKey?: string
   cachePolicy?: ExecutionCachePolicy
   applicationRevision?: string
   now?: () => Date

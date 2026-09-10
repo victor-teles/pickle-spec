@@ -12,7 +12,11 @@ import type {
   TestResultState,
   TestStepResult,
 } from '../run-scenario-types'
-import { evidenceKinds, testRunSchemaVersion } from '../run-scenario-types'
+import {
+  authoredPlanRunSchemaVersion,
+  evidenceKinds,
+  testRunSchemaVersion,
+} from '../run-scenario-types'
 import { scenarioDefinitionId, scenarioIdentity } from './scenario-runtime'
 
 const evidenceCapabilities = {
@@ -62,7 +66,9 @@ export function createTestResult(
   }
   const scenarioId = scenarioDefinitionId(input.specification, input.scenario)
   const testResult: TestResult = {
-    schemaVersion: testRunSchemaVersion,
+    schemaVersion: input.authoredReplay
+      ? authoredPlanRunSchemaVersion
+      : testRunSchemaVersion,
     specification: {
       name: input.specification.name,
       uri: input.specification.source.uri,
@@ -103,6 +109,7 @@ export function createSyntheticTestResult(
     executionMode: mode,
     inferenceCount: 0,
     evidenceAvailability: attemptEvidence(attemptInput, []),
+    planUse: input.authoredReplay?.planUse,
   }
   if (input.adapter.fidelityPolicy) {
     attempt.fidelityPolicy = input.adapter.fidelityPolicy

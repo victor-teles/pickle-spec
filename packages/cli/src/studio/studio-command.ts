@@ -19,6 +19,10 @@ import {
 import { errorMessage } from '../terminal/command-error'
 import { createStudioExecutionCacheGateway } from './studio-cache'
 import { createStudioExecutionPlanGateway } from './studio-execution-plans'
+import {
+  createStudioPlanValidationService,
+  type StudioPlanValidationService,
+} from './execution-plan-validation/service'
 import { createStudioHistoryGateway } from './studio-history'
 import {
   discoverStudioMobileTargets,
@@ -68,13 +72,15 @@ function executionPlanGateway(
   root: string,
   args: StudioCommandInput,
   extensions: StudioCommandContext['extensions'],
+  validation: StudioPlanValidationService,
 ) {
-  return createStudioExecutionPlanGateway(
+  const executionPlans = createStudioExecutionPlanGateway(
     root,
     args.configPath,
     process.env.PICKLE_CACHE_ROOT,
     executionPlanOverrides(extensions),
   )
+  return { ...executionPlans, validation }
 }
 
 function studioManagementGateway(
@@ -132,6 +138,7 @@ interface StudioRunGatewayInput {
   activeRuns: Map<string, AbortController>
   context: StudioCommandContext
   controller: AbortController
+  planValidation: StudioPlanValidationService
 }
 
 function studioLiveViewportEvent(
@@ -145,7 +152,7 @@ function studioLiveViewportEvent(
 }
 
 function studioRunGateway(input: StudioRunGatewayInput): StudioRunGateway {
-  const { activeRuns, context, controller } = input
+  const { activeRuns, context, controller, planValidation } = input
   const { args, credentials, extensions, root } = context
   return {
     async start(request, onEvent) {
@@ -154,37 +161,55 @@ function studioRunGateway(input: StudioRunGatewayInput): StudioRunGateway {
       controller.signal.addEventListener('abort', onProcessAbort, {
         once: true,
       })
-      const config = await loadConfig(args.configPath, root)
-      validateStudioMobileTargetCapabilities(
-        config,
-        await discoverStudioMobileTargets(
-          config,
-          undefined,
-          extensions.adapters,
-          request?.profiles,
-        ),
-        request?.profiles,
-      )
-      const started = await startProjectRun({
-        root,
-        config: await resolveConfigSecrets(config, credentials),
-        options: {
-          extensionsPath: args.extensionsPath,
-          suite: request?.suite,
-          profiles: request?.profiles ? [...request.profiles] : undefined,
-          selection: studioRunSelection(request),
-          rerunId: request?.rerunId,
-          scenarioIds: request?.scenarioId ? [request.scenarioId] : undefined,
-          failures: request?.failures,
-          refreshCache: request?.refreshCache,
-        },
+      const callbacks = {
         signal: runController.signal,
         onEvent,
         onSchedule: (schedule) => onEvent({ type: 'run-scheduled', schedule }),
         onApplicationDiagnostic: (event) =>
           onEvent({ type: 'diagnostic-recorded', ...event }),
         onLiveViewport: (update) => onEvent(studioLiveViewportEvent(update)),
-      })
+      } satisfies Parameters<StudioPlanValidationService['start']>[1]
+      let started
+      try {
+        if (request?.planValidation) {
+          started = await planValidation.start(
+            request.planValidation,
+            callbacks,
+          )
+        } else {
+          const config = await loadConfig(args.configPath, root)
+          validateStudioMobileTargetCapabilities(
+            config,
+            await discoverStudioMobileTargets(
+              config,
+              undefined,
+              extensions.adapters,
+              request?.profiles,
+            ),
+            request?.profiles,
+          )
+          started = await startProjectRun({
+            ...callbacks,
+            root,
+            config: await resolveConfigSecrets(config, credentials),
+            options: {
+              extensionsPath: args.extensionsPath,
+              suite: request?.suite,
+              profiles: request?.profiles ? [...request.profiles] : undefined,
+              selection: studioRunSelection(request),
+              rerunId: request?.rerunId,
+              scenarioIds: request?.scenarioId
+                ? [request.scenarioId]
+                : undefined,
+              failures: request?.failures,
+              refreshCache: request?.refreshCache,
+            },
+          })
+        }
+      } catch (error) {
+        controller.signal.removeEventListener('abort', onProcessAbort)
+        throw error
+      }
       activeRuns.set(started.id, runController)
       void started.done
         .catch((error) => console.error(errorMessage(error)))
@@ -230,6 +255,17 @@ export async function runStudioCommand(
     project,
     root,
   }
+  const planValidation = createStudioPlanValidationService({
+    root,
+    configPath: args.configPath,
+    extensionsPath: args.extensionsPath,
+    async loadConfig() {
+      return resolveConfigSecrets(
+        await loadConfig(args.configPath, root),
+        credentials,
+      )
+    },
+  })
   const server = await startStudio({
     project: await loadProject(),
     loadProject,
@@ -244,7 +280,12 @@ export async function runStudioCommand(
       const current = await loadConfig(args.configPath, root)
       return current.cache ?? {}
     }),
-    executionPlans: executionPlanGateway(root, args, extensions),
+    executionPlans: executionPlanGateway(
+      root,
+      args,
+      extensions,
+      planValidation,
+    ),
     history: createStudioHistoryGateway(root, async () => {
       const current = await loadConfig(args.configPath, root)
       return {
@@ -254,7 +295,12 @@ export async function runStudioCommand(
         maxBytes: current.retention?.maxBytes,
       }
     }),
-    gateway: studioRunGateway({ activeRuns, context, controller }),
+    gateway: studioRunGateway({
+      activeRuns,
+      context,
+      controller,
+      planValidation,
+    }),
     hostname: args.remoteHost,
     allowRemoteAccess: Boolean(args.remoteHost),
     open: args.open,

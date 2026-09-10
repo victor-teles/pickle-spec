@@ -64,7 +64,7 @@ contracts are settled. No delivery dates or effort estimates are assumed.
 | [ ]  | ENG-04 | P0       | Expose a readable execution plan                 | ENG-03                         |
 | [x]  | ENG-05 | P0       | Persist durable drafts and revisions             | ENG-03                         |
 | [x]  | ENG-06 | P0       | Add manual web interaction editing               | ENG-04, ENG-05                 |
-| [ ]  | ENG-07 | P0       | Validate a candidate without activating it       | ENG-02, ENG-05, ENG-06         |
+| [x]  | ENG-07 | P0       | Validate a candidate without activating it       | ENG-02, ENG-05, ENG-06         |
 | [ ]  | ENG-08 | P0       | Activate, roll back, and preserve edited plans   | ENG-07                         |
 | [ ]  | ENG-09 | P0       | Explain failures and Replay divergence           | ENG-01, ENG-02                 |
 | [ ]  | ENG-10 | P0       | Fix first-run and setup recovery gaps            | ENG-02                         |
@@ -250,6 +250,8 @@ checks, keyboard interaction, and navigation with unsaved changes.
 Implementation evidence: [manual web interaction editing](execution-plan-editing.md).
 
 ### ENG-07: Validate a candidate without activating it
+
+Implemented and verified: [candidate validation](execution-plan-validation.md).
 
 Entry points: runner Scenario execution, adapter Replay, and existing Studio run
 requests. Extend approved contracts rather than introducing another runner.

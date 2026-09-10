@@ -4,6 +4,8 @@ import type {
   ExecutionPlanDraftDisplay,
   PlanResult,
   StepIdentity,
+  ExecutionPlanStepDisplay,
+  ValidationReceipt,
 } from '@pickle-spec/runner'
 
 export interface StudioExecutionPlanRequest {
@@ -31,6 +33,7 @@ export type StudioExecutionPlanDraftResult =
   PlanResult<ExecutionPlanDraftDisplay>
 
 export interface StudioExecutionPlanGateway {
+  validation?: StudioPlanValidationGateway
   read(request: StudioExecutionPlanRequest): Promise<ExecutionPlanDisplay>
   captureDraft(
     request: StudioExecutionPlanRequest,
@@ -38,4 +41,40 @@ export interface StudioExecutionPlanGateway {
   edit(
     request: StudioExecutionPlanEditRequest,
   ): Promise<StudioExecutionPlanDraftResult>
+}
+
+export interface StudioPlanValidationReview {
+  revisionId: Digest
+  rationale: string
+  evidenceRunIds: string[]
+}
+
+export interface StudioPlanValidationRequest {
+  revisionId: Digest
+  reviewId: Digest
+  resetConfirmed: true
+}
+
+export interface StudioPlanValidationInspection {
+  revisionId: Digest
+  baselineId: Digest
+  baselineSteps: readonly ExecutionPlanStepDisplay[]
+  candidateSteps: readonly ExecutionPlanStepDisplay[]
+}
+
+export type StudioPlanValidationStatus =
+  | { state: 'draft' }
+  | { state: 'validated'; runId: string; receipt: ValidationReceipt }
+  | { state: 'failed' | 'cancelled'; runId: string }
+
+export interface StudioPlanValidationGateway {
+  inspect(request: {
+    revisionId: Digest
+  }): Promise<PlanResult<StudioPlanValidationInspection>>
+  review(
+    request: StudioPlanValidationReview,
+  ): Promise<PlanResult<{ reviewId: Digest }>>
+  status(
+    request: Pick<StudioPlanValidationRequest, 'revisionId' | 'reviewId'>,
+  ): Promise<PlanResult<StudioPlanValidationStatus>>
 }
