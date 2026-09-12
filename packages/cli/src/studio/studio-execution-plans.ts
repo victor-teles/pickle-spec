@@ -19,6 +19,7 @@ import {
   openLocalExecutionPlanStore,
   planDigest,
   requiredVariablesAreValid,
+  serializeExecutionCacheEnvelope,
 } from '@pickle-spec/runner'
 import {
   type Scenario,
@@ -30,6 +31,8 @@ import type {
   StudioExecutionPlanEditRequest,
   StudioExecutionPlanGateway,
   StudioExecutionPlanRequest,
+  StudioExecutionPlanSaveRequest,
+  StudioExecutionPlanSaveResult,
 } from '@pickle-spec/studio'
 import {
   parseWebExecutionCachePayload,
@@ -83,7 +86,7 @@ interface ResolvedPlanContext {
 }
 
 const sourceNotice =
-  'This is the current cache entry. Its source run identifies publication metadata and does not prove that a historical attempt used these bytes.'
+  'Replay uses this plan. The source run identifies its recorded origin; manual changes do not rerun the Scenario.'
 const webPayloadValidator = {
   adapterKind: 'web',
   adapterCacheSchemaVersion: '1',
@@ -482,6 +485,7 @@ async function projectSelectedPlan(
     publication: { sourceRunId: selected.metadata.sourceRunId },
     cacheKey: selected.selected.key,
     cacheRevision: selected.snapshot.revision,
+    cacheDigest: selected.metadata.payloadDigest,
     applicability: context.applicationRevision
       ? { state: 'applicable' }
       : {
@@ -722,11 +726,115 @@ async function editDraft(
   return projectDraft(next.value, context)
 }
 
+async function savePlan(
+  request: StudioExecutionPlanSaveRequest,
+  dependencies: ExecutionPlanServiceDependencies,
+): Promise<StudioExecutionPlanSaveResult> {
+  const selected = await loadSelectedWebCache(request, dependencies)
+  if ('state' in selected) {
+    return {
+      ok: false,
+      reason: 'inapplicable',
+      message:
+        selected.state === 'unavailable'
+          ? selected.message
+          : 'The plan is no longer available. Reload it and try again.',
+    }
+  }
+  const conflict: StudioExecutionPlanSaveResult = {
+    ok: false,
+    reason: 'write-conflict',
+    message:
+      'The plan changed since you opened it. Reload the plan before saving.',
+  }
+  if (
+    selected.snapshot.revision !== request.expectedCacheRevision ||
+    selected.metadata.payloadDigest !== request.expectedCacheDigest
+  )
+    return conflict
+  const edited = replaceWebInteractionTarget(
+    selected.envelope.adapterPayload,
+    selected.envelope.adapterPayload.steps.map((_, index) => ({
+      scenarioRevision: selected.context.scenarioRevision,
+      index,
+    })),
+    selected.envelope.requiredVariables,
+    request,
+  )
+  if (!edited.ok) return edited
+  const envelope = { ...selected.envelope, adapterPayload: edited.value }
+  const serialized = serializeExecutionCacheEnvelope(
+    envelope,
+    webPayloadValidator,
+  )
+  const projected = await projectSelectedPlan(
+    {
+      ...selected,
+      envelope,
+      snapshot: {
+        source: serialized.source,
+        revision: request.expectedCacheRevision + 1,
+      },
+      metadata: {
+        ...selected.metadata,
+        payloadDigest: sourceDigest(serialized.source),
+      },
+    },
+    selected.context,
+  )
+  if (projected.state !== 'available')
+    return {
+      ok: false,
+      reason: 'invalid-payload',
+      message: 'The edited plan is incompatible with the Scenario.',
+    }
+  const coordination = selected.cache.coordination
+  const acquisition = await coordination.acquire(selected.selected.key)
+  if (!acquisition.acquired)
+    return {
+      ok: false,
+      reason: 'write-conflict',
+      message:
+        'This plan is being updated by another operation. Try saving again when it finishes.',
+    }
+  try {
+    if (acquisition.lease.baselineRevision !== request.expectedCacheRevision)
+      return conflict
+    const current = await coordination.readCurrent(selected.selected.key)
+    if (
+      !current ||
+      sourceDigest(current.source) !== request.expectedCacheDigest
+    )
+      return conflict
+    const publication = await coordination.publish(
+      acquisition.lease,
+      serialized,
+      {
+        sourceRunId: selected.metadata.sourceRunId,
+        evaluationModel: selected.metadata.evaluationModel,
+        evaluationInferenceCount: selected.metadata.evaluationInferenceCount,
+      },
+    )
+    if (!publication.published) return conflict
+    if (!publication.stored)
+      return {
+        ok: false,
+        reason: 'invalid-payload',
+        message:
+          'The execution cache could not retain this plan. Check its size limit and try again.',
+      }
+    return { ok: true, value: projected }
+  } finally {
+    await coordination.release(acquisition.lease)
+  }
+}
+
 export function createStudioExecutionPlanService(
   dependencies: ExecutionPlanServiceDependencies,
 ): StudioExecutionPlanGateway {
   return {
     read: (request) => readPlan(request, dependencies),
+    save: (request) => savePlan(request, dependencies),
     captureDraft: (request) => captureDraft(request, dependencies),
     edit: (request) => editDraft(request, dependencies),
   }

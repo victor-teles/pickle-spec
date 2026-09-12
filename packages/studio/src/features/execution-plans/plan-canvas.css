@@ -1,0 +1,26 @@
+.plan-canvas .react-flow {
+  --xy-background-color: var(--background);
+  --xy-background-pattern-dots-color: oklch(1 0 0 / 0.15);
+  --xy-edge-stroke: oklch(0.55 0 0);
+  --xy-edge-stroke-width: 1.5;
+  --xy-handle-background-color: var(--muted-foreground);
+  --xy-handle-border-color: var(--background);
+  --xy-attribution-background-color: var(--card);
+}
+
+.plan-canvas .react-flow__node-step {
+  width: 320px;
+}
+
+.plan-canvas .react-flow__handle {
+  width: 8px;
+  height: 8px;
+}
+
+.plan-canvas .react-flow__attribution a {
+  color: var(--muted-foreground);
+}
+
+.plan-step:has([aria-pressed="true"]) {
+  border-color: var(--ring);
+}

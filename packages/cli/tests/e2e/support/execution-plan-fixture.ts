@@ -91,6 +91,7 @@ export type ExecutionPlanBrowserProject = {
 export async function createExecutionPlanBrowserProject(
   project: string,
   workspace: string,
+  includeCustomProfile = true,
 ): Promise<ExecutionPlanBrowserProject> {
   const cacheRoot = join(workspace, 'eng04-cache')
   const pickleHome = join(workspace, 'eng04-home')
@@ -104,7 +105,7 @@ export async function createExecutionPlanBrowserProject(
       applicationRevision,
       executionTargetProfiles: {
         browser: { adapter: 'web', web },
-        custom: { adapter: 'custom' },
+        custom: includeCustomProfile ? { adapter: 'custom' } : undefined,
       },
     }),
   )

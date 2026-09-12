@@ -4,12 +4,16 @@ import { ExecutionPlanEditor } from '../../../src/features/execution-plans/execu
 
 import { parseLocatorInput } from '../../../src/features/execution-plans/locator-form'
 
-const draft = {
-  state: 'draft' as const,
-  revisionId: 'a'.repeat(64),
-  parentRevisionId: null,
-  sourceNotice: 'Draft stays inactive',
-  scope: {
+const plan = {
+  state: 'available' as const,
+  source: 'current-cache-entry' as const,
+  sourceNotice: 'Replay uses this plan',
+  cacheRevision: 1,
+  cacheDigest: 'a'.repeat(64),
+  publication: { sourceRunId: 'run-1' },
+  applicability: { state: 'applicable' as const },
+  cacheKey: {
+    projectKey: 'project-1',
     scenarioId: 'scenario-1',
     scenarioRevision: 'scenario-revision-1',
     executionTargetProfileId: 'browser',
@@ -48,23 +52,19 @@ const draft = {
   uncachedTail: [],
 }
 
-test('renders the draft editor beside its Scenario step and protected checks', () => {
+test('opens the plan editor without a draft or activation step', () => {
   const markup = renderToStaticMarkup(
     <ExecutionPlanEditor
-      draft={draft}
-      onSave={async () => ({ ok: true, value: draft })}
-      onDiscard={() => {}}
+      plan={plan}
+      onSave={async () => ({ ok: true, value: plan })}
+      onReload={() => {}}
     />,
   )
 
-  expect(markup).toContain('Edit cached plan')
-  expect(markup).toContain('When I submit the order')
-  expect(markup).toContain('Edit locator')
-  expect(markup).toContain('Protected check text-equals')
-  expect(markup).toContain('Close draft')
-  expect(markup.match(/aria-label="Plan steps"/g)).toHaveLength(1)
-  expect(markup.match(/Edit locator/g)).toHaveLength(1)
-  expect(markup).not.toContain('xl:grid-cols-2')
+  expect(markup).toContain('Execution plan canvas')
+  expect(markup).not.toMatch(/draft|inactive|activation/i)
+  expect(markup).toContain('Reload plan')
+  expect(markup).not.toContain('Edit action locator')
 })
 
 describe('locator form input', () => {

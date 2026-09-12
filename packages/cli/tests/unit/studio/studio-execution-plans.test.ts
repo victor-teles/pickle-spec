@@ -362,3 +362,104 @@ describe('Studio readable execution plan service', () => {
     })
   })
 })
+
+describe('direct plan editing', () => {
+  async function editableFixture() {
+    const { cache, key, root } = await fixture()
+    const service = createStudioExecutionPlanService({
+      loadProject: async () => ({ config, specifications: [specification] }),
+      openCache: async () => cache,
+      resolveApplicationRevision: (value) => value,
+    })
+    const plan = await service.read({ scenarioId, profileId: 'browser' })
+    if (plan.state !== 'available') throw new Error('Expected an editable plan')
+    const request = {
+      scenarioId,
+      profileId: 'browser',
+      applicationRevision: plan.cacheKey.applicationRevision,
+      expectedCacheRevision: plan.cacheRevision,
+      expectedCacheDigest: plan.cacheDigest,
+      step: { scenarioRevision: plan.cacheKey.scenarioRevision, index: 0 },
+      instructionIndex: 0,
+      expectedInstructionDigest: requiredValue(
+        plan.steps[0]?.operations[0]?.editable,
+      ).instructionDigest,
+      locator: { selector: { segments: [{ literal: '#updated' }] }, nth: 1 },
+    }
+    return { service, cache, key, root, request }
+  }
+
+  test('updates the cache used by Replay, survives reopening, and preserves other fields', async () => {
+    const { service, cache, key, request } = await editableFixture()
+    const saved = await service.save(request)
+    expect(saved).toMatchObject({
+      ok: true,
+      value: {
+        state: 'available',
+        cacheRevision: request.expectedCacheRevision + 1,
+      },
+    })
+    const reopened = await service.read({ scenarioId, profileId: 'browser' })
+    expect(reopened).toEqual(saved.ok ? saved.value : undefined)
+    const source = requiredValue(await cache.read(key))
+    expect(JSON.parse(source).adapterPayload).toEqual({
+      ...partialPayload,
+      steps: [
+        {
+          instructions: [
+            {
+              ...partialPayload.steps[0]?.instructions[0],
+              locator: request.locator,
+            },
+          ],
+        },
+      ],
+    })
+  })
+
+  test('rejects stale editors without overwriting a newer save', async () => {
+    const { service, cache, key, request } = await editableFixture()
+    expect((await service.save(request)).ok).toBe(true)
+    const before = await cache.coordination.readCurrent(key)
+    expect(
+      await service.save({
+        ...request,
+        locator: { selector: { segments: [{ literal: '#stale' }] } },
+      }),
+    ).toMatchObject({ ok: false, reason: 'write-conflict' })
+    expect(await cache.coordination.readCurrent(key)).toEqual(before)
+  })
+
+  test('rejects a replaced scope or source even when its numeric revision matches', async () => {
+    const { service, cache, key, request } = await editableFixture()
+    const before = await cache.coordination.readCurrent(key)
+    expect(
+      await service.save({ ...request, expectedCacheDigest: '0'.repeat(64) }),
+    ).toMatchObject({ ok: false, reason: 'write-conflict' })
+    expect(await cache.coordination.readCurrent(key)).toEqual(before)
+  })
+
+  test('respects an existing writer lease and can save after it is released', async () => {
+    const { service, cache, key, request } = await editableFixture()
+    const lease = await cache.coordination.acquire(key)
+    if (!lease.acquired) throw new Error('Expected a lease')
+    expect(await service.save(request)).toMatchObject({
+      ok: false,
+      reason: 'write-conflict',
+    })
+    await cache.coordination.release(lease.lease)
+    expect((await service.save(request)).ok).toBe(true)
+  })
+
+  test('keeps the current plan unchanged on invalid locator input', async () => {
+    const { service, cache, key, request } = await editableFixture()
+    const before = await cache.coordination.readCurrent(key)
+    expect(
+      await service.save({
+        ...request,
+        locator: { selector: { segments: [{ variable: 'unknown' }] } },
+      }),
+    ).toMatchObject({ ok: false, reason: 'invalid-payload' })
+    expect(await cache.coordination.readCurrent(key)).toEqual(before)
+  })
+})

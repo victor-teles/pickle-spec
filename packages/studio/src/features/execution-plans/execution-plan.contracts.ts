@@ -32,8 +32,27 @@ export interface StudioExecutionPlanEditRequest extends StudioExecutionPlanReque
 export type StudioExecutionPlanDraftResult =
   PlanResult<ExecutionPlanDraftDisplay>
 
+export type StudioEditableExecutionPlan = Extract<
+  ExecutionPlanDisplay,
+  { state: 'available' }
+>
+
+export interface StudioExecutionPlanSaveRequest extends Omit<
+  StudioExecutionPlanEditRequest,
+  'parentRevisionId'
+> {
+  expectedCacheRevision: number
+  expectedCacheDigest: Digest
+}
+
+export type StudioExecutionPlanSaveResult =
+  PlanResult<StudioEditableExecutionPlan>
+
 export interface StudioExecutionPlanGateway {
   validation?: StudioPlanValidationGateway
+  save(
+    request: StudioExecutionPlanSaveRequest,
+  ): Promise<StudioExecutionPlanSaveResult>
   read(request: StudioExecutionPlanRequest): Promise<ExecutionPlanDisplay>
   captureDraft(
     request: StudioExecutionPlanRequest,

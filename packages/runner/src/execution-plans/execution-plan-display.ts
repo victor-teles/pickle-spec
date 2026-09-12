@@ -83,6 +83,7 @@ export type ExecutionPlanDisplay =
       publication: { sourceRunId: string }
       cacheKey: ExecutionCacheKey
       cacheRevision: number
+      cacheDigest: string
       applicability: ExecutionPlanApplicability
       requiredVariables: readonly string[]
       steps: readonly ExecutionPlanStepDisplay[]

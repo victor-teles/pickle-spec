@@ -45,7 +45,7 @@ export async function inspectScenario(
     )
   }
   await inspect.click()
-  return page.getByRole('region', { name: 'Readable execution plan' }).last()
+  return page.getByRole('region', { name: 'Execution plan editor' }).last()
 }
 
 export async function tabTo(page: Page, target: Locator): Promise<void> {

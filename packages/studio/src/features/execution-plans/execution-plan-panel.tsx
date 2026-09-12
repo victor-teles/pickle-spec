@@ -1,34 +1,17 @@
-import type {
-  ExecutionPlanDisplay,
-  ExecutionPlanDraftDisplay,
-} from '@pickle-spec/runner'
-import { type ComponentProps, useEffect, useState } from 'react'
+import type { ExecutionPlanDisplay } from '@pickle-spec/runner'
+import { useEffect, useState } from 'react'
 import { Button } from '../../components/ui/button'
 import {
   Card,
-  CardAction,
   CardContent,
   CardDescription,
   CardHeader,
   CardTitle,
 } from '../../components/ui/card'
-import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-} from '../../components/ui/collapsible'
-import type {
-  StudioExecutionPlanDraftResult,
-  StudioExecutionPlanEditRequest,
-  StudioExecutionPlanRequest,
-} from './execution-plan.contracts'
-import {
-  captureExecutionPlan,
-  editExecutionPlan,
-  getExecutionPlan,
-} from './execution-plan.functions'
+import type { StudioExecutionPlanRequest } from './execution-plan.contracts'
+import { getExecutionPlan, saveExecutionPlan } from './execution-plan.functions'
 import { ExecutionPlanEditor } from './execution-plan-editor'
-import { PlanOperation, type PlanStepFocus, PlanSteps } from './plan-steps'
+import type { PlanStepFocus } from './plan-steps'
 
 type ExecutionPlanPanelProps = {
   scenarioId: string
@@ -43,6 +26,16 @@ interface ScenarioExecutionPlanProps {
 
 export function ScenarioExecutionPlan(props: ScenarioExecutionPlanProps) {
   const [profileId, setProfileId] = useState<string>()
+  const onlyProfile =
+    props.profiles.length === 1 ? props.profiles[0] : undefined
+  if (onlyProfile) {
+    return (
+      <ExecutionPlanPanel
+        scenarioId={props.scenarioId}
+        profileId={onlyProfile}
+      />
+    )
+  }
   return (
     <section
       className="min-w-0 space-y-3"
@@ -97,7 +90,6 @@ export function ExecutionPlanPanel(props: ExecutionPlanPanelProps) {
 
 function ExecutionPlanPanelScope(props: ExecutionPlanPanelProps) {
   const loaded = useExecutionPlan(props)
-  const draftState = useExecutionPlanDraft()
 
   if (loaded.error) {
     return <PlanLoadError message={loaded.error} onRetry={loaded.retry} />
@@ -125,124 +117,18 @@ function ExecutionPlanPanelScope(props: ExecutionPlanPanelProps) {
     )
   }
   return (
-    <EditablePlanView
+    <ExecutionPlanEditor
       plan={loaded.plan}
       focusStep={props.focusStep}
-      draft={draftState.draft}
-      captureError={draftState.captureError}
-      capturing={draftState.capturing}
-      onCapture={() => {
-        void captureDraft(loaded.request, draftState)
+      onReload={loaded.retry}
+      onSave={async (request) => {
+        const result = await saveExecutionPlan({ data: request })
+        if (result.ok) loaded.update(result.value)
+        return result
       }}
-      onSave={(request) => saveDraft(request, draftState.setDraft)}
-      onDiscard={draftState.discard}
-    />
-  )
-}
-
-export type ExecutionPlanDraftState = {
-  draft?: ExecutionPlanDraftDisplay
-  captureError?: string
-  capturing: boolean
-  setDraft(value: ExecutionPlanDraftDisplay): void
-  setCaptureError(value: string | undefined): void
-  setCapturing(value: boolean): void
-  discard(): void
-}
-
-function useExecutionPlanDraft(): ExecutionPlanDraftState {
-  const [draft, setDraft] = useState<ExecutionPlanDraftDisplay>()
-  const [captureError, setCaptureError] = useState<string>()
-  const [capturing, setCapturing] = useState(false)
-  return {
-    draft,
-    captureError,
-    capturing,
-    setDraft,
-    setCaptureError,
-    setCapturing,
-    discard: () => {
-      setDraft(undefined)
-      setCaptureError(undefined)
-    },
-  }
-}
-
-type CaptureExecutionPlan = (input: {
-  data: StudioExecutionPlanRequest
-}) => Promise<StudioExecutionPlanDraftResult>
-
-export async function captureDraft(
-  request: StudioExecutionPlanRequest,
-  state: ExecutionPlanDraftState,
-  capture: CaptureExecutionPlan = captureExecutionPlan,
-) {
-  state.setCaptureError(undefined)
-  state.setCapturing(true)
-  try {
-    const result = await capture({ data: request })
-    if (!result.ok) {
-      state.setCaptureError(result.message)
-      return
-    }
-    state.setDraft(result.value)
-  } catch {
-    state.setCaptureError(
-      'Unable to start the draft. Check the project and try again.',
-    )
-  } finally {
-    state.setCapturing(false)
-  }
-}
-
-async function saveDraft(
-  request: StudioExecutionPlanEditRequest,
-  setDraft: (value: ExecutionPlanDraftDisplay) => void,
-) {
-  const result = await editExecutionPlan({ data: request })
-  if (!result.ok) return { ok: false as const, message: result.message }
-  setDraft(result.value)
-  return { ok: true as const, value: result.value }
-}
-
-interface EditablePlanViewProps {
-  plan: Extract<ExecutionPlanDisplay, { state: 'available' }>
-  focusStep?: ExecutionPlanPanelProps['focusStep']
-  draft?: ExecutionPlanDraftDisplay
-  captureError?: string
-  capturing: boolean
-  onCapture(): void
-  onSave: ComponentProps<typeof ExecutionPlanEditor>['onSave']
-  onDiscard(): void
-}
-
-function EditablePlanView(props: EditablePlanViewProps) {
-  if (props.draft) {
-    return (
-      <ExecutionPlanEditor
-        draft={props.draft}
-        focusStep={props.focusStep}
-        onSave={props.onSave}
-        onDiscard={props.onDiscard}
-      >
-        <PlanCacheDetails plan={props.plan} />
-      </ExecutionPlanEditor>
-    )
-  }
-  return (
-    <>
-      <AvailableExecutionPlan
-        plan={props.plan}
-        focusStep={props.focusStep}
-        onStartDraft={props.onCapture}
-        capturing={props.capturing}
-      />
-      {props.captureError ? (
-        <p role="alert" className="px-3 text-sm text-destructive">
-          {props.captureError}
-        </p>
-      ) : null}
-    </>
+    >
+      <PlanCacheDetails plan={loaded.plan} />
+    </ExecutionPlanEditor>
   )
 }
 
@@ -281,7 +167,7 @@ function useExecutionPlan(props: ExecutionPlanPanelProps) {
     error: result.state === 'error' ? result.message : undefined,
     plan: result.state === 'ready' ? result.plan : undefined,
     retry: () => setRequest((current) => ({ ...current })),
-    request,
+    update: (plan: ExecutionPlanDisplay) => setResult({ state: 'ready', plan }),
     selectRevision: (applicationRevision: string) =>
       setRequest((current) => ({ ...current, applicationRevision })),
   }
@@ -307,13 +193,6 @@ function PlanLoadError(props: PlanLoadErrorProps) {
 
 type AvailablePlan = Extract<ExecutionPlanDisplay, { state: 'available' }>
 
-interface AvailableExecutionPlanProps {
-  plan: AvailablePlan
-  focusStep?: PlanStepFocus
-  onStartDraft(): void
-  capturing: boolean
-}
-
 function PlanCacheDetails({ plan }: { plan: AvailablePlan }) {
   return (
     <div className="min-w-0 space-y-2 break-all text-xs text-muted-foreground">
@@ -327,7 +206,7 @@ function PlanCacheDetails({ plan }: { plan: AvailablePlan }) {
         Application{' '}
         <span className="font-mono">{plan.cacheKey.applicationRevision}</span>
       </p>
-      <p>Published by run {plan.publication.sourceRunId}</p>
+      <p>Recorded by run {plan.publication.sourceRunId}</p>
       <dl className="grid min-w-0 gap-2">
         <div>
           <dt>Project</dt>
@@ -356,51 +235,6 @@ function PlanCacheDetails({ plan }: { plan: AvailablePlan }) {
         </div>
       </dl>
     </div>
-  )
-}
-
-function AvailableExecutionPlan(props: AvailableExecutionPlanProps) {
-  const { plan } = props
-  return (
-    <section
-      className="min-w-0 space-y-3 p-3"
-      aria-label="Readable execution plan"
-    >
-      <Card size="sm">
-        <CardHeader>
-          <CardTitle>Current cached plan</CardTitle>
-          <CardDescription>{plan.sourceNotice}</CardDescription>
-          <CardAction className="col-span-2 col-start-1 row-start-3 justify-self-start">
-            <Button
-              type="button"
-              size="sm"
-              onClick={props.onStartDraft}
-              disabled={props.capturing}
-            >
-              {props.capturing ? 'Starting draft…' : 'Start draft from cache'}
-            </Button>
-          </CardAction>
-        </CardHeader>
-        <CardContent>
-          <Collapsible>
-            <CollapsibleTrigger
-              render={<Button type="button" size="sm" variant="ghost" />}
-            >
-              Applicability details
-            </CollapsibleTrigger>
-            <CollapsibleContent className="pt-2">
-              <PlanCacheDetails plan={plan} />
-            </CollapsibleContent>
-          </Collapsible>
-        </CardContent>
-      </Card>
-      <PlanSteps
-        steps={plan.steps}
-        uncachedTail={plan.uncachedTail}
-        focusStep={props.focusStep}
-        renderOperation={(operation) => <PlanOperation operation={operation} />}
-      />
-    </section>
   )
 }
 

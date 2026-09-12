@@ -4,18 +4,17 @@ ENG-07 adds full-Scenario validation of a saved web candidate through the
 existing Replay runner and Studio run workflow. Validation never writes the
 active selection or generated execution cache. Activation remains ENG-08.
 
-In the Scenario’s Plan tab, save the locator edit and choose **Review for
-validation**. Compare the baseline, candidate, and original Specification;
-record why the target preserves the intended behavior. Confirm the review and
-reset the application to the Scenario’s starting state before choosing
-**Validate candidate**. Pickle records this explicit human attestation; it does
-not reset arbitrary applications. The acceptance fixture uses a fresh browser
-context for each execution.
+Candidate validation remains available to programmatic callers that use
+immutable revisions. Studio's Plan tab now [edits the current plan directly](execution-plan-editing.md)
+and has no draft or candidate-review flow. Saving a locator updates the cache
+used by Replay; it does not run candidate validation.
 
-Validation executes every Scenario action, including actions that submit forms
-or change data. Studio labels these side effects before execution. Cancellation
-uses the existing run cancellation endpoint and cannot undo completed actions.
-Run evidence remains available through Runs.
+Programmatic validation requires a review of the baseline, candidate, and
+Specification, a rationale, and explicit confirmation that the application was
+reset to the Scenario's starting state. Pickle does not reset arbitrary
+applications. Validation executes every Scenario action, including actions that
+submit forms or change data. Cancellation cannot undo completed actions. Run
+evidence remains available through Runs.
 
 The service resolves one complete Scenario and target, loads the immutable
 candidate and its assertion baseline, and permits only the supported interaction
