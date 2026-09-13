@@ -1,161 +1,200 @@
 # Pickle Spec roadmap
 
-This roadmap was reconciled on 2026-09-04 against the revision recorded in the
-[capability and release evidence inventory](docs/capability-status.md).
-Checked items describe implemented scope, not live-target certification or
-completed phase exit criteria. Stagehand powers web execution, and agent-device
-powers mobile execution.
+Reviewed on 2026-09-13 against `bc5a824317665739cf2d2a4c0ec2aeeec2c7ee8c`.
+This roadmap prioritizes stability, everyday QA usability, and a credible launch.
+The [review and QA record](docs/roadmap-qa-ux-review.md) contains findings,
+source references, checks attempted, and executable acceptance scenarios.
+The [capability inventory](docs/capability-status.md) separates implementation
+from verification. No milestone is certified complete by this review.
 
-## Where the platform stands
+## Product direction
 
-The execution engine is ahead of the product surface. Pickle Spec ships these capabilities today:
+Make this loop dependable: configure an application, write a meaningful Gherkin
+Scenario, run it, understand a failure, correct an interaction, rerun, and share
+the evidence. Start with a web technical preview; qualify mobile and remote
+browser environments individually before advertising them as verified.
 
-- **Specifications** — Gherkin with `@pickle` tags, durable identities, tag-expression selection, and duration-aware sharding
-- **Runner** — event-sourced runs under `~/.pickle`, worker-pool concurrency, retries, flake marking, and the Adaptive/Replay execution cache
-- **Web** — Stagehand observe, act, extract, and verify routing with screenshots and local, Browserbase, or external CDP environments
-- **Mobile** — agent-device automation for Android emulators and iOS simulators, with screenshots, logs, recordings, and traces
-- **CLI** — `init`, `apps`, `doctor`, `run`, `studio`, `cache`, `check`, `migrate`, `compare`, `export`, and `import`. Exports support JUnit, JSON, NDJSON, HTML, archives, and Allure.
-- **Studio** — a Specification catalog, Monaco Gherkin editing, and live scenario-by-profile progress. Studio also provides deep-linked evidence, history, comparison, export, rerun, settings, git integration, and mobile target discovery.
+Keep four principles:
 
-Studio displays live browser frames, Browserbase session embeds, and mobile
-frames. Web evidence includes structured activity traces, console and network
-diagnostics, screenshots, and optional recordings. These are not Playwright
-Trace Viewer archives or a complete network capture. Target prerequisites and
-verification limits are recorded in the [inventory](docs/capability-status.md).
+1. Repository files own test intent and expected behavior.
+2. Autonomous actions expose tool activity, outcomes, model identity, and evidence;
+   they never require private chain-of-thought.
+3. Applicable Replay reuses a recorded path without model inference. Cache misses,
+   divergence, fallback, and application failures must remain distinguishable.
+4. A saved interaction is not a validated Scenario. Repairs must not weaken an
+   assertion to hide an application regression.
 
-Visual diffing, built-in AI authoring, execution-plan editing, guarded test
-repair, trend analytics, and hosted collaboration remain unsupported.
+Studio follows [DESIGN.md](DESIGN.md) and its shadcn Mira primitives. Prioritize
+clear next actions, keyboard access, recoverable errors, and readable evidence
+before adding more panels or controls.
 
-## Competitive baseline
+## Current baseline
 
-The market already treats natural-language tests, AI-assisted authoring, selector recovery, visual editing, and rich failure artifacts as baseline capabilities. Pickle Spec must meet that baseline without copying a competitor's product model.
+The repository contains specification parsing/selection, runner scheduling and
+stored evidence, web and mobile adapters, CLI commands and exports, and Studio
+catalog/editor/runs/history/settings/git surfaces. Studio has routing, onboarding,
+command-palette, evidence-inspection, and execution-plan code with controlled tests.
+Their presence is implementation evidence, not a current release acceptance result.
 
-| Competitor signal                                                 | Documented baseline                                                              | Pickle Spec response                                                                                       |
-| ----------------------------------------------------------------- | -------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
-| [Momentic](https://momentic.ai/docs)                              | Local editor; modules; cache; selection; maintenance; quarantine; MCP            | Match the workflow baseline. Lead with Gherkin, local evidence, provider choice, and deterministic Replay. |
-| [OpenQA](https://github.com/openqa-labs/openqa)                   | One-command setup; selector-free Gherkin; provider sessions; Playwright evidence | Make setup fast and provider-neutral. Preserve one source-controlled Specification.                        |
-| [Playwright Test Agents](https://playwright.dev/docs/test-agents) | Planner, generator, and healer roles; seed tests; plans; live validation         | Separate planning, generation, validation, and repair. Link each accepted mutation to evidence.            |
+The Plan tab provides canvas/list inspection and direct web locator saves with
+revision/digest conflict checks and a writer lease. Separate draft and validation
+infrastructure exists. The current Save action does not establish full-Scenario
+validation, activation, rollback, or preservation of that edit after cache eviction.
+See the inventory before using “editable plans” or “validated repairs” in copy.
 
-These features are necessary, but they are not sufficient differentiation. Pickle Spec's advantage is one local-first evidence model across web and mobile, with explicit Adaptive and Replay behavior, portable runs, and observable autonomy.
+- [x] Follow mode: implemented causal following and pinned investigation; live-target acceptance remains pending.
+- [ ] Concurrent target filmstrip: multiple live targets in one UI.
+- [ ] Picture-in-picture: a target view outside the inspector pane.
 
-## The core bet
+These three checkboxes describe implementation scope only.
 
-Pickle Spec should become the most trustworthy place to watch, understand, and govern an AI test run. Live viewing alone is not the differentiator. The product must combine concurrent web and mobile views with typed decision evidence, deterministic Replay, cache provenance, and reviewable repairs.
+The former week-based phases are replaced by evidence-based milestones. Existing
+features must pass the gates below; they do not need to be rebuilt. Advanced
+features remain in the backlog and do not block a focused technical preview.
 
-Four product rules protect that position:
+## Current release blockers
 
-1. **The repository owns intent.** Specifications, reusable flows, configuration, and accepted repairs remain version-controlled files.
-2. **Autonomy stays inspectable.** Studio records observations, tool activity, chosen actions, model identity, cache behavior, and artifacts. It does not expose or depend on private chain-of-thought.
-3. **Known work becomes deterministic.** Adaptive execution discovers a path. Replay executes the validated path without model inference when the cache remains applicable.
-4. **Mutation requires proof.** An agent can propose a Specification or repair. Acceptance requires a source diff and a validating run.
+The local quality, integration, package, and controlled Replay checks pass. The
+full CLI browser run has two failed acceptance cases: it misses a transient
+running indicator before cache refresh, and a plan-validation baseline fails before
+its injected timeout check. These are failed release gates, not established cache
+corruption or false-pass defects. Both failures reproduced in isolation; see the QA record for evidence.
+Toolchain alignment, provisioned target evidence, and external pilot acceptance
+also remain open. This candidate is not launch-ready on current evidence.
 
-Every phase follows [DESIGN.md](DESIGN.md) for current colors, typography,
-layout, motion, and labeled result states. Every control uses a shadcn Mira
-primitive. The roadmap does not define a second set of design tokens.
+## Milestone 0: Reproducible release candidate
 
-## Phase 1: Command Center (weeks 1–6)
+**Priority P0.** Establish an exact artifact and a trustworthy quality baseline.
 
-Phase 1 makes Studio navigable, addressable, and usable from first launch. Runs become a global area instead of history nested under each Specification.
+- [ ] **S1 — Reproducible toolchain.** Reconcile Bun `1.4.2` in `package.json`
+      with `1.3.11` in CI and publish workflows. Choose one supported release runtime,
+      verify frozen installation, and use it throughout release acceptance.
+- [ ] **S2 — Required quality gates.** Pass lint, typecheck, unit, integration,
+      browser E2E, release-package acceptance, and Replay performance checks from
+      [Release validation](docs/releasing.md). Record failures and skipped tests.
+- [ ] **S3 — Run lifecycle and recovery.** Verify cancellation, interrupted runs,
+      provider timeout, browser disconnect, restart, and reconnect. No run may remain
+      falsely active or be reported as passed because evidence delivery stopped.
+- [ ] **S4 — Evidence integrity.** Verify redaction across stored files, live events,
+      logs, exports, and imports using synthetic canaries. Check artifact access,
+      local-session security, corrupt input handling, and cross-project isolation.
+- [ ] **S5 — Replay correctness.** Exercise hit, miss, divergence, fallback,
+      changed application/profile, retry, and cache-only failure. Assert meaningful
+      application outcomes as well as execution mode and inference counts.
+- [ ] **S6 — Packaging and recovery.** Install the seven packed packages in a clean
+      project; run the CLI and built Studio; test archive handoff. Verify license and
+      package metadata, and document previous-version recovery before distribution.
 
-- [x] Global Runs area: provide a cross-Specification dashboard with live progress and a filterable run list backed by `index.sqlite`. Join the manifest and event stream on one run detail page.
-- [x] Real URL routing and deep links: give every Specification, scenario, run, result, and artifact a stable URL. Ensure it survives refresh.
-- [x] Command palette (`Cmd+K`): jump to a Specification, scenario, or run; start or cancel a run; and switch profiles.
-- [x] First-run onboarding: guide users through project checks, target readiness, model credentials, and a first green run. Offer a credential-free example that demonstrates Replay and evidence inspection.
-- [x] Design-system fill-in: add the missing shadcn Mira toast, tooltip, dropdown menu, command, and skeleton primitives.
+Exit: all required checks pass on the named candidate; no open blocker causing
+false passes, lost user edits, leaked secrets, broken installation, or unusable
+primary web execution. Environmental skips are not passes. Exact registry-install
+verification remains a separate post-publication step owned by the release owner.
 
-Exit criteria: every Studio entity has a stable URL. After target access and credentials are ready, a new user reaches a first green run within 2 minutes.
+## Milestone 1: Complete the everyday QA workflow
 
-## Phase 2: Observable Execution Theater (weeks 5–14)
+**Priority P1; preview gate for the primary web journey.** Build on current UX.
 
-Phase 2 makes concurrent execution understandable during and after a run. The live view and result inspector must use the same event and evidence contracts.
+- [ ] **U1 — First successful assertion.** Verify a clean README path, ready/blocked
+      onboarding states, credential-free demonstration, and real application setup.
+      Separate demo completion from a real run; errors identify the failing prerequisite
+      and offer a useful recovery action. Measure setup and ready-to-green separately.
+- [ ] **U2 — Understand a failure.** From a failed run, reach the failed step,
+      expected outcome, target state, diagnostics, retry history, and source location.
+      Preserve selection while other results arrive; deep links survive refresh.
+- [ ] **U3 — Explain Replay divergence.** Show the divergence step, reused prefix,
+      reason, and whether Adaptive fallback occurred. Use existing runner events;
+      do not imply a cache-only run silently switched to inference.
+- [ ] **U4 — Maintain an interaction.** Verify canvas and list locator editing,
+      validation errors, protected operations, unsaved-change behavior, save failure,
+      concurrent writers, and reload persistence. Explain what Save affects and let
+      QA rerun the Scenario to verify the outcome. Report cache-clear behavior honestly.
+- [ ] **U5 — Repeat a focused test.** Verify failed-Scenario/profile rerun preserves
+      selection and configuration; retain the original evidence and identify the new run.
+- [ ] **U6 — Share a diagnosis.** Export a deliberate failure and inspect/import it
+      in a second isolated workspace without access to the originating project.
+      Missing optional recordings must not prevent diagnosis.
+- [ ] **U7 — Accessible investigation.** Verify keyboard-only navigation, focus
+      restoration, labeled controls, result states beyond color, zoom, smaller screens,
+      reduced motion, and a large catalog/run. Automated accessibility checks supplement
+      hands-on use. Canvas functionality needs an equivalent usable list path.
 
-- [x] Shared evidence contract: version observations, tool activity, outcomes, timing, cost, artifact references, execution mode, and cache decisions. Redact secrets before streaming or persistence. Never store private chain-of-thought.
-- [x] Live browser viewport: stream CDP screencast frames from a local or attached browser over the per-run WebSocket. Embed the Browserbase live session for remote runs.
-- [x] Live device mirror: stream Android emulator and iOS simulator frames through the existing Node worker protocol. Render the active device beside the step timeline.
-- [x] Web activity traces: retain structured browser and resolved-action evidence with step and event attribution. These are Pickle Spec traces, not Playwright trace archives.
-- [x] Web console and network diagnostics: collect instrumented page activity with redaction and explicit collection failures. This is not a complete browser network log.
-- [x] Web recordings: capture screenshot-based MP4 files when artifact policy requests them and local `ffmpeg` is available. Capture failures remain visible.
-- [x] Time-travel inspector: connect each action to target state, diagnostics, source evidence, retries, and before-and-after screenshots. Use the same view for live and completed runs.
-- [ ] Replay divergence explainer: show the divergence step, sealed prefix, and Adaptive fallback. Use the existing `replay-diverged` and `adaptive-fallback-started` events.
-- [x] Pin an investigation: keep the selected Scenario/profile evidence while other attempts update.
-- [x] Cancel a Test run: cancel the run through existing run controls. This is not individual Scenario cancellation.
-- [x] Live session viewing: display the selected target in the Viewport tab or workbench.
-- [ ] Individual Scenario cancellation: stop one Scenario without cancelling its Test run.
-- [ ] Manual evidence capture: let an operator request evidence independently of automatic artifact policy.
-- [ ] Pause after step: requires a safe runner suspension contract. Pausing follow mode does not suspend execution.
-- [x] Follow mode: follow causal activity and prioritize a failed attempt until the investigation is pinned. Manual timeline inspection pauses following; it can be resumed.
-- [ ] Concurrent target filmstrip: show multiple live targets together. Retaining frames by target does not provide a filmstrip UI.
-- [ ] Picture-in-picture: keep a target visible outside its normal inspector pane.
-- [x] Live step timeline: project step events, screenshots, execution mode, cache evidence, retries, and timing into the same inspector used for completed runs. A dedicated Replay divergence explanation remains pending above.
-- [ ] Read-and-run agent API: expose readiness, run control, events, result inspection, and artifact retrieval through local MCP tools.
+Exit: the core acceptance session in the QA record passes. Proposed pilot target:
+at least four of five new testers finish setup → assertion → deliberate failure →
+diagnosis → focused rerun → evidence handoff without maintainer intervention.
+Record assistance and individual timings; this is a learning gate, not market proof.
 
-Exit criteria: an operator can watch a run, inspect any completed action, and cancel unsafe execution. The same evidence remains available after the run ends.
+## Milestone 2: Features that improve adoption
 
-## Phase 3: Planned authoring (weeks 10–20)
+Prioritize observed pilot blockers over expanding the surface. Reuse existing
+contracts where possible; design review precedes new public APIs or durable formats.
 
-Phase 3 provides a deliberate path from product intent to a running Specification. AI propose currently exists only as an optional extension hook.
+| Order | Feature                                      | Acceptance before marking complete                                                                                                                                                                            |
+| ----- | -------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| F1    | Authenticated setup and repeatable test data | A documented login/setup path runs twice with isolated data, handles expired auth, and leaves secrets out of evidence. Inventory existing support before introducing a flow abstraction.                      |
+| F2    | Better assertions and Specification health   | QA sees ambiguous actions or missing outcomes and can add a meaningful assertion; an intentionally broken application still fails.                                                                            |
+| F3    | CI handoff                                   | One runnable CI recipe has correct exit codes, JUnit output, cache-only behavior, and a portable failure that opens locally.                                                                                  |
+| F4    | Plan maintenance beyond the cache            | Decide from observed needs whether durable authored revisions are required. If built, verify review, full-Scenario validation, activation, rollback, eviction survival, and historical provenance end to end. |
+| F5    | Visual comparison                            | Compare compatible screenshots/regions, explain unavailable or incompatible baselines, and review intentional baseline changes. Extend existing comparison surfaces.                                          |
+| F6    | Simple suite health                          | Show pass/flake rate, duration, cache usage, inference count, and measured cost where available. Define denominators and missing-data behavior.                                                               |
+| F7    | Reusable flows and project knowledge         | Reuse authentication/data/journeys with parameters and repository-owned terms; show dependency impact and preserve behavior when shared flows change.                                                         |
 
-- [ ] Coverage planner: explore a URL with an optional product requirement, seed scenario, or authenticated setup. Produce a human-readable coverage plan with journeys, edge cases, expected results, and uncovered risks.
-- [ ] Plan-to-draft generation: generate `@pickle:state:draft` Specifications only from an approved plan. Preserve links from each generated scenario to its plan and exploration evidence.
-- [ ] Built-in authoring: provide a default `authorSpecification` implementation for any configured model, without requiring `pickle.extensions.ts`.
-- [ ] Step-level live preview: run one step or a selected range from Monaco against a live session. Show the result inline before saving.
-- [ ] Semantic review: show added, changed, and removed behaviors before applying generated Gherkin. Require explicit acceptance into the working tree.
-- [ ] Reusable flows and state: add parameterized authentication, setup, test data, variables, and repeated journeys. Show dependency impact before changing a shared flow.
-- [ ] Project knowledge: store approved product terms, agent rules, and known flows in repository-owned files. Apply them consistently during authoring and Adaptive execution.
-- [ ] Authoring agent API: extend the Phase 2 MCP tools with planning, draft proposal, preview, and semantic-diff operations. Publish project skills over those public contracts.
-- [ ] Grounded autocomplete: suggest steps from the observed target state, project knowledge, and the existing Gherkin vocabulary.
-- [ ] Specification health: flag ambiguous steps, uncacheable patterns, unreachable states, and missing assertions. Ground journey and variant coverage in observed executions.
+F1–F3 should advance when they remove primary-workflow blockers. F4–F7 follow
+pilot evidence. A feature's usefulness does not automatically make it a launch gate.
 
-Exit criteria: a user can approve a coverage plan and create a passing scenario for an existing application in under 5 minutes. The workflow requires no extension code and leaves a reviewable evidence trail.
+## Milestone 3: Technical preview and launch
 
-## Phase 4: Guarded maintenance (weeks 16–28)
+Use the [launch and growth plan](docs/launch-and-growth.md) for assets, ownership,
+and rollout. Keep the date unset until the primary journey passes.
 
-Phase 4 turns failure evidence into controlled maintenance. Autonomous recovery must preserve application regressions and unknown failures as failures.
+- [ ] **L1 — Claim audit.** Quick start, website, package README, demo, roadmap,
+      and support matrix describe the same candidate and limitations. Repair broken
+      documentation links; remove claims unsupported by acceptance evidence.
+- [ ] **L2 — Demonstration package.** One synthetic example shows a meaningful pass,
+      deliberate failure, diagnosis, and applicable Replay, with a portable report.
+- [ ] **L3 — Support matrix.** Record OS, runtime, browser/device/provider, test app,
+      revision, and evidence for each advertised environment. Local Chrome evidence
+      does not certify attached CDP, Browserbase, Android, or iOS.
+- [ ] **L4 — Pilot.** Observe five external projects. Log version, task, assistance,
+      blocker, time, diagnosis accuracy, and return on another day within seven days.
+- [ ] **L5 — Release operation.** Assign release and support owners; review known
+      issues and recovery instructions. After authorized publication, verify the exact
+      registry version/dist-tag in a clean project before broad promotion.
 
-- [ ] Visual screenshot diff: compare full screenshots and selected regions between compatible runs. Extend `pickle compare` and the Studio comparison view.
-- [ ] Evidence-based classification: classify each failure by cause, with provenance and confidence. Show the supporting evidence and allow an explicit override.
-- [ ] Guarded repair loop: propose the smallest source diff, run the affected scenario, and attach before-and-after evidence. Stop after a bounded number of attempts. Never change expected behavior to pass an application regression.
-- [ ] Suite circuit breaker: stop automated repair during a broad outage, shared-dependency failure, or repeated suite-wide pattern.
-- [ ] Quarantine workflow: keep an unresolved flaky scenario visible and running without blocking configured CI gates. Record provenance, justification, owner, and expiry conditions.
-- [ ] Repair delivery policy: support local proposals first. Add automatic working-tree edits or pull requests only through explicit project policy.
-- [ ] Maintenance agent API: expose classification, override, repair proposal, validation, and quarantine through the shared local contracts.
+Technical preview requires Milestones 0 and 1 for its advertised scope and explicit
+limitations for everything else. Broader launch requires repeated external use,
+resolved repeated blockers, and support capacity. Publication and outreach are
+owner actions, not side effects of editing this roadmap.
 
-Exit criteria: at least 80% of example-suite failures are diagnosable without a rerun. Every accepted repair retains its source diff and validation evidence.
+## Later capabilities
 
-## Phase 5: Insight and scale (weeks 26+)
+Retain these from the earlier roadmap without committing dates:
 
-Phase 5 turns local run history into suite intelligence and team workflows. The run index remains the source for local analysis.
+- Execution controls: individual Scenario cancellation, manual evidence capture,
+  safe pause-after-step, concurrent target filmstrip, and picture-in-picture.
+  Follow-mode pause must remain distinct from suspending execution.
+- Agent integration: read-and-run local MCP for readiness, run control, events,
+  results, and artifacts; add authoring and maintenance operations over shared contracts.
+- Planned authoring: coverage exploration, approved plan-to-draft generation,
+  built-in authoring, selected-step preview, semantic review, grounded autocomplete,
+  and observed journey/variant coverage. Preserve source and exploration provenance.
+- Guarded maintenance: evidence-based failure classification with override,
+  bounded repair proposals, full validation, suite circuit breaker, quarantine
+  with owner/expiry, and explicit delivery policy. Never heal application regressions.
+- Scale: deeper trends and suite-health ranking, explained change-impact selection
+  with full-suite fallback, PR annotations, shard merging, remote-target parity,
+  and physical devices when the adapter supports them.
+- Hosted collaboration: decide only after local workflows demonstrate repeat use;
+  synchronization, access control, audit logs, and multi-user review remain future scope.
 
-- [ ] Trends: show pass rate, flake rate, duration, cache usage, inference count, and cost over time.
-- [ ] Suite health view: rank Specifications that need attention. Combine failure history, quarantine age, cache churn, duration changes, and coverage gaps without hiding flaky scenarios.
-- [ ] Change-impact map: connect application revisions and observed journeys to Scenarios. Select a smaller CI set from a code change, explain every selection, and provide an explicit full-suite fallback.
-- [ ] CI surface: add pull-request annotations, cache-only playbooks, and shard-aware result merging. Open archived CI failures in local Studio through deep links.
-- [ ] Execution scale: add physical mobile devices when agent-device supports them. Reach parity across local, attached CDP, and Browserbase web execution.
-- [ ] Hosted collaboration decision: decide whether to add hosted sync, access control, audit logs, and multi-user review. Keep these features out of scope until local workflows meet the earlier exit criteria.
+## Measurement and completion
 
-Exit criteria: teams use Studio instead of raw CI logs to understand suite health. Change-aware selection reduces pull-request time without increasing escaped regressions.
+Record exact candidate, environment, command/session, outcome, skipped cases,
+artifact location, defect, retest, and responsible owner for every gate.
+Use `passed`, `failed`, `blocked`, or `not run`; keep implementation status separate.
 
-## Cross-phase release gates
-
-Every phase must meet these gates before its exit criteria count as complete:
-
-- **Security** — redact credentials, tokens, user data, and credential-bearing URLs before they cross a trust boundary.
-- **Auditability** — version every new event and artifact schema. Attribute autonomous actions and mutations to their model, tool, input evidence, and run.
-- **Interoperability** — keep CLI, Studio, CI, exports, and coding-agent tools on the same public runner and result contracts.
-- **Safety** — default agents to proposals. Require explicit policy before automatic source changes, quarantine, cache invalidation, or hosted upload.
-- **Portability** — keep complete runs inspectable through local Studio and self-contained exports without a Pickle Spec cloud account.
-
-## Success metrics
-
-- Median time from ready prerequisites to first green run, split by example, web, and mobile setup. Target at most 2 minutes.
-- Share of live runs watched, pinned, or cancelled from Studio
-- Share of failed scenarios diagnosed without a rerun, targeting at least 80%
-- Evidence completeness for failed steps, including target state, diagnostics, execution mode, cache provenance, and model identity
-- Repair proposal acceptance, validation, and escaped-regression rates. An application regression must never be auto-healed into a pass.
-- Median time from approved coverage plan to a new passing scenario, targeting under 5 minutes
-- Cache hit rate, inference count, and inference cost per CI run
-- Change-aware selection duration and escaped-regression rate compared with the full suite
-
-## Competitive research
-
-Read the [competitive roadmap review](docs/roadmap-competitive-review.md) before changing the differentiation claim or moving a baseline capability between phases.
+Track first-green timing, correct failure diagnosis without rerun, failed-step
+evidence completeness, successful maintenance and rerun, Replay eligibility/hits,
+inference count, and seven-day repeat use. Initial aspirations remain two minutes
+from ready prerequisites to first green and 80% diagnosis without rerun; neither
+has been measured here. Measure plan-to-passing time only when built-in authoring
+exists, and repair/selection safety only when those features are available.

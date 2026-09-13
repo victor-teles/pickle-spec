@@ -85,7 +85,7 @@ system, execution target, application revision, and Pickle Spec revision.
   [`packages/mobile/README.md`](../packages/mobile/README.md#real-ios-simulator-smoke-test).
 
 Attached CDP and Browserbase have connection implementations and controlled
-tests, but no dedicated live smoke recipe in this policy. ENG-13 owns their
+tests, but no dedicated live smoke recipe in this policy. Roadmap gate L3 owns their
 provisioned acceptance evidence. A local web smoke does not certify either.
 `pickle doctor` checks CDP URL syntax and Browserbase configuration without
 testing remote connectivity or successful model authentication.
