@@ -1,6 +1,6 @@
 # Pickle Spec launch and growth plan
 
-Drafted on 2026-09-04. This plan proposes a focused technical preview followed
+Drafted on 2026-09-04; roadmap alignment updated on 2026-09-13. This plan proposes a focused technical preview followed
 by a broader launch after external projects demonstrate repeat use. It is not
 a claim that release gates have passed. Product priorities are in the
 [QA and UX roadmap review](roadmap-qa-ux-review.md); package validation remains
@@ -38,10 +38,11 @@ must not appear as available features in launch copy.
 
 A QA engineer, through the project owner, asked for easy maintenance of the
 AI-generated cached interactions, either manually or through autonomous repair.
-The proposed product response is an editable execution plan linked to Gherkin
-steps, with validated revisions and recoverable human changes. See the
-[execution-plan review](roadmap-qa-ux-review.md#high-qa-needs-ownership-of-the-generated-execution-plan)
-for the workflow and acceptance criteria.
+The current Plan tab supports direct web locator editing with conflict checks.
+Save updates the execution cache; it does not itself validate the full Scenario.
+Separate draft/validation infrastructure exists, but a complete activation,
+rollback, and eviction-survival workflow is not established by this review.
+See the [QA review](roadmap-qa-ux-review.md#findings) for the evidence and gates.
 
 Add a maintenance task to pilot interviews: change a UI interaction while keeping
 the expected business outcome unchanged, then ask the participant to repair it.
@@ -50,11 +51,10 @@ autonomous repair, and why. Measure task completion, assistance, time to a
 validated revision, and confidence explaining the change. Distinguish a
 prototype session from a working released editor.
 
-Manual execution-plan maintenance is a proposed core QA milestone. Broad launch
-positioning around maintainability should wait for its acceptance checks. A
-technical preview can still disclose the limitation. Do not advertise editable
-plans or autonomous repair until the exact released workflow is verified.
-
+Manual locator maintenance is implemented and still needs release-specific
+acceptance. A technical preview should describe its exact scope, rerun requirement,
+and cache retention limits. Do not advertise durable plans or autonomous repair
+until those exact workflows are verified.
 Once available, demonstrate the complete loop: AI creates interactions, QA
 corrects one, the Scenario validates without weakening its assertions, and
 Replay uses the accepted revision. Test whether this helps activated projects
@@ -99,15 +99,15 @@ gate, with the exact revision and evidence location. An unchecked gate is pendin
 - [ ] Record live smoke evidence for every target advertised in this launch. Mark other targets unverified for this release or omit the claim.
 - [ ] Publish prerequisites, provider-data boundaries, supported environments, and known limitations beside the quick start.
 - [ ] Confirm package metadata, license terms, repository links, issue reporting, and install instructions for the release. This review did not establish published availability or license readiness.
-- [ ] Complete the QA acceptance session in the companion review, including keyboard use, error recovery, and manual execution-plan maintenance. A preview without the editor must record that task as unavailable, not passed.
-- [ ] Before advertising plan maintenance, verify manual edit, validation, activation, rollback, and preservation through refresh and cache eviction. Verify AI repair separately before advertising it.
+- [ ] Complete the QA acceptance session in the companion review, including keyboard use, error recovery, and manual execution-plan maintenance. Record direct locator editing separately from durable-plan lifecycle acceptance.
+- [ ] Before advertising direct locator maintenance, verify edit, save, conflicts, refresh, and rerun. Before advertising durable validated plans, also verify activation, rollback, and preservation through cache eviction. Verify AI repair separately before advertising it.
 - [ ] Assign someone to handle install failures and feedback during the launch window, with a documented workaround or previous-version recovery path.
 
 A technical preview may proceed with disclosed limitations and assisted setup.
 Defer broad promotion if the primary web path is broken, evidence is misleading,
 regressions become passes, or external users cannot recover from common failures.
 Do not delay the preview for AI authoring, autonomous repair, trends, or hosted
-collaboration. Keep the manual-maintenance gap visible in preview limitations.
+collaboration. Keep the durable-plan lifecycle limitation visible in preview copy.
 
 ## Launch package
 

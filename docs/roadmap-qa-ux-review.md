@@ -1,276 +1,126 @@
-# Roadmap review: QA workflows, usability, reach, and simplicity
+# Stability, UX, and launch readiness review
 
-Reviewed on 2026-09-04. This is a proposed revision strategy for
-[ROADMAP.md](../ROADMAP.md), not a replacement roadmap or an implementation
-status certification. The companion [launch and growth plan](launch-and-growth.md)
-turns the adoption priorities into release and distribution work.
+Reviewed 2026-09-13 at `bc5a824317665739cf2d2a4c0ec2aeeec2c7ee8c`.
+Scope: roadmap reconciliation, source/test inventory, local automated QA, and a
+launch acceptance plan. No publication, outreach, or real-provider execution is
+implied. [ROADMAP.md](../ROADMAP.md) owns priorities and milestone completion.
 
-ENG-01 has since reconciled the status and design-token contradictions in the
-[capability inventory](capability-status.md). Roadmap line references below
-describe the pre-inventory snapshot; the remaining workflow priorities still apply.
+## Findings
 
-## Recommendation
+| Priority            | Finding and evidence                                                                                                                                                                                                     | Required outcome                                                                                                                                                  |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| P0 release process  | `package.json` pins Bun 1.4.2; both `.github/workflows/ci.yml` and `publish.yml` use 1.3.11. This is confirmed configuration drift, not proof of a CI failure.                                                           | S1: agree and validate one release toolchain, then align both workflows.                                                                                          |
+| P1 claim accuracy   | The previous roadmap linked to absent `capability-status.md` and `roadmap-competitive-review.md`; launch copy also linked to an absent QA review.                                                                        | Restored inventory and QA review; removed unsupported competitive-baseline claims from the active roadmap. Do not infer release readiness from old checked boxes. |
+| P1 plan maintenance | The previous roadmap said plan editing was unsupported. `execution-plan-panel.tsx` calls Save; `savePlan` in the CLI publishes directly to cache with concurrency checks. Separate revision/validation code also exists. | Advertise the exact locator-edit scope only after QA. Do not equate a save with validated activation, rollback, or durable authored storage.                      |
+| P1 verification     | `studio-hardening-suite.ts` includes accessibility, focus, responsive, and large-collection tests; mobile smoke suites are opt-in.                                                                                       | Run existing suites before adding redundant coverage. Record skipped provisioned tests separately from passing controlled tests.                                  |
+| P1 release UX       | Existing launch material describes manual maintenance as wholly proposed and relies on older phase/engineering references.                                                                                               | Reconcile current behavior and replace stale gate references with this roadmap.                                                                                   |
+| P1 packaging review | No root license file was found in the initial source inventory. Package metadata/legal readiness remains unverified.                                                                                                     | Release owner confirms intended terms and package contents; do not invent or apply a license during a roadmap review.                                             |
 
-Finish the everyday QA loop before expanding autonomous authoring and repair:
-connect a real application, write a meaningful assertion, run it, understand a
-failure, maintain the generated interactions, rerun the affected scenario, and
-give a teammate useful evidence.
+The lifecycle, redaction, recovery, usability, and portability scenarios below are
+risk-based acceptance requirements, not claims that each contains a known defect.
+The review does not recommend replacing current direct editing with a new storage
+model without observing needs and approving the contract.
 
-The roadmap is strong on inspectable execution and source ownership. It is less
-specific about the work that makes a QA practitioner return tomorrow. Prioritize
-authentication, repeatable test data, assertion quality, failure recovery, and CI
-handoff ahead of picture-in-picture, broad exploration, and autonomous repair.
-Feature reach should mean more real journeys successfully tested with the same
-few concepts, rather than more modes and dashboards.
+## Executable QA session
 
-## Findings by impact
+Use an isolated project, synthetic credentials/data, a known application revision,
+and the exact release candidate. Capture command output and failed-step artifacts.
+For each row record passed/failed/blocked, run or screenshot, defect, owner, and retest.
+All rows remain pending until actual execution evidence is recorded.
 
-### High: completion status is internally inconsistent
+| ID    | Actions                                                                                                                                                                      | Pass condition                                                                                                                                                | Coverage / roadmap                                    |
+| ----- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------- |
+| QA-01 | Follow README from a clean project; run init/doctor/Studio; inspect demo, then run a real assertion. Repeat with missing/invalid credentials.                                | Demo is clearly distinct; first real assertion is meaningful; blocked setup gives a recoverable next action. Record setup and ready-to-green times.           | Onboarding unit and CLI browser tests; U1.            |
+| QA-02 | Break the application expectation; run; inspect failure, source, screenshots, diagnostics, and retry history; refresh the deep link.                                         | Failure remains a failure and identifies the correct step/profile; evidence and selection survive refresh.                                                    | Studio routing/result suites; U2.                     |
+| QA-03 | Run Adaptive, applicable Replay, then cache-only with an empty cache and a diverged target.                                                                                  | Outcomes and inference counts match each mode; miss/divergence never silently passes or invokes forbidden fallback.                                           | Cache integration / Replay gate; S5, U3.              |
+| QA-04 | Cancel a running run; interrupt its process; disconnect browser/provider; reopen Studio.                                                                                     | Cancellation and interruption are truthful; no false success or indefinitely active run; historical evidence stays inspectable.                               | Run integration / Studio controlled browser seam; S3. |
+| QA-05 | Edit a locator in list and canvas; try invalid input; abort save transport; retry; edit concurrently in a second tab; reload; rerun.                                         | Input survives failed save, stale writes cannot overwrite current data, successful edit persists across reload, and actual Scenario outcome is checked.       | Plan editor E2E; U4.                                  |
+| QA-06 | Record a saved edit, clear/evict its cache in the isolated fixture, inspect again, and compare old run evidence.                                                             | UI and documentation accurately describe edit retention/loss; historical evidence is not rewritten. Durable retention is a separate feature gate if promised. | Plan/cache integration plus manual session; U4, F4.   |
+| QA-07 | Rerun only a failed Scenario/profile while another result updates.                                                                                                           | Correct selection/configuration, distinct new run, original evidence retained; pinned investigation does not jump.                                            | Studio follow/rerun suites; U5.                       |
+| QA-08 | Export HTML and archive; transfer to a fresh workspace; import and inspect without the original project.                                                                     | Failure can be explained and artifacts resolve; missing optional evidence is labeled.                                                                         | CLI export/import plus independent workspace; U6.     |
+| QA-09 | Complete the core loop with keyboard only, at 200% zoom and 390px width, with reduced motion; use list instead of canvas.                                                    | Controls reachable and named, focus visible/restored, no essential content clipped, no status conveyed only by color.                                         | Axe/hardening suites plus manual browser QA; U7.      |
+| QA-10 | Run login plus a state-changing journey twice with isolated data; expire auth and retry.                                                                                     | Repeatable state, meaningful assertions, actionable expired-auth failure, no secret disclosure.                                                               | Live primary web acceptance; F1–F2.                   |
+| QA-11 | Insert synthetic secret canaries into credential-bearing URLs and supported input channels; inspect live/stored/exported evidence. Attempt forbidden origins/artifact paths. | Canaries are absent where redaction is required; untrusted access rejected without losing useful diagnostics.                                                 | Confidentiality and Studio security suites; S4.       |
+| QA-12 | Install packed release set in clean project; exercise CLI/Studio and CI recipe. After authorized publishing, repeat exact registry install.                                  | All seven artifacts interoperate; correct exit codes/JUnit; version and dist-tag verified separately after publication.                                       | Release acceptance; S6, F3, L5.                       |
+| QA-13 | Repeat pass/failure/evidence/cancel on each advertised target and with recording dependencies absent.                                                                        | Independent target evidence; skips and optional capture failures reported explicitly.                                                                         | Provisioned web/mobile/remote runs; L3.               |
 
-The platform summary at ROADMAP.md line 16 says live target video and web traces
-are absent. Lines 60–63 mark browser viewing, device mirroring, diagnostics, and
-time-travel inspection complete. Neither statement establishes which targets and
-artifact types have passed a real release test.
+## Pilot and launch decisions
 
-The unchecked follow-mode item at line 66 also combines existing behavior with
-future work. The inspected [live follow model](../packages/studio/src/features/runs/result/live-result-follow.ts)
-already selects failing attempts, preserves a pinned location, and follows
-timeline entries. That proves implementation exists, not that picture-in-picture
-or the full user journey is complete.
+Have five new testers attempt QA-01, QA-02, QA-05, QA-07, and QA-08. Observe
+without coaching first; record every intervention and completion time. Ask them
+to explain why the test failed and whether a saved locator has been validated.
+Target four independent completions out of five before broadening the preview.
+Check reuse on another day within seven days; do not replace this with downloads.
 
-Split compound items and attach a release revision, supported target list, and
-verification link to each completed capability. Distinguish implemented,
-verified on a real target, and planned. Reconcile the summary only after that
-inventory. Do not restart features merely because their checkbox is stale.
+Stop release for false passes, secret exposure, lost edits, broken installation,
+or a broken advertised primary path. Defer advanced authoring, repair, analytics,
+and hosted collaboration. Assign real owners before sign-off; none are invented here.
 
-### High: QA needs ownership of the generated execution plan
+## Local QA results
 
-A QA engineer's feedback, relayed by the project owner, identifies a missing
-workflow: AI produces cached interactions, and a human must be able to edit and
-maintain them, with autonomous repair available when appropriate. This is one
-qualitative signal, not a measured demand rate, but it directly affects whether
-a team can maintain a suite after its first successful run.
+Environment: macOS, Bun 1.4.2, source revision above plus this documentation diff.
+The initial checkout had no installed dependencies. Frozen installation succeeded
+with network access after the sandbox attempt failed DNS resolution. Root unit
+fixtures needed access beyond the sandbox for temporary installation subprocesses;
+Chrome also failed to launch in the initial sandbox browser attempt.
 
-Use execution plan for the ordered actions and checks used by Replay. The
-coverage plan in Phase 3 describes what to test; the execution plan describes
-how a Scenario runs. Keep the Gherkin Specification as the source of expected
-behavior. Editing a click target must not silently change what the test asserts.
+| Check                                            | Result | Evidence and boundary                                                                                                                               |
+| ------------------------------------------------ | ------ | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `bun install --frozen-lockfile`                  | Passed | Locked dependencies installed; manifest and lockfile unchanged.                                                                                     |
+| `bun run lint`                                   | Passed | Oxlint and Oxfmt; changed Markdown formatted with the existing formatter.                                                                           |
+| `bun run typecheck`                              | Passed | Eight Turbo tasks; cache misses.                                                                                                                    |
+| `bun run test`                                   | Passed | 734 tests: 14 script tests plus 720 across seven packages. Six package results reused from local Turbo cache; Studio rebuilt and tested.            |
+| `bun run test:integration`                       | Passed | 179 tests across confidentiality, CLI, mobile, and web controlled suites.                                                                           |
+| `bun run test:e2e`                               | Failed | CLI: 151 passed, two failed, two skipped. Both failures reproduced in isolation; details below. Separate mobile run: two provisioned tests skipped. |
+| `bun run release:check`                          | Passed | Validated seven package artifacts at source version 1.0.2; not a registry installation test.                                                        |
+| `bun run benchmark:replay`                       | Passed | Controlled web and mobile latency gates; not live-provider performance or dollar-cost proof.                                                        |
+| Local documentation links and `git diff --check` | Passed | All local link targets in the five changed documents resolve. Inventory anchor checks also pass in script tests.                                    |
 
-Promote execution-plan inspection and manual maintenance into the core QA loop.
-Provide one workflow with two ways to prepare a change: the QA engineer edits
-an interaction, or AI proposes a repair. Both use the same diff, validation,
-version history, and activation rules. Autonomous application can follow later
-through explicit project policy and bounded attempts.
+Full command logs for this local session are at
+`/tmp/pickle-launch-{install,lint,types,tests,integration,e2e,release,benchmark}.log`.
+These are temporary local evidence; the release owner must retain candidate logs
+in the release record before sign-off. Initial failures were resolved by restoring
+the documentation contract and running fixtures with the required environment access.
 
-The proposed interaction is:
+No real model/target smoke, human keyboard/visual session, external-project pilot,
+or exact registry-version installation has passed in this review. Those gates remain
+pending even when controlled automated checks pass.
 
-1. Open the execution plan from a Scenario or failing step. Show ordered actions
-   grouped by Gherkin step, with targets, non-secret inputs, checks, and the
-   evidence used to generate them. Explain complete and partial cached paths.
-2. Edit supported action fields directly, or insert, remove, and reorder
-   supported interactions. Offer contextual controls for targets and inputs;
-   do not require QA to edit SQLite or an opaque adapter payload. Label any
-   unsupported operation and explain the available recovery path.
-3. Alternatively, request an AI repair for the failing interaction. Show its
-   proposed changes and evidence. Preserve a manual path that needs no model
-   credentials for editing or Replay validation.
-4. Validate the candidate against the affected Scenario from a known initial
-   state. Keep the original expected outcomes. An isolated action preview is
-   useful feedback, but cannot establish that the Scenario still works.
-5. Activate only the validated revision, recording the human or AI author,
-   change diff, source run, and validation result. Keep the previous revision
-   available for rollback. Existing runs retain their original evidence.
+## Browser acceptance failures
 
-Human edits are authored work. They must survive cache eviction and must not be
-silently overwritten by Cache refresh. Before implementation, decide how durable
-repository-owned plan revisions produce disposable runtime cache entries, how
-refresh reconciles edits, and how changes to the Specification, application,
-profile, or adapter invalidate applicability. Reuse existing cache eligibility
-rules. This review proposes the requirement without selecting a new storage
-format or changing the current cache contract.
+The full CLI E2E run completed with 151 passed, two failed, and two skipped tests
+(27 passed files, two failed files, one skipped file). Chrome ran successfully
+outside the sandbox. The root command stopped before the mobile package suite.
 
-Start with inspection and manual editing, then AI-assisted repair through that
-same workflow. Autonomous repair must obey the same validation gate, preserve
-assertions, stop on uncertain or repeated failures, and retain a rollback path.
-A real application regression stays failed. Changes to expected behavior belong
-in an explicit Specification review, not interaction repair.
+1. `packages/cli/tests/e2e/studio/studio.test.ts:659`: the cache-refresh case
+   timed out waiting for a visible running result on the initial run. It had not
+   reached the replacement-publication assertions. Investigate transient-state
+   synchronization and actual visible progress; do not report proven cache corruption.
+2. `packages/cli/tests/e2e/acceptance/execution-plan-validation.test.ts:445`:
+   the initial baseline returned `failed` instead of `validated`, before the
+   injected timeout. The fixture uses a 250ms step budget. Inspect baseline evidence
+   and timing before changing either runtime behavior or the timeout assertion.
 
-### High: first green is too weak an activation criterion
+Both failures block S2 until resolved or explained with a reproducible retest.
+The roadmap review does not weaken either test or alter runtime code to obtain green.
 
-Phase 1 measures two minutes only after credentials and target access are ready.
-That excludes much of the likely setup friction. A passing example also does
-not establish that someone can test their own application or detect a defect.
+Isolated retest: both selected cases failed again at the same assertions (two
+failed, 35 intentionally filtered/skipped). Log:
+`/tmp/pickle-launch-e2e-retest.log`. These are reproducible local failures;
+the underlying product-versus-fixture cause remains unresolved.
 
-Keep the two-minute ready-to-example goal as a diagnostic metric. Add total
-setup time, blocked and abandoned attempts, first real-application assertion,
-and a deliberate failure that the user can explain. Separate credential-free
-demonstration from successful Adaptive execution and applicable Replay.
+The mobile package E2E command was also run separately: both provisioned device
+smokes skipped because their opt-in environment flags were absent. Log:
+`/tmp/pickle-launch-mobile-e2e.log`. No device certification follows from that exit code.
 
-The [onboarding model](../packages/studio/src/features/onboarding/first-run-onboarding-model.ts)
-has explicit empty, blocked, ready, running, failed, and complete states. Use
-those states as the starting point for a journey audit instead of adding another
-onboarding system. No timing or user completion rate was measured in this review.
+Next engineering work, in dependency order:
 
-### High: repeatable QA setup is buried in a large authoring phase
-
-Phase 3 line 81 bundles authentication, setup, data, variables, and reusable
-journeys. These are prerequisites for testing ordinary logged-in applications,
-including manually authored Specifications. They should not depend on a coverage
-planner or built-in generation.
-
-First document and verify what existing configuration and Gherkin support.
-Then close observed gaps for login, data isolation, cleanup, and state reset.
-Extract reusable flows only after two actual scenarios need the same behavior.
-A payment journey needs an explicit expected result and controlled test data
-before it needs an agent-generated plan.
-
-### High: failure diagnosis and CI arrive too late
-
-Phase 4 line 101 makes diagnosis without rerunning an exit criterion. Phase 5
-line 110 delays cache-only CI guidance and archived-failure handoff. These are
-core adoption tasks for a QA tool, even when repair and suite analytics are absent.
-
-Move basic diagnosis and a single-run CI recipe into launch readiness. Existing
-[CLI exports, selective reruns, and cache rules](../README.md) provide a starting
-point. Show expected versus observed behavior, the relevant step and artifact,
-application revision, execution mode, and a useful next action. Missing evidence
-must have an explicit reason. Keep unknown causes unknown.
-
-Basic CI use should not wait for PR annotations, shard merging, or a hosted
-service. Verify one failed CI run exported, downloaded, imported, and understood
-in local Studio without access to the original workspace.
-
-### Medium: the roadmap lacks a usable feature-reach boundary
-
-Web and mobile adapter names do not answer which journeys a QA team can trust.
-The README already records meaningful asymmetry: web can replay a stored prefix,
-while mobile Replay requires a complete Scenario. A parity promise hides that
-important difference.
-
-Publish a task-based support matrix before broad launch. For local web, attached
-CDP, Browserbase, Android Emulator, and iOS Simulator, record authentication,
-isolation, assertions, uploads/downloads where applicable, live viewing,
-artifacts, Replay, cancellation, and CI setup. Each cell needs a status and a
-reproducible example. Use unsupported and unverified distinctly. Audit existing
-support before adding functionality. Keep physical devices and hosted
-collaboration explicitly outside the initial release promise.
-
-### Medium: authoring and operator features need smaller contracts
-
-Phase 2 combines follow mode, pinning, filmstrip, picture-in-picture, capture,
-and cancellation. Phase 3 adds planning, generation, preview, semantic review,
-project knowledge, reusable state, health analysis, and autocomplete.
-
-Start with one selected scenario and one evidence inspector. Explain Run,
-Replay, and Cache refresh where users choose them. Put advanced diagnostics
-behind the failing step; preserve the selected evidence while new events arrive.
-
-For authoring, start with an editable template, clear assertion guidance, and
-full-scenario validation. A step preview must explain its initial state, setup,
-side effects, and whether it changed the live application. A green isolated step
-must not imply a green scenario. Keep generated drafts and acceptance when AI
-is added, but require the full planner only for workflows that need exploration.
-
-### Medium: accessibility and recovery are absent from release gates
-
-The existing gates cover security and portability but do not establish keyboard
-completion, focus recovery, zoom, readable narrow layouts, or streaming behavior.
-Add keyboard and screen-reader checks for selecting, running, inspecting,
-cancelling, and exporting. Verify focus after dialogs, failures, and rerenders.
-Live updates must not steal focus or continuously flood announcements.
-
-Also test invalid credentials, missing targets, stale live connections, cancelled
-runs, unavailable artifacts, and unsaved edits. Every blocked state should say
-what happened, preserve useful work, and expose the next supported action.
-
-### Medium: visual guidance and scheduling have drifted
-
-ROADMAP.md line 41 names Bone, teal, oxide, and amber. Current
-[DESIGN.md](../DESIGN.md) specifies neutral hierarchy, near-white primary
-controls, and written green/red result states. Refer to DESIGN.md as the visual
-source of truth rather than repeating tokens in the roadmap.
-
-The overlapping week ranges have no start date, capacity, or estimates. Replace
-them with ordered milestones and dependencies until the remaining work is sized.
-Watching a run is useful, but the share of watched runs is not a success measure
-by itself. An efficient team may need to watch fewer runs.
-
-## Proposed sequence
-
-These are recommendations for the next roadmap revision, not new delivery dates.
-
-| Milestone               | Work to include                                                                                                                                           | Exit evidence                                                                                                     |
-| ----------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
-| 1. Trust the release    | Reconcile status, support matrix, installation, setup recovery, evidence availability                                                                     | Exact release installed outside the monorepo; every advertised target has recorded real-target proof              |
-| 2. Complete the QA loop | Meaningful assertions, authenticated example, isolated data, failure explanation, manual execution-plan maintenance, selective rerun, export and basic CI | External users repair a changed interaction through a validated plan revision; a seeded regression remains failed |
-| 3. Grow useful coverage | Templates, needed shared setup, manual Specification health, smallest draft/review/validate flow                                                          | A user adds a second independent journey and can explain its expected results                                     |
-| 4. Reduce maintenance   | Compatible visual comparison, evidenced classification, visible quarantine, AI-assisted and policy-controlled autonomous plan repair                      | Known app regressions remain failures; every accepted change has source and validation evidence                   |
-| 5. Scale proven usage   | Trends, PR annotations, shard merging, agent workflows, change-impact experiments                                                                         | Returning projects demonstrate a specific bottleneck and the change improves it                                   |
-
-Continue using the current shared runner and evidence contracts throughout.
-Read-and-run MCP can move earlier if active coding-agent users demonstrate that
-it is their adoption blocker. It should not delay the human QA loop.
-
-Defer picture-in-picture, a concurrent-target filmstrip, broad autonomous
-exploration, physical devices, and hosted collaboration until observed use makes
-them necessary. Keep safe cancellation, live/completed evidence consistency, and
-explicit Replay divergence in the near-term scope.
-
-## QA acceptance session
-
-Recruit five external QA practitioners or developers with testing responsibility.
-Use their own small applications when access permits. Record assistance,
-completion, elapsed time, and blockers for each task. The following thresholds
-are proposed planning gates, not measured product performance or statistical
-proof of market readiness.
-
-| Task                    | Acceptance check                                                                                                                                                                     |
-| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Install and connect     | Four of five reach a ready target without maintainer intervention; report total setup time and all failed attempts                                                                   |
-| Write and run           | Four of five create a real assertion and explain why it passed; record time separately from example completion                                                                       |
-| Detect a regression     | A seeded incorrect application outcome fails every time in the test fixture; no fallback weakens the assertion                                                                       |
-| Diagnose                | Four of five identify the seeded cause within five minutes from persisted evidence without rerunning                                                                                 |
-| Repeat                  | Eligible scenarios Replay without inference; misses, partial prefixes, and divergence are explained accurately                                                                       |
-| Maintain interactions   | Four of five locate and edit a changed interaction without raw cache editing, validate the Scenario with unchanged assertions, and activate the revision; record time and assistance |
-| Preserve ownership      | A validated manual change survives cache eviction; refresh exposes conflicts rather than overwriting it; rollback restores the previous plan revision                                |
-| Reject an unsafe repair | A candidate that skips or weakens the failed assertion cannot be activated as an interaction repair; failed validation leaves the active revision unchanged                          |
-| Recover                 | An invalid credential or disconnected target gives a usable recovery path without losing edits                                                                                       |
-| Hand off                | A second person opens the exported failure and identifies the failed expectation without the author's help                                                                           |
-| Return                  | At least three projects run again on a different day within seven days; assisted and unassisted returns stay separate                                                                |
-
-Run the core journey with keyboard alone, at 200% zoom, and at a narrow viewport.
-Inspect long names, large histories, unavailable artifacts, and concurrent events.
-A walkthrough or DOM check is not evidence that these sessions passed.
-
-For diagnosis measurements, use an explicit case set covering application
-regression, assertion defect, setup/data failure, infrastructure failure, and
-Replay divergence. Report correct answers and denominators by cause. The
-roadmap's 80% target should not be reported against only easy example failures.
-
-## Simplicity rules for the revision
-
-- Keep the existing navigation. Put new actions beside the task that needs them.
-- Show one clear primary action and progressively disclose advanced controls.
-- Keep Scenario result, execution mode, and cache outcome distinct, with short explanations.
-- Separate local Studio links from portable reports; a localhost URL is not a teammate-sharing mechanism.
-- Reuse the same failed-step evidence for live viewing, history, reruns, and exports.
-- Prefer a documented existing configuration path before creating a new wizard or abstraction.
-- Add a feature only with a named QA task, an observed gap, and a completion check.
-
-## Evidence and limits
-
-The execution-plan maintenance requirement incorporates QA feedback supplied by
-the project owner after the initial review. It is proposed product work; no plan
-editor, durable revision format, or repair workflow was implemented or verified.
-
-This review read the roadmap, README, DESIGN.md, release policy, onboarding
-model, and live follow implementation. It did not run Studio, test a published
-package, provision execution targets, or conduct usability interviews. Gaps in
-the roadmap are not automatically missing runtime features.
-
-The earlier [competitive review](roadmap-competitive-review.md) remains historical
-context. Current [Playwright documentation](https://playwright.dev/docs/test-agents)
-was checked on 2026-09-04 and describes planner, generator, and healer roles.
-That supports treating AI authoring as an existing competitive capability; it
-does not establish demand, quality, or a reason to match every feature before
-launch. The priority choices above are product judgments to test with users.
+- **QA-B1 / S2:** reproduce the initial running-state wait using the existing
+  Studio fixture; establish whether the UI misses progress or the test depends
+  on a transient state. Fix the demonstrated cause and rerun cache publication assertions.
+- **QA-B2 / S2:** inspect why the 250ms baseline fails before timeout injection;
+  ensure baseline validity and retain the negative timeout/no-receipt/cache-preservation checks.
+- **S1:** align the agreed Bun runtime across installation, CI, and publishing;
+  rerun required gates on the resulting candidate.
+- **U1–U7 / L3:** execute the primary real-target and manual acceptance session,
+  then collect external pilot evidence before release sign-off.
