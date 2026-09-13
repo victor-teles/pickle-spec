@@ -1,5 +1,4 @@
 import { createServerFn } from '@tanstack/react-start'
-import '../../start-context'
 import { z } from 'zod'
 
 const variableNameSchema = z.string().regex(/^[A-Za-z_][A-Za-z0-9_.-]*$/)
@@ -17,8 +16,9 @@ const executionPlanRequestSchema = z.object({
   profileId: z.string().min(1),
   applicationRevision: z.string().min(1).optional(),
 })
-const executionPlanEditRequestSchema = executionPlanRequestSchema.extend({
-  parentRevisionId: digestSchema,
+const executionPlanSaveRequestSchema = executionPlanRequestSchema.extend({
+  expectedCacheRevision: z.number().int().positive(),
+  expectedCacheDigest: digestSchema,
   step: z.object({
     scenarioRevision: z.string().min(1),
     index: z.number().int().nonnegative(),
@@ -37,20 +37,10 @@ export const getExecutionPlan = createServerFn({ method: 'GET' })
     return context.studio.executionPlans.read(data)
   })
 
-export const captureExecutionPlan = createServerFn({ method: 'POST' })
-  .inputValidator((value) => executionPlanRequestSchema.parse(value))
+export const saveExecutionPlan = createServerFn({ method: 'POST' })
+  .inputValidator((value) => executionPlanSaveRequestSchema.parse(value))
   .handler(({ context, data }) => {
-    if (!context.studio.executionPlans) {
+    if (!context.studio.executionPlans)
       throw new Error('Editable execution plans are unavailable')
-    }
-    return context.studio.executionPlans.captureDraft(data)
-  })
-
-export const editExecutionPlan = createServerFn({ method: 'POST' })
-  .inputValidator((value) => executionPlanEditRequestSchema.parse(value))
-  .handler(({ context, data }) => {
-    if (!context.studio.executionPlans) {
-      throw new Error('Editable execution plans are unavailable')
-    }
-    return context.studio.executionPlans.edit(data)
+    return context.studio.executionPlans.save(data)
   })

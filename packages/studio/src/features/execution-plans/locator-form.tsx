@@ -63,9 +63,9 @@ interface LocatorFormProps {
   errors?: LocatorErrors
   saving: boolean
   dirty: boolean
-  onChange(value: LocatorInput): void
-  onSave(): void
-  onCancel(): void
+  onChange(this: void, value: LocatorInput): void
+  onSave(this: void): void
+  onCancel(this: void): void
 }
 
 function useLocatorFormFocus(errors?: LocatorErrors) {
@@ -160,7 +160,7 @@ interface MatchFieldProps {
   value: string
   error?: string
   saving: boolean
-  onChange(value: string): void
+  onChange(this: void, value: string): void
   id: string
   inputRef: Ref<HTMLInputElement>
 }

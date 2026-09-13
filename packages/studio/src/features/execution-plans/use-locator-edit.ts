@@ -1,9 +1,9 @@
-import type {
-  ExecutionPlanDraftDisplay,
-  ExecutionPlanOperationDisplay,
-} from '@pickle-spec/runner'
+import type { ExecutionPlanOperationDisplay } from '@pickle-spec/runner'
 import { useRef, useState } from 'react'
-import type { StudioExecutionPlanEditRequest } from './execution-plan.contracts'
+import type {
+  StudioEditableExecutionPlan,
+  StudioExecutionPlanSaveRequest,
+} from './execution-plan.contracts'
 import {
   type LocatorErrors,
   type LocatorInput,
@@ -11,13 +11,16 @@ import {
 } from './locator-form'
 import { templateText } from './plan-steps'
 
-type DraftSaveResult =
-  | { ok: true; value: ExecutionPlanDraftDisplay }
+type PlanSaveResult =
+  | { ok: true; value: StudioEditableExecutionPlan }
   | { ok: false; message: string }
 
 export interface LocatorEditProps {
-  draft: ExecutionPlanDraftDisplay
-  onSave(request: StudioExecutionPlanEditRequest): Promise<DraftSaveResult>
+  plan: StudioEditableExecutionPlan
+  onSave(
+    this: void,
+    request: StudioExecutionPlanSaveRequest,
+  ): Promise<PlanSaveResult>
 }
 
 interface EditingTarget {
@@ -38,8 +41,8 @@ export function hasChanges(editing: EditingTarget): boolean {
 
 interface SaveTargetProps extends LocatorEditProps {
   editing?: EditingTarget
-  setEditing(value: EditingTarget): void
-  finishEdit(message: string): void
+  setEditing(this: void, value: EditingTarget): void
+  finishEdit(this: void, message: string): void
 }
 
 async function saveTarget(props: SaveTargetProps) {
@@ -57,15 +60,16 @@ async function saveTarget(props: SaveTargetProps) {
     return
   }
   setEditing({ ...editing, saving: true, errors: undefined })
-  let result: DraftSaveResult
+  let result: PlanSaveResult
   try {
     result = await props.onSave({
-      scenarioId: props.draft.scope.scenarioId,
-      profileId: props.draft.scope.executionTargetProfileId,
-      applicationRevision: props.draft.scope.applicationRevision,
-      parentRevisionId: props.draft.revisionId,
+      scenarioId: props.plan.cacheKey.scenarioId,
+      profileId: props.plan.cacheKey.executionTargetProfileId,
+      applicationRevision: props.plan.cacheKey.applicationRevision,
+      expectedCacheRevision: props.plan.cacheRevision,
+      expectedCacheDigest: props.plan.cacheDigest,
       step: {
-        scenarioRevision: props.draft.scope.scenarioRevision,
+        scenarioRevision: props.plan.cacheKey.scenarioRevision,
         index: editing.stepIndex,
       },
       instructionIndex: editing.operation.index,
@@ -75,7 +79,7 @@ async function saveTarget(props: SaveTargetProps) {
   } catch {
     result = {
       ok: false,
-      message: 'Unable to save this draft. Check the connection and try again.',
+      message: 'Unable to save this plan. Check the connection and try again.',
     }
   }
   if (!result.ok) {
@@ -86,7 +90,7 @@ async function saveTarget(props: SaveTargetProps) {
     })
     return
   }
-  finishEdit('Saved to draft')
+  finishEdit('Plan saved')
 }
 
 export function useLocatorEdit(props: LocatorEditProps) {
@@ -127,8 +131,7 @@ export function useLocatorEdit(props: LocatorEditProps) {
 
   let status = notice
   if (blocked)
-    status =
-      'Save or cancel your change before editing another action or closing the draft.'
+    status = 'Save or cancel this change before editing another action.'
   if (editing?.saving) status = 'Saving change…'
   return {
     editing,

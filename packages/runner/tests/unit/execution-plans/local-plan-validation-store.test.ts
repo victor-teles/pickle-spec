@@ -186,7 +186,7 @@ describe('local plan validation evidence', () => {
     expect(results.every((result) => result.ok)).toBe(true)
     const generations = results
       .map((result) => (result.ok ? result.value.head.generation : 0))
-      .sort()
+      .toSorted((left, right) => left - right)
     expect(generations).toEqual([1, 2])
     expect(await store.readHead(basisDigest)).toMatchObject({
       ok: true,

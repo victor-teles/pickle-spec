@@ -20,9 +20,9 @@ import {
 describe('Execution cache lifecycle', () => {
   test('runs authored validation as v3 Replay without cache access or cache outcome', async () => {
     const { store } = memoryStore()
-    store.read = vi.fn(store.read.bind(store))
-    store.write = vi.fn(store.write.bind(store))
-    store.delete = vi.fn(store.delete.bind(store))
+    const readSpy = vi.spyOn(store, 'read')
+    const writeSpy = vi.spyOn(store, 'write')
+    const deleteSpy = vi.spyOn(store, 'delete')
     const digest = 'a'.repeat(64)
     const planUse: PlanUse = {
       purpose: 'validation',
@@ -95,9 +95,9 @@ describe('Execution cache lifecycle', () => {
       schemaVersion: 3,
       attempt: { planUse },
     })
-    expect(store.read).not.toHaveBeenCalled()
-    expect(store.write).not.toHaveBeenCalled()
-    expect(store.delete).not.toHaveBeenCalled()
+    expect(readSpy).not.toHaveBeenCalled()
+    expect(writeSpy).not.toHaveBeenCalled()
+    expect(deleteSpy).not.toHaveBeenCalled()
   })
 
   test('rejects invalid authored Replay before target launch', async () => {
@@ -144,9 +144,9 @@ describe('Execution cache lifecycle', () => {
 
   test('rejects authored Replay from another project without target or cache access', async () => {
     const { store } = memoryStore()
-    store.read = vi.fn(store.read.bind(store))
-    store.write = vi.fn(store.write.bind(store))
-    store.delete = vi.fn(store.delete.bind(store))
+    const readSpy = vi.spyOn(store, 'read')
+    const writeSpy = vi.spyOn(store, 'write')
+    const deleteSpy = vi.spyOn(store, 'delete')
     const openSession = vi.fn()
     const adapter: ExecutionTargetAdapter = { executionCache, openSession }
     const payload = { operations: completeOperations }
@@ -185,9 +185,9 @@ describe('Execution cache lifecycle', () => {
       message: 'Authored Replay does not apply to the resolved project',
     })
     expect(openSession).not.toHaveBeenCalled()
-    expect(store.read).not.toHaveBeenCalled()
-    expect(store.write).not.toHaveBeenCalled()
-    expect(store.delete).not.toHaveBeenCalled()
+    expect(readSpy).not.toHaveBeenCalled()
+    expect(writeSpy).not.toHaveBeenCalled()
+    expect(deleteSpy).not.toHaveBeenCalled()
   })
 
   test('keeps a passed but non-deterministic Scenario uncacheable', async () => {

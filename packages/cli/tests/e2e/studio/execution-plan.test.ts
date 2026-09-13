@@ -1,6 +1,6 @@
 import { mkdir } from 'node:fs/promises'
 import { resolve } from 'node:path'
-import AxeBuilder from '@axe-core/playwright'
+import { AxeBuilder } from '@axe-core/playwright'
 import type { Response } from 'playwright'
 import { afterAll, beforeAll, describe, expect, test } from 'vitest'
 import {
@@ -79,18 +79,32 @@ describe('ENG04 readable execution plan browser acceptance', () => {
         .filter({ hasText: 'The readable execution plan could not be loaded.' })
         .waitFor()
       await page.getByRole('button', { name: 'Retry', exact: true }).click()
-      await complete.getByText('Current cached plan').waitFor()
+      await complete
+        .getByRole('heading', { name: 'Execution plan', exact: true })
+        .waitFor()
       expect(planRequestCount).toBe(2)
       await page.unroute('**/_serverFn/**')
+      await complete.getByRole('button', { name: 'List', exact: true }).click()
       expect(await complete.textContent()).toContain('Fill')
       expect(await complete.textContent()).toContain('Check visible')
-      expect(await complete.textContent()).toContain('Value <redacted>')
+      await complete
+        .getByRole('button', { name: /^Edit locator: Fill/ })
+        .first()
+        .click()
+      expect(
+        await complete.getByLabel('Locator', { exact: true }).inputValue(),
+      ).toBe('#password')
+      await complete
+        .getByRole('button', { name: 'Cancel', exact: true })
+        .click()
+      await complete
+        .getByRole('button', { name: /^Inspect action: Navigate/ })
+        .first()
+        .click()
       expect(await complete.textContent()).toContain(
         'https://example.test/account?access_token=%3Credacted%3E',
       )
-      await complete
-        .getByRole('button', { name: 'Applicability details' })
-        .click()
+      await complete.getByRole('button', { name: 'Plan details' }).click()
       const applicationBadge = complete.getByText(
         `Application 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef`,
         { exact: true },
@@ -106,8 +120,8 @@ describe('ENG04 readable execution plan browser acceptance', () => {
       })
 
       const partial = await inspectScenario(page, 'Partial cached plan')
-      await partial.getByText('Uncached tail').waitFor()
-      expect(await partial.textContent()).toContain('Then I see the account')
+      await partial.getByText('Uncached', { exact: true }).waitFor()
+      expect(await partial.textContent()).toContain('I see the account')
       await page.screenshot({
         path: resolve(evidenceDirectory, 'partial-desktop.png'),
         fullPage: true,
@@ -125,8 +139,8 @@ describe('ENG04 readable execution plan browser acceptance', () => {
         'The cached plan does not match the current Gherkin step roles.',
       )
 
-      const absent = await inspectScenario(page, 'No cached plan yet')
-      await absent.getByText('No cached plan', { exact: true }).waitFor()
+      await inspectScenario(page, 'No cached plan yet')
+      await page.getByText('No cached plan', { exact: true }).waitFor()
       expect(await page.textContent('body')).toContain(
         'Run this Scenario with the selected profile to create a readable plan.',
       )
@@ -144,11 +158,12 @@ describe('ENG04 readable execution plan browser acceptance', () => {
     }
   }, 60_000)
 
-  test('supports keyboard review and accessible 320px reflow before a run', async () => {
+  test('opens the only profile directly with keyboard review and accessible 320px reflow', async () => {
     const project = await fixture.createProject('eng04-plan-mobile')
     const seeded = await createExecutionPlanBrowserProject(
       project,
       fixture.workspace,
+      false,
     )
     const { child, url } = await fixture.start(project, {
       PICKLE_CACHE_ROOT: seeded.cacheRoot,
@@ -192,19 +207,30 @@ describe('ENG04 readable execution plan browser acceptance', () => {
         await planTab.evaluate((element) => element.matches(':focus')),
       ).toBe(true)
       await page.keyboard.press('Enter')
-      const inspect = page.getByRole('button', {
-        name: 'Inspect browser',
-        exact: true,
-      })
-      await tabTo(page, inspect)
-      await page.keyboard.press('Enter')
       const complete = page
-        .getByRole('region', { name: 'Readable execution plan' })
+        .getByRole('region', { name: 'Execution plan editor' })
         .last()
-      await complete.getByText('Current cached plan').waitFor()
+      await complete
+        .getByRole('heading', { name: 'Execution plan', exact: true })
+        .waitFor()
+      expect(
+        await page
+          .getByRole('button', { name: 'Inspect browser', exact: true })
+          .count(),
+      ).toBe(0)
+      expect(
+        await page
+          .getByText('Readable execution plan', { exact: true })
+          .count(),
+      ).toBe(0)
+      expect(
+        await page
+          .getByText('Choose a profile to inspect its current cached plan.')
+          .count(),
+      ).toBe(0)
       const detailsBounds = await complete.boundingBox()
       expect(detailsBounds?.height).toBeGreaterThan(200)
-      const details = complete.getByText('Applicability details')
+      const details = complete.getByText('Plan details')
       await details.focus()
       expect(
         await details.evaluate((element) => element.matches(':focus')),
@@ -255,39 +281,43 @@ describe('ENG04 readable execution plan browser acceptance', () => {
       await showDetails(page)
       await page.getByRole('tab', { name: 'Plan', exact: true }).click()
       const plan = page
-        .getByRole('region', { name: 'Readable execution plan' })
+        .getByRole('region', { name: 'Execution plan editor' })
         .last()
-      await plan.getByText('Current cached plan').waitFor()
+      await plan
+        .getByRole('heading', { name: 'Execution plan', exact: true })
+        .waitFor()
       const focused = plan.locator('[data-state="selected"]')
-      expect(await focused.textContent()).toContain('Then I see the account')
+      expect(await focused.textContent()).toContain('I see the account')
       expect(await focused.textContent()).toContain('Recorded failed step')
-      expect(
-        await focused.evaluate((element) => element.matches(':focus')),
-      ).toBe(true)
-      await plan.getByRole('button', { name: 'Start draft from cache' }).click()
-      const draft = page.getByRole('region', {
-        name: 'Execution plan draft editor',
-      })
-      const draftFocus = draft.locator('[data-state="selected"]')
       await expect
-        .poll(() => draftFocus.evaluate((element) => element.matches(':focus')))
+        .poll(() => focused.evaluate((element) => element.matches(':focus')))
         .toBe(true)
-      expect(await draftFocus.textContent()).toContain('Then I see the account')
-      expect(await plan.count()).toBe(0)
-      await draft.getByRole('button', { name: 'Edit locator' }).first().click()
-      await draft.getByLabel('Locator', { exact: true }).fill('#help-repaired')
-      await draft.getByRole('button', { name: 'Cancel', exact: true }).click()
-      await draft.getByRole('button', { name: 'Edit locator' }).first().click()
-      await draft.getByLabel('Locator', { exact: true }).fill('#help-repaired')
-      await draft
+      await plan.getByRole('button', { name: 'List', exact: true }).click()
+      await plan
+        .getByRole('button', { name: /^Edit locator:/ })
+        .first()
+        .click()
+      await plan.getByLabel('Locator', { exact: true }).fill('#help-repaired')
+      await plan.getByRole('button', { name: 'Cancel', exact: true }).click()
+      await plan
+        .getByRole('button', { name: /^Edit locator:/ })
+        .first()
+        .click()
+      await plan.getByLabel('Locator', { exact: true }).fill('#help-repaired')
+      await plan
         .getByRole('button', { name: 'Save change', exact: true })
         .click()
-      await draft
-        .getByRole('status')
-        .filter({ hasText: 'Saved to draft' })
-        .waitFor()
-      await draft.getByRole('button', { name: 'Close draft' }).click()
-      await plan.getByText('Current cached plan').waitFor()
+      await plan.getByRole('status').filter({ hasText: 'Plan saved' }).waitFor()
+      await plan
+        .getByRole('button', { name: 'Reload plan', exact: true })
+        .click()
+      await expect
+        .poll(() =>
+          plan
+            .locator('[data-state="selected"]')
+            .evaluate((element) => element.matches(':focus')),
+        )
+        .toBe(true)
       await page.screenshot({
         path: resolve(evidenceDirectory, 'failed-step-focus.png'),
         fullPage: true,
