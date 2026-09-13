@@ -1,6 +1,6 @@
 import { mkdir } from 'node:fs/promises'
 import { resolve } from 'node:path'
-import AxeBuilder from '@axe-core/playwright'
+import { AxeBuilder } from '@axe-core/playwright'
 import type { Response } from 'playwright'
 import { afterAll, beforeAll, describe, expect, test } from 'vitest'
 import {

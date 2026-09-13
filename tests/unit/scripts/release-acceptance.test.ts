@@ -2,6 +2,7 @@ import { mkdir, mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { describe, expect, test } from 'vitest'
+import { z } from 'zod'
 import {
   prepareRelease,
   releaseDistTagFromTag,
@@ -13,26 +14,32 @@ import {
 
 const repositoryRoot = resolve(import.meta.dir, '../../..')
 
-type PublishWorkflowStep = {
-  name?: string
-  run?: string
-  'continue-on-error'?: boolean
-}
-
-type PublishWorkflow = {
-  jobs?: {
-    publish?: {
-      steps?: PublishWorkflowStep[]
-    }
-  }
-}
+const publishWorkflowStepSchema = z.object({
+  name: z.string().optional(),
+  run: z.string().optional(),
+  'continue-on-error': z.boolean().optional(),
+})
+const publishWorkflowSchema = z.object({
+  jobs: z
+    .object({
+      publish: z
+        .object({
+          steps: z.array(publishWorkflowStepSchema).optional(),
+        })
+        .optional(),
+    })
+    .optional(),
+})
+type PublishWorkflowStep = z.infer<typeof publishWorkflowStepSchema>
 
 async function readPublishSteps(): Promise<PublishWorkflowStep[] | undefined> {
-  const workflow = Bun.YAML.parse(
-    await Bun.file(
-      join(repositoryRoot, '.github/workflows/publish.yml'),
-    ).text(),
-  ) as PublishWorkflow
+  const workflow = publishWorkflowSchema.parse(
+    Bun.YAML.parse(
+      await Bun.file(
+        join(repositoryRoot, '.github/workflows/publish.yml'),
+      ).text(),
+    ),
+  )
   return workflow.jobs?.publish?.steps
 }
 

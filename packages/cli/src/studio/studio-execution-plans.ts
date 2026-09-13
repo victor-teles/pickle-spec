@@ -41,7 +41,6 @@ import {
   resolveFidelityPolicy,
   type WebAdapterOptions,
   type WebExecutionCachePayload,
-  type WebLocator,
   webTargetConfigurationFingerprint,
 } from '@pickle-spec/web'
 import { z } from 'zod'
@@ -72,7 +71,10 @@ export interface ExecutionPlanServiceDependencies {
   loadProject(): Promise<ExecutionPlanProject>
   openCache(): Promise<LocalExecutionCache>
   openPlanStore?: () => Promise<LocalExecutionPlanStore>
-  resolveApplicationRevision(value: string | undefined): string | undefined
+  resolveApplicationRevision(
+    this: void,
+    value: string | undefined,
+  ): string | undefined
   now?: () => Date
 }
 

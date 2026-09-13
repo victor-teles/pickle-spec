@@ -5,7 +5,6 @@ import {
   type ExecutionCacheKey,
   openLocalExecutionCache,
   openLocalExecutionPlanStore,
-  type PlanScope,
   serializeExecutionCacheEnvelope,
 } from '@pickle-spec/runner'
 import { parseSpecification, scenarioRevision } from '@pickle-spec/spec'

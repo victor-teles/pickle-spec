@@ -17,7 +17,7 @@ import {
 interface ExecutionPlanEditorProps extends LocatorEditProps {
   focusStep?: PlanStepFocus
   children?: ReactNode
-  onReload(): void
+  onReload(this: void): void
 }
 
 export function ExecutionPlanEditor(props: ExecutionPlanEditorProps) {

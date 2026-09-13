@@ -1,7 +1,8 @@
+/* oxlint-disable anti-slop/no-unknown-parameters -- Canonical serialization is the validation boundary for arbitrary JavaScript values. */
 import { createHash } from 'node:crypto'
+import { z } from 'zod'
 import type {
   Digest,
-  JsonPrimitive,
   JsonValue,
   PlanRevision,
   PlanRevisionContent,
@@ -158,32 +159,46 @@ function isJsonWhitespace(value: string | undefined): boolean {
   return value === ' ' || value === '\n' || value === '\r' || value === '\t'
 }
 
-type JsonCandidate = JsonPrimitive | object
-type JsonObjectCandidate = object
+const jsonPrimitiveSchema = z.union([
+  z.string(),
+  z.boolean(),
+  z.number(),
+  z.null(),
+])
+const jsonObjectSchema = z.custom<object>(
+  (value) => value !== null && Object(value) === value,
+)
 
-function jsonValue<T>(value: T, ancestors: Set<object>): JsonValue {
-  if (value === undefined) throw new TypeError('Value is not JSON-compatible')
-  const candidate = value as JsonCandidate
-  if (candidate === null) return candidate
-  const tag = Object.prototype.toString.call(candidate)
-  if (tag === '[object String]' && candidate === String(candidate)) {
-    return String(candidate)
+function jsonValue(value: unknown, ancestors: Set<object>): JsonValue {
+  const primitive = jsonPrimitiveSchema.safeParse(value)
+  if (primitive.success) {
+    const number = z.number().safeParse(primitive.data)
+    return number.success ? jsonNumber(number.data) : primitive.data
   }
-  if (tag === '[object Boolean]' && candidate === Boolean(candidate)) {
-    return Boolean(candidate)
-  }
-  if (tag === '[object Number]' && candidate === Number(candidate)) {
-    return jsonNumber(Number(candidate))
-  }
-  if (Array.isArray(candidate)) return jsonArray(candidate, ancestors)
-  const objectValue = candidate as JsonObjectCandidate
-  if (ancestors.has(objectValue))
+  const parsedObject = jsonObjectSchema.safeParse(value)
+  if (!parsedObject.success) throw new TypeError('Value is not JSON-compatible')
+  const candidate = parsedObject.data
+  if (ancestors.has(candidate))
     throw new TypeError('Cyclic values are not JSON-compatible')
-  ancestors.add(objectValue)
+  ancestors.add(candidate)
   try {
-    return jsonObject(objectValue, ancestors)
+    if (Array.isArray(candidate)) return jsonArray(candidate, ancestors)
+    const prototype = Object.getPrototypeOf(candidate)
+    if (prototype !== Object.prototype && prototype !== null) {
+      throw new TypeError('Only plain objects are JSON-compatible')
+    }
+    if (Object.getOwnPropertySymbols(candidate).length > 0) {
+      throw new TypeError('Symbol keys are not JSON-compatible')
+    }
+    const entries = Object.entries(candidate).toSorted(([left], [right]) => {
+      if (left < right) return -1
+      return Number(left > right)
+    })
+    return Object.fromEntries(
+      entries.map(([key, entry]) => [key, jsonValue(entry, ancestors)]),
+    )
   } finally {
-    ancestors.delete(objectValue)
+    ancestors.delete(candidate)
   }
 }
 
@@ -196,8 +211,8 @@ function jsonNumber(value: number): number {
   return value
 }
 
-function jsonArray<T>(
-  value: readonly T[],
+function jsonArray(
+  value: readonly unknown[],
   ancestors: Set<object>,
 ): JsonValue[] {
   for (let index = 0; index < value.length; index += 1) {
@@ -207,34 +222,15 @@ function jsonArray<T>(
   return value.map((item) => jsonValue(item, ancestors))
 }
 
-function jsonObject<T>(
-  value: T,
-  ancestors: Set<object>,
-): { [key: string]: JsonValue } {
-  const prototype = Object.getPrototypeOf(value)
-  if (prototype !== Object.prototype && prototype !== null) {
-    throw new TypeError('Only plain objects are JSON-compatible')
-  }
-  if (Object.getOwnPropertySymbols(value).length > 0) {
-    throw new TypeError('Symbol keys are not JSON-compatible')
-  }
-  const record = value as Record<string, T>
-  return Object.fromEntries(
-    Object.keys(record)
-      .toSorted()
-      .map((key) => [key, jsonValue(record[key], ancestors)]),
-  )
-}
-
 export function parseUniqueKeyJson(source: string): JsonValue {
   return new UniqueKeyJsonParser(source).parse()
 }
 
-export function canonicalJson<T>(value: T): string {
+export function canonicalJson(value: unknown): string {
   return JSON.stringify(jsonValue(value, new Set()))
 }
 
-export function planDigest<T>(value: T): Digest {
+export function planDigest(value: unknown): Digest {
   return createHash('sha256').update(canonicalJson(value), 'utf8').digest('hex')
 }
 
@@ -280,6 +276,6 @@ export function selectionDigest(selection: PlanSelection): Digest {
   return planDigest(planSelectionSchema.parse(selection))
 }
 
-export function serializePlanDocument<T>(value: T): string {
+export function serializePlanDocument(value: unknown): string {
   return `${canonicalJson(value)}\n`
 }

@@ -53,7 +53,7 @@ export async function tabTo(page: Page, target: Locator): Promise<void> {
     await page.keyboard.press('Tab')
     if (await target.evaluate((element) => element.matches(':focus'))) return
   }
-  throw new Error(`Keyboard focus did not reach ${target}`)
+  throw new Error(`Keyboard focus did not reach ${target.toString()}`)
 }
 
 export async function waitForStudio(

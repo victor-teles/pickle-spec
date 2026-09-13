@@ -1,5 +1,4 @@
 import { createServerFn } from '@tanstack/react-start'
-import '../../start-context'
 import { z } from 'zod'
 
 const variableNameSchema = z.string().regex(/^[A-Za-z_][A-Za-z0-9_.-]*$/)

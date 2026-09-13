@@ -231,6 +231,8 @@ function checkDisplay(
     case 'count-equals':
     case 'url-equals':
       return aggregateCheckDisplay(instruction, sensitiveLiterals)
+    default:
+      throw new Error('Unsupported check instruction')
   }
 }
 
@@ -251,7 +253,12 @@ function aggregateCheckDisplay(
     .safeParse(instruction.expected)
   const segments = expectedVariable.success
     ? [{ kind: 'variable' as const, name: expectedVariable.data.variable }]
-    : [{ kind: 'literal' as const, value: String(instruction.expected) }]
+    : [
+        {
+          kind: 'literal' as const,
+          value: String(z.number().parse(instruction.expected)),
+        },
+      ]
   return {
     kind: instruction.kind,
     summary: 'Check count',

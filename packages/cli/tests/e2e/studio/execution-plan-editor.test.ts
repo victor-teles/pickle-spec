@@ -1,6 +1,6 @@
 import { mkdir } from 'node:fs/promises'
 import { resolve } from 'node:path'
-import AxeBuilder from '@axe-core/playwright'
+import { AxeBuilder } from '@axe-core/playwright'
 import type { Page } from 'playwright'
 import { afterAll, beforeAll, expect, test } from 'vitest'
 import {
@@ -51,7 +51,7 @@ test('saves the current plan directly with validation, recovery, reload persiste
     viewport: { width: 1440, height: 1000 },
   })
   const page = await context.newPage()
-  let releaseSave = () => {}
+  let releaseSave: (() => void) | undefined
   try {
     await page.goto(url)
     await waitForStudio(page, 'direct-plan-editor')
@@ -111,7 +111,7 @@ test('saves the current plan directly with validation, recovery, reload persiste
     await plan.getByRole('button', { name: 'Saving…', exact: true }).waitFor()
     expect(await selector.isDisabled()).toBe(true)
     expect(await cancel.isDisabled()).toBe(true)
-    releaseSave()
+    releaseSave?.()
     await plan.getByRole('status').filter({ hasText: 'Plan saved' }).waitFor()
     await page.unroute('**/_serverFn/**')
     await expect
@@ -167,7 +167,7 @@ test('saves the current plan directly with validation, recovery, reload persiste
     })
     await cancel.click()
   } finally {
-    releaseSave()
+    releaseSave?.()
     await context.close()
     child.kill()
     await child.exited

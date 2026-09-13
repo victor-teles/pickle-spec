@@ -175,7 +175,7 @@ function useExecutionPlan(props: ExecutionPlanPanelProps) {
 
 interface PlanLoadErrorProps {
   message: string
-  onRetry(): void
+  onRetry(this: void): void
 }
 
 function PlanLoadError(props: PlanLoadErrorProps) {

@@ -17,7 +17,10 @@ type PlanSaveResult =
 
 export interface LocatorEditProps {
   plan: StudioEditableExecutionPlan
-  onSave(request: StudioExecutionPlanSaveRequest): Promise<PlanSaveResult>
+  onSave(
+    this: void,
+    request: StudioExecutionPlanSaveRequest,
+  ): Promise<PlanSaveResult>
 }
 
 interface EditingTarget {
@@ -38,8 +41,8 @@ export function hasChanges(editing: EditingTarget): boolean {
 
 interface SaveTargetProps extends LocatorEditProps {
   editing?: EditingTarget
-  setEditing(value: EditingTarget): void
-  finishEdit(message: string): void
+  setEditing(this: void, value: EditingTarget): void
+  finishEdit(this: void, message: string): void
 }
 
 async function saveTarget(props: SaveTargetProps) {

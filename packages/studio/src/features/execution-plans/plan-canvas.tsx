@@ -47,11 +47,13 @@ interface PlanCanvasProps {
   editing?: boolean
   status?: string
   onSelect?(
+    this: void,
     operation: ExecutionPlanOperationDisplay,
     stepIndex: number,
     button: HTMLButtonElement,
   ): void
   renderDetails?(
+    this: void,
     operation: ExecutionPlanOperationDisplay,
     stepIndex: number,
   ): ReactNode
@@ -92,18 +94,17 @@ const StepContent = memo(function StepContent({
   const selectedButtonRef = useRef<HTMLButtonElement>(null)
   const wasEditing = useRef(data.editing)
   useEffect(() => {
-    if (!data.focused || !data.ready) return
     const frame = requestAnimationFrame(() => {
-      stepRef.current?.focus({ preventScroll: true })
+      if (data.focused && data.ready)
+        stepRef.current?.focus({ preventScroll: true })
     })
     return () => cancelAnimationFrame(frame)
   }, [data.focused, data.ready])
   useEffect(() => {
     const finished = wasEditing.current && !data.editing
     wasEditing.current = data.editing
-    if (!finished) return
     const frame = requestAnimationFrame(() => {
-      selectedButtonRef.current?.focus()
+      if (finished) selectedButtonRef.current?.focus()
     })
     return () => cancelAnimationFrame(frame)
   }, [data.editing])
