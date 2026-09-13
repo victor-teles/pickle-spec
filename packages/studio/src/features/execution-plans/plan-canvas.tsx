@@ -18,7 +18,14 @@ import {
   type NodeProps,
   type XYPosition,
 } from '@xyflow/react'
-import { type ReactNode, useEffect, useRef, useState } from 'react'
+import {
+  memo,
+  type ReactNode,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react'
 import { Badge } from '../../components/ui/badge'
 import { Button } from '../../components/ui/button'
 import {
@@ -76,7 +83,11 @@ function operationTargetText(operation: ExecutionPlanOperationDisplay) {
   return operation.check ? 'Protected check' : 'Read-only'
 }
 
-function StepContent({ data }: { data: PlanNode['data'] }) {
+const StepContent = memo(function StepContent({
+  data,
+}: {
+  data: PlanNode['data']
+}) {
   const stepRef = useRef<HTMLDivElement>(null)
   const selectedButtonRef = useRef<HTMLButtonElement>(null)
   const wasEditing = useRef(data.editing)
@@ -187,7 +198,7 @@ function StepContent({ data }: { data: PlanNode['data'] }) {
       </CardContent>
     </Card>
   )
-}
+})
 
 function StepNode({ data }: NodeProps<PlanNode>) {
   return (
@@ -233,10 +244,13 @@ function CanvasWorkspace(props: PlanCanvasProps) {
       )
     }
   }
-  const steps = [
-    ...props.steps,
-    ...props.uncachedTail.map((step) => ({ ...step, operations: [] })),
-  ]
+  const steps = useMemo(
+    () => [
+      ...props.steps,
+      ...props.uncachedTail.map((step) => ({ ...step, operations: [] })),
+    ],
+    [props.steps, props.uncachedTail],
+  )
   const focused = steps.find(
     (step) =>
       step.index === props.focusStep?.index &&
@@ -254,55 +268,83 @@ function CanvasWorkspace(props: PlanCanvasProps) {
     })
   }, [focusedIndex, view, flow, nodesInitialized])
 
-  const nodes: PlanNode[] = steps.map((step, index) => ({
-    id: String(step.index),
-    type: 'step',
-    position: positions[String(step.index)] ?? { x: index * 376, y: 0 },
-    width: 320,
-    measured: measurements[String(step.index)],
-    dragHandle: '.plan-drag-handle',
-    data: {
-      step,
-      uncached: index >= props.steps.length,
-      focused: step === focused,
-      selectedOperation:
-        selection?.stepIndex === step.index
-          ? selection.operationIndex
-          : undefined,
-      blocked: Boolean(props.blocked),
-      editable: Boolean(props.onSelect),
-      editing: Boolean(props.editing),
-      renderDetails: props.renderDetails,
-      ready: view === 'list' || nodesInitialized,
-      reveal: () => {
-        if (view === 'canvas')
-          void flow.fitView({
-            nodes: [{ id: String(step.index) }],
-            maxZoom: 1,
-            padding: 0.2,
-          })
-      },
-      onSelect: (operation, stepIndex, button) => {
-        if (props.blocked) return
-        setSelection({ stepIndex, operationIndex: operation.index })
-        props.onSelect?.(operation, stepIndex, button)
-      },
-    },
-  }))
-  const edges: Edge[] = nodes.flatMap((node, index) => {
-    const previous = nodes[index - 1]
-    if (!previous) return []
-    return [
-      {
-        id: `${previous.id}-${node.id}`,
-        source: previous.id,
-        target: node.id,
-        type: 'smoothstep',
-        markerEnd: { type: MarkerType.ArrowClosed },
-        style: { strokeDasharray: node.data.uncached ? '5 5' : undefined },
-      },
-    ]
-  })
+  const baseNodes = useMemo<PlanNode[]>(
+    () =>
+      steps.map((step, index) => ({
+        id: String(step.index),
+        type: 'step',
+        position: { x: index * 376, y: 0 },
+        width: 320,
+        dragHandle: '.plan-drag-handle',
+        data: {
+          step,
+          uncached: index >= props.steps.length,
+          focused: step === focused,
+          selectedOperation:
+            selection?.stepIndex === step.index
+              ? selection.operationIndex
+              : undefined,
+          blocked: Boolean(props.blocked),
+          editable: Boolean(props.onSelect),
+          editing: Boolean(props.editing),
+          renderDetails: props.renderDetails,
+          ready: view === 'list' || nodesInitialized,
+          reveal: () => {
+            if (view === 'canvas')
+              void flow.fitView({
+                nodes: [{ id: String(step.index) }],
+                maxZoom: 1,
+                padding: 0.2,
+              })
+          },
+          onSelect: (operation, stepIndex, button) => {
+            if (props.blocked) return
+            setSelection({ stepIndex, operationIndex: operation.index })
+            props.onSelect?.(operation, stepIndex, button)
+          },
+        },
+      })),
+    [
+      steps,
+      focused,
+      selection,
+      props.blocked,
+      props.onSelect,
+      props.editing,
+      props.renderDetails,
+      props.steps.length,
+      view,
+      nodesInitialized,
+      flow,
+    ],
+  )
+  const nodes = useMemo(
+    () =>
+      baseNodes.map((node) => ({
+        ...node,
+        position: positions[node.id] ?? node.position,
+        measured: measurements[node.id],
+      })),
+    [baseNodes, positions, measurements],
+  )
+  const edges = useMemo<Edge[]>(
+    () =>
+      baseNodes.flatMap((node, index) => {
+        const previous = baseNodes[index - 1]
+        if (!previous) return []
+        return [
+          {
+            id: `${previous.id}-${node.id}`,
+            source: previous.id,
+            target: node.id,
+            type: 'smoothstep',
+            markerEnd: { type: MarkerType.ArrowClosed },
+            style: { strokeDasharray: node.data.uncached ? '5 5' : undefined },
+          },
+        ]
+      }),
+    [baseNodes],
+  )
   return (
     <div
       ref={workspaceRef}
@@ -374,6 +416,19 @@ function CanvasWorkspace(props: PlanCanvasProps) {
               edges={edges}
               nodeTypes={nodeTypes}
               onNodesChange={(changes) => {
+                setPositions((current) => {
+                  let next = current
+                  for (const change of changes) {
+                    if (change.type !== 'position' || !change.position) continue
+                    if (
+                      next[change.id]?.x === change.position.x &&
+                      next[change.id]?.y === change.position.y
+                    )
+                      continue
+                    next = { ...next, [change.id]: change.position }
+                  }
+                  return next
+                })
                 for (const change of changes) {
                   if (change.type !== 'dimensions' || !change.dimensions)
                     continue
@@ -397,12 +452,6 @@ function CanvasWorkspace(props: PlanCanvasProps) {
               nodesFocusable={false}
               elementsSelectable={false}
               deleteKeyCode={null}
-              onNodeDragStop={(_event, node) =>
-                setPositions((current) => ({
-                  ...current,
-                  [node.id]: node.position,
-                }))
-              }
               preventScrolling={false}
             >
               <Background gap={20} size={1} />
