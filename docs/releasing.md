@@ -31,7 +31,10 @@ release rejects numeric, unsafe, overlong, or `latest` prerelease identifiers.
 
 ## Required gates
 
-Run these gates from the repository root before creating the GitHub release:
+The supported release runtime is Bun 1.4.2, pinned by the root
+`packageManager` field and used by both CI and the publish workflow. Run these
+gates from the repository root with that exact version before creating the
+GitHub release:
 
 ```sh
 bun install --frozen-lockfile

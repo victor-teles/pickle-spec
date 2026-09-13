@@ -17,6 +17,12 @@ const repositoryRoot = resolve(import.meta.dir, '../../..')
 const publishWorkflowStepSchema = z.object({
   name: z.string().optional(),
   run: z.string().optional(),
+  uses: z.string().optional(),
+  with: z
+    .object({
+      'bun-version': z.string().optional(),
+    })
+    .optional(),
   'continue-on-error': z.boolean().optional(),
 })
 const publishWorkflowSchema = z.object({
@@ -31,6 +37,15 @@ const publishWorkflowSchema = z.object({
     .optional(),
 })
 type PublishWorkflowStep = z.infer<typeof publishWorkflowStepSchema>
+
+const toolchainWorkflowSchema = z.object({
+  jobs: z.record(
+    z.string(),
+    z.object({ steps: z.array(publishWorkflowStepSchema) }),
+  ),
+})
+
+const repositoryManifestSchema = z.object({ packageManager: z.string() })
 
 async function readPublishSteps(): Promise<PublishWorkflowStep[] | undefined> {
   const workflow = publishWorkflowSchema.parse(
@@ -153,6 +168,38 @@ async function createReleaseWorkspace(): Promise<string> {
 }
 
 describe('release package acceptance', () => {
+  test('uses the package runtime and frozen lockfile in every CI and release job', async () => {
+    const manifest = repositoryManifestSchema.parse(
+      await Bun.file(join(repositoryRoot, 'package.json')).json(),
+    )
+    const bunVersion = manifest.packageManager.match(/^bun@(.+)$/)?.[1]
+
+    expect(bunVersion).toBeDefined()
+    for (const workflowPath of [
+      '.github/workflows/ci.yml',
+      '.github/workflows/publish.yml',
+    ]) {
+      const workflow = toolchainWorkflowSchema.parse(
+        Bun.YAML.parse(
+          await Bun.file(join(repositoryRoot, workflowPath)).text(),
+        ),
+      )
+
+      for (const job of Object.values(workflow.jobs)) {
+        const setupIndex = job.steps.findIndex(
+          (step) => step.uses === 'oven-sh/setup-bun@v2',
+        )
+        const installIndex = job.steps.findIndex(
+          (step) => step.run === 'bun install --frozen-lockfile',
+        )
+
+        expect(setupIndex).toBeGreaterThan(-1)
+        expect(job.steps[setupIndex]?.with?.['bun-version']).toBe(bunVersion)
+        expect(installIndex).toBeGreaterThan(setupIndex)
+      }
+    }
+  })
+
   test('publishes every release package in dependency order', async () => {
     const steps = await readPublishSteps()
     const publishCommand = steps?.find(

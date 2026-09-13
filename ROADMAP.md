@@ -59,16 +59,16 @@ full CLI browser run has two failed acceptance cases: it misses a transient
 running indicator before cache refresh, and a plan-validation baseline fails before
 its injected timeout check. These are failed release gates, not established cache
 corruption or false-pass defects. Both failures reproduced in isolation; see the QA record for evidence.
-Toolchain alignment, provisioned target evidence, and external pilot acceptance
-also remain open. This candidate is not launch-ready on current evidence.
+Provisioned target evidence and external pilot acceptance also remain open. This
+candidate is not launch-ready on current evidence.
 
 ## Milestone 0: Reproducible release candidate
 
 **Priority P0.** Establish an exact artifact and a trustworthy quality baseline.
 
-- [ ] **S1 — Reproducible toolchain.** Reconcile Bun `1.4.2` in `package.json`
-      with `1.3.11` in CI and publish workflows. Choose one supported release runtime,
-      verify frozen installation, and use it throughout release acceptance.
+- [x] **S1 — Reproducible toolchain.** Bun `1.4.2` is the supported release
+      runtime in `package.json`, CI, and publish workflows. Release acceptance
+      verifies frozen installation, and a regression test enforces alignment.
 - [ ] **S2 — Required quality gates.** Pass lint, typecheck, unit, integration,
       browser E2E, release-package acceptance, and Replay performance checks from
       [Release validation](docs/releasing.md). Record failures and skipped tests.
