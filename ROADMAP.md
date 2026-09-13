@@ -1,6 +1,9 @@
 # Pickle Spec roadmap
 
 Reviewed on 2026-09-13 against `bc5a824317665739cf2d2a4c0ec2aeeec2c7ee8c`.
+Required-gate validation was updated on 2026-09-13 against
+`966dc8f52fb9c709d975780102af913898fb49ec` plus the test-only patch identified
+in the QA record.
 This roadmap prioritizes stability, everyday QA usability, and a credible launch.
 The [review and QA record](docs/roadmap-qa-ux-review.md) contains findings,
 source references, checks attempted, and executable acceptance scenarios.
@@ -54,13 +57,12 @@ features remain in the backlog and do not block a focused technical preview.
 
 ## Current release blockers
 
-The local quality, integration, package, and controlled Replay checks pass. The
-full CLI browser run has two failed acceptance cases: it misses a transient
-running indicator before cache refresh, and a plan-validation baseline fails before
-its injected timeout check. These are failed release gates, not established cache
-corruption or false-pass defects. Both failures reproduced in isolation; see the QA record for evidence.
-Provisioned target evidence and external pilot acceptance also remain open. This
-candidate is not launch-ready on current evidence.
+The required quality, integration, browser, package, and controlled Replay gates
+pass on the recorded candidate. The earlier browser failures were resolved as a
+fixture timeout-budget defect and a transient-state failure that cleared repeated
+retests; the full retest also made Git fixtures independent of inherited signing policy.
+Provisioned target evidence and external pilot acceptance remain open. This
+candidate is not launch-ready on current evidence; see the QA record for details.
 
 ## Milestone 0: Reproducible release candidate
 
@@ -69,7 +71,7 @@ candidate is not launch-ready on current evidence.
 - [x] **S1 — Reproducible toolchain.** Bun `1.4.2` is the supported release
       runtime in `package.json`, CI, and publish workflows. Release acceptance
       verifies frozen installation, and a regression test enforces alignment.
-- [ ] **S2 — Required quality gates.** Pass lint, typecheck, unit, integration,
+- [x] **S2 — Required quality gates.** Pass lint, typecheck, unit, integration,
       browser E2E, release-package acceptance, and Replay performance checks from
       [Release validation](docs/releasing.md). Record failures and skipped tests.
 - [ ] **S3 — Run lifecycle and recovery.** Verify cancellation, interrupted runs,

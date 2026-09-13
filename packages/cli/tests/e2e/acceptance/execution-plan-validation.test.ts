@@ -423,7 +423,7 @@ test('records a real replay timeout without issuing a receipt or changing cache 
   const fixture = await createPlanValidationFixture(
     'changed-target',
     delayedInstructionFactory(baseFactory, () => delay.ms, 'click'),
-    { stepTimeoutMs: 250 },
+    { stepTimeoutMs: 2_000 },
   )
   try {
     const cacheBefore = await fixture.cache.inspect()
@@ -446,7 +446,7 @@ test('records a real replay timeout without issuing a receipt or changing cache 
       ok: true,
       value: { state: 'validated', runId: passed.id },
     })
-    delay.ms = 500
+    delay.ms = 3_000
     const started = await fixture.validationService.start(request, {})
     const completed = await started.done
     const result = completed.manifest.results[0]

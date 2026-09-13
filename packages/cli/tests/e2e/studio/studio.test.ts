@@ -2314,6 +2314,10 @@ Feature: Checkout
       cwd: project,
     })
     Bun.spawnSync({
+      cmd: ['git', 'config', 'commit.gpgsign', 'false'],
+      cwd: project,
+    })
+    Bun.spawnSync({
       cmd: ['git', 'add', 'features/checkout.feature', 'pickle.config.jsonc'],
       cwd: project,
     })

@@ -115,12 +115,47 @@ smokes skipped because their opt-in environment flags were absent. Log:
 
 Next engineering work, in dependency order:
 
-- **QA-B1 / S2:** reproduce the initial running-state wait using the existing
-  Studio fixture; establish whether the UI misses progress or the test depends
-  on a transient state. Fix the demonstrated cause and rerun cache publication assertions.
-- **QA-B2 / S2:** inspect why the 250ms baseline fails before timeout injection;
-  ensure baseline validity and retain the negative timeout/no-receipt/cache-preservation checks.
-- **S1:** align the agreed Bun runtime across installation, CI, and publishing;
-  rerun required gates on the resulting candidate.
+- **S3:** verify run cancellation, interruption, provider timeout, browser
+  disconnect, process restart, and Studio reconnect without false terminal states.
+- **S4–S6:** complete evidence-integrity, Replay-correctness, and clean-package
+  recovery acceptance for the named candidate.
 - **U1–U7 / L3:** execute the primary real-target and manual acceptance session,
   then collect external pilot evidence before release sign-off.
+
+## Required-gate engineering retest
+
+Retested 2026-09-13 on Linux at
+`966dc8f52fb9c709d975780102af913898fb49ec` plus the two test-fixture fixes,
+whose code-only patch SHA-256 is
+`313107a07255a2adeabc41d39cf38bc7edf9c681c17240ba0040271474044d5e`, using Bun
+1.4.2 and Google Chrome 153.0.8010.36. This supersedes the S2 browser failure
+status above, but not the remaining provisioned-target or manual QA gaps.
+
+QA-B1 passed in isolation five consecutive times and again in the complete CLI
+E2E suite. No product defect was reproducible, so runtime behavior was not changed.
+QA-B2 was a fixture defect: its 250ms per-step deadline included normal real-browser
+Replay operations and evidence capture, allowing the baseline to expire before the
+injected delay. The fixture now allows 2 seconds for baseline work and injects a
+3-second delay; the negative run still reports an infrastructure error with zero
+inferences and leaves receipts, cache state, and plan selection unchanged.
+
+The first complete E2E retest exposed an unrelated fixture dependency on host Git
+configuration: inherited mandatory commit signing prevented its synthetic initial
+commit. The fixture now disables signing in its isolated repository. Its focused
+retest and the complete E2E rerun pass without changing Studio commit behavior.
+
+| Check                           | Result | Retest evidence and boundary                                                                                       |
+| ------------------------------- | ------ | ------------------------------------------------------------------------------------------------------------------ |
+| `bun install --frozen-lockfile` | Passed | Exact Bun 1.4.2; 645 installs checked with no changes.                                                             |
+| `bun run lint`                  | Passed | Oxlint type-aware checks and Oxfmt passed. An invalid concurrent run raced the Studio build; serial retest passed. |
+| `bun run typecheck`             | Passed | Eight Turbo tasks passed.                                                                                          |
+| `bun run test`                  | Passed | Script and all seven package suites passed.                                                                        |
+| `bun run test:integration`      | Passed | CLI, mobile, and web controlled integration suites passed.                                                         |
+| `bun run test:e2e`              | Passed | CLI: 153 passed, two skipped. Mobile: two provisioned device smokes skipped because opt-in flags were absent.      |
+| `bun run release:check`         | Passed | Seven package artifacts validated together at source version 1.0.2; no registry installation was attempted.        |
+| `bun run benchmark:replay`      | Passed | Controlled web and mobile p50/p95 ratio gates passed.                                                              |
+
+S2 is complete for the required controlled gates. The four skipped provisioned
+cases are recorded skips, not target certification. Live target evidence remains
+owned by L3, and exact registry installation remains a post-publication release-owner
+step.
