@@ -166,38 +166,23 @@ function RunAttemptPicker(
 
 function SelectedAttemptActions(props: RunAttemptsProps & RunAttempt) {
   const { result } = props
-  const rerunScenario = () =>
+  const rerunSelectedResult = () =>
     void props.onRerun({
       rerunId: props.runId,
       scenarioId: result.scenario.id,
       scenarioName: result.scenario.id ? undefined : result.scenario.name,
-    })
-  const rerunTarget = () =>
-    void props.onRerun({
-      rerunId: props.runId,
       profiles: [result.executionTargetProfile.id],
     })
   return (
-    <div className="flex flex-wrap gap-2">
-      <Button
-        type="button"
-        size="sm"
-        variant="outline"
-        disabled={props.runsBlocked}
-        onClick={rerunScenario}
-      >
-        Rerun Scenario
-      </Button>
-      <Button
-        type="button"
-        size="sm"
-        variant="outline"
-        disabled={props.runsBlocked}
-        onClick={rerunTarget}
-      >
-        Rerun target
-      </Button>
-    </div>
+    <Button
+      type="button"
+      size="sm"
+      variant="outline"
+      disabled={props.runsBlocked}
+      onClick={rerunSelectedResult}
+    >
+      Rerun selected result
+    </Button>
   )
 }
 

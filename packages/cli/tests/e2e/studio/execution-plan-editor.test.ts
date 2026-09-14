@@ -9,6 +9,7 @@ import {
   waitForStudio,
 } from '../support/execution-plan-browser'
 import { createExecutionPlanBrowserProject } from '../support/execution-plan-fixture'
+import { replayEditedPlanAgainstTarget } from '../support/execution-plan-replay-target'
 import { StudioBrowserFixture } from '../support/studio-browser-fixture'
 
 const fixture = new StudioBrowserFixture()
@@ -265,6 +266,116 @@ test('edits fields inside canvas nodes through dragging, zooming and fullscreen'
       .getByRole('button', { name: 'Exit fullscreen', exact: true })
       .click()
     expect(errors).toEqual([])
+  } finally {
+    await context.close()
+    child.kill()
+    await child.exited
+  }
+}, 60_000)
+
+test('rejects a stale browser editor without losing its draft and reports cache-clear behavior', async () => {
+  const project = await fixture.createProject('concurrent-plan-editors')
+  const seeded = await createExecutionPlanBrowserProject(
+    project,
+    fixture.workspace,
+  )
+  const { child, url } = await fixture.start(project, {
+    PICKLE_CACHE_ROOT: seeded.cacheRoot,
+    PICKLE_HOME: seeded.pickleHome,
+  })
+  const context = await fixture.browser.newContext({
+    viewport: { width: 1440, height: 1000 },
+  })
+  const firstPage = await context.newPage()
+  const stalePage = await context.newPage()
+  try {
+    await Promise.all([firstPage.goto(url), stalePage.goto(url)])
+    await Promise.all([
+      waitForStudio(firstPage, 'concurrent-plan-editors'),
+      waitForStudio(stalePage, 'concurrent-plan-editors'),
+    ])
+    const [firstPlan, stalePlan] = await Promise.all([
+      inspectScenario(firstPage, 'Complete cached plan'),
+      inspectScenario(stalePage, 'Complete cached plan'),
+    ])
+    await Promise.all([expandPlanDock(firstPage), expandPlanDock(stalePage)])
+    await Promise.all([
+      firstPlan.getByRole('button', { name: 'List', exact: true }).click(),
+      stalePlan.getByRole('button', { name: 'List', exact: true }).click(),
+    ])
+
+    await firstPlan
+      .getByRole('button', { name: /^Edit locator:/ })
+      .first()
+      .click()
+    await stalePlan
+      .getByRole('button', { name: /^Edit locator:/ })
+      .first()
+      .click()
+    const firstSelector = firstPlan.getByLabel('Locator', { exact: true })
+    const staleSelector = stalePlan.getByLabel('Locator', { exact: true })
+    await firstSelector.fill('#newer-writer')
+    await staleSelector.fill('#preserved-stale-draft')
+
+    await firstPlan.getByRole('button', { name: 'Save change' }).click()
+    await firstPlan
+      .getByRole('status')
+      .filter({ hasText: 'Plan saved' })
+      .waitFor()
+    await stalePlan.getByRole('button', { name: 'Save change' }).click()
+    await stalePlan
+      .getByRole('alert')
+      .filter({ hasText: 'The plan changed since you opened it.' })
+      .waitFor()
+    expect(await staleSelector.inputValue()).toBe('#preserved-stale-draft')
+    expect(
+      await stalePlan.getByRole('button', { name: 'Reload plan' }).isDisabled(),
+    ).toBe(true)
+
+    await stalePlan.getByRole('button', { name: 'Cancel' }).click()
+    await stalePlan.getByRole('button', { name: 'Reload plan' }).click()
+    await stalePlan.getByRole('button', { name: 'List', exact: true }).click()
+    await stalePlan
+      .getByRole('button', { name: /^Edit locator:/ })
+      .first()
+      .click()
+    expect(
+      await stalePlan.getByLabel('Locator', { exact: true }).inputValue(),
+    ).toBe('#newer-writer')
+    await stalePlan.getByRole('button', { name: 'Cancel' }).click()
+    await stalePlan.getByRole('button', { name: 'Plan details' }).click()
+    expect(await stalePlan.textContent()).toContain(
+      'Save changes only this action locator in the current Replay cache entry.',
+    )
+    expect(await stalePlan.textContent()).toContain(
+      'Clearing the execution cache removes the manual change.',
+    )
+
+    expect(
+      await replayEditedPlanAgainstTarget(fixture.browser, seeded),
+    ).toMatchObject({
+      state: 'passed',
+      executionMode: 'replay',
+      cacheOutcome: 'hit',
+      inferenceCount: 0,
+    })
+
+    await firstPage.getByRole('button', { name: 'Settings' }).click()
+    await firstPage
+      .getByRole('button', { name: 'Clear Execution cache' })
+      .click()
+    const confirmation = firstPage.getByRole('dialog', {
+      name: 'Clear Execution cache?',
+    })
+    await confirmation.getByRole('button', { name: 'Clear cache' }).click()
+    await firstPage
+      .getByRole('status')
+      .filter({ hasText: 'No cached replay revisions' })
+      .waitFor()
+    expect(await seeded.cache.inspect()).toEqual([])
+
+    await stalePlan.getByRole('button', { name: 'Reload plan' }).click()
+    await stalePage.getByText('No cached plan', { exact: true }).waitFor()
   } finally {
     await context.close()
     child.kill()

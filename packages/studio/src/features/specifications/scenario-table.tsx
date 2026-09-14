@@ -222,7 +222,7 @@ function ScenarioResultCell(props: ScenarioResultCellProps) {
         onClick={handleSelect}
       >
         <ResultMark key={cell.state} state={cell.state} />
-        <span className="hidden sm:inline">{cell.state}</span>
+        <span className="truncate">{cell.state}</span>
       </Button>
     </TableCell>
   )

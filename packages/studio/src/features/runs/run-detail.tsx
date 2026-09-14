@@ -13,6 +13,7 @@ import type {
 import { RunReportMenu } from '../history/run-report-menu'
 import type { LiveResultInspection } from './result/live-result-inspection'
 import type { ResultInspectionLocation } from './result/result-inspection'
+import { EvidenceDetails } from './result/evidence-details'
 import { reasonMessage, resultBadgeVariant } from './result/result-presentation'
 import { RunAttempts } from './run-attempts'
 import { durationLabel, inferenceCountLabel } from './run-format'
@@ -129,11 +130,11 @@ function RunDetailHeader(
             {displayState}
           </Badge>
         </div>
-        <p className="text-xs text-muted-foreground">
-          {props.manifest.sourceRunId
-            ? `Rerun of ${props.manifest.sourceRunId}`
-            : 'Original Test run'}
-        </p>
+        {props.manifest.sourceRunId ? (
+          <p className="text-xs text-muted-foreground">
+            Rerun of {props.manifest.sourceRunId}
+          </p>
+        ) : null}
         {props.live?.connection.kind === 'disconnected' ? (
           <p role="status" className="text-sm text-destructive">
             {props.live.connection.message}
@@ -200,39 +201,48 @@ function RunDetailMessage(props: {
 function RunMetadata(props: { manifest: TestRunManifest }) {
   const values = runMetadataValues(props.manifest)
   return (
-    <dl className="grid gap-x-6 gap-y-4 rounded-xl border border-border bg-card p-4 sm:grid-cols-2 lg:grid-cols-4">
-      <Metadata
-        label="Started"
-        value={new Date(props.manifest.startedAt).toLocaleString()}
-      />
-      <Metadata label="Duration" value={durationLabel(values.durationMs)} />
-      <Metadata
-        label="Suite"
-        value={props.manifest.suite ?? 'Ad hoc selection'}
-      />
-      <Metadata
-        label="Application revision"
-        value={props.manifest.applicationRevision ?? 'Not set'}
-        mono
-      />
-      <Metadata
-        label="Targets"
-        value={values.profileIds.join(', ') || 'None'}
-      />
-      <Metadata
-        label="Execution modes"
-        value={values.executionModes.join(', ') || 'Not recorded'}
-      />
-      <Metadata
-        label="Cache outcomes"
-        value={values.cacheOutcomes.join(', ') || 'Not recorded'}
-      />
-      <Metadata
-        label="Inferences"
-        value={inferenceCountLabel(values.inferenceCount)}
-      />
-      <Metadata label="Results" value={String(props.manifest.results.length)} />
-    </dl>
+    <div className="space-y-4 rounded-xl border border-border bg-card p-4">
+      <dl className="grid gap-x-6 gap-y-4 sm:grid-cols-2 lg:grid-cols-4">
+        <Metadata
+          label="Started"
+          value={new Date(props.manifest.startedAt).toLocaleString()}
+        />
+        <Metadata label="Duration" value={durationLabel(values.durationMs)} />
+        <Metadata
+          label="Suite"
+          value={props.manifest.suite ?? 'Ad hoc selection'}
+        />
+        <Metadata
+          label="Application revision"
+          value={props.manifest.applicationRevision ?? 'Not set'}
+          mono
+        />
+        <Metadata
+          label="Targets"
+          value={values.profileIds.join(', ') || 'None'}
+        />
+        <Metadata
+          label="Results"
+          value={String(props.manifest.results.length)}
+        />
+      </dl>
+      <EvidenceDetails label="Execution details">
+        <dl className="grid gap-4 sm:grid-cols-3">
+          <Metadata
+            label="Execution modes"
+            value={values.executionModes.join(', ') || 'Not recorded'}
+          />
+          <Metadata
+            label="Cache outcomes"
+            value={values.cacheOutcomes.join(', ') || 'Not recorded'}
+          />
+          <Metadata
+            label="Inferences"
+            value={inferenceCountLabel(values.inferenceCount)}
+          />
+        </dl>
+      </EvidenceDetails>
+    </div>
   )
 }
 

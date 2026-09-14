@@ -131,7 +131,7 @@ function TimelineLabelEntry(
         {props.entry.causal ? (
           <>
             <span className="sr-only">
-              {props.entry.causalAt ? 'Causal point' : 'Failure context'}
+              {props.entry.causalAt ? 'Failure evidence' : 'Failure context'}
             </span>
             <span
               aria-hidden="true"

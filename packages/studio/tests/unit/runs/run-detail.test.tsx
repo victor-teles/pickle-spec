@@ -107,6 +107,5 @@ test('keeps run actions and selects an attempt on the run page', () => {
   expect(markup).toContain('Rerun failures')
   expect(markup).toContain('id="run-attempt-select"')
   expect(markup).toContain('Pay for the order · chrome')
-  expect(markup).toContain('Rerun Scenario')
-  expect(markup).toContain('Rerun target')
+  expect(markup).toContain('Rerun selected result')
 })

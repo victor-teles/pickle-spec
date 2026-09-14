@@ -155,7 +155,7 @@ function StudioWorkspace({ studio }: { studio: StudioController }) {
         onAreaChange={studio.actions.selectArea}
         onOpenCommands={studio.actions.openCommands}
       />
-      {specificationsWorkbenchVisible ? null : (
+      {studio.authoring ? null : (
         <FirstRunOnboarding
           activeProfileId={studio.activeProfileId}
           currentSpecification={studio.selection.selected}

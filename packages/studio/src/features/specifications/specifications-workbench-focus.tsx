@@ -140,7 +140,8 @@ export function WorkbenchPreview(props: {
   return (
     <section
       aria-labelledby="workbench-preview-title"
-      className="flex min-h-0 min-w-0 flex-col overflow-hidden"
+      className="flex min-h-0 min-w-0 flex-col overflow-hidden focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-ring"
+      tabIndex={0}
     >
       <header className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-b border-border px-3 py-2 sm:px-4">
         <div className="flex items-center gap-2">

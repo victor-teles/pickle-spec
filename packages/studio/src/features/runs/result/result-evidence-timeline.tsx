@@ -5,7 +5,6 @@ import {
   Card,
   CardAction,
   CardContent,
-  CardDescription,
   CardHeader,
   CardTitle,
 } from '../../../components/ui/card'
@@ -16,6 +15,7 @@ import {
   type TimelineEntryKind,
   timelineEntriesOfKinds,
 } from './result-evidence'
+import { EvidenceDetails } from './evidence-details'
 import { TimelineEvidenceDetail } from './timeline-evidence-detail'
 import { TimelineKindFilter, timelineEntryKinds } from './timeline-kind'
 import { TimelineWaterfall } from './timeline-waterfall'
@@ -155,9 +155,6 @@ function useTimelineView(props: ResultEvidenceTimelineProps) {
 
 export function ResultEvidenceTimeline(props: ResultEvidenceTimelineProps) {
   const view = useTimelineView(props)
-  const causalPointUnavailable =
-    !props.entries.some((entry) => entry.causalAt) &&
-    (props.state === 'failed' || props.state === 'infrastructure-error')
   const entryCount = view.visibleEntries.length
 
   function handleSelect(entryId: string) {
@@ -188,10 +185,7 @@ export function ResultEvidenceTimeline(props: ResultEvidenceTimelineProps) {
     <Card>
       <CardHeader className="border-b border-border">
         <CardTitle>Execution timeline</CardTitle>
-        <CardDescription>
-          Steps span their recorded duration. Actions and evidence mark when
-          they were recorded.
-        </CardDescription>
+
         <CardAction>
           <span
             role="status"
@@ -208,15 +202,6 @@ export function ResultEvidenceTimeline(props: ResultEvidenceTimelineProps) {
           selectedKinds={view.selectedKinds}
           onKindChange={handleKindChange}
         />
-        {causalPointUnavailable ? (
-          <p
-            role="status"
-            className="border-b border-border px-4 py-3 text-xs text-muted-foreground"
-          >
-            Causal point unavailable. The retained evidence does not identify a
-            precise failing instant.
-          </p>
-        ) : null}
         <TimelineDisplay
           {...props}
           selectedEntry={view.selectedEntry}
@@ -226,6 +211,16 @@ export function ResultEvidenceTimeline(props: ResultEvidenceTimelineProps) {
           onPause={handlePauseFollowing}
           onClearFilters={handleClearFilters}
         />
+        <div className="border-t border-border p-3">
+          <EvidenceDetails label="About this timeline">
+            <p className="text-xs text-muted-foreground">
+              Steps span their recorded duration. Actions and evidence mark when
+              they were recorded. Failure highlighting locates related evidence,
+              not a confirmed root cause. When no precise failure time was
+              recorded, the failed step provides context.
+            </p>
+          </EvidenceDetails>
+        </div>
       </CardContent>
     </Card>
   )
