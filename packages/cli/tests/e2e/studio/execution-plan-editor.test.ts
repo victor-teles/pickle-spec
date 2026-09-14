@@ -360,7 +360,9 @@ test('rejects a stale browser editor without losing its draft and reports cache-
       inferenceCount: 0,
     })
 
-    await firstPage.getByRole('button', { name: 'Settings' }).click()
+    await firstPage
+      .getByRole('button', { name: 'Settings', exact: true })
+      .click()
     await firstPage
       .getByRole('button', { name: 'Clear Execution cache' })
       .click()
