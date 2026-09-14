@@ -733,7 +733,6 @@ export default {
       await page.goto(url)
       const running = runningResults(page)
       await runSpecification(page)
-      await running.waitFor()
       await waitForScenarioResult(
         page,
         'Complete a purchase deterministic passed',
@@ -789,6 +788,10 @@ export default {
           .nth(1),
       )
       await page.getByRole('combobox', { name: 'Attempt' }).waitFor()
+      await page
+        .getByRole('button', { name: 'Execution details', exact: true })
+        .first()
+        .click()
       expect(await page.getByText('adaptive').count()).toBeGreaterThan(0)
       expect(await page.getByText('refresh').count()).toBeGreaterThan(0)
       expect(await page.getByText('3 inferences').count()).toBeGreaterThan(0)
@@ -1490,6 +1493,10 @@ Feature: Search
       const attemptSelect = page.getByRole('combobox', { name: 'Attempt' })
       await attemptSelect.waitFor()
       await page.getByText('app-42').waitFor()
+      await page
+        .getByRole('button', { name: 'Execution details', exact: true })
+        .first()
+        .click()
       expect(await page.getByText('adaptive').count()).toBeGreaterThan(0)
       expect(await page.getByText('uncacheable').count()).toBeGreaterThan(0)
       expect(await page.getByText('0 inferences').count()).toBeGreaterThan(0)
@@ -1544,7 +1551,10 @@ Feature: Search
       expect(
         await page.getByRole('link', { name: 'Download screenshot' }).count(),
       ).toBe(1)
-      expect(await page.getByText('image/png').count()).toBeGreaterThan(0)
+      await page
+        .getByRole('button', { name: 'File details', exact: true })
+        .click()
+      await page.getByText('image/png', { exact: true }).waitFor()
       const deepLink = page.url()
       await page.route('**/api/runs/*', async (route) => {
         if (route.request().method() === 'GET') await Bun.sleep(500)
