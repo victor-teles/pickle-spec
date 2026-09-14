@@ -88,7 +88,7 @@ interface ResolvedPlanContext {
 }
 
 const sourceNotice =
-  'Replay uses this plan. The source run identifies its recorded origin; manual changes do not rerun the Scenario.'
+  'Save changes only this action locator in the current Replay cache entry. It does not rerun the Scenario or alter historical results. Clearing the execution cache removes the manual change.'
 const webPayloadValidator = {
   adapterKind: 'web',
   adapterCacheSchemaVersion: '1',
@@ -747,7 +747,7 @@ async function savePlan(
     ok: false,
     reason: 'write-conflict',
     message:
-      'The plan changed since you opened it. Reload the plan before saving.',
+      'The plan changed since you opened it. Cancel this edit, reload the plan, then apply your change again.',
   }
   if (
     selected.snapshot.revision !== request.expectedCacheRevision ||

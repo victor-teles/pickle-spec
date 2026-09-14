@@ -1,6 +1,6 @@
 import { z } from 'zod'
 import { testRunManifestSchema } from '@pickle-spec/runner'
-import { mkdir } from 'node:fs/promises'
+import { mkdir, rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import {
   type ExecutionCacheEnvelope,
@@ -399,9 +399,13 @@ Feature: Search
     try {
       await page.goto(url)
       await page
-        .getByRole('button', { name: 'Run Scenario Pay for the order' })
-        .click()
+        .getByRole('heading', { name: 'Run your first green Scenario' })
+        .waitFor()
+      await page.getByRole('button', { name: 'Run first Scenario' }).click()
       await waitForScenarioResult(page, 'Pay for the order firefox passed')
+      await page
+        .getByRole('heading', { name: 'Run your first green Scenario' })
+        .waitFor({ state: 'hidden' })
 
       const index = historyIndexSchema.parse(
         await page.evaluate(async () => (await fetch('/api/runs')).json()),
@@ -410,6 +414,59 @@ Feature: Search
       expect(index.runs[0]?.specificationUris).toEqual([
         'features/checkout.feature',
       ])
+    } finally {
+      await page.close()
+      child.kill()
+      await child.exited
+    }
+  }, 60_000)
+
+  test('the workbench explains blocked first-run setup and opens Settings', async () => {
+    const project = await createStudioProject('first-run-blocked')
+    await Bun.write(
+      join(project, 'pickle.config.jsonc'),
+      JSON.stringify({
+        schemaVersion: 1,
+        specifications: 'features/**/*.feature',
+        executionTargetProfiles: {
+          web: {
+            adapter: 'web',
+            web: {
+              baseUrl: 'https://example.com',
+              browser: {
+                environment: 'local',
+                modelName: 'anthropic/claude-sonnet-4-6',
+                headless: true,
+              },
+            },
+          },
+        },
+      }),
+    )
+    const { child, url } = await startStudio(project, {
+      ANTHROPIC_API_KEY: '',
+      GEMINI_API_KEY: '',
+      GOOGLE_API_KEY: '',
+      GOOGLE_GENERATIVE_AI_API_KEY: '',
+      OPENAI_API_KEY: '',
+    })
+    const page = await browser.newPage()
+    try {
+      await page.goto(url)
+      await page
+        .getByRole('heading', { name: 'Run your first green Scenario' })
+        .waitFor()
+      await page.getByText('Setup needed', { exact: true }).waitFor()
+      await page
+        .getByText(
+          'Store a model credential in the system keychain before a web test run',
+          { exact: true },
+        )
+        .waitFor()
+      await page.getByRole('button', { name: 'Open Settings' }).click()
+      await page
+        .getByRole('heading', { name: 'Credentials', exact: true })
+        .waitFor()
     } finally {
       await page.close()
       child.kill()
@@ -1070,21 +1127,37 @@ export default {
       expect(queueText).toContain('Review the purchase')
       expect(queueText).toContain('Complete a purchase')
       await failedResult.click()
-      expect(new URL(page.url()).pathname).toBe('/')
+      const diagnosisUrl = new URL(page.url())
+      expect(diagnosisUrl.pathname).toMatch(/^\/runs\/[^/]+$/)
+      expect(Object.fromEntries(diagnosisUrl.searchParams)).toEqual({
+        specification: 'features/checkout.feature',
+        scenario: 'scnpaybbbbbbbbbb',
+        profile: 'chrome',
+        attempt: '1',
+      })
       expect(await timeline.textContent()).toContain('Then payment is captured')
       expect(await timeline.textContent()).not.toContain('Payment was declined')
-      await page.getByRole('tab', { name: 'Artifacts' }).click()
-      const previewArtifact = page.getByRole('button', {
-        name: /^Preview screenshot artifact/,
-      })
-      const artifactRow = previewArtifact.locator('xpath=ancestor::li')
-      await previewArtifact.click()
-      await artifactRow.getByRole('img', { name: /screenshot/ }).waitFor()
+      const diagnosisLink = page.url()
+      await page.reload()
+      await page
+        .getByRole('heading', { name: 'Pay for the order · chrome' })
+        .waitFor()
+      await page.waitForTimeout(100)
+      expect(page.url()).toBe(diagnosisLink)
+      expect(await timeline.textContent()).toContain('Then payment is captured')
+      const artifactsTab = page.getByRole('tab', { name: 'Artifacts' })
+      await artifactsTab.click()
+      await expect
+        .poll(() => artifactsTab.getAttribute('aria-selected'))
+        .toBe('true')
+      await page
+        .getByRole('img', {
+          name: 'screenshot from failed result for Pay for the order: Then payment is captured',
+        })
+        .waitFor()
       const [artifactDownload] = await Promise.all([
         page.waitForEvent('download'),
-        artifactRow
-          .getByRole('link', { name: /^Download screenshot artifact/ })
-          .click(),
+        page.getByRole('link', { name: 'Download screenshot' }).click(),
       ])
       expect(artifactDownload.suggestedFilename()).toBe(
         'scnpaybbbbbbbbbb-chrome-attempt-1-step-1.png',
@@ -1421,10 +1494,9 @@ Feature: Search
       expect(await page.getByText('uncacheable').count()).toBeGreaterThan(0)
       expect(await page.getByText('0 inferences').count()).toBeGreaterThan(0)
       expect(
-        await page.getByRole('button', { name: 'Rerun Scenario' }).count(),
-      ).toBeGreaterThan(0)
-      expect(
-        await page.getByRole('button', { name: 'Rerun target' }).count(),
+        await page
+          .getByRole('button', { name: 'Rerun selected result' })
+          .count(),
       ).toBeGreaterThan(0)
       await page
         .getByRole('heading', {
@@ -1500,28 +1572,46 @@ Feature: Search
           .getAttribute('aria-selected'),
       ).toBe('true')
       expect(new URL(page.url()).pathname).toMatch(/^\/runs\/[^/]+$/)
-      await page.getByRole('button', { name: 'Rerun Scenario' }).click()
+      await attemptSelect.click()
+      await page
+        .getByRole('option', {
+          name: /Pay for the order · chrome · Attempt 1 · failed/,
+        })
+        .click()
+      await page.getByRole('button', { name: 'Rerun selected result' }).click()
       await history.getByRole('row').nth(3).waitFor({ timeout: 20_000 })
-      await history.getByText('2 results').first().waitFor({ timeout: 20_000 })
-      expect(await history.getByRole('row').nth(1).textContent()).toContain(
-        '2 results',
+      const focusedRerun = history.getByRole('row').nth(1)
+      await focusedRerun.getByText('1 result').waitFor({ timeout: 20_000 })
+      expect(await focusedRerun.textContent()).toContain('chrome')
+      const originalRunId = requiredValue(indexedHistory.runs[0]).id
+      const focusedRunLabel = await focusedRerun
+        .getByRole('button', { name: /^Open run / })
+        .getAttribute('aria-label')
+      expect(focusedRunLabel).toMatch(/^Open run .+/)
+      expect(focusedRunLabel).not.toBe(`Open run ${originalRunId}`)
+      expect(await focusedRerun.textContent()).toContain(
+        `Rerun of ${originalRunId}`,
       )
-      await openRunDetailsFromRow(
-        page,
-        history.getByRole('row').filter({ hasText: '6 results' }).first(),
-      )
-      await page.getByRole('button', { name: 'Rerun target' }).click()
-      await history.getByRole('row').nth(4).waitFor({ timeout: 20_000 })
-      await history.getByText('3 results').first().waitFor({ timeout: 20_000 })
-      expect(await history.getByRole('row').nth(1).textContent()).toContain(
-        '3 results',
-      )
-
       expect(await page.getByText('14 days · 1 B').count()).toBe(1)
+      await openRunDetailsFromRow(page, focusedRerun)
+      await page
+        .getByRole('heading', { name: 'Pay for the order · chrome' })
+        .waitFor()
+      expect(await page.getByText('app-42').count()).toBeGreaterThan(0)
+      await page.getByRole('combobox', { name: 'Attempt' }).click()
+      await page.getByRole('option').waitFor()
+      expect(await page.getByRole('option').count()).toBe(1)
+      await page.keyboard.press('Escape')
+
+      await page.getByRole('button', { name: 'Back to Runs' }).click()
       await openRunDetailsFromRow(
         page,
         history.getByRole('row').filter({ hasText: '6 results' }).first(),
       )
+      await page.getByRole('tab', { name: 'Artifacts' }).click()
+      expect(
+        await page.getByRole('link', { name: 'Download screenshot' }).count(),
+      ).toBe(1)
       const exportButton = page.getByRole('button', {
         name: 'Download report',
       })
@@ -1728,6 +1818,115 @@ Feature: Search
     }
   }, 60_000)
 
+  test('Studio imports a diagnosable failure without the source project', async () => {
+    const source = await createStudioProject('portable-diagnosis-source')
+    const archivePath = join(fixture.workspace, 'portable-diagnosis.json')
+    const sourceStudio = await startStudio(source)
+    const sourcePage = await browser.newPage()
+    let sourceRunId = ''
+    try {
+      await sourcePage.goto(sourceStudio.url)
+      await runSpecification(sourcePage)
+      await waitForScenarioResult(sourcePage, 'Pay for the order chrome failed')
+      await expectRunningStatusCleared(sourcePage)
+      const sourceHistory = historyIndexSchema.parse(
+        await sourcePage.evaluate(async () =>
+          (await fetch('/api/runs')).json(),
+        ),
+      )
+      sourceRunId = requiredValue(sourceHistory.runs[0]).id
+      const exports = await sourcePage.evaluate(async (runId) => {
+        const [archiveResponse, htmlResponse] = await Promise.all([
+          fetch(`/api/history/${encodeURIComponent(runId)}/archive`),
+          fetch(`/api/history/${encodeURIComponent(runId)}/html`),
+        ])
+        if (!archiveResponse.ok || !htmlResponse.ok) {
+          throw new Error('Portable failure export failed')
+        }
+        return {
+          archive: await archiveResponse.text(),
+          html: await htmlResponse.text(),
+        }
+      }, sourceRunId)
+      expect(exports.html).toContain('<!DOCTYPE html>')
+      expect(exports.html).toContain('Pay for the order')
+      expect(exports.html).toContain('data:image/png;base64,')
+      await Bun.write(archivePath, exports.archive)
+    } finally {
+      await sourcePage.close()
+      sourceStudio.child.kill()
+      await sourceStudio.child.exited
+      await rm(source, { recursive: true, force: true })
+    }
+
+    const target = await createStudioProject('portable-diagnosis-target')
+    await Bun.write(
+      join(target, 'features', 'checkout.feature'),
+      `@pickle:id:spectargetaaaaaaaa @pickle:state:active
+Feature: Unrelated target project
+  @pickle:id:scntargetbbbbbbbb
+  Scenario: Search the catalog
+    Then results are shown
+`,
+    )
+    const targetStudio = await startStudio(target)
+    const targetPage = await browser.newPage()
+    try {
+      await targetPage.goto(targetStudio.url)
+      await targetPage
+        .getByRole('button', { name: 'Runs', exact: true })
+        .click()
+      await targetPage
+        .getByLabel('Import run archive')
+        .setInputFiles(archivePath)
+      await targetPage
+        .getByRole('dialog')
+        .filter({ hasText: 'Test run imported' })
+        .filter({ hasText: `${sourceRunId} is now available in Runs.` })
+        .waitFor()
+
+      const history = targetPage.getByRole('table', {
+        name: 'Test run history',
+      })
+      const importedRun = history.getByRole('row').filter({
+        has: targetPage.getByRole('button', {
+          name: `Open run ${sourceRunId}`,
+        }),
+      })
+      expect(await importedRun.textContent()).toContain('failed')
+      expect(await importedRun.textContent()).toContain('6 results')
+      await openRunDetailsFromRow(targetPage, importedRun)
+      await targetPage
+        .getByRole('heading', { name: 'Pay for the order · chrome' })
+        .waitFor()
+
+      const timeline = targetPage.getByRole('list', {
+        name: 'Execution timeline',
+      })
+      expect(await timeline.textContent()).toContain('Then payment is captured')
+      await targetPage.getByRole('tab', { name: 'Diagnostics' }).click()
+      await targetPage.getByText('Payment was declined').waitFor()
+      await targetPage.getByRole('tab', { name: 'Artifacts' }).click()
+      await targetPage
+        .getByRole('img', {
+          name: 'screenshot from failed result for Pay for the order: Then payment is captured',
+        })
+        .waitFor()
+      const availability = targetPage.getByRole('region', {
+        name: 'Artifact availability',
+      })
+      expect(await availability.textContent()).toContain('recording')
+      expect(await availability.textContent()).toContain('not-supported')
+      expect(await availability.textContent()).toContain(
+        'Choose an execution target that supports this evidence, then run the Scenario again.',
+      )
+    } finally {
+      await targetPage.close()
+      targetStudio.child.kill()
+      await targetStudio.child.exited
+    }
+  }, 60_000)
+
   test('Studio reruns one durable Scenario when names repeat', async () => {
     const project = await createStudioProject('scenario-rerun-identity')
     await Bun.write(
@@ -1757,9 +1956,9 @@ Feature: Checkout
       expect(await page.getByRole('option').count()).toBe(4)
       await page.keyboard.press('Escape')
 
-      await page.getByRole('button', { name: 'Rerun Scenario' }).click()
+      await page.getByRole('button', { name: 'Rerun selected result' }).click()
       await history.getByRole('row').nth(2).waitFor({ timeout: 20_000 })
-      await history.getByText('2 results').waitFor({ timeout: 20_000 })
+      await history.getByText('1 result').waitFor({ timeout: 20_000 })
       expect(await history.getByRole('row').nth(1).textContent()).toContain(
         'Rerun of',
       )

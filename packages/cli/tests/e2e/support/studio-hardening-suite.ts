@@ -221,24 +221,24 @@ Feature: Checkout
       expect(
         await focusedFailure.evaluate((element) => element.matches(':focus')),
       ).toBe(true)
-
-      await Bun.write(releaseFailure, 'continue')
-      await page
-        .getByRole('button', { name: /Pay for the order.*chrome.*failed/ })
-        .waitFor()
-      expect(
-        await focusedFailure.evaluate((element) => element.matches(':focus')),
-      ).toBe(true)
-      await focusedFailure.click()
+      await page.keyboard.press('Enter')
       const selectedEntry = page.getByRole('region', {
         name: 'Selected timeline entry',
       })
       expect(await selectedEntry.textContent()).toContain(
         'Then the basket is reviewed',
       )
-      await page
-        .getByRole('button', { name: /Pay for the order.*chrome.*failed/ })
-        .click()
+
+      await Bun.write(releaseFailure, 'continue')
+      const paymentFailure = page.getByRole('button', {
+        name: /Pay for the order.*chrome.*failed/,
+      })
+      await paymentFailure.waitFor()
+      expect(await selectedEntry.textContent()).toContain(
+        'Then the basket is reviewed',
+      )
+      await tabTo(page, paymentFailure)
+      await page.keyboard.press('Enter')
       expect(await selectedEntry.textContent()).toContain(
         'Then payment is captured',
       )
@@ -297,6 +297,11 @@ Feature: Checkout
       await page
         .getByRole('button', { name: /Pay for the order.*chrome.*failed/ })
         .waitFor({ timeout: 20_000 })
+      await page
+        .getByRole('button', { name: /Pay for the order.*chrome.*failed/ })
+        .first()
+        .getByText('failed', { exact: true })
+        .waitFor()
       const timeline = page.getByRole('list', {
         name: 'Execution timeline',
       })
@@ -314,6 +319,18 @@ Feature: Checkout
           .locator('html')
           .evaluate((element) => element.scrollWidth <= element.clientWidth),
       ).toBe(true)
+      await page.setViewportSize({ width: 1280, height: 800 })
+      await page.locator('html').evaluate((element) => {
+        element.style.zoom = '2'
+      })
+      const diagnosticsTab = page.getByRole('tab', { name: 'Diagnostics' })
+      await tabTo(page, diagnosticsTab)
+      expect(
+        await diagnosticsTab.evaluate((element) =>
+          element.matches(':focus-visible'),
+        ),
+      ).toBe(true)
+      await page.getByText('Payment was declined', { exact: true }).waitFor()
     } finally {
       await context.close()
       child.kill()

@@ -327,8 +327,10 @@ function liveInspectionControls(
       setLive(undefined)
       setRunId(undefined)
     },
-    inspectLocation: (location: ResultInspectionLocation) =>
-      update((current) => pinLiveInvestigation(current, location)),
+    inspectLocation: (location: ResultInspectionLocation) => {
+      update((current) => pinLiveInvestigation(current, location))
+      if (live?.phase === 'finished') onInspectResult(location)
+    },
     inspectTimelineEntry: (entryId: string) =>
       update((current) => inspectLiveTimelineEntry(current, entryId)),
     pauseFollowing: () => update(pauseLiveFollowing),

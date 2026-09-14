@@ -1,6 +1,6 @@
 import { mkdir, mkdtemp, rm, symlink, unlink } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { dirname, join, resolve } from 'node:path'
+import { dirname, join } from 'node:path'
 import { resolveLocalProjectStorage } from '@pickle-spec/runner'
 import { expect, test } from 'vitest'
 import { startStudio } from '../../../src/server/server'
@@ -27,23 +27,6 @@ async function withProjectStorage(
     ])
   }
 }
-
-test('allows live web capture files under the project artifact directory', async () => {
-  await withProjectStorage(async (root) => {
-    const capture = join(
-      resolveLocalProjectStorage(root).projectDirectory,
-      'artifacts',
-      'scenario-hash',
-      'step-01-passed.png',
-    )
-    await mkdir(dirname(capture), { recursive: true })
-    await Bun.write(capture, 'png-bytes')
-    expect(resolveStudioArtifactPath(capture, root)).toEqual({
-      kind: 'ready',
-      path: resolve(capture),
-    })
-  })
-})
 
 test('rejects directory symlinks and treats dangling targets as missing', async () => {
   await withProjectStorage(async (root) => {

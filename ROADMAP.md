@@ -100,25 +100,64 @@ verification remains a separate post-publication step owned by the release owner
       onboarding states, credential-free demonstration, and real application setup.
       Separate demo completion from a real run; errors identify the failing prerequisite
       and offer a useful recovery action. Measure setup and ready-to-green separately.
+
+  - [x] Controlled Studio onboarding exposes ready and credential-blocked states,
+        starts the exact first Scenario, persists its pass, and opens credential
+        settings from the blocker. README copy distinguishes scaffolding from a
+        real application test. See the [QA record](docs/roadmap-qa-ux-review.md#first-successful-assertion-workflow-verification).
+  - [ ] Run the documented quick start against a real target with valid and invalid
+        credentials; record setup and ready-to-green timings. Decide whether a
+        credential-free demonstration is still required from observed onboarding.
+
 - [ ] **U2 — Understand a failure.** From a failed run, reach the failed step,
       expected outcome, target state, diagnostics, retry history, and source location.
       Preserve selection while other results arrive; deep links survive refresh.
-- [ ] **U3 — Explain Replay divergence.** Show the divergence step, reused prefix,
+
+  - [x] Controlled Studio failure inspection preserves in-progress pinning, opens a
+        completed failed result on its durable run selection, and restores the failed
+        step, screenshot, and diagnostics after refresh.
+  - [ ] Verify expected outcome, target state, source location, and retry history
+        together on a deliberate real-application failure.
+
+- [x] **U3 — Explain Replay divergence.** Show the divergence step, reused prefix,
       reason, and whether Adaptive fallback occurred. Use existing runner events;
-      do not imply a cache-only run silently switched to inference.
-- [ ] **U4 — Maintain an interaction.** Verify canvas and list locator editing,
+      do not imply a cache-only run silently switched to inference. Studio pairs
+      scoped events by full cache identity, explains same-attempt continuation or
+      next-attempt restart, and renders nothing for an unpaired cache-only divergence.
+      See the [QA record](docs/roadmap-qa-ux-review.md#replay-divergence-explanation-verification).
+- [x] **U4 — Maintain an interaction.** Verify canvas and list locator editing,
       validation errors, protected operations, unsaved-change behavior, save failure,
       concurrent writers, and reload persistence. Explain what Save affects and let
       QA rerun the Scenario to verify the outcome. Report cache-clear behavior honestly.
-- [ ] **U5 — Repeat a focused test.** Verify failed-Scenario/profile rerun preserves
-      selection and configuration; retain the original evidence and identify the new run.
-- [ ] **U6 — Share a diagnosis.** Export a deliberate failure and inspect/import it
-      in a second isolated workspace without access to the originating project.
-      Missing optional recordings must not prevent diagnosis.
-- [ ] **U7 — Accessible investigation.** Verify keyboard-only navigation, focus
-      restoration, labeled controls, result states beyond color, zoom, smaller screens,
-      reduced motion, and a large catalog/run. Automated accessibility checks supplement
-      hands-on use. Canvas functionality needs an equivalent usable list path.
+
+  - [x] Controlled Studio acceptance covers canvas and list locator editing,
+        validation and protected operations, retained drafts after save failures,
+        stale-writer rejection, reload persistence, and cache clearing. Plan details
+        explain that Save changes only the selected locator in the current Replay
+        cache entry, does not rerun or rewrite history, and is removed by cache clear.
+        See the [QA record](docs/roadmap-qa-ux-review.md#interaction-maintenance-workflow-verification).
+  - [x] Rerun the edited locator cache-only against an isolated browser application;
+        the real DOM Scenario passes with a Replay cache hit and zero inference.
+
+- [x] **U5 — Repeat a focused test.** A selected result now has one exact rerun
+      action that intersects its durable Scenario identity with its execution target.
+      Controlled Chrome acceptance verifies a one-result rerun, preserved target and
+      application revision, a distinct run linked to its source, and re-openable
+      original failure evidence. See the
+      [QA record](docs/roadmap-qa-ux-review.md#focused-rerun-workflow-verification).
+- [x] **U6 — Share a diagnosis.** Controlled Chrome acceptance exports HTML and a
+      run archive for a deliberate failure, removes the source project, and imports
+      the archive into an unrelated workspace. The failed step, diagnostic, and
+      embedded screenshot remain inspectable; an unsupported recording is labeled
+      with recovery guidance and does not block diagnosis. See the
+      [QA record](docs/roadmap-qa-ux-review.md#portable-diagnosis-workflow-verification).
+- [x] **U7 — Accessible investigation.** Controlled Chrome acceptance covers
+      keyboard-only navigation and result selection, visible/restored focus, labeled
+      controls, explicit result-state text, 200% page scaling, 390px and 320px reflow,
+      reduced motion, 250-Specification and 250-attempt fixtures, and the usable list
+      alternative to canvas editing. WCAG 2.2 AA Axe checks supplement the interaction
+      paths. See the
+      [QA record](docs/roadmap-qa-ux-review.md#accessible-investigation-workflow-verification).
 
 Exit: the core acceptance session in the QA record passes. Proposed pilot target:
 at least four of five new testers finish setup → assertion → deliberate failure →

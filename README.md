@@ -46,6 +46,12 @@ bunx pickle init
 bunx pickle studio
 ```
 
+`pickle init` creates a configuration shell; it does not create a demonstration
+or claim a successful application test. Follow the
+[web quick start](apps/docs/content/docs/web/quick-start.mdx) to configure a real
+target and add a meaningful assertion before opening Studio. Studio then shows
+the exact setup checks blocking the first run and starts one Scenario at a time.
+
 The CLI package installs Studio as part of the compatible package set. Pickle
 Spec does not require a cloud service. This release excludes hosted
 synchronization and physical-device provisioning.

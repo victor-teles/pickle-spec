@@ -157,6 +157,150 @@ cases are recorded skips, not target certification. Live target evidence remains
 owned by L3, and exact registry installation remains a post-publication release-owner
 step.
 
+## First successful assertion workflow verification
+
+Verified 2026-09-13 in the working tree based on
+`dc37ea8bb6b34553eea5f8bf5448efbb32f858fe` plus the U1 patch. The first-run guide
+now appears on the default Specifications screen instead of being omitted from
+the screen that owns the run action. A controlled browser test starts its exact
+Scenario through **Run first Scenario**, observes the persisted passing result,
+and verifies that the completed guide disappears. A second browser case removes
+all supported model-provider environment credentials, verifies the structured
+credential blocker, and follows **Open Settings** to the credential form.
+
+The README now states that `pickle init` creates configuration scaffolding, not
+a demonstration or successful application test, and links to the real web quick
+start. Focused onboarding model/component tests passed (six tests), and the two
+focused Chrome cases passed outside the sandbox.
+
+This is controlled UI and custom-adapter evidence only. QA-01 and U1 remain open
+until the documented quick start runs against a real target with valid and invalid
+credentials and records setup and ready-to-green timings.
+
+## Failure investigation workflow verification
+
+Verified 2026-09-13 in the working tree based on
+`dc37ea8bb6b34553eea5f8bf5448efbb32f858fe` plus the U1 and U2 patches. Selecting
+a completed failed result now opens its existing durable run route with the result
+identity in its query; selecting a result while execution is active continues to pin
+the in-place workbench so later results do not steal the investigation. The controlled
+Chrome path follows the failed step, screenshot, and diagnostic, reloads the result
+URL, and verifies that the same Scenario, profile, attempt, and failed-step timeline
+are restored.
+
+This completes the controlled deep-link and refresh portion of QA-02. U2 remains open
+until one deliberate real-application failure presents expected outcome, target state,
+source location, and retry history together in the acceptance session.
+
+## Replay divergence explanation verification
+
+Verified 2026-09-13 in the working tree based on
+`dc37ea8bb6b34553eea5f8bf5448efbb32f858fe` plus the U1–U3 patches. Studio now
+projects the existing `replay-diverged` and `adaptive-fallback-started` events by
+Scenario, Examples row, execution target, attempt, event order, and full cache-key
+identity. The result inspector explains the divergence step, sealed Replay prefix,
+and whether Adaptive continued in the same attempt or restarted in the next one.
+An unpaired divergence—including cache-only behavior—produces no fallback claim.
+
+Seven focused projector and rendered-component tests passed. The existing S5 gates
+below cover the runner event contract and controlled browser Replay outcomes; no new
+event, persistence, or route contract was introduced. Current-branch interactive
+browser rendering was not repeated for this explainer.
+
+## Interaction maintenance workflow verification
+
+Verified 2026-09-13 in the working tree based on
+`dc37ea8bb6b34553eea5f8bf5448efbb32f858fe` plus the U1–U4 patches. Three focused
+Chrome cases cover direct locator editing in both list and canvas views, validation
+errors, protected operations, dirty-state navigation guards, transport failure with
+draft retention, successful save and reload persistence, keyboard focus restoration,
+mobile reflow, and reduced-motion accessibility.
+
+The concurrent-writer case opens the same plan in two browser pages. After the first
+page saves, the stale page is rejected without losing its draft or overwriting the
+newer cache entry; cancelling and reloading reveals the winning locator. Plan details
+now state that Save changes only the selected locator in the current Replay cache entry,
+does not rerun the Scenario or alter historical results, and that clearing the execution
+cache removes the manual change. Before clearing, the browser case runs the edited
+cache entry through the real web adapter against an isolated DOM application. The
+Scenario passes in cache-only Replay with a cache hit and zero inference, proving that
+the saved locator—not a compiler fallback—drives the changed outcome. The same case
+then clears the cache and verifies that the plan becomes absent. Eleven focused
+execution-plan service tests also passed, including cache persistence, stale
+revision/digest rejection, writer leases, and invalid-input immutability.
+
+This completes U4 and the controlled editing, rerun, persistence, conflict, and
+cache-clear portions of QA-05 and QA-06. The target is a local synthetic application
+driven through a real Chrome context; provider inference, remote browsers, and
+production application behavior remain outside this evidence.
+
+## Focused rerun workflow verification
+
+Verified 2026-09-13 in the working tree based on
+`dc37ea8bb6b34553eea5f8bf5448efbb32f858fe` plus the U1–U5 patches. The result
+inspector now exposes one focused action for the selected Scenario/profile pair
+instead of separate Scenario-wide and target-wide actions. It submits the source
+run, durable Scenario identity, and selected execution-target profile through the
+existing rerun contract.
+
+The controlled Chrome journey selects the deliberate `Pay for the order` failure on
+`chrome` from a six-result source run and verifies that the rerun contains exactly
+that one result. The history presents a different new run ID with `Rerun of` pointing
+to the source; the rerun retains target `chrome` and application revision `app-42`.
+The source run remains in history and its failed screenshot can still be reopened
+after the rerun. The duplicate-name browser case also verifies that durable Scenario
+identity, rather than display name, chooses the single Scenario/profile result.
+
+This completes U5 and the controlled portion of QA-07. Existing live-follow coverage
+proves that a pinned investigation does not jump while other results arrive. The
+workflow uses the synthetic custom adapter in local Chrome; live-provider and pilot
+usability evidence remain outside this verification.
+
+## Portable diagnosis workflow verification
+
+Verified 2026-09-13 in the working tree based on
+`dc37ea8bb6b34553eea5f8bf5448efbb32f858fe` plus the U1–U6 patches. A focused
+Chrome case runs a deliberate six-result failure, exports its default HTML report and
+run archive, shuts down Studio, and removes the entire source project. The HTML report
+contains the failed Scenario and its embedded screenshot.
+
+The case then creates an unrelated project, imports the transferred archive through
+Studio, and opens the imported run. The failed `Pay for the order` step, `Payment was
+declined` diagnostic, and screenshot all remain inspectable from destination-owned
+storage. Recording is reported as `not-supported` with concrete rerun guidance and
+does not prevent the other evidence from loading. Existing archive integration and
+unit coverage separately verifies immutable byte preservation, path containment,
+artifact integrity, and rollback on rejected imports.
+
+This completes U6 and the controlled portion of QA-08. The handoff uses a synthetic
+custom adapter and local filesystem transfer; sharing through external collaboration
+systems and independent pilot comprehension remain outside this verification.
+
+## Accessible investigation workflow verification
+
+Verified 2026-09-13 in the working tree based on
+`dc37ea8bb6b34553eea5f8bf5448efbb32f858fe` plus the U1–U7 patches. Controlled
+Chrome interaction reaches the primary destinations and live result controls by
+keyboard, exposes visible focus, activates selected results with Enter, and keeps a
+pinned investigation stable while later results arrive. Existing command-palette and
+plan-editor cases verify focus restoration after dismissal and save failure. At compact
+widths, result state text remains visible alongside its icon instead of relying on
+color alone.
+
+The responsive cases inspect a deliberate failure at 390px with reduced motion, then
+apply 200% page scaling and confirm that the focused diagnostics control and failure
+message remain available. The plan workflow passes its WCAG scan at 320px; its browser
+preview is now a labeled, focusable region so keyboard users can reach content that
+becomes scrollable. Direct locator maintenance remains available through the list view
+at compact width, providing the same save path without requiring the canvas.
+
+The five-case hardening run passes WCAG 2.2 AA Axe scans across the core destinations,
+run history, command palette, and responsive result review. It also exercises more than
+250 Specifications, a bounded 150-run history, and selection within a 250-attempt run.
+The two focused plan cases pass for 320px review and list-based editing. This completes
+U7 and the controlled portion of QA-09. Screen-reader sessions, forced-colors review,
+physical-device behavior, and independent pilot usability remain outside this evidence.
+
 ## Run lifecycle and recovery verification
 
 Verified 2026-09-14 on Linux with Bun 1.4.2 at

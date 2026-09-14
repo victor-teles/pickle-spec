@@ -42,6 +42,8 @@ import {
   ResultOverview,
 } from './result-evidence-panels'
 import { ResultEvidenceTimeline } from './result-evidence-timeline'
+import { projectReplayDivergenceExplanation } from './replay-divergence'
+import { ReplayDivergenceExplainer } from './replay-divergence-explainer'
 
 import { reasonMessage, resultBadgeVariant } from './result-presentation'
 
@@ -324,6 +326,11 @@ function InspectedResultView(props: InspectedResultViewProps) {
       />
     )
   }
+  const replayDivergence = projectReplayDivergenceExplanation({
+    events: snapshot.events,
+    result: inspected.result,
+    selectedAttemptNumber: inspected.attempt.attempt,
+  })
   const contentProps = {
     ...props,
     ...projection,
@@ -334,6 +341,9 @@ function InspectedResultView(props: InspectedResultViewProps) {
       className="min-h-0 flex-1 overflow-auto px-3 py-4 sm:px-5"
     >
       <ResultInspectorHeader {...contentProps} />
+      {replayDivergence ? (
+        <ReplayDivergenceExplainer explanation={replayDivergence} />
+      ) : null}
       <ResultInspectorTabs {...contentProps} />
     </section>
   )
