@@ -141,6 +141,8 @@ interface PickleRunOptions {
   inferenceMarker: string
   cacheOnly?: boolean
   evaluationDelayMs?: number
+  exposeEvidence?: boolean
+  outputs?: readonly string[]
 }
 
 function childEnvironment(options: PickleRunOptions) {
@@ -157,6 +159,9 @@ function childEnvironment(options: PickleRunOptions) {
     PICKLE_CONFIDENTIALITY_EVALUATION_DELAY_MS: String(
       options.evaluationDelayMs ?? 0,
     ),
+    PICKLE_CONFIDENTIALITY_EXPOSE_EVIDENCE: options.exposeEvidence
+      ? 'true'
+      : 'false',
     PICKLE_CONFIDENTIALITY_FORBIDDEN_ENV_NAMES:
       providerCredentialEnvironmentNames.join(','),
   }
@@ -193,6 +198,7 @@ function runPickle(options: PickleRunOptions) {
     'run',
     '--reporter',
     'ndjson',
+    ...(options.outputs ?? []).flatMap((output) => ['--output', output]),
     ...(options.cacheOnly ? ['--cache-only'] : []),
   ])
 }
@@ -263,6 +269,13 @@ test('keeps runtime values and model credentials out of public cache-only and co
   const configPath = join(projectRoot, 'pickle.config.jsonc')
   const featurePath = join(featureDirectory, 'confidentiality.feature')
   const extensionsPath = join(projectRoot, 'pickle.extensions.ts')
+  const exportPaths = {
+    archive: join(projectRoot, 'confidentiality.archive.json'),
+    html: join(projectRoot, 'confidentiality.html'),
+    json: join(projectRoot, 'confidentiality.json'),
+    junit: join(projectRoot, 'confidentiality.xml'),
+    ndjson: join(projectRoot, 'confidentiality.ndjson'),
+  }
   await mkdir(featureDirectory)
   await Bun.write(
     configPath,
@@ -340,8 +353,33 @@ export default {
 
       return {
         async executeStep(_step, _signal, context) {
-          if (runtimeValue(context) !== process.env.PICKLE_CONFIDENTIALITY_SENTINEL) {
+          const value = runtimeValue(context)
+          if (value !== process.env.PICKLE_CONFIDENTIALITY_SENTINEL) {
             throw new Error('runtime value did not reach the adapter boundary')
+          }
+          if (process.env.PICKLE_CONFIDENTIALITY_EXPOSE_EVIDENCE === 'true') {
+            return {
+              state: 'failed',
+              message: \`Adapter failed with \${value}\`,
+              resolvedActions: [
+                { description: \`Apply private value \${value}\` },
+              ],
+              diagnostics: [
+                {
+                  occurredAt: '2026-09-13T12:00:00.000Z',
+                  level: 'error',
+                  origin: 'adapter',
+                  message: \`Adapter diagnostic contains \${value}\`,
+                },
+              ],
+              trace: [
+                {
+                  occurredAt: '2026-09-13T12:00:00.000Z',
+                  kind: 'resolved-action',
+                  description: \`Trace contains \${value}\`,
+                },
+              ],
+            }
           }
           if (input.mode === 'adaptive') await evaluate(context)
           else if (
@@ -389,9 +427,45 @@ export default {
     runtimeSentinel: runtimeSentinelA,
     inferenceMarker,
   }
-  const adaptive = await runPickle(runOptions)
+  const adaptive = await runPickle({
+    ...runOptions,
+    outputs: Object.entries(exportPaths).map(
+      ([format, path]) => `${format}=${path}`,
+    ),
+  })
   expect(adaptive.exitCode).toBe(0)
+  for (const path of Object.values(exportPaths)) {
+    expect(await Bun.file(path).exists(), `${path} should exist`).toBe(true)
+    expect(Bun.file(path).size, `${path} should not be empty`).toBeGreaterThan(
+      0,
+    )
+  }
+  expect(await Bun.file(exportPaths.json).text()).toContain('"state": "passed"')
+  expect(await Bun.file(exportPaths.ndjson).text()).toContain(
+    '"type":"scenario-finished"',
+  )
+  expect(await Bun.file(exportPaths.junit).text()).toContain('<testsuite')
+  expect(await Bun.file(exportPaths.html).text()).toContain('<!DOCTYPE html>')
+  expect(await Bun.file(exportPaths.archive).text()).toContain('"manifest"')
   const initialCache = await inspectCache(cacheRoot)
+
+  const importProjectRoot = await tempRoot('pickle-confidentiality-import')
+  const sourceStorage = resolveLocalProjectStorage(projectRoot, cacheRoot)
+  const importStorage = resolveLocalProjectStorage(importProjectRoot, cacheRoot)
+  expect(importStorage.projectDirectory).not.toBe(
+    sourceStorage.projectDirectory,
+  )
+  expect(await readdir(sourceStorage.runsDirectory)).toHaveLength(1)
+  await expect(readdir(importStorage.runsDirectory)).rejects.toMatchObject({
+    code: 'ENOENT',
+  })
+  const imported = await executePickle(
+    { ...runOptions, projectRoot: importProjectRoot },
+    ['import', exportPaths.archive],
+  )
+  expect(imported.exitCode).toBe(0)
+  expect(outputText(imported.stdout)).toContain(importStorage.projectDirectory)
+  expect(await readdir(importStorage.runsDirectory)).toHaveLength(1)
 
   await writeConfidentialityFeature(featurePath, runtimeSentinelB)
   const cacheOnly = await runPickle({
@@ -497,18 +571,95 @@ export default {
   expect(concurrentCache.leases).toEqual([])
   expect(concurrentCache.leaseOutcomes).toEqual([])
 
+  const failureCacheRoot = await tempRoot(
+    'pickle-failure-confidentiality-cache',
+  )
+  const failureImportRoot = await tempRoot(
+    'pickle-failure-confidentiality-import',
+  )
+  const failureSentinel = `runtime-failure-${crypto.randomUUID()}@example.test`
+  const failureExports = {
+    archive: exportPaths.archive.replace(
+      'confidentiality.',
+      'failure-confidentiality.',
+    ),
+    html: exportPaths.html.replace(
+      'confidentiality.',
+      'failure-confidentiality.',
+    ),
+    json: exportPaths.json.replace(
+      'confidentiality.',
+      'failure-confidentiality.',
+    ),
+    junit: exportPaths.junit.replace(
+      'confidentiality.',
+      'failure-confidentiality.',
+    ),
+    ndjson: exportPaths.ndjson.replace(
+      'confidentiality.',
+      'failure-confidentiality.',
+    ),
+  }
+  await writeConfidentialityFeature(featurePath, failureSentinel)
+  const failed = await runPickle({
+    ...runOptions,
+    cacheRoot: failureCacheRoot,
+    runtimeSentinel: failureSentinel,
+    exposeEvidence: true,
+    outputs: Object.entries(failureExports).map(
+      ([format, path]) => `${format}=${path}`,
+    ),
+  })
+  expect(failed.exitCode).toBe(1)
+  const failedResult = reporterResult(failed.stdout)
+  expect(failedResult.state).toBe('failed')
+  expect(JSON.stringify(failedResult)).not.toContain(failureSentinel)
+  expect(JSON.stringify(failedResult)).toContain('<token>')
+  expect(JSON.stringify(failedResult)).toContain('Adapter diagnostic contains')
+  for (const path of Object.values(failureExports)) {
+    expect(await Bun.file(path).exists(), `${path} should exist`).toBe(true)
+    expect(Bun.file(path).size, `${path} should not be empty`).toBeGreaterThan(
+      0,
+    )
+  }
+  expect(await Bun.file(failureExports.json).text()).toContain(
+    '"state": "failed"',
+  )
+  expect(await Bun.file(failureExports.ndjson).text()).toContain(
+    '"type":"scenario-finished"',
+  )
+  expect(await Bun.file(failureExports.junit).text()).toContain('<failure')
+  expect(await Bun.file(failureExports.html).text()).toContain(
+    '<!DOCTYPE html>',
+  )
+  expect(await Bun.file(failureExports.archive).text()).toContain('"manifest"')
+  const failureImported = await executePickle(
+    { ...runOptions, projectRoot: failureImportRoot },
+    ['import', failureExports.archive],
+  )
+  expect(failureImported.exitCode).toBe(0)
+  const failureImportStorage = resolveLocalProjectStorage(
+    failureImportRoot,
+    cacheRoot,
+  )
+  expect(await readdir(failureImportStorage.runsDirectory)).toHaveLength(1)
+  const failureCache = await inspectCache(failureCacheRoot)
+
   const executions = [
     adaptive,
+    imported,
     cacheOnly,
     cacheInitialization,
     ...concurrentRuns,
+    failed,
+    failureImported,
   ]
   const processOutput = executions
     .flatMap((execution) => [execution.stdout, execution.stderr])
     .map(outputText)
     .join('\n')
-  const runtimeSentinels = [runtimeSentinelA, runtimeSentinelB]
-  const caches = [sequentialCache, concurrentCache]
+  const runtimeSentinels = [runtimeSentinelA, runtimeSentinelB, failureSentinel]
+  const caches = [sequentialCache, concurrentCache, failureCache]
   await expectRuntimeSentinelsAbsent(
     runtimeSentinels,
     processOutput,
@@ -518,21 +669,25 @@ export default {
 
   const runStateFiles = (
     await Promise.all(
-      [cacheRoot, concurrentCacheRoot].map((pickleHome) =>
+      [cacheRoot, concurrentCacheRoot, failureCacheRoot].map((pickleHome) =>
         filesUnder(
           resolveLocalProjectStorage(projectRoot, pickleHome).projectDirectory,
         ),
       ),
     )
   ).flat()
+  runStateFiles.push(...(await filesUnder(importStorage.projectDirectory)))
+  runStateFiles.push(
+    ...(await filesUnder(failureImportStorage.projectDirectory)),
+  )
   const eventFiles = runStateFiles.filter((path) =>
     path.endsWith('events.ndjson'),
   )
   const manifestFiles = runStateFiles.filter((path) =>
     path.endsWith('manifest.json'),
   )
-  expect(eventFiles).toHaveLength(4)
-  expect(manifestFiles).toHaveLength(4)
+  expect(eventFiles).toHaveLength(7)
+  expect(manifestFiles).toHaveLength(7)
 
   const fixtureFiles = new Set([
     configPath,
@@ -545,6 +700,7 @@ export default {
     (path) => !fixtureFiles.has(path),
   )
   const persistentFiles = [
+    ...runStateFiles,
     ...generatedProjectFiles,
     ...sequentialCache.files,
     ...concurrentCache.files,

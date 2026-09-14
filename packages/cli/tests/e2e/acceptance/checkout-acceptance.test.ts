@@ -37,6 +37,7 @@ type RunCaseInput = {
   applicationRevisionLabel?: string
   cacheName: string
   compilerTarget: CompilerTarget
+  executionTargetProfileId?: string
   name: string
   policy?: 'cache-only'
   sourceRunId: string
@@ -151,7 +152,9 @@ async function runCase(input: RunCaseInput) {
     const run = await runScenario({
       specification,
       scenario,
-      executionTargetProfile: { id: 'eng02-chrome' },
+      executionTargetProfile: {
+        id: input.executionTargetProfileId ?? 'eng02-chrome',
+      },
       adapter,
       executionCache: {
         store: cache,
@@ -200,9 +203,16 @@ describe('ENG-02 synthetic checkout acceptance', () => {
     expect(replay.applicationRevision).toBe(cold.applicationRevision)
   }, 60_000)
 
-  test('cache-only misses a new application revision without browser or inference work', async () => {
-    const miss = await runCase({
-      cacheName: 'original',
+  test('cache-only misses changed application and target profile identities without browser or inference work', async () => {
+    const seed = await runCase({
+      cacheName: 'changed-identities',
+      compilerTarget: 'original',
+      name: 'changed-identities-seed',
+      sourceRunId: 'changed-identities-seed',
+      variant: 'original',
+    })
+    const applicationMiss = await runCase({
+      cacheName: 'changed-identities',
       compilerTarget: 'original',
       name: 'application-revision-cache-only-miss',
       policy: 'cache-only',
@@ -210,13 +220,26 @@ describe('ENG-02 synthetic checkout acceptance', () => {
       variant: 'original',
       applicationRevisionLabel: 'original-unseeded-revision',
     })
-    expect(finalScenarioAttempt(miss.run.result)).toMatchObject({
-      state: 'failed',
-      failureKind: 'cache-miss',
-      cacheOutcome: 'miss',
-      inferenceCount: 0,
+    const profileMiss = await runCase({
+      cacheName: 'changed-identities',
+      compilerTarget: 'original',
+      executionTargetProfileId: 'eng02-chrome-changed',
+      name: 'target-profile-cache-only-miss',
+      policy: 'cache-only',
+      sourceRunId: 'profile-miss',
+      variant: 'original',
     })
-    expect(miss.launches).toBe(0)
+
+    expect(finalScenarioAttempt(seed.run.result).state).toBe('passed')
+    for (const miss of [applicationMiss, profileMiss]) {
+      expect(finalScenarioAttempt(miss.run.result)).toMatchObject({
+        state: 'failed',
+        failureKind: 'cache-miss',
+        cacheOutcome: 'miss',
+        inferenceCount: 0,
+      })
+      expect(miss.launches).toBe(0)
+    }
   })
 
   test('fails on a stale target and passes after a locator-only repair', async () => {

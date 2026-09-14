@@ -6,7 +6,11 @@ import {
   resolveLocalProjectStorage,
 } from '@pickle-spec/runner'
 import { afterEach, expect, test } from 'vitest'
-import { createStudioHistoryGateway } from '../../../src/studio/studio-history'
+import {
+  createStudioHistoryGateway,
+  markStudioRunOwned,
+  recoverAbandonedStudioRuns,
+} from '../../../src/studio/studio-history'
 
 const directories: string[] = []
 const originalPickleHome = process.env.PICKLE_HOME
@@ -110,4 +114,29 @@ test('rejects Studio report export until the Test run is finalized', async () =>
   await expect(
     gateway.exportReport({ runId: 'run-1', format: 'json' }),
   ).rejects.toThrow('must be finalized before export')
+})
+
+test('recovers only unfinished Studio runs whose owner process exited', async () => {
+  const { root } = await fixture(false)
+  const storage = resolveLocalProjectStorage(root)
+  const manifestPath = join(storage.runsDirectory, 'run-1', 'manifest.json')
+  const ownerPath = join(storage.runsDirectory, 'run-1', 'studio-owner.json')
+  await markStudioRunOwned(root, 'run-1')
+
+  await recoverAbandonedStudioRuns(root)
+  expect(JSON.parse(await Bun.file(manifestPath).text())).not.toHaveProperty(
+    'finishedAt',
+  )
+  expect(await Bun.file(ownerPath).exists()).toBe(true)
+
+  await Bun.write(ownerPath, `${JSON.stringify({ pid: 2_147_483_647 })}\n`)
+  await Promise.all([
+    recoverAbandonedStudioRuns(root),
+    recoverAbandonedStudioRuns(root),
+  ])
+  expect(JSON.parse(await Bun.file(manifestPath).text())).toMatchObject({
+    finishedAt: expect.any(String),
+    state: 'infrastructure-error',
+  })
+  expect(await Bun.file(ownerPath).exists()).toBe(false)
 })

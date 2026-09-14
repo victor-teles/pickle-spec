@@ -7,7 +7,7 @@ import {
   type StudioHttpHandler,
   unavailable,
 } from '../../server/http'
-import { resolveStudioArtifactPath } from '../../server/studio-artifact-path'
+import { readStudioArtifact } from '../../server/studio-artifact-path'
 import type {
   StudioRunGateway,
   StudioRunSnapshot,
@@ -99,39 +99,28 @@ async function runSnapshot(
   } satisfies StudioRunSnapshot)
 }
 
-function artifactPath(options: RunRoutesOptions, url: URL): string | Response {
-  const resolved = resolveStudioArtifactPath(
-    url.searchParams.get('path'),
-    options.projectRoot,
-  )
-  if (resolved.kind === 'missing-query') {
-    return new Response('Missing path', { status: 400 })
-  }
-  if (resolved.kind === 'forbidden') {
-    return new Response('Forbidden', { status: 403 })
-  }
-  return resolved.path
-}
-
 function artifactResponse(
   request: Request,
   url: URL,
   path: string,
-  file: ReturnType<typeof Bun.file>,
+  size: number,
+  body?: ReadableStream,
 ): Response {
+  const contentType = Bun.file(path).type || 'application/octet-stream'
   const headers = {
-    'content-type': file.type || 'application/octet-stream',
-    'content-length': String(file.size),
+    'content-type': contentType,
+    'content-length': String(size),
   }
   if (request.method === 'HEAD') return new Response(null, { headers })
   if (url.searchParams.get('download') !== 'true') {
-    return new Response(file, { headers })
+    return new Response(body, { headers })
   }
   const requestedName = url.searchParams.get('name')
   const downloadName = basename(requestedName || path).replace(/["\r\n]/g, '_')
-  return new Response(file, {
+  return new Response(body, {
     headers: {
       'content-disposition': `attachment; filename="${downloadName}"`,
+      'content-type': contentType,
     },
   })
 }
@@ -141,11 +130,27 @@ async function readArtifact(
   request: Request,
   url: URL,
 ): Promise<Response> {
-  const path = artifactPath(options, url)
-  if (path instanceof Response) return path
-  const file = Bun.file(path)
-  if (!(await file.exists())) return new Response('Not found', { status: 404 })
-  return artifactResponse(request, url, path, file)
+  const artifact = await readStudioArtifact(
+    url.searchParams.get('path'),
+    options.projectRoot,
+    request.method !== 'HEAD',
+  )
+  if (artifact.kind === 'missing-query') {
+    return new Response('Missing path', { status: 400 })
+  }
+  if (artifact.kind === 'missing') {
+    return new Response('Not found', { status: 404 })
+  }
+  if (artifact.kind === 'forbidden') {
+    return new Response('Forbidden', { status: 403 })
+  }
+  return artifactResponse(
+    request,
+    url,
+    artifact.path,
+    artifact.size,
+    artifact.body,
+  )
 }
 
 async function handleRunResource(

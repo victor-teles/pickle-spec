@@ -23,7 +23,12 @@ import {
   createStudioPlanValidationService,
   type StudioPlanValidationService,
 } from './execution-plan-validation/service'
-import { createStudioHistoryGateway } from './studio-history'
+import {
+  clearStudioRunOwner,
+  createStudioHistoryGateway,
+  markStudioRunOwned,
+  recoverAbandonedStudioRuns,
+} from './studio-history'
 import {
   discoverStudioMobileTargets,
   studioMobileEnvironmentAdapterFactory,
@@ -164,6 +169,7 @@ function studioRunGateway(input: StudioRunGatewayInput): StudioRunGateway {
       const callbacks = {
         signal: runController.signal,
         onEvent,
+        onRunCreated: (runId: string) => markStudioRunOwned(root, runId),
         onSchedule: (schedule) => onEvent({ type: 'run-scheduled', schedule }),
         onApplicationDiagnostic: (event) =>
           onEvent({ type: 'diagnostic-recorded', ...event }),
@@ -213,7 +219,10 @@ function studioRunGateway(input: StudioRunGatewayInput): StudioRunGateway {
       activeRuns.set(started.id, runController)
       void started.done
         .catch((error) => console.error(errorMessage(error)))
-        .finally(() => {
+        .finally(async () => {
+          await clearStudioRunOwner(root, started.id).catch((error) =>
+            console.error(errorMessage(error)),
+          )
           activeRuns.delete(started.id)
           controller.signal.removeEventListener('abort', onProcessAbort)
         })
@@ -255,6 +264,7 @@ export async function runStudioCommand(
     project,
     root,
   }
+  await recoverAbandonedStudioRuns(root)
   const planValidation = createStudioPlanValidationService({
     root,
     configPath: args.configPath,

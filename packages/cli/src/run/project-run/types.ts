@@ -65,6 +65,7 @@ export type StartProjectRunInput = {
     schedule: readonly ScheduledTestResult[],
   ) => void | Promise<void>
   onResult?: (result: TestResult) => void | Promise<void>
+  onRunCreated?: (runId: string) => void | Promise<void>
   executionPlanValidation?: {
     authoredReplay: AuthoredReplayExecution
   }

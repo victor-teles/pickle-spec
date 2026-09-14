@@ -32,6 +32,7 @@ type ValidationCallbacks = Pick<
   | 'onApplicationDiagnostic'
   | 'onLiveViewport'
   | 'onResult'
+  | 'onRunCreated'
 >
 type ReviewRequest = Pick<
   StudioPlanValidationRequest,

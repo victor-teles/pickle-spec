@@ -16,7 +16,14 @@ import { StudioBrowserFixture } from '../support/studio-browser-fixture'
 import { registerStudioHardeningTests } from '../support/studio-hardening-suite'
 
 const historyIndexSchema = z.object({
-  runs: z.array(z.object({ specificationUris: z.array(z.string()) })),
+  runs: z.array(
+    z.object({
+      id: z.string(),
+      finishedAt: z.string().optional(),
+      specificationUris: z.array(z.string()),
+      state: z.string(),
+    }),
+  ),
   activeRunIds: z.array(z.string()),
 })
 
@@ -63,6 +70,19 @@ async function waitForFile(path: string): Promise<void> {
   const deadline = Date.now() + 20_000
   while (!(await Bun.file(path).exists())) {
     if (Date.now() >= deadline) throw new Error(`Timed out waiting for ${path}`)
+    await Bun.sleep(25)
+  }
+}
+
+async function waitForFileText(path: string, expected: string): Promise<void> {
+  const deadline = Date.now() + 20_000
+  while (
+    !(await Bun.file(path).exists()) ||
+    !(await Bun.file(path).text()).includes(expected)
+  ) {
+    if (Date.now() >= deadline) {
+      throw new Error(`Timed out waiting for ${expected} in ${path}`)
+    }
     await Bun.sleep(25)
   }
 }
@@ -1807,6 +1827,169 @@ Feature: Checkout
       await page.close()
       child.kill()
       await child.exited
+    }
+  }, 60_000)
+
+  test('Studio shutdown finalizes an active run before restart', async () => {
+    const project = await createStudioProject('restart-active-run')
+    const marker = join(project, 'step-started.txt')
+    const gate = join(project, 'continue.txt')
+    const first = await startStudio(project, {
+      PICKLE_STUDIO_STEP_MARKER: marker,
+      PICKLE_STUDIO_CONTINUE: gate,
+    })
+    const page = await browser.newPage()
+    let restarted: Awaited<ReturnType<typeof startStudio>> | undefined
+    try {
+      await page.goto(first.url)
+      await runSpecification(page)
+      await waitForFile(marker)
+      const runningIndex = historyIndexSchema.parse(
+        await page.evaluate(async () => {
+          const response = await fetch('/api/runs')
+          return response.json()
+        }),
+      )
+      const runId = requiredValue(runningIndex.activeRunIds[0])
+
+      first.child.kill('SIGTERM')
+      expect(await first.child.exited).toBe(0)
+
+      restarted = await startStudio(project)
+      await page.goto(restarted.url)
+      const recoveredIndex = historyIndexSchema.parse(
+        await page.evaluate(async () => {
+          const response = await fetch('/api/runs')
+          return response.json()
+        }),
+      )
+      expect(recoveredIndex.activeRunIds).toEqual([])
+      expect(recoveredIndex.runs).toContainEqual(
+        expect.objectContaining({
+          id: runId,
+          finishedAt: expect.any(String),
+          state: 'cancelled',
+        }),
+      )
+
+      await page.getByRole('button', { name: 'Runs', exact: true }).click()
+      const row = page
+        .getByRole('table', { name: 'Test run history' })
+        .getByRole('row')
+        .filter({ hasText: runId })
+      await row.waitFor()
+      expect(await row.textContent()).toContain('cancelled')
+      await openRunDetailsFromRow(page, row)
+      await page.getByRole('combobox', { name: 'Attempt' }).waitFor()
+      expect(new URL(page.url()).pathname).toBe(`/runs/${runId}`)
+    } finally {
+      await page.close()
+      if (first.child.exitCode === null) {
+        first.child.kill()
+        await first.child.exited
+      }
+      if (restarted) {
+        restarted.child.kill()
+        await restarted.child.exited
+      }
+    }
+  }, 60_000)
+
+  test('Studio restart marks an abruptly abandoned run as an infrastructure error', async () => {
+    const project = await createStudioProject('restart-abandoned-run')
+    const marker = join(project, 'step-started.txt')
+    const gate = join(project, 'continue.txt')
+    await Bun.write(
+      join(project, 'features', 'checkout.feature'),
+      `@pickle:id:specrecoveraaaaaa @pickle:state:active
+Feature: Restart recovery
+  @pickle:id:scncompletedaaaaa
+  Scenario: Complete before interruption
+    Then the first result succeeds
+  @pickle:id:scninterruptedaaa
+  Scenario: Wait during interruption
+    Then the second result waits
+`,
+    )
+    const first = await startStudio(project, {
+      PICKLE_STUDIO_STEP_MARKER: marker,
+      PICKLE_STUDIO_CONTINUE: gate,
+      PICKLE_STUDIO_GATE_SCENARIO: 'Wait during interruption',
+    })
+    const page = await browser.newPage()
+    let restarted: Awaited<ReturnType<typeof startStudio>> | undefined
+    try {
+      await page.goto(first.url)
+      await runSpecification(page)
+      await waitForFile(marker)
+      const runningIndex = historyIndexSchema.parse(
+        await page.evaluate(async () => {
+          const response = await fetch('/api/runs')
+          return response.json()
+        }),
+      )
+      const runId = requiredValue(runningIndex.activeRunIds[0])
+      const storage = resolveLocalProjectStorage(project)
+      await waitForFileText(
+        join(storage.runsDirectory, runId, 'events.ndjson'),
+        '"type":"scenario-finished"',
+      )
+
+      first.child.kill('SIGKILL')
+      await first.child.exited
+
+      restarted = await startStudio(project)
+      await page.goto(restarted.url)
+      const recoveredIndex = historyIndexSchema.parse(
+        await page.evaluate(async () => {
+          const response = await fetch('/api/runs')
+          return response.json()
+        }),
+      )
+      expect(recoveredIndex.activeRunIds).toEqual([])
+      expect(recoveredIndex.runs).toContainEqual(
+        expect.objectContaining({
+          id: runId,
+          finishedAt: expect.any(String),
+          state: 'infrastructure-error',
+        }),
+      )
+      const manifest = testRunManifestSchema.parse(
+        await Bun.file(
+          join(storage.runsDirectory, runId, 'manifest.json'),
+        ).json(),
+      )
+      expect(manifest.state).toBe('infrastructure-error')
+      expect(manifest.results).toContainEqual(
+        expect.objectContaining({
+          scenario: expect.objectContaining({
+            name: 'Complete before interruption',
+          }),
+          state: 'passed',
+        }),
+      )
+      expect(
+        manifest.results.some(
+          (result) => result.scenario.name === 'Wait during interruption',
+        ),
+      ).toBe(false)
+      await page.getByRole('button', { name: 'Runs', exact: true }).click()
+      const row = page
+        .getByRole('table', { name: 'Test run history' })
+        .getByRole('row')
+        .filter({ hasText: runId })
+      await row.waitFor()
+      expect(await row.textContent()).toContain('infrastructure-error')
+    } finally {
+      await page.close()
+      if (first.child.exitCode === null) {
+        first.child.kill('SIGKILL')
+        await first.child.exited
+      }
+      if (restarted) {
+        restarted.child.kill()
+        await restarted.child.exited
+      }
     }
   }, 60_000)
 

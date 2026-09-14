@@ -131,6 +131,71 @@ describe('Execution cache lifecycle', () => {
     expect(fallback.result.attempts).toHaveLength(1)
   })
 
+  test('retries a Replay infrastructure error in a fresh Replay session', async () => {
+    const { store } = memoryStore()
+    const modes: string[] = []
+    let replayShouldFail = false
+    const adapter: ExecutionTargetAdapter = {
+      executionCache,
+      async openSession(input) {
+        modes.push(input.mode ?? 'adaptive')
+        return {
+          async executeStep() {
+            if (input.mode === 'replay' && replayShouldFail) {
+              replayShouldFail = false
+              throw new Error('Browser process exited during Replay')
+            }
+            return { state: 'passed' as const, resolvedActions: [] }
+          },
+          async complete() {
+            return {
+              inferenceCount: input.mode === 'adaptive' ? 2 : 0,
+              replayRepresentation: {
+                cacheable: true as const,
+                adapterPayload: { operations: completeOperations },
+                requiredVariables: [],
+              },
+            }
+          },
+          async close() {},
+        }
+      },
+    }
+    const runInput = cacheRunInput({
+      adapter,
+      store,
+      retry: { infrastructureErrors: 1 },
+    })
+    await runScenario(runInput)
+    replayShouldFail = true
+
+    const recovered = await runScenario({
+      ...runInput,
+      executionCache: { ...runInput.executionCache, sourceRunId: 'run-2' },
+    })
+
+    expect(recovered.result).toMatchObject({
+      state: 'passed',
+      flaky: true,
+      attempts: [
+        { attempt: 1, state: 'infrastructure-error', executionMode: 'replay' },
+        {
+          attempt: 2,
+          state: 'passed',
+          executionMode: 'replay',
+          cacheOutcome: 'hit',
+          inferenceCount: 0,
+        },
+      ],
+    })
+    expect(modes).toEqual(['adaptive', 'replay', 'replay'])
+    expect(
+      recovered.events
+        .filter((event) => event.type === 'scenario-finished')
+        .map((event) => event.scope.attempt),
+    ).toEqual([1, 2])
+  })
+
   test('preserves globally ordered Replay and Adaptive steps through mixed-session materialization', async () => {
     const { store } = memoryStore()
     let replayShouldDiverge = false

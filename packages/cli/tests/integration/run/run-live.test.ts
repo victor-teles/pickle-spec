@@ -2,7 +2,10 @@ import packageManifest from '../../../package.json'
 import { mkdir, mkdtemp, rm, symlink } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
-import { resolveLocalProjectStorage } from '@pickle-spec/runner'
+import {
+  resolveLocalProjectStorage,
+  testRunManifestSchema,
+} from '@pickle-spec/runner'
 import { afterAll, beforeAll, expect, test } from 'vitest'
 import { requiredValue } from '../../../src/required-value'
 
@@ -291,6 +294,106 @@ Feature: Interrupt safely
       .map((event) => event.attempt.state),
   ).toEqual(['passed', 'cancelled'])
 }, 15_000)
+
+test.each([
+  {
+    name: 'provider timeout',
+    timeout: { stepMs: 25 },
+    executeStep: `
+          await new Promise((_resolve, reject) => {
+            signal?.addEventListener(
+              'abort',
+              () => reject(new DOMException('Provider request aborted', 'AbortError')),
+              { once: true },
+            )
+          })
+          return { state: 'passed', resolvedActions: [] }`,
+    message: 'Step exceeded its 25ms deadline',
+  },
+  {
+    name: 'browser disconnect',
+    executeStep: `throw new Error('Browser disconnected')`,
+    message: 'Browser disconnected',
+  },
+])(
+  'finalizes a $name as an infrastructure error instead of a false pass',
+  async ({ name, timeout, executeStep, message }) => {
+    const project = join(workspace, name.replaceAll(' ', '-'))
+    await mkdir(join(project, 'features'), { recursive: true })
+    await Bun.write(
+      join(project, 'pickle.config.jsonc'),
+      JSON.stringify({
+        schemaVersion: 1,
+        specifications: 'features/**/*.feature',
+        executionTargetProfile: { id: 'unstable-web' },
+        execution: timeout ? { stepTimeoutMs: timeout.stepMs } : undefined,
+      }),
+    )
+    await Bun.write(
+      join(project, 'pickle.extensions.ts'),
+      `export default {
+  adapter: {
+    async openSession() {
+      return {
+        async executeStep(_step, signal) {${executeStep}
+        },
+        async close() {},
+      }
+    },
+  },
+}`,
+    )
+    await Bun.write(
+      join(project, 'features', 'lifecycle.feature'),
+      `@pickle:id:speclifecycleaaa @pickle:state:active
+Feature: Run lifecycle
+  @pickle:id:scnlifecycleaaaa
+  Scenario: Report lost execution infrastructure
+    Then execution finishes truthfully`,
+    )
+
+    const run = spawnInteractiveRun({
+      cmd: [pickleCommand, 'run'],
+      cwd: project,
+      env: { ...Bun.env, NO_COLOR: '1', TERM: 'xterm-256color' },
+    })
+    const { exitCode, output } = await run.finish()
+
+    expect(exitCode).toBe(1)
+    expect(output).toContain('1 infrastructure error (1)')
+    expect(output).toContain(message)
+    const manifestPaths = [
+      ...new Bun.Glob('*/manifest.json').scanSync({
+        cwd: resolveLocalProjectStorage(project).runsDirectory,
+      }),
+    ]
+    expect(manifestPaths).toHaveLength(1)
+    const manifest = testRunManifestSchema.parse(
+      await Bun.file(
+        join(
+          resolveLocalProjectStorage(project).runsDirectory,
+          requiredValue(manifestPaths[0]),
+        ),
+      ).json(),
+    )
+    expect(manifest).toMatchObject({
+      state: 'infrastructure-error',
+      results: [{ state: 'infrastructure-error' }],
+    })
+    expect(manifest.results[0]?.attempts).toHaveLength(2)
+    expect(
+      manifest.results[0]?.attempts.map((attempt) => ({
+        state: attempt.state,
+        message: attempt.message,
+      })),
+    ).toEqual([
+      { state: 'infrastructure-error', message },
+      { state: 'infrastructure-error', message },
+    ])
+    expect(manifest.finishedAt).toBeTypeOf('string')
+  },
+  15_000,
+)
 
 test('restores an interactive terminal before reporting a zero-selection command error', async () => {
   const project = join(workspace, 'zero-selection')

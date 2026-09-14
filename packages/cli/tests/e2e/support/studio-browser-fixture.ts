@@ -85,10 +85,14 @@ export default {
         async executeStep(step, signal) {
           const marker = process.env.PICKLE_STUDIO_STEP_MARKER
           const gate = process.env.PICKLE_STUDIO_CONTINUE
-          if (marker && !(await Bun.file(marker).exists())) {
+          const profile = input.executionTargetProfile.id
+          const scenario = input.scenario.name
+          const gatedScenario = process.env.PICKLE_STUDIO_GATE_SCENARIO
+          const shouldGate = !gatedScenario || scenario === gatedScenario
+          if (marker && shouldGate && !(await Bun.file(marker).exists())) {
             await Bun.write(marker, 'started')
           }
-          if (gate) {
+          if (gate && shouldGate) {
             while (!(await Bun.file(gate).exists())) {
               if (signal?.aborted) {
                 throw new DOMException('Scenario cancelled', 'AbortError')
@@ -96,8 +100,6 @@ export default {
               await Bun.sleep(10)
             }
           }
-          const profile = input.executionTargetProfile.id
-          const scenario = input.scenario.name
           const releaseFailure = process.env.PICKLE_STUDIO_RELEASE_FAILURE
           if (releaseFailure && scenario === 'Pay for the order') {
             while (!(await Bun.file(releaseFailure).exists())) {

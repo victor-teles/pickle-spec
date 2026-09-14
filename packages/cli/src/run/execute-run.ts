@@ -195,6 +195,12 @@ export async function startProjectRun(
     applicationRevision,
     evidencePersistence,
   })
+  try {
+    await input.onRunCreated?.(testRun.id)
+  } catch (error) {
+    await testRun.materialize({ state: 'infrastructure-error' })
+    throw error
+  }
 
   const runWork = () =>
     runProjectWork({ applicationRevision, args, input, root, store, testRun })

@@ -236,10 +236,15 @@ export async function runControlledWebPerformanceBenchmark(
             sourceRunId: `controlled-${runNumber}`,
           },
         })
+        const attempt = finalScenarioAttempt(run.result)
         const expectedMode = mode === 'adaptive' ? 'adaptive' : 'replay'
+        const expectedCacheOutcome = mode === 'adaptive' ? 'refresh' : 'hit'
+        const expectedInferenceCount = mode === 'adaptive' ? 2 : 0
         if (
           run.result.state !== 'passed' ||
-          finalScenarioAttempt(run.result).executionMode !== expectedMode
+          attempt.executionMode !== expectedMode ||
+          attempt.cacheOutcome !== expectedCacheOutcome ||
+          attempt.inferenceCount !== expectedInferenceCount
         ) {
           throw new Error(`Controlled ${mode} benchmark run failed`)
         }

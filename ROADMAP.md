@@ -74,13 +74,13 @@ candidate is not launch-ready on current evidence; see the QA record for details
 - [x] **S2 — Required quality gates.** Pass lint, typecheck, unit, integration,
       browser E2E, release-package acceptance, and Replay performance checks from
       [Release validation](docs/releasing.md). Record failures and skipped tests.
-- [ ] **S3 — Run lifecycle and recovery.** Verify cancellation, interrupted runs,
+- [x] **S3 — Run lifecycle and recovery.** Verify cancellation, interrupted runs,
       provider timeout, browser disconnect, restart, and reconnect. No run may remain
       falsely active or be reported as passed because evidence delivery stopped.
-- [ ] **S4 — Evidence integrity.** Verify redaction across stored files, live events,
+- [x] **S4 — Evidence integrity.** Verify redaction across stored files, live events,
       logs, exports, and imports using synthetic canaries. Check artifact access,
       local-session security, corrupt input handling, and cross-project isolation.
-- [ ] **S5 — Replay correctness.** Exercise hit, miss, divergence, fallback,
+- [x] **S5 — Replay correctness.** Exercise hit, miss, divergence, fallback,
       changed application/profile, retry, and cache-only failure. Assert meaningful
       application outcomes as well as execution mode and inference counts.
 - [ ] **S6 — Packaging and recovery.** Install the seven packed packages in a clean

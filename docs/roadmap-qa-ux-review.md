@@ -115,10 +115,7 @@ smokes skipped because their opt-in environment flags were absent. Log:
 
 Next engineering work, in dependency order:
 
-- **S3:** verify run cancellation, interruption, provider timeout, browser
-  disconnect, process restart, and Studio reconnect without false terminal states.
-- **S4–S6:** complete evidence-integrity, Replay-correctness, and clean-package
-  recovery acceptance for the named candidate.
+- **S6:** complete clean-package recovery acceptance for the named candidate.
 - **U1–U7 / L3:** execute the primary real-target and manual acceptance session,
   then collect external pilot evidence before release sign-off.
 
@@ -159,3 +156,110 @@ S2 is complete for the required controlled gates. The four skipped provisioned
 cases are recorded skips, not target certification. Live target evidence remains
 owned by L3, and exact registry installation remains a post-publication release-owner
 step.
+
+## Run lifecycle and recovery verification
+
+Verified 2026-09-14 on Linux with Bun 1.4.2 at
+`7d79a03c7d84fd0959f4d2170d03671779844d9e` plus the S3 code and test patch,
+whose code-only SHA-256 is
+`5fa84790931fce45b7b65501d82b3949c442020d1b38c95b0fe3097db3997d09`.
+
+QA-04 now covers the complete controlled lifecycle boundary. Existing tests prove
+explicit Studio cancellation, browser cleanup after cancellation, and interactive
+SIGINT recovery with partial persisted/exported evidence. Added CLI integration
+cases inject a provider deadline and browser disconnect, assert both retry attempts,
+exit code 1, an `infrastructure-error` result, and a finalized manifest. The added
+Studio browser case terminates Studio during an active run, restarts it, and verifies
+that the run is no longer active, is finalized as `cancelled`, and remains inspectable
+from history. Abrupt-exit coverage completes one Scenario, holds another, sends
+`SIGKILL`, and restarts Studio. Studio records ownership before execution starts,
+atomically claims only runs whose owner process exited, preserves completed evidence,
+and finalizes the abandoned run as `infrastructure-error` rather than a false pass.
+Concurrent recovery leaves a live owner's run untouched.
+
+| Check                                                                                                 | Result | Evidence and boundary                                                                                                      |
+| ----------------------------------------------------------------------------------------------------- | ------ | -------------------------------------------------------------------------------------------------------------------------- |
+| `bun run test:integration:main -- tests/integration/run/run-live.test.ts`                             | Passed | Seven controlled CLI lifecycle tests, including timeout, disconnect, SIGINT, and finalization.                             |
+| `bun run test -- tests/unit/studio/studio-history.test.ts`                                            | Passed | Five history cases, including live-owner preservation and atomic abandoned-run recovery.                                   |
+| `bun run test:e2e -- tests/e2e/studio/studio.test.ts -t "Studio (shutdown finalizes\|restart marks)"` | Passed | Two Chrome restart/history cases covering graceful cancellation and abrupt-exit infrastructure failure; 30 cases filtered. |
+
+S3 is complete for controlled lifecycle and recovery behavior. Live-provider and
+provisioned-target qualification remains owned by L3. A hard process kill cannot run
+application cleanup, so restart truthfully records an infrastructure error rather
+than graceful cancellation.
+
+## Evidence integrity verification
+
+Verified 2026-09-14 on Linux with Bun 1.4.2 at
+`7d79a03c7d84fd0959f4d2170d03671779844d9e` plus the S4 code and test patch,
+whose code-only SHA-256 is
+`b55d86344904f829671a2768b045f538dfc52ebb19d086661957f6198e281e3b`.
+
+QA-11 now covers the controlled evidence-integrity boundary. The confidentiality
+integration injects unique runtime canaries into successful and deliberately failing
+adapter evidence and removes provider credentials before execution. It requires all
+five requested exports to exist with meaningful result content, then checks live
+NDJSON output, process logs, messages, actions, diagnostics, traces, persisted events
+and manifests, cache databases, and every export. It imports successful and failed
+archives into isolated projects and rescans the imported runs. Existing archive tests
+reject corrupt schemas, inconsistent identifiers,
+unfinished runs, traversal, missing/orphan/invalid payloads, and immutable-run
+overwrites without mutating the destination. The Studio browser test verifies local
+session authentication, untrusted-origin rejection, token removal, and security
+headers.
+
+Artifact-path review found a real defect: lexical containment allowed a symlink under
+one project's artifact directory to resolve to another project's file. Studio now
+fails closed on unresolved paths, opens without following the leaf symlink, verifies
+the opened file's device and inode against its canonical in-project path, and streams
+from that validated file descriptor. Regression tests cover direct cross-project,
+file and directory symlinks, dangling targets, path replacement, and request-level
+responses while normal live captures remain readable.
+
+| Check                                                                                                                                                                                                                              | Result | Evidence and boundary                                                                                                              |
+| ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------ | ---------------------------------------------------------------------------------------------------------------------------------- |
+| `bun run test:integration:confidentiality`                                                                                                                                                                                         | Passed | Successful and failing canaries across live output, returned evidence, storage, five required exports, two imports, and isolation. |
+| `bun run test -- tests/unit/server/studio-artifact-path.test.ts`                                                                                                                                                                   | Passed | Six artifact sandbox tests, including request-level directory/dangling symlinks and replacement denial.                            |
+| `bun run test -- tests/unit/exports/archive/import-safety.test.ts tests/unit/exports/archive/artifact-validation.test.ts tests/unit/exports/archive/payload-validation.test.ts tests/unit/results/store/artifact-identity.test.ts` | Passed | Four files and 14 corrupt-input, immutable-storage, and artifact-integrity cases.                                                  |
+| `bun run test:e2e -- tests/e2e/studio/studio.test.ts -t "Studio protects the local session token and rejects untrusted origins"`                                                                                                   | Passed | One Chrome local-session security case; 30 unrelated cases intentionally filtered.                                                 |
+
+S4 is complete for controlled text evidence, storage, exports/imports, and local
+Studio access. This does not claim visual redaction of arbitrary pixels inside target
+screenshots or qualify a provisioned target; those require target-specific acceptance
+under L3.
+
+## Replay correctness verification
+
+Verified 2026-09-13 on Linux with Bun 1.4.2 at
+`7d79a03c7d84fd0959f4d2170d03671779844d9e` plus the S5 code and test patch,
+whose code-only SHA-256 is
+`81e7384a4f5aae1412c44cc6e4f30ff1b2ae0752cef4c07d52e3d66f658c08bb`.
+
+QA-03 covers Replay correctness from lifecycle contracts through a real Chrome
+checkout. The browser acceptance proves a cold Adaptive pass and zero-inference
+cache hit, cache-only misses after either application revision or target profile
+changes without launching a browser, locator failure and repaired Replay, and a
+meaningful business assertion that remains failed after the locator repair. Runner lifecycle
+tests prove cache miss/hit policy, cache-only divergence without forbidden fallback,
+prefer-cache fallback, and a Replay infrastructure retry in a fresh session with one
+final flaky result. The CLI integration verifies Adaptive, Replay, refresh,
+cache-only, divergence fallback, and uncacheable outcomes at the public NDJSON
+boundary. Web target tests verify configuration changes alter its cache fingerprint.
+
+The controlled web performance fixture now rejects runs whose cache outcome or
+inference count is wrong, matching the existing mobile benchmark contract. The
+combined performance gate therefore measures only valid Adaptive refreshes and
+zero-inference Replay hits.
+
+| Check                                                                                                                                                                                                              | Result | Evidence and boundary                                                                                                           |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------ | ------------------------------------------------------------------------------------------------------------------------------- |
+| `bun run test:e2e -- tests/e2e/acceptance/checkout-acceptance.test.ts`                                                                                                                                             | Passed | Five Chrome cases covering hit, identity misses, locator failure/repair, and meaningful application pass/failure outcomes.      |
+| `bun run test -- tests/unit/execution-cache/lifecycle/replay-fallback.test.ts tests/unit/execution-cache/lifecycle/cache-policy.test.ts tests/unit/execution-cache/lifecycle/prefix-and-scenario-sessions.test.ts` | Passed | Three files and 13 lifecycle cases, including fallback, cache-only denial, and Replay retry with mode/inference assertions.     |
+| `bun run test:integration:main -- tests/integration/workspace/workspace.test.ts -t "runs Adaptive, Replay, refresh, and explicit CI cache-only through the local Execution cache"`                                 | Passed | One CLI policy-matrix case; 49 unrelated cases intentionally filtered.                                                          |
+| `bun run test -- tests/unit/execution-cache/web-execution-cache.test.ts`                                                                                                                                           | Passed | Eight web cache serialization and target-configuration fingerprint cases.                                                       |
+| `bun run test:integration -- tests/integration/benchmarking/web-benchmark-cli.test.ts`                                                                                                                             | Passed | Seven controlled web benchmark entrypoint cases.                                                                                |
+| `bun run benchmark:replay`                                                                                                                                                                                         | Passed | Web p50/p95 ratios 0.314/0.376; mobile 0.528/0.684. Both adapters passed their configured limits with validated Replay results. |
+
+S5 is complete for controlled adapters and the synthetic real-browser checkout.
+Live-provider and provisioned-target correctness remains part of L3 rather than this
+controlled release-candidate gate.

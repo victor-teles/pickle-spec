@@ -64,7 +64,10 @@ export interface PersistedTestRun {
   id: string
   append(event: RunEvent | RunEventPayload): Promise<RunEvent>
   events(): Promise<RunEvent[]>
-  materialize(input?: { finished?: boolean }): Promise<TestRunManifest>
+  materialize(input?: {
+    finished?: boolean
+    state?: TestResultState
+  }): Promise<TestRunManifest>
 }
 
 export interface RetentionPolicy {

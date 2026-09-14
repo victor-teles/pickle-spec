@@ -110,7 +110,7 @@ async function appendPersistedEvent(
 
 async function materializePersistedRun(
   state: PersistedRunState,
-  input?: { finished?: boolean },
+  input?: { finished?: boolean; state?: TestRunManifest['state'] },
 ): Promise<TestRunManifest> {
   const finalized = await finalizedManifest(state)
   if (finalized) return finalized
@@ -124,7 +124,7 @@ async function materializePersistedRun(
       : testRunSchemaVersion,
     id: state.id,
     startedAt: startedAtFrom(recorded, state.startedAt),
-    state: aggregateTestResultState(results),
+    state: input?.state ?? aggregateTestResultState(results),
     results,
   }
   if (!(input?.finished === false)) {
