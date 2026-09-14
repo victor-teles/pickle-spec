@@ -1154,6 +1154,7 @@ export default {
         .poll(() => artifactsTab.getAttribute('aria-selected'))
         .toBe('true')
       await page
+        .getByRole('tabpanel', { name: 'Artifacts', exact: true })
         .getByRole('img', {
           name: 'screenshot from failed result for Pay for the order: Then payment is captured',
         })
@@ -2293,6 +2294,7 @@ Feature: Restart recovery
         }),
       ).toBe(true)
       await page.setViewportSize(desktopViewport)
+      await page.getByRole('button', { name: 'Show Right sidebar' }).waitFor()
       await editSpecification(page)
       expect(
         await page.getByRole('navigation', { name: 'Specifications' }).count(),
