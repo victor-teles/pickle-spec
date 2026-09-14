@@ -44,6 +44,7 @@ bun run test
 bun run test:integration
 bun run test:e2e
 bun run release:check
+bun run release:install-check
 bun run benchmark:replay
 ```
 
@@ -67,6 +68,44 @@ tests and installation of the exact published version remain separate evidence.
 `bun run release:check` verifies lockstep versions, exact package export maps,
 the installed `pickle` executable, the Studio dependency, removal of the legacy
 monolithic package, excluded test sources, and `bun pm pack` for every package.
+It also verifies the repository's MIT license and each package's description,
+license, homepage, source directory, and supported Bun version.
+
+`bun run release:install-check` packs all seven packages and installs the
+artifacts in a clean temporary project. It imports every public entry point,
+runs the installed CLI, starts the packaged Studio build, and requests its HTML.
+It also imports a schema-version 2 run archive, exports it with the current
+package set, and imports that archive into a second isolated project. The
+prepublication project uses local tarball overrides because internal package
+dependencies already refer to the final lockstep version.
+
+## Previous-version recovery
+
+Do not unpublish a broken version. Move the affected dist-tag to the last known
+good version, then verify that exact version in a clean project. For example:
+
+```sh
+npm dist-tag add @pickle-spec/configuration@<previous-version> latest
+npm dist-tag add @pickle-spec/spec@<previous-version> latest
+npm dist-tag add @pickle-spec/runner@<previous-version> latest
+npm dist-tag add @pickle-spec/web@<previous-version> latest
+npm dist-tag add @pickle-spec/mobile@<previous-version> latest
+npm dist-tag add @pickle-spec/studio@<previous-version> latest
+npm dist-tag add @pickle-spec/cli@<previous-version> latest
+
+mkdir pickle-recovery-check && cd pickle-recovery-check
+bun init -y
+bun add --exact @pickle-spec/cli@<previous-version>
+bunx pickle --version
+bunx pickle import /path/to/run.archive.json
+bunx pickle studio --no-open
+```
+
+Move all seven package tags as one operation. If one command fails, stop broad
+distribution and finish the set before announcing recovery. Existing projects
+can pin `@pickle-spec/cli` to the previous version and run `bun install`.
+Run archives remain immutable during import. Keep the source archive until the
+recovered Studio displays the imported run.
 
 ## Provisioned smoke tests
 

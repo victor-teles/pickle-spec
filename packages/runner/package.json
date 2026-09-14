@@ -1,6 +1,14 @@
 {
   "name": "@pickle-spec/runner",
   "version": "1.0.2",
+  "description": "Scheduling, execution, Replay, and test evidence for Pickle Spec",
+  "homepage": "https://github.com/victor-teles/pickle-spec#readme",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/victor-teles/pickle-spec.git",
+    "directory": "packages/runner"
+  },
   "files": [
     "benchmarking.ts",
     "index.ts",
@@ -34,5 +42,8 @@
   },
   "peerDependencies": {
     "vitest": "^5.0.0"
+  },
+  "engines": {
+    "bun": ">=1.4.2"
   }
 }

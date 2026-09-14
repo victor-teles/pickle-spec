@@ -1,6 +1,14 @@
 {
   "name": "@pickle-spec/web",
   "version": "1.0.2",
+  "description": "Stagehand web execution adapter for Pickle Spec",
+  "homepage": "https://github.com/victor-teles/pickle-spec#readme",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/victor-teles/pickle-spec.git",
+    "directory": "packages/web"
+  },
   "files": [
     "index.ts",
     "src/**/*.ts"
@@ -31,5 +39,8 @@
     "typescript": "catalog:",
     "vitest": "catalog:",
     "vitest-mock-extended": "catalog:"
+  },
+  "engines": {
+    "bun": ">=1.4.2"
   }
 }

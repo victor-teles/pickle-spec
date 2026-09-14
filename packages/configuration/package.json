@@ -1,6 +1,14 @@
 {
   "name": "@pickle-spec/configuration",
   "version": "1.0.2",
+  "description": "Configuration schemas and validation for Pickle Spec",
+  "homepage": "https://github.com/victor-teles/pickle-spec#readme",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/victor-teles/pickle-spec.git",
+    "directory": "packages/configuration"
+  },
   "files": [
     "index.ts",
     "src/**/*.ts"
@@ -23,5 +31,8 @@
     "@types/bun": "catalog:",
     "typescript": "catalog:",
     "vitest": "catalog:"
+  },
+  "engines": {
+    "bun": ">=1.4.2"
   }
 }

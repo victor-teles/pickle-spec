@@ -126,12 +126,20 @@ const packageFixtures = [
 async function createReleaseWorkspace(): Promise<string> {
   const root = await mkdtemp(join(tmpdir(), 'pickle-release-packages-'))
   await Bun.write(
+    join(root, 'LICENSE'),
+    'MIT License\n\nCopyright (c) 2026 Victor Mesquita\n',
+  )
+  await Bun.write(
     join(root, 'package.json'),
     `${JSON.stringify({ private: true, workspaces: ['packages/*'] }, null, 2)}\n`,
   )
   for (const [directory, name, exports, dependencies] of packageFixtures) {
     const packageRoot = join(root, 'packages', directory)
     await mkdir(join(packageRoot, 'src'), { recursive: true })
+    await Bun.write(
+      join(packageRoot, 'LICENSE'),
+      'MIT License\n\nCopyright (c) 2026 Victor Mesquita\n',
+    )
     const files = [
       ...new Set(
         Object.values(exports).map((target) => target.replace('./', '')),
@@ -141,6 +149,15 @@ async function createReleaseWorkspace(): Promise<string> {
     const manifest = {
       name,
       version: '1.0.2',
+      description: `${name} release description`,
+      license: 'MIT',
+      homepage: 'https://github.com/victor-teles/pickle-spec#readme',
+      repository: {
+        type: 'git',
+        url: 'git+https://github.com/victor-teles/pickle-spec.git',
+        directory: `packages/${directory}`,
+      },
+      engines: { bun: '>=1.4.2' },
       type: 'module',
       exports,
       publishConfig: { access: 'public' },
@@ -233,6 +250,22 @@ describe('release package acceptance', () => {
       expect(gateIndex).toBeLessThan(preparationIndex)
       expect(steps?.[gateIndex]?.['continue-on-error']).toBeUndefined()
     }
+  })
+
+  test('installs the packed release set before publication', async () => {
+    const steps = await readPublishSteps()
+    const installIndex =
+      steps?.findIndex(
+        (step) => step.name === 'Validate packed installation',
+      ) ?? -1
+    const publicationIndex =
+      steps?.findIndex(
+        (step) => step.name === 'Publish compatible package set',
+      ) ?? -1
+
+    expect(installIndex).toBeGreaterThan(-1)
+    expect(steps?.[installIndex]?.run).toBe('bun run release:install-check')
+    expect(publicationIndex).toBeGreaterThan(installIndex)
   })
 
   test('publishes one compatible package set with curated public entry points', async () => {

@@ -44,6 +44,9 @@ jobs:
       - name: Validate release packages
         run: bun run release:check
 
+      - name: Validate packed installation
+        run: bun run release:install-check
+
       - name: Publish compatible package set
         run: |
           dist_tag="$(bun scripts/release-packages.ts dist-tag "$GITHUB_REF_NAME")"

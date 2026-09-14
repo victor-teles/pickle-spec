@@ -35,6 +35,7 @@
     "docs": "turbo run dev --filter=@pickle-spec/docs",
     "docs:build": "turbo run build --filter=@pickle-spec/docs",
     "release:check": "bun scripts/release-packages.ts validate",
+    "release:install-check": "bun scripts/release-install-acceptance.ts",
     "run:example": "turbo run run:example --filter=@pickle-spec/example",
     "studio": "turbo run studio --filter=@pickle-spec/example",
     "studio:watch": "bun run --cwd apps/example studio:watch"

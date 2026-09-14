@@ -8,6 +8,17 @@ const packageManifestSchema = z
   .object({
     name: z.string().optional(),
     version: z.string().optional(),
+    description: z.string().optional(),
+    license: z.string().optional(),
+    homepage: z.string().optional(),
+    repository: z
+      .object({
+        type: z.string().optional(),
+        url: z.string().optional(),
+        directory: z.string().optional(),
+      })
+      .optional(),
+    engines: z.record(z.string(), z.string()).optional(),
     exports: z.record(z.string(), z.string()).optional(),
     bin: z.record(z.string(), z.string()).optional(),
     files: z.array(z.string()).optional(),
@@ -20,6 +31,12 @@ const packageManifestSchema = z
   .catchall(z.json())
 
 type PackageManifest = z.infer<typeof packageManifestSchema>
+
+type PackedManifest = {
+  manifest: PackageManifest
+  entries: string[]
+  licenseText: string | undefined
+}
 
 type ReleasePackageDefinition = {
   directory: string
@@ -39,6 +56,9 @@ export type ReleasePackageValidation = {
 }
 
 const versionPattern = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/
+const repositoryUrl = 'git+https://github.com/victor-teles/pickle-spec.git'
+const homepageUrl = 'https://github.com/victor-teles/pickle-spec#readme'
+const supportedBunRange = '>=1.4.2'
 
 const releasePackageDefinitions: ReleasePackageDefinition[] = [
   {
@@ -153,7 +173,7 @@ function runCommand(
 async function readPackedManifest(
   root: string,
   definition: ReleasePackageDefinition,
-): Promise<{ manifest: PackageManifest; entries: string[] }> {
+): Promise<PackedManifest> {
   const artifactDirectory = await mkdtemp(
     join(tmpdir(), 'pickle-package-artifact-'),
   )
@@ -184,7 +204,14 @@ async function readPackedManifest(
       .trim()
       .split('\n')
       .filter(Boolean)
-    return { manifest, entries }
+    const licenseText = entries.includes('package/LICENSE')
+      ? runCommand(
+          ['tar', '-xOf', archivePath, 'package/LICENSE'],
+          root,
+          `${definition.name} packed license cannot be read`,
+        )
+      : undefined
+    return { manifest, entries, licenseText }
   } finally {
     await rm(artifactDirectory, { recursive: true, force: true })
   }
@@ -253,7 +280,6 @@ export async function prepareRelease(root: string, tag: string): Promise<void> {
 
 type ReleaseDefinition = (typeof releasePackageDefinitions)[number]
 type ReleaseManifest = Awaited<ReturnType<typeof readManifest>>
-type PackedManifest = Awaited<ReturnType<typeof readPackedManifest>>
 
 function validateSourceManifest(
   definition: ReleaseDefinition,
@@ -277,6 +303,7 @@ function validateSourceManifest(
     manifest.publishConfig?.access === 'public',
     `${definition.name} must publish with public access`,
   )
+  validatePackageMetadata(definition, manifest, 'source manifest')
   assertRelease(
     sameEntries(manifest.exports, definition.exports),
     `${definition.name} exports must match its documented public entry points`,
@@ -284,16 +311,47 @@ function validateSourceManifest(
   return version
 }
 
+function validatePackageMetadata(
+  definition: ReleaseDefinition,
+  manifest: ReleaseManifest,
+  location: string,
+): void {
+  assertRelease(
+    Boolean(manifest.description?.trim()),
+    `${definition.name} ${location} must have a description`,
+  )
+  assertRelease(
+    manifest.license === 'MIT',
+    `${definition.name} ${location} must declare the MIT license`,
+  )
+  assertRelease(
+    manifest.homepage === homepageUrl,
+    `${definition.name} ${location} must link to the project homepage`,
+  )
+  assertRelease(
+    manifest.repository?.type === 'git' &&
+      manifest.repository.url === repositoryUrl &&
+      manifest.repository.directory === definition.directory,
+    `${definition.name} ${location} must identify its source directory`,
+  )
+  assertRelease(
+    manifest.engines?.bun === supportedBunRange,
+    `${definition.name} ${location} must require Bun ${supportedBunRange}`,
+  )
+}
+
 function validatePackedRelease(
   definition: ReleaseDefinition,
   manifest: ReleaseManifest,
   packed: PackedManifest,
   version: string,
+  licenseText: string,
 ): Record<string, string> {
   assertRelease(
     packed.manifest.version === version,
     `${definition.name} package artifact must use version ${version}`,
   )
+  validatePackageMetadata(definition, packed.manifest, 'package artifact')
   assertRelease(
     sameEntries(packed.manifest.exports, definition.exports),
     `${definition.name} package artifact exports do not match its public entry points`,
@@ -301,6 +359,10 @@ function validatePackedRelease(
   assertRelease(
     !packed.entries.some((entry) => /\.test\.[cm]?[jt]sx?$/.test(entry)),
     `${definition.name} package artifact must not include test sources`,
+  )
+  assertRelease(
+    packed.licenseText === licenseText,
+    `${definition.name} package artifact must include the approved MIT license text`,
   )
   const internalNames = Object.keys(manifest.dependencies ?? {}).filter(
     (name) => releasePackageNames.has(name),
@@ -323,6 +385,7 @@ async function validateReleasePackage(
   root: string,
   definition: ReleaseDefinition,
   expectedVersion: string | undefined,
+  licenseText: string,
 ): Promise<{ package: ValidatedReleasePackage; version: string }> {
   const manifest = await readManifest(root, definition.directory)
   const version = validateSourceManifest(definition, manifest, expectedVersion)
@@ -333,6 +396,7 @@ async function validateReleasePackage(
     manifest,
     packed,
     version,
+    licenseText,
   )
   return {
     version,
@@ -368,6 +432,12 @@ async function validateCliRelease(root: string): Promise<void> {
 export async function validateReleasePackages(
   root: string,
 ): Promise<ReleasePackageValidation> {
+  const license = await Bun.file(join(root, 'LICENSE')).text()
+  assertRelease(
+    license.startsWith('MIT License\n') &&
+      license.includes('Copyright (c) 2026 Victor Mesquita'),
+    'The release must include the approved MIT license',
+  )
   const packages: ValidatedReleasePackage[] = []
   let releaseVersion: string | undefined
 
@@ -376,6 +446,7 @@ export async function validateReleasePackages(
       root,
       definition,
       releaseVersion,
+      license,
     )
     releaseVersion = validated.version
     packages.push(validated.package)

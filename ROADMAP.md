@@ -83,7 +83,7 @@ candidate is not launch-ready on current evidence; see the QA record for details
 - [x] **S5 — Replay correctness.** Exercise hit, miss, divergence, fallback,
       changed application/profile, retry, and cache-only failure. Assert meaningful
       application outcomes as well as execution mode and inference counts.
-- [ ] **S6 — Packaging and recovery.** Install the seven packed packages in a clean
+- [x] **S6 — Packaging and recovery.** Install the seven packed packages in a clean
       project; run the CLI and built Studio; test archive handoff. Verify license and
       package metadata, and document previous-version recovery before distribution.
 

@@ -1,6 +1,14 @@
 {
   "name": "@pickle-spec/studio",
   "version": "1.0.2",
+  "description": "Local test authoring and investigation Studio for Pickle Spec",
+  "homepage": "https://github.com/victor-teles/pickle-spec#readme",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/victor-teles/pickle-spec.git",
+    "directory": "packages/studio"
+  },
   "files": [
     "dist",
     "index.ts",
@@ -54,5 +62,8 @@
     "@types/react-dom": "^19.1.9",
     "typescript": "catalog:",
     "vitest": "catalog:"
+  },
+  "engines": {
+    "bun": ">=1.4.2"
   }
 }

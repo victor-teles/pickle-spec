@@ -39,6 +39,9 @@ jobs:
       - name: Release package acceptance
         run: bun run release:check
 
+      - name: Packed installation acceptance
+        run: bun run release:install-check
+
       - name: Replay performance gate
         run: bun run benchmark:replay
 

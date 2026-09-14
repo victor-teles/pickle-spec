@@ -263,3 +263,35 @@ zero-inference Replay hits.
 S5 is complete for controlled adapters and the synthetic real-browser checkout.
 Live-provider and provisioned-target correctness remains part of L3 rather than this
 controlled release-candidate gate.
+
+## Packaging and recovery verification
+
+Verified 2026-09-14 on macOS 27.0 with Bun 1.4.2 at
+`81188724a61d807cd62536b681da32aad94f8788` plus the S6 code, metadata, license,
+and documentation patch. The implementation and license patch SHA-256 is
+`aa900a83a6cc31295abfbfe38b0a51e52cb2558b12e3c57d684d5523f82fe1d4`.
+
+QA-12 now has a prepublication package gate. The gate packs and installs all seven
+packages in a clean temporary project with local tarball overrides. It imports every
+public entry point, runs the installed CLI, starts packaged Studio, and requests its
+built HTML. It imports a schema-version 2 archive, exports it with the candidate, and
+imports the result into a second isolated project. CI and the publish workflow run
+this gate before publication.
+
+The repository and every package now use the MIT license. Each package artifact
+contains the license text and declares its description, homepage, source directory,
+and supported Bun version. Release validation rejects missing or inconsistent
+metadata. The release guide documents dist-tag rollback, exact-version installation,
+archive import, and Studio inspection for previous-version recovery.
+
+| Check                                                                                                                                                                                               | Result | Evidence and boundary                                                                                                               |
+| --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------ | ----------------------------------------------------------------------------------------------------------------------------------- |
+| `bun run release:check`                                                                                                                                                                             | Passed | Seven lockstep artifacts include validated metadata, MIT declarations, license text, export maps, and internal dependency versions. |
+| `bun run release:install-check`                                                                                                                                                                     | Passed | Clean tarball installation, all public imports, CLI 1.0.2, packaged Studio HTML, and two-project archive handoff passed.            |
+| `bunx --bun vitest run --configLoader runner --experimental.viteModuleRunner=false --experimental.nodeLoader=false --config vitest.scripts.config.ts tests/unit/scripts/release-acceptance.test.ts` | Passed | Nine workflow, toolchain, versioning, package-set, and prepublication-install policy cases passed.                                  |
+| `bun run lint`                                                                                                                                                                                      | Passed | Oxlint type-aware checks and Oxfmt passed.                                                                                          |
+| `bun run typecheck`                                                                                                                                                                                 | Passed | Eight Turbo typecheck tasks passed.                                                                                                 |
+
+S6 is complete for packed source artifacts and documented recovery. Exact
+registry-version and dist-tag installation remains a post-publication release-owner
+operation. No npm publication or dist-tag change occurred during this verification.

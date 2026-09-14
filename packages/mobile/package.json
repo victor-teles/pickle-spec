@@ -1,6 +1,14 @@
 {
   "name": "@pickle-spec/mobile",
   "version": "1.0.2",
+  "description": "Android Emulator and iOS Simulator adapter for Pickle Spec",
+  "homepage": "https://github.com/victor-teles/pickle-spec#readme",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/victor-teles/pickle-spec.git",
+    "directory": "packages/mobile"
+  },
   "files": [
     "index.ts",
     "src/**/*.ts"
@@ -30,5 +38,8 @@
     "@types/bun": "catalog:",
     "typescript": "catalog:",
     "vitest": "catalog:"
+  },
+  "engines": {
+    "bun": ">=1.4.2"
   }
 }
