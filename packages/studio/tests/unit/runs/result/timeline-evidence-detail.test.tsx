@@ -100,8 +100,6 @@ test('renders action evidence through the selected timeline entry', () => {
     />,
   )
 
-  expect(markup).toContain('Before target state')
   expect(markup).toContain('Checkout ready')
-  expect(markup).toContain('After target state')
   expect(markup).toContain('Payment submitted')
 })

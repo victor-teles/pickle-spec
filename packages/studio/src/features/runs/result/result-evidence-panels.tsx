@@ -18,6 +18,7 @@ import {
 import { Input } from '../../../components/ui/input'
 import { Label } from '../../../components/ui/label'
 import { studioRouteHref } from '../../studio/studio-route'
+import { EvidenceDetails } from './evidence-details'
 import { ArtifactViewer } from './artifact-viewer'
 import {
   type ArtifactEvidence,
@@ -104,56 +105,17 @@ function Metadata(props: MetadataProps) {
   )
 }
 
-function EvidenceAvailabilityCard(props: {
-  availability: readonly EvidenceAvailability[]
-}) {
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Evidence availability</CardTitle>
-        <CardDescription>
-          What the test run retained for investigation.
-        </CardDescription>
-      </CardHeader>
-      <CardContent>
-        <dl className="space-y-3">
-          {props.availability.map((item) => (
-            <div
-              key={item.kind}
-              className="flex items-start justify-between gap-3"
-            >
-              <dt>{item.kind}</dt>
-              <dd className="text-right text-muted-foreground">
-                {item.state}
-                {item.message ? (
-                  <span className="block">{item.message}</span>
-                ) : null}
-                {item.state !== 'available' ? (
-                  <span className="block">{recoveryGuidance(item.state)}</span>
-                ) : null}
-              </dd>
-            </div>
-          ))}
-        </dl>
-      </CardContent>
-    </Card>
-  )
-}
-
 type ResultOverviewProps = InspectedResult & { inProgress?: boolean }
 
 export function ResultOverview(props: ResultOverviewProps) {
   const { result, attempt, inProgress } = props
   return (
-    <div className="grid gap-3 lg:grid-cols-[minmax(0,2fr)_minmax(16rem,1fr)]">
+    <div className="space-y-3">
       <Card>
         <CardHeader>
           <CardTitle>Scenario attempt</CardTitle>
-          <CardDescription>
-            Canonical result evidence for this Scenario attempt.
-          </CardDescription>
         </CardHeader>
-        <CardContent>
+        <CardContent className="space-y-4">
           <dl className="grid gap-x-6 gap-y-4 sm:grid-cols-2">
             <Metadata
               label="Started"
@@ -172,27 +134,30 @@ export function ResultOverview(props: ResultOverviewProps) {
               value={inProgress ? 'In progress' : `${attempt.durationMs} ms`}
             />
             <Metadata label="Attempt" value={String(attempt.attempt)} />
-            <Metadata
-              label="Execution mode"
-              value={attempt.executionMode ?? 'Not recorded'}
-            />
-            <Metadata
-              label="Cache outcome"
-              value={attempt.cacheOutcome ?? 'Not recorded'}
-            />
-            <Metadata
-              label="Inferences"
-              value={String(attempt.inferenceCount ?? 'Not recorded')}
-            />
-            <Metadata
-              label="Scenario identifier"
-              value={result.scenario.id ?? 'Derived from name'}
-              mono
-            />
           </dl>
+          <EvidenceDetails label="Execution details">
+            <dl className="grid gap-x-6 gap-y-4 sm:grid-cols-2">
+              <Metadata
+                label="Execution mode"
+                value={attempt.executionMode ?? 'Not recorded'}
+              />
+              <Metadata
+                label="Cache outcome"
+                value={attempt.cacheOutcome ?? 'Not recorded'}
+              />
+              <Metadata
+                label="Inferences"
+                value={String(attempt.inferenceCount ?? 'Not recorded')}
+              />
+              <Metadata
+                label="Scenario identifier"
+                value={result.scenario.id ?? 'Derived from name'}
+                mono
+              />
+            </dl>
+          </EvidenceDetails>
         </CardContent>
       </Card>
-      <EvidenceAvailabilityCard availability={attempt.evidenceAvailability} />
     </div>
   )
 }
@@ -316,31 +281,32 @@ export function ResultArtifact(props: ResultArtifactProps) {
           stepText={props.evidence.stepText}
         />
         <div className="space-y-4">
-          <dl className="space-y-3">
-            <Metadata label="Kind" value={artifact.kind} />
-            <Metadata
-              label="File name"
-              value={artifact.name ?? 'Not recorded'}
-              mono
-            />
-            <Metadata
-              label="Media type"
-              value={artifact.mediaType ?? 'Not recorded'}
-            />
-            <Metadata
-              label="File size"
-              value={formatBytes(artifact.sizeBytes)}
-            />
-            <Metadata
-              label="Captured"
-              value={new Date(props.evidence.capturedAt).toLocaleString()}
-            />
-            <Metadata
-              label="Step index"
-              value={String(props.evidence.stepIndex)}
-            />
-            <Metadata label="Persisted path" value={artifact.path} mono />
-          </dl>
+          <EvidenceDetails label="File details">
+            <dl className="space-y-3">
+              <Metadata
+                label="File name"
+                value={artifact.name ?? 'Not recorded'}
+                mono
+              />
+              <Metadata
+                label="Media type"
+                value={artifact.mediaType ?? 'Not recorded'}
+              />
+              <Metadata
+                label="File size"
+                value={formatBytes(artifact.sizeBytes)}
+              />
+              <Metadata
+                label="Captured"
+                value={new Date(props.evidence.capturedAt).toLocaleString()}
+              />
+              <Metadata
+                label="Step index"
+                value={String(props.evidence.stepIndex)}
+              />
+              <Metadata label="Persisted path" value={artifact.path} mono />
+            </dl>
+          </EvidenceDetails>
           <div className="flex flex-wrap gap-2">
             {props.pageHref ? (
               <ButtonLink
@@ -481,30 +447,36 @@ type DiagnosticFilterState = ReturnType<typeof useDiagnosticFilters>
 
 function DiagnosticAvailabilityCards(props: ResultDiagnosticsProps) {
   const availability = diagnosticAvailability(props.availability)
+  const showAvailability =
+    props.availability.find((item) => item.kind === 'diagnostics')?.state !==
+    'available'
+  const unavailableStreams =
+    props.applicationOutputAvailability?.filter(
+      (item) => item.state !== 'available',
+    ) ?? []
   return (
     <>
-      <Card>
-        <CardHeader>
-          <CardTitle>Diagnostics availability</CardTitle>
-          <CardDescription>
-            <span>{availability.description}</span>
-            {availability.recovery ? (
-              <span className="block">{availability.recovery}</span>
-            ) : null}
-          </CardDescription>
-        </CardHeader>
-      </Card>
-      {props.applicationOutputAvailability?.length ? (
+      {showAvailability ? (
+        <Card>
+          <CardHeader>
+            <CardTitle>Diagnostics availability</CardTitle>
+            <CardDescription>
+              <span>{availability.description}</span>
+              {availability.recovery ? (
+                <span className="block">{availability.recovery}</span>
+              ) : null}
+            </CardDescription>
+          </CardHeader>
+        </Card>
+      ) : null}
+      {unavailableStreams.length > 0 ? (
         <Card>
           <CardHeader>
             <CardTitle>Managed application streams</CardTitle>
-            <CardDescription>
-              stdout and stderr are tracked independently for this target.
-            </CardDescription>
           </CardHeader>
           <CardContent>
             <dl className="grid gap-3 sm:grid-cols-2">
-              {props.applicationOutputAvailability.map((item) => (
+              {unavailableStreams.map((item) => (
                 <div key={item.stream} className="space-y-1">
                   <dt className="font-mono text-sm">{item.stream}</dt>
                   <dd className="text-muted-foreground">
@@ -527,9 +499,6 @@ function DiagnosticFiltersCard(props: { state: DiagnosticFilterState }) {
     <Card>
       <CardHeader>
         <CardTitle>Filter Diagnostic entries</CardTitle>
-        <CardDescription>
-          Filters preserve the original chronological order.
-        </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
         <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end">

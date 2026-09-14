@@ -67,10 +67,12 @@ test('renders retry and before-after evidence for one action', () => {
     />,
   )
 
-  expect(markup).toContain('Before target state')
-  expect(markup).toContain('After target state')
+  expect(markup).toContain('Checkout ready')
+  expect(markup).toContain('Payment submitted')
   expect(markup).toContain('Attempt 1 failed')
   expect(markup).toContain('Attempt 2 passed current')
   expect(markup).toContain('Payment request retried')
-  expect(markup).toContain('features/checkout.feature:4')
+  expect(markup).toContain('Source details')
+  expect(markup).not.toContain('features/checkout.feature:4')
+  expect(markup).toContain('aria-expanded="false"')
 })

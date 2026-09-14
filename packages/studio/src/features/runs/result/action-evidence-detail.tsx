@@ -7,23 +7,37 @@ import {
   CardHeader,
   CardTitle,
 } from '../../../components/ui/card'
+import { EvidenceDetails } from './evidence-details'
 import { ArtifactViewer } from './artifact-viewer'
 import type { TimeTravelAction } from './time-travel-inspection'
 
-function ScreenshotSlot(props: {
+function ActionSnapshot(props: {
   action: TimeTravelAction
   position: 'before' | 'after'
   resultState: TestResultState
   scenarioName: string
 }) {
   const screenshot = props.action.evidence?.screenshots[props.position]
+  const target = props.action.evidence?.target[props.position]
+  const before = props.action.evidence?.target.before
+  const showLocation =
+    target?.location &&
+    (props.position === 'before' || target.location !== before?.location)
+  const showSummary =
+    target?.summary &&
+    (props.position === 'before' || target.summary !== before?.summary)
   return (
     <Card>
       <CardHeader>
         <CardTitle className="capitalize">{props.position}</CardTitle>
-        <CardDescription>Action screenshot</CardDescription>
+        {showLocation ? (
+          <CardDescription className="break-words">
+            {target.location}
+          </CardDescription>
+        ) : null}
       </CardHeader>
-      <CardContent>
+      <CardContent className="space-y-3">
+        {showSummary ? <p className="text-sm">{target.summary}</p> : null}
         {screenshot?.state === 'available' ? (
           <ArtifactViewer
             artifact={screenshot.artifact}
@@ -35,7 +49,7 @@ function ScreenshotSlot(props: {
           <p className="text-sm text-muted-foreground">
             {screenshot?.message ??
               screenshot?.state ??
-              'Unavailable in legacy run'}
+              'Screenshot wasn’t recorded.'}
           </p>
         )}
       </CardContent>
@@ -70,47 +84,26 @@ export function ActionEvidenceDetail(props: {
   if (!evidence) {
     return (
       <p className="mt-4 text-sm text-muted-foreground">
-        Legacy schema-v2 action. Exact target state, timing, diagnostics, and
-        screenshots were not recorded.
+        Detailed evidence wasn’t recorded for this action.
       </p>
     )
   }
   return (
     <div className="mt-4 space-y-4">
       <RetryHistory action={props.action} />
-      <Card>
-        <CardHeader>
-          <CardTitle>Before target state</CardTitle>
-          {evidence.target.before.location ? (
-            <CardDescription>{evidence.target.before.location}</CardDescription>
-          ) : null}
-        </CardHeader>
-        <CardContent className="text-sm">
-          {evidence.target.before.summary}
-        </CardContent>
-      </Card>
-      <Card>
-        <CardHeader>
-          <CardTitle>After target state</CardTitle>
-          {evidence.target.after.location ? (
-            <CardDescription>{evidence.target.after.location}</CardDescription>
-          ) : null}
-        </CardHeader>
-        <CardContent className="text-sm">
-          {evidence.target.after.summary}
-        </CardContent>
-      </Card>
-      <ScreenshotSlot {...props} position="before" />
-      <ScreenshotSlot {...props} position="after" />
-      <div className="space-y-2">
-        <p className="break-words font-mono text-xs text-muted-foreground">
-          {evidence.source.uri}
-          {evidence.source.line ? `:${evidence.source.line}` : ''}
-        </p>
-        <pre className="overflow-auto rounded-md bg-muted p-3 text-xs">
-          {evidence.source.excerpt}
-        </pre>
-      </div>
+      <ActionSnapshot {...props} position="before" />
+      <ActionSnapshot {...props} position="after" />
+      <EvidenceDetails label="Source details">
+        <div className="space-y-2">
+          <p className="break-words font-mono text-xs text-muted-foreground">
+            {evidence.source.uri}
+            {evidence.source.line ? `:${evidence.source.line}` : ''}
+          </p>
+          <pre className="overflow-auto rounded-md bg-muted p-3 text-xs">
+            {evidence.source.excerpt}
+          </pre>
+        </div>
+      </EvidenceDetails>
       {evidence.diagnostics.length > 0 ? (
         <div className="space-y-2">
           {evidence.diagnostics.map((diagnostic) => (
