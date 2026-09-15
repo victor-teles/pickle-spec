@@ -59,13 +59,18 @@ async function readPublishSteps(): Promise<PublishWorkflowStep[] | undefined> {
 }
 
 const packageFixtures = [
-  ['configuration', '@pickle-spec/configuration', { '.': './index.ts' }, {}],
+  [
+    'configuration',
+    '@pickle-spec/configuration',
+    { '.': './lib/index.js' },
+    {},
+  ],
   [
     'spec',
     '@pickle-spec/spec',
     {
-      '.': './index.ts',
-      './schemas': './src/authoring/specification-schema.ts',
+      '.': './lib/index.js',
+      './schemas': './lib/src/authoring/specification-schema.js',
     },
     { '@pickle-spec/configuration': 'workspace:*' },
   ],
@@ -73,10 +78,10 @@ const packageFixtures = [
     'runner',
     '@pickle-spec/runner',
     {
-      '.': './index.ts',
-      './benchmarking': './benchmarking.ts',
-      './schemas': './schemas.ts',
-      './testing': './testing.ts',
+      '.': './lib/index.js',
+      './benchmarking': './lib/benchmarking.js',
+      './schemas': './lib/schemas.js',
+      './testing': './lib/testing.js',
     },
     {
       '@pickle-spec/configuration': 'workspace:*',
@@ -86,7 +91,7 @@ const packageFixtures = [
   [
     'web',
     '@pickle-spec/web',
-    { '.': './index.ts' },
+    { '.': './lib/index.js' },
     {
       '@pickle-spec/configuration': 'workspace:*',
       '@pickle-spec/runner': 'workspace:*',
@@ -96,13 +101,13 @@ const packageFixtures = [
   [
     'mobile',
     '@pickle-spec/mobile',
-    { '.': './index.ts' },
+    { '.': './lib/index.js' },
     { '@pickle-spec/runner': 'workspace:*' },
   ],
   [
     'studio',
     '@pickle-spec/studio',
-    { '.': './index.ts' },
+    { '.': './lib/index.js' },
     {
       '@pickle-spec/runner': 'workspace:*',
       '@pickle-spec/spec': 'workspace:*',
@@ -111,7 +116,7 @@ const packageFixtures = [
   [
     'cli',
     '@pickle-spec/cli',
-    { '.': './index.ts' },
+    { '.': './lib/index.js' },
     {
       '@pickle-spec/configuration': 'workspace:*',
       '@pickle-spec/mobile': 'workspace:*',
@@ -144,7 +149,7 @@ async function createReleaseWorkspace(): Promise<string> {
       ...new Set(
         Object.values(exports).map((target) => target.replace('./', '')),
       ),
-      'src/**/*.ts',
+      'lib',
     ]
     const manifest = {
       name,
@@ -157,14 +162,14 @@ async function createReleaseWorkspace(): Promise<string> {
         url: 'git+https://github.com/victor-teles/pickle-spec.git',
         directory: `packages/${directory}`,
       },
-      engines: { bun: '>=1.4.2' },
+      engines: { node: '>=24.0.0' },
       type: 'module',
       exports,
       publishConfig: { access: 'public' },
       files,
       dependencies,
     }
-    const cliManifest = { ...manifest, bin: { pickle: './src/cli.ts' } }
+    const cliManifest = { ...manifest, bin: { pickle: './lib/src/cli.js' } }
     await Bun.write(
       join(packageRoot, 'package.json'),
       `${JSON.stringify(
@@ -178,7 +183,10 @@ async function createReleaseWorkspace(): Promise<string> {
       await Bun.write(join(packageRoot, target), 'export {}\n')
     }
     if (directory === 'cli') {
-      await Bun.write(join(packageRoot, 'src/cli.ts'), '#!/usr/bin/env bun\n')
+      await Bun.write(
+        join(packageRoot, 'lib/src/cli.js'),
+        '#!/usr/bin/env node\n',
+      )
     }
   }
   return root

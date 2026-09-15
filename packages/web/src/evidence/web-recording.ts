@@ -1,5 +1,8 @@
 import type { TestArtifact } from '@pickle-spec/runner'
-import type { FileSink } from 'bun'
+import { spawn } from 'node:child_process'
+import { once } from 'node:events'
+import type { Writable } from 'node:stream'
+import { text } from 'node:stream/consumers'
 import { capturedWebArtifact } from './web-artifact'
 
 export type WebRecording = {
@@ -55,29 +58,37 @@ function browserSafeRecordingArgs(path: string): string[] {
 }
 
 async function writeRecordingFrame(
-  stdin: FileSink,
+  stdin: Writable,
   frame: Uint8Array,
 ): Promise<void> {
-  await stdin.write(frame)
+  await new Promise<void>((resolve, reject) => {
+    stdin.write(frame, (error) => (error ? reject(error) : resolve()))
+  })
 }
 
 export async function startWebRecording(
   input: StartWebRecordingInput,
 ): Promise<WebRecording> {
-  if (!Bun.which('ffmpeg')) {
-    throw new Error('ffmpeg is required to capture a web recording')
-  }
-  const ffmpeg = Bun.spawn(browserSafeRecordingArgs(input.path), {
-    stdin: 'pipe',
-    stdout: 'ignore',
-    stderr: 'pipe',
+  const args = browserSafeRecordingArgs(input.path)
+  const ffmpeg = spawn(args[0] ?? '', args.slice(1), {
+    stdio: ['pipe', 'ignore', 'pipe'],
   })
+  const exited = new Promise<number>((resolve) => {
+    ffmpeg.once('close', (code) => resolve(code ?? 1))
+  })
+  const stderr = text(ffmpeg.stderr)
+  try {
+    await once(ffmpeg, 'spawn')
+  } catch (cause) {
+    throw new Error('ffmpeg is required to capture a web recording', { cause })
+  }
   if (!ffmpeg.stdin) {
     ffmpeg.kill()
     throw new Error('Recording encoder did not accept frame input')
   }
   let stopped = false
   const stdin = ffmpeg.stdin
+  stdin.on('error', () => {})
   let writes = Promise.resolve()
 
   async function nextFrame(): Promise<Uint8Array | undefined> {
@@ -112,10 +123,9 @@ export async function startWebRecording(
       const frame = await nextFrame()
       if (frame) await writeRecordingFrame(stdin, frame)
       void stdin.end()
-      const code = await ffmpeg.exited
+      const code = await exited
       if (code !== 0) {
-        const stderr = await new Response(ffmpeg.stderr).text()
-        throw new Error(stderr.trim() || 'Recording encode failed')
+        throw new Error((await stderr).trim() || 'Recording encode failed')
       }
       return capturedWebArtifact('recording', input.path, 'video/mp4')
     },
@@ -126,7 +136,7 @@ export async function startWebRecording(
       void writes.catch(() => {})
       void stdin.end()
       ffmpeg.kill()
-      await ffmpeg.exited
+      await exited
     },
   }
 }

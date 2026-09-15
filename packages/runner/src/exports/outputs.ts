@@ -1,3 +1,5 @@
+import { readFile } from 'node:fs/promises'
+import { existsSync } from 'node:fs'
 import type {
   RunEvent,
   TestArtifact,
@@ -57,10 +59,10 @@ function resultArtifacts(result: TestResult): TestArtifact[] {
 async function embedArtifact(
   artifact: TestArtifact,
 ): Promise<string | undefined> {
-  const file = Bun.file(artifact.path)
-  if (!(await file.exists())) return undefined
+  const file = artifact.path
+  if (!existsSync(file)) return undefined
 
-  const bytes = Buffer.from(await file.arrayBuffer())
+  const bytes = Buffer.from(await readFile(file))
   const mediaType = artifact.mediaType ?? 'application/octet-stream'
   const href = `data:${mediaType};base64,${bytes.toString('base64')}`
   const kind = escapeXml(artifact.kind)

@@ -1,5 +1,4 @@
-import type { ServerWebSocket } from 'bun'
-import type { StudioSocketData } from '../../server/socket-data'
+import type { StudioSocket } from '../../server/socket-data'
 import {
   liveViewportTargetKey,
   type StudioLiveViewportEvent,
@@ -20,10 +19,10 @@ function isViewportEvent(
 export interface RunEventHub {
   activeRunIds(): readonly string[]
   bufferedEvents(runId: string): readonly StudioRunStreamEvent[]
-  close(socket: ServerWebSocket<StudioSocketData>): void
+  close(socket: StudioSocket): void
   finish(runId: string): void
   markActive(runId: string): void
-  open(socket: ServerWebSocket<StudioSocketData>): void
+  open(socket: StudioSocket): void
   publish(runId: string, event: StudioRunStreamEvent): void
 }
 

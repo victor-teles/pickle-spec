@@ -7,6 +7,7 @@ import type {
   Examples,
   Feature,
   FeatureChild,
+  GherkinDocument,
   Location,
   RuleChild,
   Scenario,
@@ -45,7 +46,10 @@ export interface IdentityNode {
   pickleIdValue?: string
 }
 
-export function parseIdentityDocument(source: string, language = 'en') {
+export function parseIdentityDocument(
+  source: string,
+  language = 'en',
+): GherkinDocument {
   return new Parser(
     new AstBuilder(IdGenerator.incrementing()),
     new GherkinClassicTokenMatcher(language),

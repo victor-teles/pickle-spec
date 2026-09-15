@@ -1,4 +1,4 @@
-import { mkdir, open, rm, stat } from 'node:fs/promises'
+import { mkdir, open, rm, stat, readFile, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import {
   openTestRunStore,
@@ -35,9 +35,7 @@ interface PreparedArchiveImport {
 async function prepareArchiveImport(
   input: ImportRunArchiveInput,
 ): Promise<PreparedArchiveImport> {
-  const originalBytes = new Uint8Array(
-    await Bun.file(input.archivePath).arrayBuffer(),
-  )
+  const originalBytes = new Uint8Array(await readFile(input.archivePath))
   const archive = parseRunArchive(
     JSON.parse(new TextDecoder().decode(originalBytes)),
   )
@@ -108,7 +106,7 @@ async function writeImportedArtifacts(
   const pathMap = new Map<string, string>()
   for (const artifact of artifacts) {
     await mkdir(dirname(artifact.target), { recursive: true })
-    await Bun.write(
+    await writeFile(
       artifact.target,
       decodeBase64(artifact.content, artifact.path),
     )
@@ -145,11 +143,11 @@ export async function importRunArchive(
       ),
     }
 
-    await Bun.write(
+    await writeFile(
       join(runDirectory, 'events.ndjson'),
       `${events.map((event) => JSON.stringify(event)).join('\n')}\n`,
     )
-    await Bun.write(
+    await writeFile(
       join(runDirectory, 'manifest.json'),
       `${JSON.stringify(manifest, null, 2)}\n`,
     )

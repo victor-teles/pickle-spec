@@ -1,4 +1,6 @@
-import { join, resolve } from 'node:path'
+import { mkdir, readFile, writeFile } from 'node:fs/promises'
+import { existsSync } from 'node:fs'
+import { dirname, join, resolve } from 'node:path'
 import {
   optionalPositiveInteger,
   optionalString,
@@ -510,20 +512,18 @@ export async function loadConfig(
 ): Promise<PickleConfig> {
   const selectedPath =
     configPath ??
-    ((await Bun.file(join(root, defaultConfigFile)).exists())
-      ? defaultConfigFile
-      : undefined)
+    (existsSync(join(root, defaultConfigFile)) ? defaultConfigFile : undefined)
   if (!selectedPath) return { schemaVersion: 1 }
   if (!selectedPath.endsWith('.jsonc') && !selectedPath.endsWith('.json')) {
     throw new Error('Configuration must use pickle.config.jsonc')
   }
   const absolutePath = resolve(root, selectedPath)
-  if (!(await Bun.file(absolutePath).exists())) {
+  if (!existsSync(absolutePath)) {
     throw new Error(`Configuration file not found: ${selectedPath}`)
   }
 
   try {
-    return validateConfig(parseJsonc(await Bun.file(absolutePath).text()))
+    return validateConfig(parseJsonc(await readFile(absolutePath, 'utf8')))
   } catch (error) {
     const reason = error instanceof Error ? error.message : String(error)
     throw new Error(
@@ -543,7 +543,8 @@ export async function saveConfig(
     throw new Error('Configuration must use pickle.config.jsonc')
   }
   validateConfig(config)
-  await Bun.write(
+  await mkdir(dirname(resolve(root, selectedPath)), { recursive: true })
+  await writeFile(
     resolve(root, selectedPath),
     `${JSON.stringify(config, null, 2)}\n`,
   )

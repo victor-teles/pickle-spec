@@ -1,4 +1,5 @@
-import { mkdir } from 'node:fs/promises'
+import { existsSync } from 'node:fs'
+import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { dirname, join, resolve } from 'node:path'
 import type { RunEvent, TestRunSchemaVersion } from '../execution/run-scenario'
 import { parseTestRunManifest } from '../results/test-run-schema'
@@ -76,12 +77,12 @@ async function loadRunFiles(
     runId,
   )
   const manifestPath = join(runDirectory, 'manifest.json')
-  if (!(await Bun.file(manifestPath).exists())) {
+  if (!existsSync(manifestPath)) {
     throw new Error(`Test run "${runId}" must be finalized before export`)
   }
   const manifest = parseTestRunManifest((version): never => {
     throw new Error(`Test run storage schema version ${version} is unsupported`)
-  })(await Bun.file(manifestPath).json())
+  })(JSON.parse(await readFile(manifestPath, 'utf8')))
   assertFinalizedManifest(manifest)
   return { runDirectory, manifest, events }
 }
@@ -102,13 +103,13 @@ export async function writeRunArchive(
     pathMap.get(resolve(path)) ?? containedArtifactPath(runDirectory, path)
   const artifacts: RunArchiveArtifact[] = []
   for (const item of collected) {
-    const file = Bun.file(item.absolutePath)
-    if (!(await file.exists())) {
+    const file = item.absolutePath
+    if (!existsSync(file)) {
       throw new Error(`Artifact source file is missing: ${item.absolutePath}`)
     }
     artifacts.push({
       path: item.archivePath,
-      content: Buffer.from(await file.arrayBuffer()).toString('base64'),
+      content: Buffer.from(await readFile(file)).toString('base64'),
       mediaType: item.mediaType,
     })
   }
@@ -127,12 +128,12 @@ export async function writeRunArchive(
   }
   assertArchiveArtifactPayloads(archive)
   await mkdir(dirname(input.outputPath), { recursive: true })
-  await Bun.write(input.outputPath, `${JSON.stringify(archive, null, 2)}\n`)
+  await writeFile(input.outputPath, `${JSON.stringify(archive, null, 2)}\n`)
   return archive
 }
 
 export async function readRunArchive(path: string): Promise<RunArchive> {
-  const parsed: unknown = JSON.parse(await Bun.file(path).text())
+  const parsed: unknown = JSON.parse(await readFile(path, 'utf8'))
   const archive = parseRunArchive(parsed)
   assertConsistentRunArchive(archive)
   assertArchiveArtifactPayloads(archive)

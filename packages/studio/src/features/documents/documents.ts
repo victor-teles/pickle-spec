@@ -1,4 +1,9 @@
-import { watch } from 'node:fs'
+import { dirname } from 'node:path'
+import { matchesGlob } from 'node:path'
+import { glob, mkdir, stat } from 'node:fs/promises'
+import { createHash } from 'node:crypto'
+import { readFile, writeFile } from 'node:fs/promises'
+import { watch, existsSync } from 'node:fs'
 import { relative, resolve, sep } from 'node:path'
 import {
   applySpecificationMetadata,
@@ -82,7 +87,7 @@ export interface SpecificationWorkspace {
 }
 
 function revisionFor(source: string): string {
-  const hasher = new Bun.CryptoHasher('sha256')
+  const hasher = createHash('sha256')
   hasher.update(source)
   return hasher.digest('hex').slice(0, 16)
 }
@@ -112,7 +117,7 @@ function resolveSpecificationUri(
   }
   const relativeUri = relative(state.root, resolved).replaceAll('\\', '/')
   const matches = state.globs.some((pattern) =>
-    new Bun.Glob(pattern).match(relativeUri),
+    matchesGlob(relativeUri, pattern),
   )
   if (!matches) {
     throw new Error(
@@ -146,14 +151,14 @@ async function validateWriteTarget(
   input: { uri: string; expectedRevision?: string; create?: boolean },
 ): Promise<string> {
   const path = resolveSpecificationUri(state, input.uri)
-  const file = Bun.file(path)
-  const exists = await file.exists()
+  const file = path
+  const exists = existsSync(file)
   if (!exists) {
     if (!input.create)
       throw new Error(`Specification ${input.uri} was not found`)
     return path
   }
-  const diskSource = await file.text()
+  const diskSource = await readFile(file, 'utf8')
   const revision = revisionFor(diskSource)
   if (
     input.create ||
@@ -168,12 +173,12 @@ async function validateWriteTarget(
 async function scanSpecifications(state: SpecificationWorkspaceState) {
   const current = new Map<string, { source: string; revision: string }>()
   for (const pattern of state.globs) {
-    for await (const path of new Bun.Glob(pattern).scan({
+    for await (const path of glob(pattern, {
       cwd: state.root,
-      onlyFiles: true,
     })) {
+      if (!(await stat(resolve(state.root, path))).isFile()) continue
       const uri = path.replaceAll('\\', '/')
-      const source = await Bun.file(resolve(state.root, uri)).text()
+      const source = await readFile(resolve(state.root, uri), 'utf8')
       current.set(uri, { source, revision: revisionFor(source) })
     }
   }
@@ -256,12 +261,11 @@ async function collectCompletions(
   tags: Set<string>,
   steps: Set<string>,
 ): Promise<void> {
-  for await (const path of new Bun.Glob(pattern).scan({
+  for await (const path of glob(pattern, {
     cwd: state.root,
-    onlyFiles: true,
   })) {
     const catalog = catalogFromSource(
-      await Bun.file(resolve(state.root, path)).text(),
+      await readFile(resolve(state.root, path), 'utf8'),
     )
     for (const tag of catalog.tags) tags.add(tag)
     for (const step of catalog.steps) steps.add(step)
@@ -280,11 +284,11 @@ export function createSpecificationWorkspace(
   return {
     async read(uri) {
       const path = resolveSpecificationUri(state, uri)
-      const file = Bun.file(path)
-      if (!(await file.exists())) {
+      const file = path
+      if (!existsSync(file)) {
         throw new Error(`Specification ${uri} was not found`)
       }
-      return specificationBuffer(state, uri, await file.text())
+      return specificationBuffer(state, uri, await readFile(file, 'utf8'))
     },
 
     preview(input) {
@@ -298,7 +302,8 @@ export function createSpecificationWorkspace(
         source: input.source,
         language: state.language,
       })
-      await Bun.write(path, source)
+      await mkdir(dirname(path), { recursive: true })
+      await writeFile(path, source)
       return specificationBuffer(state, input.uri, source)
     },
 

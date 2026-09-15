@@ -1,13 +1,12 @@
-import type { ServerWebSocket } from 'bun'
 import type {
-  StudioSocketData,
+  StudioSocket,
   WorkspaceStreamEvent,
 } from '../../server/socket-data'
 import type { DiskChangeEvent } from './documents'
 
 export interface WorkspaceEventHub {
-  close(socket: ServerWebSocket<StudioSocketData>): void
-  open(socket: ServerWebSocket<StudioSocketData>): void
+  close(socket: StudioSocket): void
+  open(socket: StudioSocket): void
   publish(event: DiskChangeEvent): void
 }
 

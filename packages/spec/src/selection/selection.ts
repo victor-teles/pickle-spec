@@ -1,3 +1,4 @@
+import { matchesGlob } from 'node:path'
 import {
   optionalString,
   configurationParser,
@@ -103,9 +104,7 @@ export const selectionOptionsSchema = strictObject('selection', {
 })
 
 function matchesPath(uri: string, pattern: string): boolean {
-  return new Bun.Glob(pattern.replaceAll('\\', '/')).match(
-    uri.replaceAll('\\', '/'),
-  )
+  return matchesGlob(uri.replaceAll('\\', '/'), pattern.replaceAll('\\', '/'))
 }
 
 function assertShard(shard: Shard): void {

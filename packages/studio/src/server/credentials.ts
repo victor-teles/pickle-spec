@@ -1,4 +1,6 @@
-import { mkdir } from 'node:fs/promises'
+import { spawnSync } from 'node:child_process'
+import { existsSync } from 'node:fs'
+import { mkdir, writeFile, readFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 
@@ -14,13 +16,13 @@ export function createDirectoryCredentialStore(
   directory: string,
 ): CredentialStore {
   function fileFor(account: string) {
-    return Bun.file(join(directory, encodeURIComponent(account)))
+    return join(directory, encodeURIComponent(account))
   }
 
   async function get(account: string): Promise<string | undefined> {
     const file = fileFor(account)
-    if (!(await file.exists())) return undefined
-    const value = (await file.text()).trim()
+    if (!existsSync(file)) return undefined
+    const value = (await readFile(file, 'utf8')).trim()
     return value || undefined
   }
 
@@ -28,7 +30,7 @@ export function createDirectoryCredentialStore(
     get,
     async set(account, secret) {
       await mkdir(directory, { recursive: true })
-      await Bun.write(fileFor(account), secret)
+      await writeFile(fileFor(account), secret)
     },
     async has(account) {
       return (await get(account)) !== undefined
@@ -39,27 +41,19 @@ export function createDirectoryCredentialStore(
 function keychainStore(): CredentialStore {
   return {
     async get(account): Promise<string | undefined> {
-      const result = Bun.spawnSync({
-        cmd: [
-          'security',
-          'find-generic-password',
-          '-s',
-          service,
-          '-a',
-          account,
-          '-w',
-        ],
-        stdout: 'pipe',
-        stderr: 'pipe',
-      })
-      if (result.exitCode !== 0) return undefined
-      const value = result.stdout.toString().trim()
+      const result = spawnSync(
+        'security',
+        ['find-generic-password', '-s', service, '-a', account, '-w'],
+        { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] },
+      )
+      if (result.status !== 0) return undefined
+      const value = (result.stdout ?? '').trim()
       return value || undefined
     },
     async set(account, secret) {
-      const result = Bun.spawnSync({
-        cmd: [
-          'security',
+      const result = spawnSync(
+        'security',
+        [
           'add-generic-password',
           '-s',
           service,
@@ -69,12 +63,12 @@ function keychainStore(): CredentialStore {
           secret,
           '-U',
         ],
-        stdout: 'pipe',
-        stderr: 'pipe',
-      })
-      if (result.exitCode !== 0) {
+        { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] },
+      )
+      if (result.status !== 0) {
         throw new Error(
-          result.stderr.toString().trim() || 'Unable to store credential',
+          (result.stderr ?? result.error?.message ?? '').trim() ||
+            'Unable to store credential',
         )
       }
     },

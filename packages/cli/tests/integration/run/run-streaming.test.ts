@@ -69,14 +69,14 @@ export default {
       return {
         async executeStep(step, signal) {
           const gateName = step.text
-          await Bun.write(\`\${gateDirectory}/\${gateName}.started\`, '')
-          while (!(await Bun.file(\`\${gateDirectory}/\${gateName}.release\`).exists())) {
+          await (await import('node:fs/promises')).writeFile(\`\${gateDirectory}/\${gateName}.started\`, '')
+          while (!(await (await import('node:fs')).existsSync(\`\${gateDirectory}/\${gateName}.release\`))) {
             if (signal?.aborted) {
               throw new DOMException('Scenario cancelled', 'AbortError')
             }
-            await Bun.sleep(5)
+            await (await import('node:timers/promises')).setTimeout(5)
           }
-          await Bun.write(\`\${gateDirectory}/\${gateName}.finished\`, '')
+          await (await import('node:fs/promises')).writeFile(\`\${gateDirectory}/\${gateName}.finished\`, '')
           return { state: 'passed', resolvedActions: [] }
         },
         async close() {},

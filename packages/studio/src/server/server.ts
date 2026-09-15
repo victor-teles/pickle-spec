@@ -1,22 +1,11 @@
-import type { ServerWebSocket } from 'bun'
-import { type Server, type ServerOptions, serve as serveBunHost } from 'srvx'
+import { spawn } from 'node:child_process'
+import type { Server as HttpServer } from 'node:http'
+import { serve } from 'srvx/node'
 import type { StudioOptions, StudioServer } from './contracts'
-import {
-  createStudioRequestHandler,
-  type StudioRequestHandler,
-} from './request-handler'
-import { createStudioRuntime, type StudioRuntime } from './runtime'
+import { createStudioRequestHandler } from './request-handler'
+import { createStudioRuntime } from './runtime'
 import type { StudioSocketData } from './socket-data'
-
-type BunStudioServerOptions = Omit<ServerOptions, 'fetch' | 'bun'> & {
-  bun: NonNullable<ServerOptions['bun']>
-  fetch: StudioRequestHandler
-}
-
-// Bun accepts an empty response after upgrading a request to a WebSocket.
-declare module 'srvx' {
-  function serve(options: BunStudioServerOptions): Server
-}
+import { attachStudioWebSockets } from './websocket'
 
 export type * from './contracts'
 
@@ -39,46 +28,14 @@ function studioHostname(options: StudioOptions): string {
 }
 
 function openBrowser(url: string): void {
-  if (process.platform === 'darwin') {
-    Bun.spawn(['open', url], { stdout: 'ignore', stderr: 'ignore' })
-    return
-  }
-  if (process.platform === 'win32') {
-    Bun.spawn(['cmd', '/c', 'start', '', url], {
-      stdout: 'ignore',
-      stderr: 'ignore',
-    })
-    return
-  }
-  Bun.spawn(['xdg-open', url], { stdout: 'ignore', stderr: 'ignore' })
-}
-
-function websocketHandlers(runtime: StudioRuntime) {
-  return {
-    open(socket: ServerWebSocket<StudioSocketData>) {
-      runtime.openSocket(socket)
-    },
-    message() {},
-    close(socket: ServerWebSocket<StudioSocketData>) {
-      runtime.closeSocket(socket)
-    },
-  }
-}
-
-function startServer(
-  options: StudioOptions,
-  hostname: string,
-  runtime: StudioRuntime,
-  requestHandler: StudioRequestHandler,
-) {
-  return serveBunHost({
-    hostname,
-    port: options.port ?? 0,
-    gracefulShutdown: false,
-    silent: true,
-    bun: { websocket: websocketHandlers(runtime) },
-    fetch: requestHandler,
-  })
+  let command = ['xdg-open', url]
+  if (process.platform === 'darwin') command = ['open', url]
+  if (process.platform === 'win32') command = ['cmd', '/c', 'start', '', url]
+  const child = spawn(command[0] ?? '', command.slice(1), { stdio: 'ignore' })
+  child.once('error', (error) =>
+    console.warn(`Unable to open Studio browser: ${error.message}`),
+  )
+  child.unref()
 }
 
 export async function startStudio(
@@ -86,23 +43,54 @@ export async function startStudio(
 ): Promise<StudioServer> {
   const hostname = studioHostname(options)
   const token = options.token ?? crypto.randomUUID()
-  const runtime = await createStudioRuntime(options)
-  const requestHandler = createStudioRequestHandler({
-    hostname,
-    runtime,
-    token,
+  const upgrades = new WeakMap<Request, StudioSocketData>()
+  const runtime = await createStudioRuntime(options, (request, data) => {
+    if (request.headers.get('upgrade')?.toLowerCase() !== 'websocket') {
+      return new Response('WebSocket upgrade required', { status: 400 })
+    }
+    upgrades.set(request, data)
+    return
   })
-  const server = startServer(options, hostname, runtime, requestHandler)
-
-  await server.ready()
-  if (!server.url) throw new Error('Studio server did not expose a URL')
-  const url = `${new URL(server.url).origin}/?token=${token}`
+  const origin = () => {
+    if (!server.url) throw new Error('Studio server did not expose a URL')
+    return new URL(server.url).origin
+  }
+  const requestHandler = createStudioRequestHandler({ runtime, token, origin })
+  const server = serve({
+    hostname,
+    port: options.port ?? 0,
+    gracefulShutdown: false,
+    silent: true,
+    fetch: async (request) =>
+      (await requestHandler(request)) ??
+      new Response('Invalid upgrade', { status: 400 }),
+  })
+  const httpServer = server.node?.server
+  if (!httpServer) {
+    runtime.stop()
+    throw new Error('Studio Node.js server is unavailable')
+  }
+  const closeSockets = attachStudioWebSockets(
+    httpServer as HttpServer,
+    origin,
+    requestHandler,
+    runtime,
+    upgrades,
+  )
+  try {
+    await server.ready()
+  } catch (error) {
+    closeSockets()
+    runtime.stop()
+    throw error
+  }
+  const url = `${origin()}/?token=${token}`
   if (options.open) openBrowser(url)
-
   return {
     url,
     token,
     stop() {
+      closeSockets()
       runtime.stop()
       void server.close(true)
     },

@@ -684,14 +684,14 @@ export default {
         async executeStep(_step, signal) {
           if (
             input.mode === 'adaptive' &&
-            await Bun.file(${JSON.stringify(blockRefresh)}).exists()
+            await (await import('node:fs')).existsSync(${JSON.stringify(blockRefresh)})
           ) {
-            await Bun.write(${JSON.stringify(refreshStarted)}, 'started')
-            while (!(await Bun.file(${JSON.stringify(releaseRefresh)}).exists())) {
+            await (await import('node:fs/promises')).writeFile(${JSON.stringify(refreshStarted)}, 'started')
+            while (!(await (await import('node:fs')).existsSync(${JSON.stringify(releaseRefresh)}))) {
               if (signal?.aborted) {
                 throw new DOMException('Scenario cancelled', 'AbortError')
               }
-              await Bun.sleep(10)
+              await (await import('node:timers/promises')).setTimeout(10)
             }
           }
           return { state: 'passed', resolvedActions: [] }
@@ -702,7 +702,7 @@ export default {
             replayRepresentation: {
               cacheable: true,
               adapterPayload: {
-                operations: [await Bun.file(${JSON.stringify(payloadVersion)}).text()],
+                operations: [await (await import('node:fs/promises')).readFile(${JSON.stringify(payloadVersion)}, 'utf8')],
               },
               requiredVariables: [],
             },
@@ -1236,7 +1236,7 @@ const adapter = (configuredProfile) => ({
     }]
   },
   async openSession(input) {
-    await Bun.write(${JSON.stringify(sessionMarker)}, 'opened')
+    await (await import('node:fs/promises')).writeFile(${JSON.stringify(sessionMarker)}, 'opened')
     return {
       async executeStep(step) {
         const profile = input.executionTargetProfile.id

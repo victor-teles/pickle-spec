@@ -1,4 +1,5 @@
-import { appendFile, rm } from 'node:fs/promises'
+import { existsSync } from 'node:fs'
+import { appendFile, rm, readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { RunEvent, RunEventPayload } from '../../execution/run-scenario'
 import {
@@ -55,9 +56,9 @@ export interface PersistedTestRunOptions {
 async function finalizedManifest(
   state: PersistedRunState,
 ): Promise<TestRunManifest | undefined> {
-  if (!(await Bun.file(state.manifestPath).exists())) return undefined
+  if (!existsSync(state.manifestPath)) return undefined
   const manifest = parseTestRunManifest(state.incompatibleSchema)(
-    await Bun.file(state.manifestPath).json(),
+    JSON.parse(await readFile(state.manifestPath, 'utf8')),
   )
   return manifest.finishedAt ? manifest : undefined
 }
@@ -139,7 +140,7 @@ async function materializePersistedRun(
   if (state.metadata.applicationRevision) {
     manifest.applicationRevision = state.metadata.applicationRevision
   }
-  await Bun.write(state.manifestPath, `${JSON.stringify(manifest, null, 2)}\n`)
+  await writeFile(state.manifestPath, `${JSON.stringify(manifest, null, 2)}\n`)
   await state.onMaterialize(manifest)
   return manifest
 }
@@ -184,8 +185,8 @@ export async function readEvents(
   path: string,
   incompatibleSchema: (version: string) => never,
 ): Promise<RunEvent[]> {
-  if (!(await Bun.file(path).exists())) return []
-  const source = await Bun.file(path).text()
+  if (!existsSync(path)) return []
+  const source = await readFile(path, 'utf8')
   return source
     .split('\n')
     .filter((line) => line.length > 0)

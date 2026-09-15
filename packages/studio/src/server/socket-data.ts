@@ -1,6 +1,11 @@
 import type { DiskChangeEvent } from '../features/documents/documents'
 import type { StudioRunStreamEvent } from '../features/runs/run.contracts'
 
+export interface StudioSocket {
+  data: StudioSocketData
+  send(message: string): void
+}
+
 export type WorkspaceStreamEvent = DiskChangeEvent & { type: 'disk-changed' }
 
 export type StudioSocketData =

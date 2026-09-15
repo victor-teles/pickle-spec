@@ -89,24 +89,24 @@ export default {
           const scenario = input.scenario.name
           const gatedScenario = process.env.PICKLE_STUDIO_GATE_SCENARIO
           const shouldGate = !gatedScenario || scenario === gatedScenario
-          if (marker && shouldGate && !(await Bun.file(marker).exists())) {
-            await Bun.write(marker, 'started')
+          if (marker && shouldGate && !(await (await import('node:fs')).existsSync(marker))) {
+            await (await import('node:fs/promises')).writeFile(marker, 'started')
           }
           if (gate && shouldGate) {
-            while (!(await Bun.file(gate).exists())) {
+            while (!(await (await import('node:fs')).existsSync(gate))) {
               if (signal?.aborted) {
                 throw new DOMException('Scenario cancelled', 'AbortError')
               }
-              await Bun.sleep(10)
+              await (await import('node:timers/promises')).setTimeout(10)
             }
           }
           const releaseFailure = process.env.PICKLE_STUDIO_RELEASE_FAILURE
           if (releaseFailure && scenario === 'Pay for the order') {
-            while (!(await Bun.file(releaseFailure).exists())) {
+            while (!(await (await import('node:fs')).existsSync(releaseFailure))) {
               if (signal?.aborted) {
                 throw new DOMException('Scenario cancelled', 'AbortError')
               }
-              await Bun.sleep(10)
+              await (await import('node:timers/promises')).setTimeout(10)
             }
           }
           if (scenario === 'Pay for the order' && profile === 'chrome') {

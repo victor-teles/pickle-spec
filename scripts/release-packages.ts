@@ -58,51 +58,51 @@ export type ReleasePackageValidation = {
 const versionPattern = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/
 const repositoryUrl = 'git+https://github.com/victor-teles/pickle-spec.git'
 const homepageUrl = 'https://github.com/victor-teles/pickle-spec#readme'
-const supportedBunRange = '>=1.4.2'
+const supportedNodeRange = '>=24.0.0'
 
 const releasePackageDefinitions: ReleasePackageDefinition[] = [
   {
     directory: 'packages/configuration',
     name: '@pickle-spec/configuration',
-    exports: { '.': './index.ts' },
+    exports: { '.': './lib/index.js' },
   },
   {
     directory: 'packages/spec',
     name: '@pickle-spec/spec',
     exports: {
-      '.': './index.ts',
-      './schemas': './src/authoring/specification-schema.ts',
+      '.': './lib/index.js',
+      './schemas': './lib/src/authoring/specification-schema.js',
     },
   },
   {
     directory: 'packages/runner',
     name: '@pickle-spec/runner',
     exports: {
-      '.': './index.ts',
-      './benchmarking': './benchmarking.ts',
-      './schemas': './schemas.ts',
-      './testing': './testing.ts',
+      '.': './lib/index.js',
+      './benchmarking': './lib/benchmarking.js',
+      './schemas': './lib/schemas.js',
+      './testing': './lib/testing.js',
     },
   },
   {
     directory: 'packages/web',
     name: '@pickle-spec/web',
-    exports: { '.': './index.ts' },
+    exports: { '.': './lib/index.js' },
   },
   {
     directory: 'packages/mobile',
     name: '@pickle-spec/mobile',
-    exports: { '.': './index.ts' },
+    exports: { '.': './lib/index.js' },
   },
   {
     directory: 'packages/studio',
     name: '@pickle-spec/studio',
-    exports: { '.': './index.ts' },
+    exports: { '.': './lib/index.js' },
   },
   {
     directory: 'packages/cli',
     name: '@pickle-spec/cli',
-    exports: { '.': './index.ts' },
+    exports: { '.': './lib/index.js' },
   },
 ]
 
@@ -335,8 +335,8 @@ function validatePackageMetadata(
     `${definition.name} ${location} must identify its source directory`,
   )
   assertRelease(
-    manifest.engines?.bun === supportedBunRange,
-    `${definition.name} ${location} must require Bun ${supportedBunRange}`,
+    manifest.engines?.node === supportedNodeRange,
+    `${definition.name} ${location} must require Node.js ${supportedNodeRange}`,
   )
 }
 
@@ -411,17 +411,19 @@ async function validateReleasePackage(
 async function validateCliRelease(root: string): Promise<void> {
   const cli = await readManifest(root, 'packages/cli')
   assertRelease(
-    cli.bin?.pickle === './src/cli.ts',
+    cli.bin?.pickle === './lib/src/cli.js',
     '@pickle-spec/cli must install the pickle executable',
   )
   assertRelease(
     cli.dependencies?.['@pickle-spec/studio'] === 'workspace:*',
     '@pickle-spec/cli must install Studio for the pickle studio command',
   )
-  const cliSource = await Bun.file(join(root, 'packages/cli/src/cli.ts')).text()
+  const cliSource = await Bun.file(
+    join(root, 'packages/cli/lib/src/cli.js'),
+  ).text()
   assertRelease(
-    cliSource.startsWith('#!/usr/bin/env bun'),
-    'The pickle executable must declare the Bun runtime',
+    cliSource.startsWith('#!/usr/bin/env node'),
+    'The pickle executable must declare the Node.js runtime',
   )
   assertRelease(
     !(await Bun.file(join(root, 'packages/pickle-spec/package.json')).exists()),

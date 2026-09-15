@@ -6,7 +6,7 @@ import type { StudioRuntime } from './runtime'
 const sessionCookie = 'pickle_studio_token'
 
 interface RequestHandlerOptions {
-  hostname: string
+  origin(): string
   runtime: StudioRuntime
   token: string
 }
@@ -20,10 +20,6 @@ interface RequestContext {
 export type StudioRequestHandler = (
   request: ServerRequest,
 ) => Promise<Response | undefined>
-
-function browserHostname(hostname: string): string {
-  return hostname.includes(':') ? `[${hostname}]` : hostname
-}
 
 function requestToken(request: Request): string | undefined {
   const authorization = request.headers.get('authorization')
@@ -59,12 +55,8 @@ class StudioRequestRouter {
   }
 
   private context(request: ServerRequest): RequestContext | Response {
-    const localServer = request.runtime?.bun?.server
-    if (!localServer) {
-      return new Response('Studio server unavailable', { status: 500 })
-    }
     return {
-      origin: `http://${browserHostname(this.options.hostname)}:${localServer.port}`,
+      origin: this.options.origin(),
       request,
       url: new URL(request.url),
     }

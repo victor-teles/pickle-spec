@@ -10,15 +10,17 @@ Pickle Spec runs Gherkin Specifications against web and native applications. The
 
 ## Get started
 
+Install Node.js 24 or newer. Bun is not required to use Pickle.
+
 ```bash
-bun add --dev @pickle-spec/cli
-bunx pickle init
+npm install --save-dev @pickle-spec/cli
+npx pickle init
 ```
 
 Follow the [web quick start](apps/docs/content/docs/web/quick-start.mdx) or [native testing guide](apps/docs/content/docs/native/index.mdx) to configure a real target and add a meaningful assertion. Then open Studio:
 
 ```bash
-bunx pickle studio
+npx pickle studio
 ```
 
 `pickle init` creates a configuration shell; it does not create a demonstration or claim a successful application test.

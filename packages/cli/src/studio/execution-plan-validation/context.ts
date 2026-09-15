@@ -1,4 +1,6 @@
-import { realpath } from 'node:fs/promises'
+import { spawnSync } from 'node:child_process'
+import { existsSync } from 'node:fs'
+import { realpath, readFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import {
   canonicalJson,
@@ -78,9 +80,10 @@ async function inputSnapshotDigest(input: InputSnapshotDigestInput) {
           input.project.extensionsPath ?? defaultExtensionsFile,
         ),
       ),
-      Bun.file(
+      readFile(
         resolve(input.root, input.selection.specification.source.uri),
-      ).text(),
+        'utf8',
+      ),
     ])
   return digester.digest({
     formatVersion: 1,
@@ -229,17 +232,16 @@ async function assertionBaseline(root: string, revision: PlanRevision) {
 }
 
 async function optionalSource(path: string) {
-  return (await Bun.file(path).exists()) ? Bun.file(path).text() : null
+  return existsSync(path) ? readFile(path, 'utf8') : null
 }
 
 export function checkoutHead(root: string): string | null {
-  const result = Bun.spawnSync({
-    cmd: ['git', 'rev-parse', '--verify', 'HEAD'],
+  const result = spawnSync('git', ['rev-parse', '--verify', 'HEAD'], {
     cwd: root,
-    stdout: 'pipe',
-    stderr: 'ignore',
+    encoding: 'utf8',
+    stdio: ['ignore', 'pipe', 'pipe'],
   })
-  return result.exitCode === 0 ? result.stdout.toString().trim() : null
+  return result.status === 0 ? (result.stdout ?? '').trim() : null
 }
 
 export async function resolvePlanValidation(

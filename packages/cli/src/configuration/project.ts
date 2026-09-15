@@ -1,3 +1,6 @@
+import { glob, mkdir, stat } from 'node:fs/promises'
+import { readFile, writeFile } from 'node:fs/promises'
+import { existsSync } from 'node:fs'
 import { relative, resolve } from 'node:path'
 import { validateProjectRunConfiguration } from '@pickle-spec/runner'
 import {
@@ -49,16 +52,17 @@ export async function initializeProject(
 ): Promise<void> {
   const cwd = resolve(options.cwd ?? process.cwd())
   const report = options.report ?? console.log
+  await mkdir(cwd, { recursive: true })
   for (const [path, contents] of [
     [defaultConfigFile, initialConfig],
     [defaultExtensionsFile, initialExtensions],
   ] as const) {
     const absolutePath = resolve(cwd, path)
-    if (await Bun.file(absolutePath).exists()) {
+    if (existsSync(absolutePath)) {
       report(`Skipped ${path}: file already exists`)
       continue
     }
-    await Bun.write(absolutePath, contents)
+    await writeFile(absolutePath, contents)
     report(`Created ${path}`)
   }
 }
@@ -71,10 +75,10 @@ async function discoverSpecificationPaths(
   const specificationPaths = new Set<string>()
   for (const pattern of Array.isArray(patterns) ? patterns : [patterns]) {
     let found = false
-    for await (const path of new Bun.Glob(pattern).scan({
+    for await (const path of glob(pattern, {
       cwd,
-      onlyFiles: true,
     })) {
+      if (!(await stat(resolve(cwd, path))).isFile()) continue
       found = true
       specificationPaths.add(resolve(cwd, path))
     }
@@ -94,7 +98,7 @@ async function readSpecificationFiles(
   const files: SpecificationSourceFile[] = []
   for (const path of await discoverSpecificationPaths(config, cwd)) {
     const uri = relative(cwd, path)
-    const source = await Bun.file(path).text()
+    const source = await readFile(path, 'utf8')
     try {
       parseSpecification({ source, uri, language: config.language })
     } catch (error) {
@@ -139,7 +143,7 @@ async function writeMigration(
   let updated = 0
   for (const file of files) {
     if (file.source === file.nextSource) continue
-    await Bun.write(resolve(cwd, file.uri), file.nextSource)
+    await writeFile(resolve(cwd, file.uri), file.nextSource)
     updated++
   }
   return updated
@@ -151,7 +155,7 @@ export async function migrateProject(
   const cwd = resolve(options.cwd ?? process.cwd())
   const configPath = resolve(cwd, options.configPath ?? defaultConfigFile)
   const report = options.report ?? console.log
-  if (!(await Bun.file(configPath).exists())) {
+  if (!existsSync(configPath)) {
     throw new Error(
       `Configuration file not found: ${relative(cwd, configPath)}. Run pickle init or pass --config <path>.`,
     )
@@ -176,12 +180,12 @@ export async function checkProject(
     cwd,
     options.extensionsPath ?? defaultExtensionsFile,
   )
-  if (!(await Bun.file(configPath).exists())) {
+  if (!existsSync(configPath)) {
     throw new Error(
       `Configuration file not found: ${relative(cwd, configPath)}. Run pickle init or pass --config <path>.`,
     )
   }
-  const extensionsExists = await Bun.file(extensionsPath).exists()
+  const extensionsExists = existsSync(extensionsPath)
   if (options.extensionsPath && !extensionsExists) {
     throw new Error(
       `Extensions file not found: ${relative(cwd, extensionsPath)}. Run pickle init or pass --extensions <path>.`,

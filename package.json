@@ -26,19 +26,20 @@
   },
   "scripts": {
     "typecheck": "turbo run typecheck",
-    "test": "bun scripts/verify-vitest-migration.ts && bunx --bun vitest run --configLoader runner --experimental.viteModuleRunner=false --experimental.nodeLoader=false --config vitest.scripts.config.ts && turbo run test",
-    "test:integration": "bun run --cwd packages/cli test:integration && bun run --cwd packages/mobile test:integration && bun run --cwd packages/web test:integration",
-    "test:e2e": "bun run --cwd packages/cli test:e2e && bun run --cwd packages/mobile test:e2e",
-    "lint": "oxlint --type-aware --type-check . && oxfmt --check .",
+    "test": "bun run build:packages && bun scripts/verify-vitest-migration.ts && bunx --bun vitest run --configLoader runner --experimental.viteModuleRunner=false --experimental.nodeLoader=false --config vitest.scripts.config.ts && turbo run test",
+    "test:integration": "bun run build:packages && bun run --cwd packages/cli test:integration && bun run --cwd packages/mobile test:integration && bun run --cwd packages/web test:integration",
+    "test:e2e": "bun run build:packages && bun run --cwd packages/cli test:e2e && bun run --cwd packages/mobile test:e2e",
+    "lint": "bun run build:packages && oxlint --type-aware --type-check . && oxfmt --check .",
     "format": "oxlint --type-aware --type-check --fix --fix-suggestions . && oxfmt --write .",
     "benchmark:replay": "bun scripts/replay-performance-gate.ts",
     "docs": "turbo run dev --filter=@pickle-spec/docs",
     "docs:build": "turbo run build --filter=@pickle-spec/docs",
-    "release:check": "bun scripts/release-packages.ts validate",
+    "release:check": "bun run build:packages && bun scripts/release-packages.ts validate",
     "release:install-check": "bun scripts/release-install-acceptance.ts",
     "run:example": "turbo run run:example --filter=@pickle-spec/example",
     "studio": "turbo run studio --filter=@pickle-spec/example",
-    "studio:watch": "bun run --cwd apps/example studio:watch"
+    "studio:watch": "bun run --cwd apps/example studio:watch",
+    "build:packages": "turbo run build --filter=@pickle-spec/cli"
   },
   "devDependencies": {
     "@biomejs/biome": "catalog:",

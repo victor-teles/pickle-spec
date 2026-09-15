@@ -1,5 +1,5 @@
 import { requiredValue } from '../../required-value'
-import type { Database } from 'bun:sqlite'
+import type { Database } from '../../storage/sqlite'
 import { createHash } from 'node:crypto'
 import type {
   ExecutionCacheEntrySnapshot,
@@ -277,5 +277,5 @@ export function executionCacheEntryIsRetained(
       'SELECT 1 AS retained FROM entries WHERE key_digest = ?',
     )
     .get(executionCacheKeyDigest(key))
-  return retained !== null
+  return retained !== undefined
 }

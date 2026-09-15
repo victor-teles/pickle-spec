@@ -1,3 +1,5 @@
+import { stat } from 'node:fs/promises'
+import { existsSync } from 'node:fs'
 import { resolve } from 'node:path'
 import {
   compareTestRuns,
@@ -49,10 +51,11 @@ async function warnForLargeHtmlExports(
   const warningThreshold = 10 * 1024 * 1024
   for (const output of outputs) {
     if (output.format !== 'html') continue
-    const file = Bun.file(output.path)
-    if (!(await file.exists()) || file.size <= warningThreshold) continue
+    const file = output.path
+    if (!existsSync(file) || (await stat(file)).size <= warningThreshold)
+      continue
     console.error(
-      `Warning: HTML export includes every available test artifact and is larger than 10 MB (${file.size} bytes).`,
+      `Warning: HTML export includes every available test artifact and is larger than 10 MB (${(await stat(file)).size} bytes).`,
     )
   }
 }

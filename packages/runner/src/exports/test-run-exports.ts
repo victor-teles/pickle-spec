@@ -1,4 +1,5 @@
-import { mkdir } from 'node:fs/promises'
+import { existsSync } from 'node:fs'
+import { mkdir, readFile, writeFile, copyFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { RunEvent } from '../execution/run-scenario'
 import { parseTestRunManifest } from '../results/test-run-schema'
@@ -63,12 +64,12 @@ async function loadFinalizedTestRun(
     input.runId,
     'manifest.json',
   )
-  if (!(await Bun.file(manifestPath).exists())) {
+  if (!existsSync(manifestPath)) {
     throw new Error(`Test run "${input.runId}" must be finalized before export`)
   }
   const manifest = parseTestRunManifest((version): never => {
     throw new Error(`Test run storage schema version ${version} is unsupported`)
-  })(await Bun.file(manifestPath).json())
+  })(JSON.parse(await readFile(manifestPath, 'utf8')))
   if (!manifest.finishedAt) {
     throw new Error(`Test run "${input.runId}" must be finalized before export`)
   }
@@ -83,18 +84,18 @@ async function writeAllureResults(
   await mkdir(destination)
   const projection = projectAllureResults(manifest)
   for (const { fileName, result } of projection.results) {
-    await Bun.write(
+    await writeFile(
       join(destination, fileName),
       `${JSON.stringify(result, null, 2)}\n`,
     )
   }
   for (const { sourcePath, fileName } of projection.attachments) {
-    const source = Bun.file(sourcePath)
-    if (!(await source.exists())) {
+    const source = sourcePath
+    if (!existsSync(source)) {
       throw new Error(`Artifact source file is missing: ${sourcePath}`)
     }
     await assertAllureArtifactPath(sourcePath, artifactsDirectory)
-    await Bun.write(join(destination, fileName), source)
+    await copyFile(source, join(destination, fileName))
   }
 }
 
@@ -106,16 +107,16 @@ async function writeExport(
 ): Promise<void> {
   switch (output.format) {
     case 'json':
-      await Bun.write(stagedPath, formatJson(evidence.manifest))
+      await writeFile(stagedPath, formatJson(evidence.manifest))
       return
     case 'ndjson':
-      await Bun.write(stagedPath, formatNdjson(evidence.events))
+      await writeFile(stagedPath, formatNdjson(evidence.events))
       return
     case 'junit':
-      await Bun.write(stagedPath, formatJunit(evidence.manifest))
+      await writeFile(stagedPath, formatJunit(evidence.manifest))
       return
     case 'html':
-      await Bun.write(
+      await writeFile(
         stagedPath,
         await formatHtml(evidence.manifest, {
           artifacts: input.htmlArtifacts ?? 'failures',

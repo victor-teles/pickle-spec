@@ -1,4 +1,4 @@
-import { mkdir } from 'node:fs/promises'
+import { mkdir, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import type {
   ActionEvidence,
@@ -69,7 +69,7 @@ async function actionScreenshot(
     )
     await mkdir(directory, { recursive: true })
     const path = join(directory, `${crypto.randomUUID()}-${position}.${format}`)
-    await Bun.write(
+    await writeFile(
       path,
       await automation.screenshot({
         format,

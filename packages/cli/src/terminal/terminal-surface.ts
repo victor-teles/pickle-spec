@@ -1,3 +1,4 @@
+import stringWidth from 'string-width'
 import { z } from 'zod'
 import { requiredValue } from '../required-value'
 export interface InteractiveTerminalSurface {
@@ -55,7 +56,7 @@ export function renderedTerminalRows(
   if (!columns) return lines.length
   return lines.reduce(
     (total, line) =>
-      total + Math.max(1, Math.ceil(Bun.stringWidth(line) / columns)),
+      total + Math.max(1, Math.ceil(stringWidth(line) / columns)),
     0,
   )
 }
@@ -72,7 +73,7 @@ export function createInteractiveTerminalSurface(
   function hiddenLine(hiddenCount: number): string {
     const label = ` … +${hiddenCount}`
     const columns = options.columns()
-    return columns && Bun.stringWidth(label) > columns ? '…' : label
+    return columns && stringWidth(label) > columns ? '…' : label
   }
 
   function visibleTail(

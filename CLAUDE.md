@@ -14,7 +14,7 @@ Typecheck and package tests run through Turborepo; the test script also runs
 script tests and a Vitest migration check. Use package test scripts for focused
 runs so their Vitest runner flags and build prerequisites are preserved.
 
-Default to using Bun instead of Node.js.
+Use Bun for repository development commands. Published packages run on Node.js 24 or newer and must not require Bun APIs or a Bun executable.
 
 - Use `bun <file>` instead of `node <file>` or `ts-node <file>`
 - Use `bunx --bun vitest run` instead of `bun test`, `jest`, or plain `vitest`
@@ -26,7 +26,7 @@ Default to using Bun instead of Node.js.
 
 ## Bun APIs
 
-For Bun runtime code:
+For development scripts that run under Bun:
 
 - `Bun.serve()` supports WebSockets, HTTPS, and routes. Don't use `express`.
 - `bun:sqlite` for SQLite. Don't use `better-sqlite3`.

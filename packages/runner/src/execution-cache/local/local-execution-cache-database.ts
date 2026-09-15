@@ -1,5 +1,5 @@
 import { requiredValue } from '../../required-value'
-import { Database, SQLiteError } from 'bun:sqlite'
+import { Database } from '../../storage/sqlite'
 import { randomUUID } from 'node:crypto'
 import { chmod, mkdir, rename } from 'node:fs/promises'
 import { dirname } from 'node:path'
@@ -136,7 +136,7 @@ function openDatabase(
   path: string,
   options: DatabaseOpenOptions = {},
 ): Database {
-  const db = new Database(path, { create: true, strict: true })
+  const db = new Database(path)
   try {
     db.run('PRAGMA busy_timeout = 5000')
     if (options.verifyIntegrity) {
@@ -174,8 +174,9 @@ function withDatabase<Value>(
 function isRecoverableDatabaseError(cause: unknown): boolean {
   return (
     cause instanceof InvalidExecutionCacheDatabaseError ||
-    (cause instanceof SQLiteError &&
-      (cause.code === 'SQLITE_CORRUPT' || cause.code === 'SQLITE_NOTADB'))
+    (cause instanceof Error &&
+      'errcode' in cause &&
+      (cause.errcode === 11 || cause.errcode === 26))
   )
 }
 

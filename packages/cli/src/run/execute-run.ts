@@ -1,3 +1,4 @@
+import { setTimeout as sleep } from 'node:timers/promises'
 import type {
   PersistedTestRun,
   RunEvent,
@@ -92,10 +93,7 @@ async function stopProjectResources(
 ): Promise<void> {
   if (server) {
     server.stop()
-    await Promise.race([
-      server.outputComplete.catch(() => {}),
-      Bun.sleep(1_000),
-    ])
+    await Promise.race([server.outputComplete.catch(() => {}), sleep(1_000)])
   }
   if (configuration) await disposeProjectRunTargets(configuration.targets)
 }

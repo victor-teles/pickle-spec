@@ -1,5 +1,5 @@
 import { requiredValue } from '../../required-value'
-import type { Database } from 'bun:sqlite'
+import type { Database } from '../../storage/sqlite'
 import { randomUUID } from 'node:crypto'
 import type {
   ExecutionCacheCoordination,
@@ -161,7 +161,7 @@ function leaseFromRow(
 }
 
 function leaseIsOwned(
-  active: LeaseRow | null,
+  active: LeaseRow | undefined,
   lease: ExecutionCacheLease,
   timestamp: number,
 ): boolean {

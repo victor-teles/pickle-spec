@@ -347,7 +347,7 @@ export default {
           const evaluationDelayMs = Number(
             process.env.PICKLE_CONFIDENTIALITY_EVALUATION_DELAY_MS ?? 0,
           )
-          if (evaluationDelayMs > 0) await Bun.sleep(evaluationDelayMs)
+          if (evaluationDelayMs > 0) await (await import('node:timers/promises')).setTimeout(evaluationDelayMs)
         }
       }
 

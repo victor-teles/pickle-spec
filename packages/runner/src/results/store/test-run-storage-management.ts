@@ -1,5 +1,7 @@
+import { glob } from 'node:fs/promises'
+import { existsSync } from 'node:fs'
 import { z } from 'zod'
-import { mkdir, rename, rm, stat } from 'node:fs/promises'
+import { mkdir, rename, rm, stat, readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { validateTestRunId } from '../test-run-id'
 import { withIndex } from './test-run-index'
@@ -25,8 +27,8 @@ export interface RunStoragePaths {
 export async function readPinnedRunIds(
   runPinsPath: string,
 ): Promise<Set<string>> {
-  if (!(await Bun.file(runPinsPath).exists())) return new Set()
-  const source: unknown = await Bun.file(runPinsPath).json()
+  if (!existsSync(runPinsPath)) return new Set()
+  const source: unknown = JSON.parse(await readFile(runPinsPath, 'utf8'))
   const parsed = z
     .object({ schemaVersion: z.literal(1), runIds: z.array(z.string()) })
     .safeParse(source)
@@ -48,7 +50,7 @@ async function writePinnedRunIds(
     runIds: [...runIds].toSorted(),
   }
   try {
-    await Bun.write(temporaryPath, `${JSON.stringify(contents, null, 2)}\n`)
+    await writeFile(temporaryPath, `${JSON.stringify(contents, null, 2)}\n`)
     await rename(temporaryPath, paths.runPinsPath)
   } finally {
     await rm(temporaryPath, { force: true })
@@ -62,7 +64,7 @@ export async function updatePinnedRun(
 ): Promise<void> {
   validateTestRunId(id)
   const eventsPath = join(paths.runsDirectory, id, 'events.ndjson')
-  if (!(await Bun.file(eventsPath).exists())) {
+  if (!existsSync(eventsPath)) {
     throw new Error(`Test run "${id}" was not found`)
   }
   const runIds = await readPinnedRunIds(paths.runPinsPath)
@@ -153,7 +155,7 @@ async function removeRunsOverLimit(
 
 async function removeRun(paths: RunStoragePaths, id: string): Promise<void> {
   await rm(join(paths.runsDirectory, id), { recursive: true, force: true })
-  if (!(await Bun.file(paths.indexPath).exists())) return
+  if (!existsSync(paths.indexPath)) return
   withIndex(paths.indexPath, (db) =>
     db.run('DELETE FROM runs WHERE id = ?', [id]),
   )
@@ -169,12 +171,12 @@ function byOldest(left: TestRunManifest, right: TestRunManifest): number {
 async function directorySize(directory: string): Promise<number> {
   if (!(await pathExists(directory))) return 0
   let total = 0
-  const files = new Bun.Glob('**/*').scan({
+  const files = glob('**/*', {
     cwd: directory,
-    onlyFiles: true,
   })
   for await (const relativePath of files) {
-    total += Bun.file(join(directory, relativePath)).size ?? 0
+    const entry = await stat(join(directory, relativePath))
+    if (entry.isFile()) total += entry.size
   }
   return total
 }

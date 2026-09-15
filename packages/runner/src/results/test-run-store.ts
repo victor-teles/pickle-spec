@@ -1,4 +1,6 @@
-import { mkdir, rm, stat } from 'node:fs/promises'
+import { glob } from 'node:fs/promises'
+import { existsSync } from 'node:fs'
+import { mkdir, rm, stat, readFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import type { RunEventPayload } from '../execution/run-scenario'
 import { resolveLocalProjectStorage } from '../storage/local-project-storage'
@@ -209,9 +211,9 @@ class LocalTestRunStore implements TestRunStore {
 
   private async manifestFor(id: string): Promise<TestRunManifest> {
     const manifestPath = join(this.runsDirectory, id, 'manifest.json')
-    if (await Bun.file(manifestPath).exists()) {
+    if (existsSync(manifestPath)) {
       return parseTestRunManifest(this.incompatibleSchema)(
-        await Bun.file(manifestPath).json(),
+        JSON.parse(await readFile(manifestPath, 'utf8')),
       )
     }
     return (await this.open(id)).materialize({ finished: false })
@@ -220,9 +222,8 @@ class LocalTestRunStore implements TestRunStore {
   private async loadManifests(): Promise<TestRunManifest[]> {
     const manifests: TestRunManifest[] = []
     if (!(await pathExists(this.runsDirectory))) return manifests
-    const files = new Bun.Glob('*/events.ndjson').scan({
+    const files = glob('*/events.ndjson', {
       cwd: this.runsDirectory,
-      onlyFiles: true,
     })
     for await (const relativePath of files) {
       const id = dirname(relativePath)
@@ -292,11 +293,11 @@ class LocalTestRunStore implements TestRunStore {
   async list(): Promise<TestRunSummary[]> {
     const manifests = await this.loadManifests()
     const storedIds = manifests.map((manifest) => manifest.id).toSorted()
-    const indexedIds = (await Bun.file(this.indexPath).exists())
+    const indexedIds = existsSync(this.indexPath)
       ? withIndex(this.indexPath, listRunIds)
       : []
     if (
-      !(await Bun.file(this.indexPath).exists()) ||
+      !existsSync(this.indexPath) ||
       indexVersion(this.indexPath) < indexSchemaVersion ||
       !sameStrings(storedIds, indexedIds)
     ) {

@@ -10,19 +10,20 @@
     "directory": "packages/configuration"
   },
   "files": [
-    "index.ts",
-    "src/**/*.ts"
+    "lib"
   ],
   "type": "module",
   "exports": {
-    ".": "./index.ts"
+    ".": "./lib/index.js"
   },
   "publishConfig": {
     "access": "public"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "test": "bunx --bun vitest run --configLoader runner --experimental.viteModuleRunner=false --experimental.nodeLoader=false --config ../../vitest.package.config.ts"
+    "test": "bunx --bun vitest run --configLoader runner --experimental.viteModuleRunner=false --experimental.nodeLoader=false --config ../../vitest.package.config.ts",
+    "build": "bun ../../scripts/build-package.ts",
+    "prepack": "bun run build"
   },
   "dependencies": {
     "zod": "catalog:"
@@ -33,6 +34,6 @@
     "vitest": "catalog:"
   },
   "engines": {
-    "bun": ">=1.4.2"
+    "node": ">=24.0.0"
   }
 }

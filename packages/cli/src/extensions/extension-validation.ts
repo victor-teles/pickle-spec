@@ -113,7 +113,7 @@ function extensionValidationProgram(
     skipLibCheck: true,
     strict: false,
     target: ts.ScriptTarget.ESNext,
-    types: ['bun'],
+    types: ['node'],
   }
   const host = ts.createCompilerHost(compilerOptions)
   const getSourceFile = host.getSourceFile.bind(host)
@@ -151,7 +151,10 @@ function throwExtensionDiagnostics(
 export function validateExtensions(
   path: string,
 ): Pick<RunExtensionManifest, 'adapterAvailable'> {
-  const validationPath = resolve(import.meta.dir, '__extension_validation__.ts')
+  const validationPath = resolve(
+    import.meta.dirname,
+    '__extension_validation__.ts',
+  )
   const program = extensionValidationProgram(
     validationPath,
     extensionValidationSource(validationPath, path),

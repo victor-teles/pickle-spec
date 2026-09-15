@@ -127,7 +127,7 @@ const adapter = {
     return {
       async executeStep(step, signal) {
         if (process.env.PICKLE_TEST_STEP_MARKER) {
-          await Bun.write(process.env.PICKLE_TEST_STEP_MARKER, 'started')
+          await (await import('node:fs/promises')).writeFile(process.env.PICKLE_TEST_STEP_MARKER, 'started')
         }
         if (process.env.PICKLE_TEST_WAIT_FOR_ABORT === 'true') {
           await new Promise((resolve, reject) => {
@@ -152,7 +152,7 @@ const adapter = {
       },
       async close() {
         if (process.env.PICKLE_TEST_CLOSE_MARKER) {
-          await Bun.write(process.env.PICKLE_TEST_CLOSE_MARKER, 'closed')
+          await (await import('node:fs/promises')).writeFile(process.env.PICKLE_TEST_CLOSE_MARKER, 'closed')
         }
       },
     }
@@ -291,10 +291,10 @@ Feature: Example
     const node = join(bin, 'node')
     await Bun.write(
       node,
-      `#!/usr/bin/env bun
-process.stdout.write(JSON.stringify({ version: 6, type: 'worker-ready', nodeVersion: '22.12.0' }) + '\\n')
+      `#!/usr/bin/env node
+process.stdout.write(JSON.stringify({ version: 6, type: 'worker-ready', nodeVersion: '24.0.0' }) + '\\n')
 const decoder = new TextDecoder()
-for await (const chunk of Bun.stdin.stream()) {
+for await (const chunk of process.stdin) {
   const request = JSON.parse(decoder.decode(chunk).trim())
   process.stdout.write(JSON.stringify({
     version: 6,
@@ -315,10 +315,10 @@ for await (const chunk of Bun.stdin.stream()) {
     const listed = Bun.spawnSync({
       cmd: [pickleCommand, 'apps', '--platform', 'ios', '--all'],
       cwd: project,
-      env: { ...Bun.env, PATH: `${bin}:${Bun.env.PATH ?? ''}` },
+      env: { ...Bun.env, PICKLE_NODE_PATH: node },
     })
 
-    expect(listed.exitCode).toBe(0)
+    expect(listed.exitCode, listed.stderr.toString()).toBe(0)
     expect(listed.stdout.toString()).toBe(
       'com.example.apple\ncom.example.zebra\n',
     )
@@ -484,7 +484,7 @@ Feature: Release acceptance
       config: defaultCheckConfig,
       specification: validSpecification,
       extensions: `
-await Bun.write(${JSON.stringify(marker)}, 'executed')
+await (await import('node:fs/promises')).writeFile(${JSON.stringify(marker)}, 'executed')
 await import('./missing-adapter.ts')
 export default {}
 `,
@@ -515,7 +515,7 @@ export default {}
       },
       specification: validSpecification,
       extensions: `
-await Bun.write(${JSON.stringify(marker)}, 'executed')
+await (await import('node:fs/promises')).writeFile(${JSON.stringify(marker)}, 'executed')
 export default {
   adapter: {
     async openSession() {
@@ -532,7 +532,7 @@ export default {
       env: { ...Bun.env },
     })
 
-    expect(doctor.exitCode).toBe(0)
+    expect(doctor.exitCode, doctor.stderr.toString()).toBe(0)
     expect(doctor.stderr.toString()).toBe('')
     expect(doctor.stdout.toString()).toContain(
       'Automatic environment checks are not available for this profile.',
@@ -549,7 +549,7 @@ export default {
       specification: validSpecification,
       extensions: `
 import { missingAdapter } from './adapter.ts'
-await Bun.write(${JSON.stringify(marker)}, 'executed')
+await (await import('node:fs/promises')).writeFile(${JSON.stringify(marker)}, 'executed')
 export default { adapter: missingAdapter }
 `,
     })
@@ -751,7 +751,7 @@ export default { adapter: missingAdapter }
         source: 'this is not a valid Specification',
       },
       extensions: `
-await Bun.write(${JSON.stringify(extensionMarker)}, 'evaluated')
+await (await import('node:fs/promises')).writeFile(${JSON.stringify(extensionMarker)}, 'evaluated')
 export default {}
 `,
     })
@@ -2080,10 +2080,10 @@ const behavior = process.env.PICKLE_CACHE_TEST_BEHAVIOR
 
 async function record(value) {
   if (!marker) return
-  const previous = await Bun.file(marker).exists()
-    ? await Bun.file(marker).text()
+  const previous = await (await import('node:fs')).existsSync(marker)
+    ? await (await import('node:fs/promises')).readFile(marker, 'utf8')
     : ''
-  await Bun.write(marker, previous + value + '\\n')
+  await (await import('node:fs/promises')).writeFile(marker, previous + value + '\\n')
 }
 
 export default {

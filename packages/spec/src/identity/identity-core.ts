@@ -1,10 +1,12 @@
-export const specificationStates = ['draft', 'active', 'deprecated'] as const
-export type SpecificationState = (typeof specificationStates)[number]
-
-export const idTagPrefix = '@pickle:id:'
-export const stateTagPrefix = '@pickle:state:'
-export const rowIdColumn = 'pickle_id'
-export const idPattern = /^[A-Za-z0-9_-]+$/
+import { createHash } from 'node:crypto'
+import {
+  idTagPrefix,
+  stateTagPrefix,
+  rowIdColumn,
+  specificationStates,
+} from './metadata'
+import type { SpecificationState } from './metadata'
+export * from './metadata'
 
 export function idValues(tags: readonly string[]): string[] {
   return tags
@@ -50,7 +52,7 @@ export function examplesRowId(
 }
 
 export function identifierDigest(parts: readonly string[]): string {
-  const hasher = new Bun.CryptoHasher('sha256')
+  const hasher = createHash('sha256')
   hasher.update(parts.join('\0'))
   return hasher.digest('hex').slice(0, 16)
 }

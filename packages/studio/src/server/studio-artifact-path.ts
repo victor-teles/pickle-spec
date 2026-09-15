@@ -1,6 +1,7 @@
 import { constants, realpathSync } from 'node:fs'
 import { open, stat } from 'node:fs/promises'
 import { resolve, sep } from 'node:path'
+import { Readable } from 'node:stream'
 import { resolveLocalProjectStorage } from '@pickle-spec/runner'
 import { z } from 'zod'
 
@@ -34,7 +35,9 @@ function missingPath(code: string | undefined): boolean {
 }
 
 function artifactBody(handle: ArtifactFileHandle): ReadableStream<Uint8Array> {
-  const reader = Bun.file(handle.fd).stream().getReader()
+  const reader = Readable.toWeb(
+    handle.createReadStream({ autoClose: false }),
+  ).getReader()
   let closed = false
   const close = async () => {
     if (closed) return

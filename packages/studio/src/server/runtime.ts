@@ -1,5 +1,3 @@
-import type { ServerWebSocket } from 'bun'
-import type { ServerRequest } from 'srvx'
 import { createDocumentRoutes } from '../features/documents/document.routes'
 import {
   createSpecificationWorkspace,
@@ -22,31 +20,23 @@ import {
 import type { StudioOptions } from './contracts'
 import { createGitWorkspace, type GitWorkspace } from './git'
 import type { StudioHttpHandler, StudioHttpResponse } from './http'
-import type { StudioSocketData } from './socket-data'
+import type { StudioSocket, StudioSocketData } from './socket-data'
 import { createStartApp, type StartServerEntry } from './start-app'
 
 export interface StudioRuntime {
   hmrOrigin?: string
-  closeSocket(socket: ServerWebSocket<StudioSocketData>): void
+  closeSocket(socket: StudioSocket): void
   handleApi(request: Request, url: URL): Promise<StudioHttpResponse>
-  openSocket(socket: ServerWebSocket<StudioSocketData>): void
+  openSocket(socket: StudioSocket): void
   serveAsset(request: Request, url: URL): Promise<Response | null>
   startResponse(request: Request): Promise<Response>
   stop(): void
 }
 
-function upgrade(
+type UpgradeRequest = (
   request: Request,
   data: StudioSocketData,
-): Response | undefined {
-  const serverRequest: ServerRequest = request
-  const upgraded = serverRequest.runtime?.bun?.server?.upgrade(request, {
-    data,
-  })
-  return upgraded
-    ? undefined
-    : new Response('WebSocket upgrade failed', { status: 400 })
-}
+) => Response | undefined
 
 async function handleApi(
   handlers: readonly StudioHttpHandler[],
@@ -70,6 +60,7 @@ interface FeatureModules {
 function createFeatureHandlers(
   options: StudioOptions,
   modules: FeatureModules,
+  upgrade: UpgradeRequest,
 ): readonly StudioHttpHandler[] {
   return [
     createProjectRoutes({
@@ -124,6 +115,7 @@ async function startResponse(
 
 export async function createStudioRuntime(
   options: StudioOptions,
+  upgrade: UpgradeRequest,
 ): Promise<StudioRuntime> {
   const startApp = await createStartApp()
   const project = createProjectModule(options)
@@ -140,12 +132,16 @@ export async function createStudioRuntime(
   const stopWatch = await documents.watch((event) =>
     workspaceEvents.publish(event),
   )
-  const apiHandlers = createFeatureHandlers(options, {
-    documents,
-    git,
-    project,
-    runEvents,
-  })
+  const apiHandlers = createFeatureHandlers(
+    options,
+    {
+      documents,
+      git,
+      project,
+      runEvents,
+    },
+    upgrade,
+  )
 
   return {
     hmrOrigin: startApp.hmrOrigin,

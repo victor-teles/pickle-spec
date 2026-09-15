@@ -4,16 +4,19 @@
   "tasks": {
     "build": {
       "dependsOn": ["^build"],
-      "outputs": [".next/**", "!.next/cache/**", "dist/**"]
+      "outputs": [".next/**", "!.next/cache/**", "dist/**", "lib/**"],
+      "inputs": ["$TURBO_DEFAULT$", "!tests/**"]
     },
     "dev": {
       "cache": false,
       "persistent": true
     },
     "typecheck": {
-      "dependsOn": ["^typecheck"]
+      "dependsOn": ["^build", "^typecheck"]
     },
-    "test": {},
+    "test": {
+      "dependsOn": ["^build"]
+    },
     "run:example": {
       "cache": false,
       "persistent": false
@@ -23,5 +26,6 @@
       "cache": false,
       "persistent": true
     }
-  }
+  },
+  "globalDependencies": ["scripts/build-package.ts", "tsconfig.json"]
 }

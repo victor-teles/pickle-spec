@@ -1,17 +1,16 @@
+import { spawnSync } from 'node:child_process'
 export function resolveApplicationRevision(
   configuredRevision: string | undefined,
   projectRoot: string,
 ): string | undefined {
   if (configuredRevision !== 'git:HEAD') return configuredRevision
-  const resolved = Bun.spawnSync({
-    cmd: ['git', 'rev-parse', '--verify', 'HEAD'],
+  const resolved = spawnSync('git', ['rev-parse', '--verify', 'HEAD'], {
     cwd: projectRoot,
-    stdin: 'ignore',
-    stdout: 'pipe',
-    stderr: 'pipe',
+    encoding: 'utf8',
+    stdio: ['ignore', 'pipe', 'pipe'],
   })
-  const revision = resolved.stdout.toString().trim()
-  if (resolved.exitCode !== 0 || !revision) {
+  const revision = (resolved.stdout ?? '').trim()
+  if (resolved.status !== 0 || !revision) {
     throw new Error(
       'applicationRevision "git:HEAD" requires a Git repository with a commit',
     )

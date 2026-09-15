@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import type { z } from 'zod'
 import type { ResolvedFidelity } from '../adapter/configuration/fidelity'
 import {
@@ -82,7 +83,7 @@ function cdpEndpointFingerprint(cdpUrl: string): string {
       'web.browser.cdpUrl must be an absolute HTTP(S) or WS(S) URL',
     )
   }
-  return new Bun.CryptoHasher('sha256').update(origin).digest('hex')
+  return createHash('sha256').update(origin).digest('hex')
 }
 
 export function webTargetConfigurationFingerprint({
@@ -114,5 +115,5 @@ export function webTargetConfigurationFingerprint({
       options.browser?.navigationTimeoutMs ?? defaultWebNavigationTimeoutMs,
     actionTimeoutMs: options.browser?.actTimeoutMs ?? defaultWebActionTimeoutMs,
   })
-  return new Bun.CryptoHasher('sha256').update(source).digest('hex')
+  return createHash('sha256').update(source).digest('hex')
 }

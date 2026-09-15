@@ -1,4 +1,5 @@
-import { link, mkdtemp, rm } from 'node:fs/promises'
+import { glob } from 'node:fs/promises'
+import { link, mkdtemp, rm, readFile, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { RetentionPolicy } from '@pickle-spec/runner'
@@ -55,7 +56,9 @@ async function readStudioRunOwner(
   path: string,
 ): Promise<StudioRunOwner | undefined> {
   try {
-    return studioRunOwnerSchema.safeParse(await Bun.file(path).json()).data
+    return studioRunOwnerSchema.safeParse(
+      JSON.parse(await readFile(path, 'utf8')),
+    ).data
   } catch {
     return undefined
   }
@@ -67,7 +70,7 @@ async function claimStudioRunRecovery(
 ): Promise<boolean> {
   const path = studioRecoveryClaimPath(root, runId)
   const candidatePath = `${path}.${process.pid}.${crypto.randomUUID()}`
-  await Bun.write(
+  await writeFile(
     candidatePath,
     `${JSON.stringify({ pid: process.pid } satisfies StudioRunOwner)}\n`,
   )
@@ -94,7 +97,7 @@ export async function markStudioRunOwned(
   root: string,
   runId: string,
 ): Promise<void> {
-  await Bun.write(
+  await writeFile(
     studioOwnerPath(root, runId),
     `${JSON.stringify({ pid: process.pid } satisfies StudioRunOwner)}\n`,
   )
@@ -110,9 +113,8 @@ export async function clearStudioRunOwner(
 export async function recoverAbandonedStudioRuns(root: string): Promise<void> {
   const store = openTestRunStore({ root })
   const runsDirectory = resolveLocalProjectStorage(root).runsDirectory
-  const owners = new Bun.Glob(`*/${studioOwnerFileName}`).scan({
+  const owners = glob(`*/${studioOwnerFileName}`, {
     cwd: runsDirectory,
-    onlyFiles: true,
   })
   try {
     for await (const relativePath of owners) {
@@ -160,7 +162,7 @@ export function createStudioHistoryGateway(
     },
     async importArchive(bytes) {
       return withTemporaryFile('import.json', async (archivePath) => {
-        await Bun.write(archivePath, bytes)
+        await writeFile(archivePath, bytes)
         return (await importRunArchive({ root, archivePath })).manifest
       })
     },
@@ -201,7 +203,7 @@ function createReportExporter(
           `${request.runId}.json`,
           async (outputPath) => {
             await writeRunArchive({ root, runId: request.runId, outputPath })
-            return Bun.file(outputPath).text()
+            return readFile(outputPath, 'utf8')
           },
         )
       default:

@@ -10,20 +10,21 @@
     "directory": "packages/spec"
   },
   "files": [
-    "index.ts",
-    "src/**/*.ts"
+    "lib"
   ],
   "type": "module",
   "exports": {
-    ".": "./index.ts",
-    "./schemas": "./src/authoring/specification-schema.ts"
+    ".": "./lib/index.js",
+    "./schemas": "./lib/src/authoring/specification-schema.js"
   },
   "publishConfig": {
     "access": "public"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "test": "bunx --bun vitest run --configLoader runner --experimental.viteModuleRunner=false --experimental.nodeLoader=false --config ../../vitest.package.config.ts"
+    "test": "bunx --bun vitest run --configLoader runner --experimental.viteModuleRunner=false --experimental.nodeLoader=false --config ../../vitest.package.config.ts",
+    "build": "bun ../../scripts/build-package.ts",
+    "prepack": "bun run build"
   },
   "dependencies": {
     "@cucumber/gherkin": "catalog:",
@@ -37,6 +38,6 @@
     "vitest": "catalog:"
   },
   "engines": {
-    "bun": ">=1.4.2"
+    "node": ">=24.0.0"
   }
 }

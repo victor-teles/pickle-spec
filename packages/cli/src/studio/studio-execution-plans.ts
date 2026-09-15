@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import type {
   ExecutionCacheEntryMetadata,
   ExecutionCacheEntrySnapshot,
@@ -196,7 +197,7 @@ function sameScenarioAndProfile(
 }
 
 function sourceDigest(source: string): string {
-  return new Bun.CryptoHasher('sha256').update(source).digest('hex')
+  return createHash('sha256').update(source).digest('hex')
 }
 
 async function coordinatedEntry(

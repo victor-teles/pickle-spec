@@ -1,5 +1,5 @@
 import { studioRunRequestSchema } from './run.schemas'
-import { basename } from 'node:path'
+import { basename, extname } from 'node:path'
 import { requiredValue } from '../../required-value'
 import {
   requestError,
@@ -14,6 +14,24 @@ import type {
   StudioRunStreamEvent,
 } from './run.contracts'
 import type { RunEventHub } from './run-event-hub'
+
+const artifactMediaTypes = new Map<string, string>(
+  Object.entries({
+    '.png': 'image/png',
+    '.jpg': 'image/jpeg',
+    '.jpeg': 'image/jpeg',
+    '.webp': 'image/webp',
+    '.gif': 'image/gif',
+    '.svg': 'image/svg+xml',
+    '.mp4': 'video/mp4',
+    '.webm': 'video/webm',
+    '.json': 'application/json',
+    '.ndjson': 'application/x-ndjson',
+    '.txt': 'text/plain;charset=utf-8',
+    '.html': 'text/html;charset=utf-8',
+    '.zip': 'application/zip',
+  }),
+)
 
 interface RunRoutesOptions {
   events: RunEventHub
@@ -106,7 +124,9 @@ function artifactResponse(
   size: number,
   body?: ReadableStream,
 ): Response {
-  const contentType = Bun.file(path).type || 'application/octet-stream'
+  const contentType =
+    artifactMediaTypes.get(extname(path).toLowerCase()) ??
+    'application/octet-stream'
   const headers = {
     'content-type': contentType,
     'content-length': String(size),

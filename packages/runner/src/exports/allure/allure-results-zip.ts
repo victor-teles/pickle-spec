@@ -1,4 +1,6 @@
-import { realpath, stat } from 'node:fs/promises'
+import { crc32 } from 'node:zlib'
+import { existsSync } from 'node:fs'
+import { realpath, stat, readFile } from 'node:fs/promises'
 import { resolve, sep } from 'node:path'
 import type { TestRunManifest } from '../../results/test-run-store'
 import type {
@@ -23,18 +25,18 @@ const defaultMaximumArchiveBytes = 128 * 1024 * 1024
 async function allureArchiveFiles(
   projection: AllureResultsProjection,
   options: AllureArchiveOptions,
-): Promise<Map<string, File>> {
-  const files: Record<string, string | Uint8Array> = {}
+): Promise<Map<string, Uint8Array>> {
+  const files = new Map<string, Uint8Array>()
   let projectedBytes = 0
   const maximumBytes = options.maximumBytes ?? defaultMaximumArchiveBytes
   for (const { fileName, result } of projection.results) {
     const contents = `${JSON.stringify(result, null, 2)}\n`
     projectedBytes += Buffer.byteLength(contents)
-    files[fileName] = contents
+    files.set(fileName, new TextEncoder().encode(contents))
   }
   for (const { sourcePath, fileName } of projection.attachments) {
-    const source = Bun.file(sourcePath)
-    if (!(await source.exists())) {
+    const source = sourcePath
+    if (!existsSync(source)) {
       throw new Error(`Artifact source file is missing: ${sourcePath}`)
     }
     await assertAllureArtifactPath(sourcePath, options.artifactsDirectory)
@@ -44,14 +46,14 @@ async function allureArchiveFiles(
         `Allure ZIP exceeds the ${Math.floor(maximumBytes / 1024 / 1024)} MiB in-memory limit`,
       )
     }
-    files[fileName] = await source.bytes()
+    files.set(fileName, await readFile(source))
   }
   if (projectedBytes > maximumBytes) {
     throw new Error(
       `Allure ZIP exceeds the ${Math.floor(maximumBytes / 1024 / 1024)} MiB in-memory limit`,
     )
   }
-  return new Bun.Archive(files).files()
+  return files
 }
 
 export async function assertAllureArtifactPath(
@@ -75,16 +77,15 @@ export async function assertAllureArtifactPath(
   }
 }
 
-async function zipEntries(files: Map<string, File>): Promise<ZipEntry[]> {
+function zipEntries(files: Map<string, Uint8Array>): ZipEntry[] {
   if (files.size > 0xffff) {
     throw new Error('Allure ZIP contains more than 65,535 files')
   }
   const encoder = new TextEncoder()
   const entries: ZipEntry[] = []
   let offset = 0
-  for (const [path, file] of files) {
+  for (const [path, contents] of files) {
     const name = encoder.encode(path)
-    const contents = new Uint8Array(await file.arrayBuffer())
     if (name.byteLength > 0xffff) {
       throw new Error(`Allure ZIP file name is too long: ${path}`)
     }
@@ -94,7 +95,7 @@ async function zipEntries(files: Map<string, File>): Promise<ZipEntry[]> {
     entries.push({
       name,
       contents,
-      crc32: Bun.hash.crc32(contents) >>> 0,
+      crc32: crc32(contents),
       offset,
     })
     offset += zipLocalHeaderSize + name.byteLength + contents.byteLength
@@ -183,5 +184,5 @@ export async function createAllureResultsZip(
     projectAllureResults(manifest),
     options,
   )
-  return storedZip(await zipEntries(files))
+  return storedZip(zipEntries(files))
 }

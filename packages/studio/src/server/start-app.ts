@@ -1,10 +1,14 @@
+import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { staticMiddleware } from 'srvx/static'
 import { z } from 'zod'
 import type { StudioRequestContext } from '../server-context'
 
-const studioPackageRoot = join(import.meta.dir, '../..')
+const sourcePackageRoot = join(import.meta.dirname, '../..')
+const studioPackageRoot = existsSync(join(sourcePackageRoot, 'package.json'))
+  ? sourcePackageRoot
+  : join(sourcePackageRoot, '..')
 const startServerEntryPath = join(studioPackageRoot, 'dist/server/index.js')
 
 const startClientDirectory = join(studioPackageRoot, 'dist/client')
@@ -33,7 +37,7 @@ export type StartServerModule = z.infer<typeof startServerModuleSchema>
 let startBuild: Promise<StartServerEntry> | undefined
 
 async function loadStartServerEntry(): Promise<StartServerEntry> {
-  if (!(await Bun.file(startServerEntryPath).exists())) {
+  if (!existsSync(startServerEntryPath)) {
     const { createRsbuild, loadConfig } = await import('@rsbuild/core')
     const previousNodeEnv = process.env.NODE_ENV
     process.env.NODE_ENV = 'production'

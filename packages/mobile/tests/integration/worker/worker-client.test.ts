@@ -44,11 +44,11 @@ test('delivers unsolicited viewport events without consuming correlated response
   }
 })
 
-test('rejects Node runtimes older than 22.12', () => {
+test('rejects Node runtimes older than 24', () => {
   expect(() => assertSupportedNodeVersion('22.11.0')).toThrow(
-    'The mobile worker requires Node 22.12 or newer; found 22.11.0',
+    'The mobile worker requires Node.js 24 or newer; found 22.11.0',
   )
-  expect(() => assertSupportedNodeVersion('22.12.0')).not.toThrow()
+  expect(() => assertSupportedNodeVersion('22.12.0')).toThrow()
   expect(() => assertSupportedNodeVersion('24.0.0')).not.toThrow()
 })
 

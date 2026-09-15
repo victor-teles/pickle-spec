@@ -1,4 +1,6 @@
-import type { Subprocess } from 'bun'
+import { setTimeout as sleep } from 'node:timers/promises'
+import { spawn } from 'node:child_process'
+import { Readable } from 'node:stream'
 import type { ServerConfig } from '../configuration/config'
 
 export interface ManagedServer {
@@ -27,10 +29,19 @@ export type ApplicationOutputAvailability = Record<
   ApplicationOutputAvailabilityState
 >
 
-type ManagedApplicationProcess = Pick<
-  Subprocess,
-  'pid' | 'stdout' | 'stderr' | 'kill'
->
+type ManagedApplicationProcess = {
+  pid: number
+  stdout: ApplicationOutputBody | null
+  stderr: ApplicationOutputBody | null
+  kill(): void
+}
+
+type ApplicationOutputBody = {
+  getReader(): {
+    read(): Promise<ReadableStreamReadResult<Uint8Array>>
+    releaseLock(): void
+  }
+}
 
 interface ServerSpawnOptions {
   cwd: string
@@ -57,8 +68,25 @@ export interface StartServerOptions {
 
 const runtime: ServerRuntime = {
   fetch,
-  sleep: Bun.sleep,
-  spawn: (command, options) => Bun.spawn(command, options),
+  sleep,
+  spawn(command, options) {
+    const child = spawn(command[0] ?? '', command.slice(1), {
+      cwd: options.cwd,
+      detached: options.detached,
+      stdio: ['ignore', options.stdout, options.stderr],
+    })
+    child.on('error', () => {})
+    if (child.pid === undefined)
+      throw new Error('Unable to start application server')
+    return {
+      pid: child.pid,
+      stdout: child.stdout ? Readable.toWeb(child.stdout) : null,
+      stderr: child.stderr ? Readable.toWeb(child.stderr) : null,
+      kill() {
+        child.kill()
+      },
+    }
+  },
 }
 
 function outputAvailability(
@@ -73,7 +101,7 @@ function outputAvailability(
 }
 
 async function observeOutput(
-  source: ReadableStream<Uint8Array>,
+  source: ApplicationOutputBody,
   stream: ApplicationOutputStream,
   now: () => Date,
   onOutput?: StartServerOptions['onOutput'],

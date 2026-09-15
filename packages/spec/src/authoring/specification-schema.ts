@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { specificationStates } from '../identity/identity-core'
+import { specificationStates } from '../identity/metadata'
 
 const stepSchema = z.object({
   keyword: z.string(),

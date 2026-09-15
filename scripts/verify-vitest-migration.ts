@@ -17,7 +17,13 @@ type Violation = {
 }
 
 const repositoryRoot = resolve(import.meta.dir, '..')
-const ignoredDirectories = new Set(['.git', '.turbo', 'dist', 'node_modules'])
+const ignoredDirectories = new Set([
+  '.git',
+  '.turbo',
+  'dist',
+  'lib',
+  'node_modules',
+])
 const sourceFilePattern = /\.[cm]?[jt]sx?$/
 const legacyImport = ['bun', 'test'].join(':')
 const legacyCommand = ['bun', 'test'].join(' ')

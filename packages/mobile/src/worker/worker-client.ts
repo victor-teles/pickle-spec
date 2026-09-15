@@ -1,4 +1,7 @@
 import { fileURLToPath } from 'node:url'
+import { spawn } from 'node:child_process'
+import { Readable } from 'node:stream'
+import { text } from 'node:stream/consumers'
 import type {
   MobileWorkerEvent,
   MobileWorkerRequest,
@@ -32,20 +35,24 @@ interface PendingRequest {
 }
 
 function spawnWorker(nodePath: string, workerEntry: URL) {
-  return Bun.spawn(
-    [nodePath, '--experimental-strip-types', fileURLToPath(workerEntry)],
-    {
-      stdin: 'pipe',
-      stdout: 'pipe',
-      stderr: 'pipe',
-    },
-  )
+  const child = spawn(nodePath, [fileURLToPath(workerEntry)], {
+    stdio: ['pipe', 'pipe', 'pipe'],
+  })
+  const exited = new Promise<number>((resolve, reject) => {
+    child.once('error', reject)
+    child.once('close', (code) => resolve(code ?? 1))
+  })
+  return { child, exited }
 }
 
-type WorkerProcess = ReturnType<typeof spawnWorker>
+type WorkerProcess = ReturnType<typeof spawn> & {
+  stdin: NonNullable<ReturnType<typeof spawn>['stdin']>
+  stdout: NonNullable<ReturnType<typeof spawn>['stdout']>
+  stderr: NonNullable<ReturnType<typeof spawn>['stderr']>
+}
 
-const minimumNodeMajor = 22
-const minimumNodeMinor = 12
+const minimumNodeMajor = 24
+const minimumNodeMinor = 0
 const workerShutdownTimeoutMs = 2_000
 
 export function assertSupportedNodeVersion(version: string): void {
@@ -59,7 +66,7 @@ export function assertSupportedNodeVersion(version: string): void {
       (major === minimumNodeMajor && minor >= minimumNodeMinor))
   if (!supported) {
     throw new Error(
-      `The mobile worker requires Node 22.12 or newer; found ${version}`,
+      `The mobile worker requires Node.js 24 or newer; found ${version}`,
     )
   }
 }
@@ -74,6 +81,7 @@ class NodeWorkerClient implements MobileWorkerClient {
   private readonly pending = new Map<number, PendingRequest>()
   private readonly listeners = new Set<(event: MobileWorkerEvent) => void>()
   private child?: WorkerProcess
+  private exited?: Promise<number>
   private startPromise?: Promise<void>
   private rejectStart?: (error: Error) => void
   private nextRequestId = 1
@@ -83,9 +91,13 @@ class NodeWorkerClient implements MobileWorkerClient {
   private stderr = ''
 
   constructor(options: NodeWorkerClientOptions) {
-    this.nodePath = options.nodePath ?? 'node'
+    this.nodePath = options.nodePath ?? process.env.PICKLE_NODE_PATH ?? 'node'
     this.workerEntry =
-      options.workerEntry ?? new URL('./worker.ts', import.meta.url)
+      options.workerEntry ??
+      new URL(
+        import.meta.url.endsWith('.ts') ? './worker.ts' : './worker.js',
+        import.meta.url,
+      )
   }
 
   async request(
@@ -129,7 +141,6 @@ class NodeWorkerClient implements MobileWorkerClient {
           payload: request,
         })}\n`,
       )
-      void child.stdin.flush()
     } catch (error) {
       const pending = this.pending.get(id)
       this.pending.delete(id)
@@ -155,7 +166,7 @@ class NodeWorkerClient implements MobileWorkerClient {
     if (!child || child.exitCode !== null) return
     child.kill(15)
     const forceKill = setTimeout(() => child.kill(9), workerShutdownTimeoutMs)
-    await child.exited
+    await this.exited
     clearTimeout(forceKill)
   }
 
@@ -172,13 +183,17 @@ class NodeWorkerClient implements MobileWorkerClient {
 
   private launch(): Promise<void> {
     return new Promise<void>((resolve, reject) => {
-      const child = spawnWorker(this.nodePath, this.workerEntry)
+      const { child, exited } = spawnWorker(this.nodePath, this.workerEntry)
       this.child = child
+      this.exited = exited
       this.rejectStart = reject
 
-      void new Response(child.stderr).text().then((stderr) => {
-        this.stderr = stderr
-      })
+      child.stdin.on('error', (error) => this.fail(error))
+      void text(child.stderr)
+        .then((stderr) => {
+          this.stderr = stderr
+        })
+        .catch((error: Error) => this.fail(error))
       void this.readMessages(child, () => {
         this.ready = true
         this.rejectStart = undefined
@@ -188,16 +203,18 @@ class NodeWorkerClient implements MobileWorkerClient {
           error instanceof Error ? error : new Error(errorMessage(error)),
         )
       })
-      void child.exited.then((code) => {
-        if (this.child === child) this.child = undefined
-        if (this.disposed) return
-        const detail = this.stderr.trim()
-        const error = new Error(
-          `Mobile worker exited before disposal (code ${code})` +
-            (detail ? `: ${detail}` : ''),
-        )
-        this.fail(error)
-      })
+      void exited
+        .then((code) => {
+          if (this.child === child) this.child = undefined
+          if (this.disposed) return
+          const detail = this.stderr.trim()
+          const error = new Error(
+            `Mobile worker exited before disposal (code ${code})` +
+              (detail ? `: ${detail}` : ''),
+          )
+          this.fail(error)
+        })
+        .catch((error: Error) => this.fail(error))
     })
   }
 
@@ -205,7 +222,7 @@ class NodeWorkerClient implements MobileWorkerClient {
     child: WorkerProcess,
     onReady: () => void,
   ): Promise<void> {
-    const reader = child.stdout.getReader()
+    const reader = Readable.toWeb(child.stdout).getReader()
     const decoder = new TextDecoder()
     let buffer = ''
     while (true) {

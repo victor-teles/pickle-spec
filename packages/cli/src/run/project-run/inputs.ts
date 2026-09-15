@@ -1,3 +1,6 @@
+import { glob, stat } from 'node:fs/promises'
+import { readFile } from 'node:fs/promises'
+import { existsSync } from 'node:fs'
 import { relative, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { openTestRunStore } from '@pickle-spec/runner'
@@ -6,7 +9,8 @@ import {
   validateSpecificationMetadata,
 } from '@pickle-spec/spec'
 import { defaultExtensionsFile } from '../../configuration/config'
-import { extensionsSchema, type Extensions } from '../../extensions/extensions'
+import type { Extensions } from '../../extensions/extensions'
+import { loadExtensionModule } from '../../extensions/extension-module'
 
 export async function loadExtensions(
   path?: string,
@@ -14,13 +18,11 @@ export async function loadExtensions(
 ): Promise<Extensions> {
   const selectedPath = path ?? defaultExtensionsFile
   const absolutePath = resolve(root, selectedPath)
-  if (!(await Bun.file(absolutePath).exists())) {
+  if (!existsSync(absolutePath)) {
     if (!path) return {}
     throw new Error(`Extensions file not found: ${selectedPath}`)
   }
-  return extensionsSchema.parse(
-    (await import(pathToFileURL(absolutePath).href)).default ?? {},
-  )
+  return loadExtensionModule(pathToFileURL(absolutePath))
 }
 
 export async function loadProjectSpecifications(
@@ -30,19 +32,16 @@ export async function loadProjectSpecifications(
 ) {
   const paths = new Set<string>()
   for (const pattern of Array.isArray(patterns) ? patterns : [patterns]) {
-    const glob = new Bun.Glob(pattern)
-    for await (const path of glob.scan({
-      cwd: root,
-      absolute: true,
-      onlyFiles: true,
-    }))
-      paths.add(path)
+    for await (const path of glob(pattern, { cwd: root })) {
+      const absolutePath = resolve(root, path)
+      if ((await stat(absolutePath)).isFile()) paths.add(absolutePath)
+    }
   }
   if (paths.size === 0) return []
   const files = await Promise.all(
     [...paths].toSorted().map(async (path) => ({
       uri: relative(root, path),
-      source: await Bun.file(path).text(),
+      source: await readFile(path, 'utf8'),
     })),
   )
   validateSpecificationMetadata(files, language)

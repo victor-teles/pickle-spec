@@ -1,0 +1,15 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "declaration": true,
+    "outDir": "lib",
+    "rootDir": ".",
+    "incremental": false,
+    "allowImportingTsExtensions": true,
+    "rewriteRelativeImportExtensions": true,
+    "noEmitOnError": true
+  },
+  "include": ["index.ts", "benchmarking.ts", "schemas.ts", "testing.ts", "src"],
+  "exclude": ["tests", "lib"]
+}

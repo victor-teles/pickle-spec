@@ -1,3 +1,6 @@
+import { spawnSync } from 'node:child_process'
+import { readFile } from 'node:fs/promises'
+import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 
 type RunResult = { stdout: string; stderr: string; exitCode: number }
@@ -33,17 +36,15 @@ export interface GitWorkspace {
 }
 
 function run(cwd: string, cmd: string[]): RunResult {
-  const result = Bun.spawnSync({
-    cmd,
-    cwd,
-    stdin: 'ignore',
-    stdout: 'pipe',
-    stderr: 'pipe',
+  const result = spawnSync(cmd[0] ?? '', cmd.slice(1), {
+    cwd: cwd,
+    encoding: 'utf8',
+    stdio: ['ignore', 'pipe', 'pipe'],
   })
   return {
-    stdout: result.stdout.toString(),
-    stderr: result.stderr.toString(),
-    exitCode: result.exitCode ?? 1,
+    stdout: result.stdout ?? '',
+    stderr: result.stderr ?? result.error?.message ?? '',
+    exitCode: result.status ?? 1,
   }
 }
 
@@ -76,9 +77,9 @@ async function diffFor(
   untracked: boolean,
 ) {
   if (untracked) {
-    const file = Bun.file(join(root, path))
-    if (!(await file.exists())) return ''
-    return `${(await file.text())
+    const file = join(root, path)
+    if (!existsSync(file)) return ''
+    return `${(await readFile(file, 'utf8'))
       .split('\n')
       .map((line) => `+${line}`)
       .join('\n')}\n`
@@ -97,7 +98,7 @@ async function pullRequestAvailability(root: string): Promise<{
   available: boolean
   reason?: string
 }> {
-  if (!Bun.which('gh')) {
+  if (run(root, ['gh', '--version']).exitCode !== 0) {
     return { available: false, reason: 'GitHub CLI is not available' }
   }
   const remotes = git(root, ['remote', '-v'])

@@ -1,5 +1,5 @@
 const impeccableLiveDev =
-  Bun.env.NODE_ENV === 'development' ? ['http://localhost:8400'] : []
+  process.env.NODE_ENV === 'development' ? ['http://localhost:8400'] : []
 
 async function inlineScriptHashes(html: string): Promise<string[]> {
   const scripts = [

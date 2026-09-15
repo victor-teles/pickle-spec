@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import type { Scenario, ScenarioStep } from '../parsing/specification'
 
 function stepDigest(step: ScenarioStep): string {
@@ -13,7 +14,7 @@ function stepDigest(step: ScenarioStep): string {
 export function scenarioRevision(
   scenario: Pick<Scenario, 'steps' | 'template'>,
 ): string {
-  const hasher = new Bun.CryptoHasher('sha256')
+  const hasher = createHash('sha256')
   hasher.update(
     (scenario.template?.steps ?? scenario.steps).map(stepDigest).join('\0'),
   )

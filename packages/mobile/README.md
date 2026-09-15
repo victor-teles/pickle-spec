@@ -1,14 +1,14 @@
 # `@pickle-spec/mobile`
 
 The mobile adapter runs Android Emulator and iOS Simulator scenarios through a
-versioned Node worker. The Bun runner remains runtime-independent, and
+versioned Node worker. The runner communicates through the worker protocol, and
 `agent-device` types stay inside the worker.
 
 ## Real-emulator smoke test
 
 The smoke test is optional and skipped by default. It requires:
 
-- Node 22.12 or newer on `PATH`, or an absolute `PICKLE_NODE_PATH`;
+- Node.js 24 or newer on `PATH`, or an absolute `PICKLE_NODE_PATH`;
 - the Android SDK and `adb` on `PATH`;
 - a booted Android Emulator visible to `agent-device doctor`;
 - an installable `.apk` or `.aab` and its Android application ID;
@@ -34,7 +34,7 @@ deleted and the configured binary is installed fresh.
 The iOS smoke test is also optional and skipped by default. It requires:
 
 - macOS with Xcode and Xcode Command Line Tools installed;
-- Node 22.12 or newer on `PATH`, or an absolute `PICKLE_NODE_PATH`;
+- Node.js 24 or newer on `PATH`, or an absolute `PICKLE_NODE_PATH`;
 - a booted iOS Simulator visible to `agent-device doctor`;
 - an installable `.app` or `.ipa` and its bundle identifier;
 - visible text that the installed application should show after launch.

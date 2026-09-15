@@ -14,7 +14,10 @@ import type {
   StudioPlanValidationRequest,
 } from '@pickle-spec/studio'
 import { startProjectRun } from '../../run/execute-run'
-import type { StartProjectRunInput } from '../../run/project-run/types'
+import type {
+  StartProjectRunInput,
+  StartedProjectRun,
+} from '../../run/project-run/types'
 import {
   checkoutHead,
   type PlanValidationProject,
@@ -196,7 +199,7 @@ async function receiptIsCurrent(
 
 export function createStudioPlanValidationService(
   project: PlanValidationProject,
-) {
+): StudioPlanValidationService {
   const gateway: StudioPlanValidationGateway = {
     inspect: (request) =>
       asResult(async () => {
@@ -336,6 +339,9 @@ export function createStudioPlanValidationService(
   }
 }
 
-export type StudioPlanValidationService = ReturnType<
-  typeof createStudioPlanValidationService
->
+export type StudioPlanValidationService = StudioPlanValidationGateway & {
+  start(
+    request: StudioPlanValidationRequest,
+    callbacks: ValidationCallbacks,
+  ): Promise<Pick<StartedProjectRun, 'id' | 'done'>>
+}

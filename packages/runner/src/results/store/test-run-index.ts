@@ -1,7 +1,7 @@
 import { z } from 'zod'
 import { requiredValue } from '../../required-value'
 import { cacheOutcomeSchema } from '../schema/run-schema-primitives'
-import { Database } from 'bun:sqlite'
+import { Database } from '../../storage/sqlite'
 import type { TestResultState } from '../../execution/run-scenario'
 import { finalScenarioAttempt } from '../../execution/run-scenario'
 import type { TestRunManifest, TestRunSummary } from './test-run-store-types'
@@ -67,7 +67,7 @@ type IndexColumn = { name: string }
 type IndexedSchemaVersion = Record<'user_version', number>
 
 function openIndex(path: string): Database {
-  const db = new Database(path, { create: true })
+  const db = new Database(path)
   db.run(`
     CREATE TABLE IF NOT EXISTS runs (
       id TEXT PRIMARY KEY,

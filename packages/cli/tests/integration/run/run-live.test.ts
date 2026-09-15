@@ -104,10 +104,10 @@ export default {
     async openSession() {
       return {
         async executeStep(step, signal) {
-          await Bun.write(\`\${gateDirectory}/\${step.text}.started\`, '')
-          while (!(await Bun.file(\`\${gateDirectory}/\${step.text}.release\`).exists())) {
+          await (await import('node:fs/promises')).writeFile(\`\${gateDirectory}/\${step.text}.started\`, '')
+          while (!(await (await import('node:fs')).existsSync(\`\${gateDirectory}/\${step.text}.release\`))) {
             if (signal?.aborted) throw new DOMException('Scenario cancelled', 'AbortError')
-            await Bun.sleep(5)
+            await (await import('node:timers/promises')).setTimeout(5)
           }
           return { state: 'passed', resolvedActions: [] }
         },
@@ -204,10 +204,10 @@ export default {
     async openSession() {
       return {
         async executeStep(step, signal) {
-          await Bun.write(\`\${gateDirectory}/\${step.text}.started\`, '')
-          while (!(await Bun.file(\`\${gateDirectory}/\${step.text}.release\`).exists())) {
+          await (await import('node:fs/promises')).writeFile(\`\${gateDirectory}/\${step.text}.started\`, '')
+          while (!(await (await import('node:fs')).existsSync(\`\${gateDirectory}/\${step.text}.release\`))) {
             if (signal?.aborted) throw new DOMException('Scenario cancelled', 'AbortError')
-            await Bun.sleep(5)
+            await (await import('node:timers/promises')).setTimeout(5)
           }
           return { state: 'passed', resolvedActions: [] }
         },
@@ -462,7 +462,7 @@ test('preserves materialized evidence and restores the terminal when rendering t
   )
   await Bun.write(
     join(project, 'pickle.extensions.ts'),
-    `Bun.stringWidth = () => { throw new Error('Reporter rendering failed') }
+    `Object.defineProperty(process.stdout, 'columns', { get() { throw new Error('Reporter rendering failed') } })
 
 export default {
   adapter: {

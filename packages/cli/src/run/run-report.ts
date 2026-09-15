@@ -1,3 +1,4 @@
+import stringWidth from 'string-width'
 import { realpathSync } from 'node:fs'
 import { isAbsolute, relative, resolve, sep } from 'node:path'
 import { finalScenarioAttempt, type TestResult } from '@pickle-spec/runner'
@@ -101,7 +102,7 @@ function stateMark(state: TestResult['state'], color: boolean): string {
 function textUnits(value: string): TextUnit[] {
   return [...graphemeSegmenter.segment(value)].map(({ segment }) => ({
     value: segment,
-    width: Bun.stringWidth(segment),
+    width: stringWidth(segment),
   }))
 }
 
@@ -131,7 +132,7 @@ export function wrappedLines(
   columns?: number,
   visiblePrefixLength = prefix.length,
 ): string[] {
-  if (!columns || visiblePrefixLength + Bun.stringWidth(content) <= columns) {
+  if (!columns || visiblePrefixLength + stringWidth(content) <= columns) {
     return [`${prefix}${content}`]
   }
 
@@ -165,8 +166,8 @@ export function wrappedLines(
         .trimStart(),
     )
     linePrefix =
-      Bun.stringWidth(continuationPrefix) < columns ? continuationPrefix : ''
-    prefixLength = Bun.stringWidth(linePrefix)
+      stringWidth(continuationPrefix) < columns ? continuationPrefix : ''
+    prefixLength = stringWidth(linePrefix)
   }
   return lines
 }

@@ -10,15 +10,14 @@
     "directory": "packages/cli"
   },
   "bin": {
-    "pickle": "./src/cli.ts"
+    "pickle": "./lib/src/cli.js"
   },
   "files": [
-    "index.ts",
-    "src/**/*.ts"
+    "lib"
   ],
   "type": "module",
   "exports": {
-    ".": "./index.ts"
+    ".": "./lib/index.js"
   },
   "publishConfig": {
     "access": "public"
@@ -31,7 +30,9 @@
     "test:integration:confidentiality": "bunx --bun vitest run --configLoader runner --experimental.viteModuleRunner=false --experimental.nodeLoader=false --config vitest.integration.config.ts tests/integration/execution-cache/execution-cache-confidentiality.test.ts",
     "test:integration:main": "bunx --bun vitest run --configLoader runner --experimental.viteModuleRunner=false --experimental.nodeLoader=false --config vitest.integration.config.ts --exclude '**/execution-cache-confidentiality.test.ts'",
     "test:e2e": "bunx --bun vitest run --configLoader runner --experimental.viteModuleRunner=false --experimental.nodeLoader=false --config vitest.e2e.config.ts",
-    "test:all": "bun run test:unit && bun run test:integration && bun run test:e2e"
+    "test:all": "bun run test:unit && bun run test:integration && bun run test:e2e",
+    "build": "bun ../../scripts/build-package.ts",
+    "prepack": "bun run build"
   },
   "dependencies": {
     "@pickle-spec/configuration": "workspace:*",
@@ -40,22 +41,23 @@
     "@pickle-spec/spec": "workspace:*",
     "@pickle-spec/studio": "workspace:*",
     "@pickle-spec/web": "workspace:*",
-    "@types/bun": "catalog:",
     "@typescript/typescript6": "catalog:",
     "commander": "^15.0.0",
     "ora": "8",
     "picocolors": "^1.1.1",
     "prompts": "^2.4.2",
+    "string-width": "7.2.0",
     "zod": "catalog:"
   },
   "devDependencies": {
     "@axe-core/playwright": "^4.13.0",
+    "@types/bun": "catalog:",
     "@types/prompts": "^2.4.9",
     "playwright": "^1.55.0",
     "typescript": "catalog:",
     "vitest": "catalog:"
   },
   "engines": {
-    "bun": ">=1.4.2"
+    "node": ">=24.0.0"
   }
 }

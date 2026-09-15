@@ -1,4 +1,5 @@
-import { mkdir } from 'node:fs/promises'
+import { createHash } from 'node:crypto'
+import { mkdir, writeFile } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import {
   type EvidenceAvailability,
@@ -66,7 +67,7 @@ type FinishWebStepRecordingInput = {
 }
 
 function screenshotIdentity(kind: string, value: string): string {
-  const digest = new Bun.CryptoHasher('sha256').update(value).digest('hex')
+  const digest = createHash('sha256').update(value).digest('hex')
   return `${kind}-${digest.slice(0, 16)}`
 }
 
@@ -219,7 +220,7 @@ async function captureScreenshot(
     await mkdir(directory, { recursive: true })
     const format = screenshotOptions?.format ?? 'png'
     const path = stepScreenshotPath(state, stepState)
-    await Bun.write(
+    await writeFile(
       path,
       await state.automation.screenshot({
         format,

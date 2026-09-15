@@ -5,9 +5,11 @@ description: Install the CLI and prepare a project for its first run.
 
 ## Prerequisites
 
-Install Bun 1.4.2 or newer and make sure `bun` is available on your PATH. Pickle's CLI uses the Bun runtime regardless of which package manager installs it.
+Install **Node.js 24 or newer** and make sure `node` is available on your PATH. You can install Pickle with npm, pnpm, Yarn, or Bun. The CLI, Studio, and native worker run on Node.js; Bun is not required.
 
-Web execution also needs a browser and model credentials for Adaptive execution. Native execution needs Node.js and an Android Emulator or iOS Simulator. The target-specific quick starts cover those requirements.
+Pickle uses Node's built-in SQLite for the local execution cache and test-run index. Published packages contain compiled JavaScript and TypeScript declarations.
+
+Web execution also needs a browser and model credentials for Adaptive execution. Native execution also needs an Android Emulator or iOS Simulator. The target-specific quick starts cover those requirements.
 
 ## Install the CLI
 

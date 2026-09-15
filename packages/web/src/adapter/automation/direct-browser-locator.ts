@@ -1,3 +1,4 @@
+import { setTimeout as sleep } from 'node:timers/promises'
 import type { BrowserContext, Locator, Page } from '@browserbasehq/stagehand'
 import type { ScenarioVariableBinding } from '@pickle-spec/spec'
 import {
@@ -77,7 +78,7 @@ export async function waitForLocator(
       ? await locatorFor(page, locator, bindings).isVisible()
       : false
     if (reachedState(state, exists, visible)) return true
-    await Bun.sleep(50)
+    await sleep(50)
   }
   return false
 }
