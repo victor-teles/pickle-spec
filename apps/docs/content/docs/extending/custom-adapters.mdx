@@ -1,0 +1,51 @@
+---
+title: Custom adapters
+description: Connect a custom execution target through an explicit project extension.
+---
+
+Create `pickle.extensions.ts` when a project needs a custom execution-target adapter:
+
+```ts
+import type { ExecutionTargetAdapter } from "@pickle-spec/runner";
+
+const adapter: ExecutionTargetAdapter = {
+  capabilities: ["filesystem"],
+  async openSession() {
+    return {
+      async executeStep(step) {
+        return {
+          state: "passed",
+          resolvedActions: [{ description: `Execute: ${step.text}` }],
+        };
+      },
+      async close() {},
+    };
+  },
+};
+
+export default {
+  adapters: {
+    custom: adapter,
+  },
+};
+```
+
+Declare the profile in `pickle.config.jsonc` and import the adapter explicitly. Pickle Spec does not discover plugins dynamically.
+
+```jsonc
+{
+  "schemaVersion": 1,
+  "executionTargetProfiles": {
+    "custom": {
+      "adapter": "custom",
+      "capabilities": ["filesystem"],
+    },
+  },
+}
+```
+
+Run the custom adapter with:
+
+```npm
+npx pickle run --profile custom --extensions pickle.extensions.ts
+```

@@ -1,0 +1,25 @@
+---
+title: Package ownership
+description: Understand the public boundaries and lockstep release set.
+---
+
+Each scoped package owns one public boundary.
+
+| Package                      | Responsibility                                                                       |
+| ---------------------------- | ------------------------------------------------------------------------------------ |
+| `@pickle-spec/configuration` | Provide shared strict configuration validation rules.                                |
+| `@pickle-spec/spec`          | Parse Specifications and select Scenarios.                                           |
+| `@pickle-spec/runner`        | Schedule Scenarios and produce run events and test results.                          |
+| `@pickle-spec/web`           | Adapt Stagehand operations to the runner contract.                                   |
+| `@pickle-spec/mobile`        | Adapt Android Emulator and iOS Simulator operations through an isolated Node worker. |
+| `@pickle-spec/studio`        | Provide the local Studio installed for `pickle studio`.                              |
+| `@pickle-spec/cli`           | Install the `pickle` executable and compose product commands.                        |
+
+The `apps/example` workspace contains sample Specifications.
+
+All seven packages belong to one lockstep release set. The publish workflow
+runs unit, integration, E2E, and package checks before publishing them in
+dependency order. See [Release validation](https://github.com/victor-teles/pickle-spec/blob/main/docs/releasing.md) for the gates.
+Library consumers use the package roots. Adapter conformance and controlled
+benchmark tooling are exposed only at `@pickle-spec/runner/testing` and
+`@pickle-spec/runner/benchmarking`.

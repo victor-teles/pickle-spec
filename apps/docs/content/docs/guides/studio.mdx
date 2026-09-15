@@ -1,0 +1,27 @@
+---
+title: Studio
+description: Open the local UI to author Specifications and inspect test runs.
+---
+
+Studio binds to loopback and opens the configured project by default:
+
+```npm
+npx pickle studio
+```
+
+Remote access requires an explicit host and prints a security warning:
+
+```npm
+npx pickle studio --remote 192.168.1.20
+```
+
+The session token grants access to local project data. Use remote access only on
+a trusted network.
+
+## Prepare your first run
+
+Studio shows the setup checks blocking the first run and starts one Scenario at a time. Complete the [web quick start](/docs/web/quick-start) or [native setup](/docs/native) to configure a target and add a meaningful assertion.
+
+## Inspect results and Replay
+
+Studio reads your local project and run history. It shows execution mode and cache outcomes with results, offers Cache refresh beside Run, and keeps cache inspection and clearing under Settings. Read [Adaptive execution and Replay](/docs/guides/replay) for cache behavior and [Test runs and exports](/docs/guides/results) for storage and retention.

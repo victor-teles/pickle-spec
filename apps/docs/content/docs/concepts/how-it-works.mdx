@@ -17,14 +17,7 @@ Pickle Spec keeps Specification parsing separate from execution-target automatio
 
 ## Package ownership
 
-| Package               | Owns                                                              |
-| --------------------- | ----------------------------------------------------------------- |
-| `@pickle-spec/spec`   | Gherkin parsing, identity, and selection.                         |
-| `@pickle-spec/runner` | Scheduling, retries, timeouts, cancellation, events, and results. |
-| `@pickle-spec/web`    | Stagehand-backed browser sessions and web Replay instructions.    |
-| `@pickle-spec/mobile` | Emulator and Simulator sessions through an isolated Node worker.  |
-| `@pickle-spec/cli`    | Commands, configuration, composition, persistence, and reporting. |
-| `@pickle-spec/studio` | The local UI for authoring and observing runs.                    |
+Each package owns one public boundary. See [Package ownership](/docs/contributing/packages) for the complete package list and release contract.
 
 ## Adaptive execution and Replay
 
@@ -41,3 +34,5 @@ An entry applies to one project, Scenario revision, execution target profile and
 ## Local state
 
 Pickle stores Test runs and the shared Execution cache under `~/.pickle`. Evidence stays in the configured local artifact directories. Studio reads the same local project and run history.
+
+For cache controls, divergence behavior, and storage limits, read [Adaptive execution and Replay](/docs/guides/replay).

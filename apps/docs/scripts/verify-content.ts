@@ -3,13 +3,22 @@ import { resolve } from 'node:path'
 const docsRoot = resolve(import.meta.dir, '..')
 const requiredPages = [
   'content/docs/index.mdx',
+  'content/docs/installation.mdx',
   'content/docs/web/quick-start.mdx',
+  'content/docs/web/configuration.mdx',
   'content/docs/web/scenarios.mdx',
   'content/docs/concepts/syntax.mdx',
   'content/docs/concepts/how-it-works.mdx',
   'content/docs/native/index.mdx',
   'content/docs/native/android.mdx',
   'content/docs/native/ios.mdx',
+  'content/docs/guides/studio.mdx',
+  'content/docs/guides/running-tests.mdx',
+  'content/docs/guides/replay.mdx',
+  'content/docs/guides/results.mdx',
+  'content/docs/extending/custom-adapters.mdx',
+  'content/docs/contributing/development.mdx',
+  'content/docs/contributing/packages.mdx',
 ]
 
 for (const page of requiredPages) {
@@ -25,8 +34,8 @@ for (const requiredText of [
   'pickle init',
   'examples/web-quick-start/pickle.config.jsonc',
   'examples/web-quick-start/features/example.feature',
-  'bunx pickle check',
-  'bunx pickle run --profile web',
+  'npx pickle check',
+  'npx pickle run --profile web',
 ]) {
   if (!quickStart.includes(requiredText)) {
     throw new Error(`Web quick start is missing: ${requiredText}`)

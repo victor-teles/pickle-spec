@@ -12,8 +12,8 @@ You need Node 22.12 or newer, the Android SDK, `adb`, and a booted Android Emula
 
 List user-installed applications:
 
-```bash
-bunx pickle apps --platform android
+```npm
+npx pickle apps --platform android
 ```
 
 Add `--all` to include system applications.
@@ -60,9 +60,9 @@ Feature: Android checkout
     Then visible: text="Payment"
 ```
 
-```bash
-bunx pickle doctor
-bunx pickle run --profile android
+```npm
+npx pickle doctor
+npx pickle run --profile android
 ```
 
 </Step>
