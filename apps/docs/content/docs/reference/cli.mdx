@@ -47,11 +47,11 @@ npx pickle run --help
 | Option                                            | Purpose                                                   |
 | ------------------------------------------------- | --------------------------------------------------------- |
 | `--concurrency <count>`                           | Set concurrent Scenario execution.                        |
-| `--retries <count>`                               | Override the retry count for this run.                    |
+| `--retries <count>`                               | Override infrastructure retries for this run.             |
 | `--scenario-timeout <ms>` / `--step-timeout <ms>` | Set positive timeout values in milliseconds.              |
 | `--headed`                                        | Show the local browser.                                   |
 | `--reuse-server`                                  | Reuse the configured application server.                  |
-| `--fast`                                          | Prefer the fastest execution profile.                     |
+| `--fast`                                          | Use fast web fidelity settings for this run.              |
 | `--application-revision <revision>`               | Set the application revision for cache selection.         |
 | `--refresh-cache`                                 | Refresh reusable instructions through Adaptive execution. |
 | `--cache-only`                                    | Require reusable instructions without model inference.    |
