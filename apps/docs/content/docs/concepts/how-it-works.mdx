@@ -21,6 +21,8 @@ Each package owns one public boundary. See [Package ownership](/docs/contributin
 
 ## Adaptive execution and Replay
 
+Read [Core concepts](/docs/concepts/terminology) for the distinction between a Test run, Test result, and attempt.
+
 Web starts in Adaptive mode when no applicable cache entry exists. The adapter resolves browser operations and compiles a deterministic step prefix as the Scenario runs.
 
 A later matching run can Replay that prefix directly. If the stored prefix is shorter than the Scenario, web Replays the known head and resumes Adaptive execution at the first gap in the same session.

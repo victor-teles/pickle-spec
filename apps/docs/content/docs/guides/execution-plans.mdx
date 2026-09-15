@@ -1,0 +1,49 @@
+---
+title: Execution plans
+description: Inspect Replay instructions and update supported web action locators in Studio.
+---
+
+## Inspect a cached plan
+
+Open a Scenario's **Plan** view in Studio. Pickle uses the selected Scenario and execution target profile to find an applicable cached plan.
+
+When one profile is available, Studio selects it directly. With multiple profiles, choose the profile to inspect.
+
+A plan shows the operations associated with Gherkin steps. Its identity includes the Scenario revision, profile configuration, and application revision.
+
+If no plan exists, run the Scenario to produce reusable instructions. An application revision is required for caching.
+
+## Edit a web action locator
+
+Use the editing controls on a supported web interaction to change its locator. A locator identifies the element that receives the action.
+
+Choose **Save change** to update that action in the current Replay cache entry. Saving does not execute the Scenario or change historical results.
+
+Run the Scenario again to check the new locator:
+
+```npm
+npx pickle run --profile web --scenario "Customer adds one product" --cache-only
+```
+
+Replace the profile and Scenario name with your own values. Cache-only execution requires a complete applicable entry and fails if Replay diverges.
+
+<Callout type="warn" title="Cache edits are local">
+  Clearing the Execution cache removes manual locator changes. Cache refresh can
+  replace the cached instructions.
+</Callout>
+
+## Resolve a write conflict
+
+Studio checks the cache revision and instruction digest before saving. A concurrent edit or run can make the displayed plan stale.
+
+Reload the plan after a write conflict. Inspect the current locator before applying your change again.
+
+## Durable revisions and validation
+
+The runner also provides APIs for immutable plan revisions, validation receipts, and active selections. These concepts are separate from Studio's direct cache edit.
+
+A validation receipt identifies a successful validation run with zero inference. It binds the revision to its inputs, assertions, and intent review.
+
+The plan model supports activation, rollback, and deactivation. Those library capabilities do not imply matching CLI commands or complete Studio controls.
+
+Use the documented Studio locator workflow for direct editing. Read [Adaptive execution and Replay](/docs/guides/replay) for cache identity and divergence behavior.

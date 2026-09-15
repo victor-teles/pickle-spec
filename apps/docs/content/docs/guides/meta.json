@@ -1,4 +1,12 @@
 {
   "title": "Guides",
-  "pages": ["studio", "running-tests", "replay", "results"]
+  "pages": [
+    "studio",
+    "running-tests",
+    "application-server",
+    "replay",
+    "execution-plans",
+    "results",
+    "troubleshooting"
+  ]
 }

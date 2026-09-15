@@ -66,3 +66,37 @@ To attach to an existing browser, set `web.browser.cdpUrl` to an absolute HTTP, 
 If you omit `cdpExtensionId`, the browser must allow Stagehand to load its extension. Set `cdpExtensionId` when the external browser already has the extension loaded. Pickle Spec closes its CDP connection after the run. The external browser owner controls the browser process and must stop it when appropriate.
 
 Treat cloud CDP URLs as secrets because they often contain credentials. Do not commit a credential-bearing `cdpUrl`. The external browser also controls launch settings such as headless mode. Pickle Spec ignores `web.browser.headless` when `cdpUrl` is set.
+
+## Browser environments
+
+The browser environment selects where automation runs. It is separate from the named execution target profile.
+
+| Setting                                  | Behavior                                   |
+| ---------------------------------------- | ------------------------------------------ |
+| `web.browser.environment: "local"`       | Start a local browser.                     |
+| `web.browser.cdpUrl`                     | Attach to an existing browser through CDP. |
+| `web.browser.environment: "browserbase"` | Use a Browserbase browser session.         |
+
+Browserbase configuration supports `browserbaseApiKey` and `browserbaseProjectId`. Do not combine the Browserbase environment with `cdpUrl`; configuration validation rejects that combination.
+
+## Fast execution and fidelity
+
+`web.profile` controls browser fidelity. Its values are `default` and `fast`; this field differs from an execution target profile ID.
+
+The default web profile preserves resources and animations. The fast web profile blocks images, media, and fonts, and disables animations by default.
+
+Use fast execution when those changes preserve the behavior you want to test. Resource blocking can change page layout or hide relevant behavior.
+
+To customize fast execution, add these fields inside your profile's `web` object:
+
+```jsonc
+"profile": "fast",
+"fidelity": {
+  "blockResources": ["media"],
+  "disableAnimations": true
+}
+```
+
+`web.fidelity` requires `web.profile: "fast"`. Test attempts record the fidelity policy and its trade-offs.
+
+To start your application before browser execution, configure an [Application server](/docs/guides/application-server).

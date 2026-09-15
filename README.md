@@ -1,4 +1,8 @@
-![Pickle Spec mascot: an abstract green character waving.](assets/brand/pickle-spec-mascot-banner.webp)
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/brand/pickle-spec-mascot-banner-dark.webp">
+  <source media="(prefers-color-scheme: light)" srcset="assets/brand/pickle-spec-mascot-banner.webp">
+  <img alt="Pickle Spec mascot: an abstract green character waving." src="assets/brand/pickle-spec-mascot-banner.webp" width="1902" height="827">
+</picture>
 
 # Pickle Spec
 
