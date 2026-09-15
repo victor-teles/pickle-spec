@@ -21,3 +21,12 @@ html {
 body {
   font-family: Inter, ui-sans-serif, system-ui, sans-serif;
 }
+
+.mascot-banner-dark,
+.dark .mascot-banner-light {
+  display: none;
+}
+
+.dark .mascot-banner-dark {
+  display: block;
+}

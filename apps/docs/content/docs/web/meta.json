@@ -1,4 +1,4 @@
 {
   "title": "Web",
-  "pages": ["quick-start", "scenarios"]
+  "pages": ["quick-start", "configuration", "scenarios"]
 }

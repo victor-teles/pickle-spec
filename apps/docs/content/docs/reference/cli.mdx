@@ -1,0 +1,66 @@
+---
+title: CLI reference
+description: Find commands and run options supported by the current CLI.
+---
+
+## Commands
+
+Run a command through the package manager used to install Pickle:
+
+```npm
+npx pickle --help
+npx pickle run --help
+```
+
+| Command                                | Purpose                                                                |
+| -------------------------------------- | ---------------------------------------------------------------------- |
+| `init`                                 | Create a project configuration shell and custom-adapter example.       |
+| `check`                                | Validate project files.                                                |
+| `doctor`                               | Diagnose environment readiness; add `--verbose` to show passed checks. |
+| `migrate`                              | Preview and apply Specification metadata migrations.                   |
+| `studio`                               | Open Studio; supports `--port`, `--no-open`, and `--remote`.           |
+| `run [specifications]`                 | Execute selected Specifications.                                       |
+| `apps --platform android`              | List applications; supports `ios` and `--all`.                         |
+| `cache inspect` / `cache clear`        | Inspect or clear the Execution cache.                                  |
+| `compare <baseline-id> <candidate-id>` | Compare persisted Test runs.                                           |
+| `import <archive>`                     | Import a Test run archive.                                             |
+| `export <id> --output <format=path>`   | Export a persisted Test run.                                           |
+
+## Run selection
+
+| Option                  | Purpose                                                         |
+| ----------------------- | --------------------------------------------------------------- |
+| `--config <path>`       | Load a configuration file.                                      |
+| `--extensions <path>`   | Load an explicit extensions file.                               |
+| `--suite <name>`        | Select a named suite.                                           |
+| `--profile <profile>`   | Select a target profile; repeat to select multiple profiles.    |
+| `--scenario <name>`     | Filter by Scenario name query.                                  |
+| `--tag <expression>`    | Filter with a Gherkin tag expression.                           |
+| `--state <state>`       | Select a Specification state; repeat to select multiple states. |
+| `--shard <index/total>` | Select a balanced shard, for example `1/3`.                     |
+| `--language <language>` | Select the Gherkin language.                                    |
+| `--rerun <id>`          | Create a new run from a previous run.                           |
+| `--failures`            | Restrict a rerun to source failures.                            |
+
+## Execution and output
+
+| Option                                            | Purpose                                                   |
+| ------------------------------------------------- | --------------------------------------------------------- |
+| `--concurrency <count>`                           | Set concurrent Scenario execution.                        |
+| `--retries <count>`                               | Override infrastructure retries for this run.             |
+| `--scenario-timeout <ms>` / `--step-timeout <ms>` | Set positive timeout values in milliseconds.              |
+| `--headed`                                        | Show the local browser.                                   |
+| `--reuse-server`                                  | Reuse the configured application server.                  |
+| `--fast`                                          | Use fast web fidelity settings for this run.              |
+| `--application-revision <revision>`               | Set the application revision for cache selection.         |
+| `--refresh-cache`                                 | Refresh reusable instructions through Adaptive execution. |
+| `--cache-only`                                    | Require reusable instructions without model inference.    |
+| `--screenshot <mode>`                             | Set screenshot capture mode.                              |
+| `--evidence <policy>`                             | Choose `off`, `on-failure`, or `always`.                  |
+| `--application-output <stream>`                   | Capture `stdout` or `stderr`; repeat for both.            |
+| `--reporter <name>`                               | Choose `default` or `ndjson`.                             |
+| `--output <format=path>`                          | Export a run; repeat for multiple destinations.           |
+| `--force`                                         | Allow overwriting output destinations.                    |
+| `--all-artifacts`                                 | Include all available artifacts in HTML output.           |
+
+`--refresh-cache` and `--cache-only` cannot be combined. See [Test runs and exports](/docs/guides/results) for output formats.

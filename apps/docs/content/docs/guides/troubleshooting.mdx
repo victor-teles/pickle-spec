@@ -1,0 +1,54 @@
+---
+title: Troubleshooting
+description: Diagnose setup failures, cache misses, and unavailable evidence.
+---
+
+## Validate project files
+
+Run the project check before starting a browser or device:
+
+```npm
+npx pickle check
+```
+
+The check validates configuration, Gherkin, and Specification metadata. Correct the reported file or field, then repeat the check.
+
+## Diagnose the environment
+
+To inspect environment readiness, including passed checks:
+
+```npm
+npx pickle doctor --verbose
+```
+
+For web execution, check browser availability and model credentials. For native execution, check Node.js and the configured Emulator or Simulator.
+
+## Explain a cache-only failure
+
+A cache-only run requires a complete applicable entry. It fails on a cache miss, partial prefix, or Replay divergence.
+
+Check `applicationRevision`, the selected profile, and the Scenario revision. Changes to these values can make an existing entry inapplicable.
+
+To inspect cache metadata:
+
+```npm
+npx pickle cache inspect
+```
+
+To regenerate instructions through Adaptive execution, run without `--cache-only` or use `--refresh-cache`. Adaptive execution can require model credentials.
+
+## Migrate older Specification metadata
+
+Commit or back up your Specifications before applying a migration. To preview metadata changes and review the confirmation prompt:
+
+```npm
+npx pickle migrate
+```
+
+Use `--yes` only when you intend to apply the migration without prompting.
+
+## Find missing diagnostics
+
+Check the evidence policy and the observation's availability state. Evidence can be unavailable even when a Test result exists.
+
+Application stdout and stderr require explicit capture. A reused server cannot provide these streams through Pickle; see [Application server](/docs/guides/application-server).

@@ -1,0 +1,91 @@
+---
+title: Running Specifications
+description: Select Scenarios, configure evidence, and choose a reporter.
+---
+
+## Select what to run
+
+To run the configured Specification glob, use:
+
+```npm
+npx pickle run
+```
+
+### Filter Scenarios
+
+Select a suite and profile, or narrow the run by tags, Scenario name, or state:
+
+```npm
+npx pickle run --suite smoke --profile web
+npx pickle run "features/**/*.feature" --tag "@smoke and not @slow"
+npx pickle run "features/**/*.feature" --scenario "checkout"
+npx pickle run "features/**/*.feature" --state draft
+```
+
+### Control scheduling
+
+Split work across CI jobs with shards, or set concurrency and retries for one run:
+
+```npm
+npx pickle run "features/**/*.feature" --shard 1/3
+npx pickle run "features/**/*.feature" --concurrency 5 --retries 1
+```
+
+### Capture diagnostics
+
+Choose screenshots, application output, or evidence persistence for one run:
+
+```npm
+npx pickle run "features/**/*.feature" --screenshot on-step
+npx pickle run --application-output stdout --application-output stderr
+npx pickle run --evidence always
+```
+
+## Evidence and application output
+
+Evidence persistence defaults to `on-failure`. Configure
+`evidence.persistence` for every run, override it with
+`executionTargetProfiles.<id>.evidence.persistence`, or use `--evidence` for
+one run. The supported policies are `off`, `on-failure`, and `always`; results
+and run events are persisted under every policy. Managed application stdout and
+stderr are independent diagnostic streams. Enable them under `server.output`,
+per profile under `applicationOutput`, or for one run with repeatable
+`--application-output` flags.
+
+## Terminal reporter
+
+The default reporter is for people. It groups every Test result by Specification
+URI, Specification, and Scenario, then reports the selected counts and timing:
+
+```text
+ RUN  pickle 1.0.2 /workspace/project
+
+ features/search.feature
+   Search
+     ✓ Visit main page [150ms]
+
+ Specifications  1
+ Scenarios       1
+ Test results    1 passed (1)
+ Start at        14:32:07
+ Duration        182ms
+```
+
+The execution target profile is omitted when only one profile is selected and
+shown on each Test result when multiple profiles run. Interactive terminals use
+state colors in addition to symbols; redirected output is plain text, and
+`NO_COLOR` disables color explicitly. Long paths and Scenario names wrap without
+being truncated.
+
+In CI and other redirected output, each complete Specification block is written
+as soon as every earlier Specification is also complete. Output remains
+append-only while preserving the same deterministic order and content as the
+finished report.
+
+## Machine-readable reporting
+
+Use `--reporter ndjson` when an integration needs the versioned run-event and
+test-result records as newline-delimited JSON. The human reporter format is not
+a machine-readable contract.
+
+See [Test runs and exports](/docs/guides/results) for reruns, comparisons, and output formats.

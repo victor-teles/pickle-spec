@@ -1,0 +1,72 @@
+---
+title: Test runs and exports
+description: Persist, rerun, compare, and export immutable test runs.
+---
+
+Every `pickle run` writes an immutable test run under `~/.pickle/projects/<project-name>-<project-key>/runs/`. Pickle Spec does not create runtime folders inside the project.
+
+Test runs have no deletion policy by default. Studio shows total local storage,
+warns at 5 GB, and lets you pin complete runs before applying an explicitly
+configured age or size limit. Active and pinned runs are never retention
+candidates.
+
+## Rerun selected results
+
+To create a selective rerun from an earlier test run, use:
+
+```npm
+npx pickle run --rerun <run-id>
+npx pickle run --rerun <run-id> --failures
+npx pickle run --rerun <run-id> --failures --scenario "Pay for the order"
+npx pickle run --rerun <run-id> --profile web
+```
+
+A rerun creates a new test run and records `sourceRunId`. It never changes the source run.
+
+## Export and import archives
+
+To move a test run between machines, export and import a run archive:
+
+```npm
+npx pickle export <run-id> --output archive=run.archive.json
+npx pickle import run.archive.json
+```
+
+Import preserves the original archive bytes under `~/.pickle/projects/<project-name>-<project-key>/archives/` and migrates older schemas in memory.
+
+## Compare runs
+
+To compare compatible test runs, use:
+
+```npm
+npx pickle compare <baseline-id> <candidate-id>
+```
+
+Comparison matches results by Scenario identifier and execution target profile identifier. It reports state, duration, flaky, execution-mode, Cache-outcome, inference-count, and artifact changes.
+
+## Export an HTML report
+
+To create a self-contained HTML export, use:
+
+```npm
+npx pickle export <run-id> --output html=report.html
+npx pickle export <run-id> --output html=report.html --all-artifacts
+```
+
+HTML export includes failure artifacts by default. Successful Adaptive fallback uses the normal artifact policy rather than a special category. The manifest includes execution mode, Cache outcome, and inference count. `--all-artifacts` embeds every available test artifact and prints a size warning when the export exceeds 10 MB.
+
+## Output formats
+
+Both `pickle run` and `pickle export` accept repeatable `--output format=path`
+requests for `json`, `ndjson`, `junit`, `html`, `archive`, and `allure`.
+Each destination is published independently after the complete output is staged.
+Existing destinations are preserved unless `--force` is explicit. For example:
+
+```npm
+npx pickle run --output junit=results.xml --output allure=allure-results
+npx pickle export <run-id> --output json=run.json --output html=report.html
+```
+
+Allure output is a raw `allure-results` directory that can be consumed by
+Allure 2 or Allure 3. Pickle Spec does not bundle an Allure report renderer,
+history manager, categories configuration, or runtime dependency.

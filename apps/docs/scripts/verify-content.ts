@@ -1,20 +1,66 @@
-import { resolve } from 'node:path'
+import { dirname, resolve } from 'node:path'
 
 const docsRoot = resolve(import.meta.dir, '..')
 const requiredPages = [
   'content/docs/index.mdx',
+  'content/docs/installation.mdx',
   'content/docs/web/quick-start.mdx',
+  'content/docs/web/configuration.mdx',
   'content/docs/web/scenarios.mdx',
   'content/docs/concepts/syntax.mdx',
   'content/docs/concepts/how-it-works.mdx',
+  'content/docs/concepts/terminology.mdx',
+  'content/docs/concepts/results-and-retries.mdx',
+  'content/docs/guides/application-server.mdx',
+  'content/docs/guides/execution-plans.mdx',
+  'content/docs/guides/troubleshooting.mdx',
+  'content/docs/reference/cli.mdx',
   'content/docs/native/index.mdx',
   'content/docs/native/android.mdx',
   'content/docs/native/ios.mdx',
+  'content/docs/guides/studio.mdx',
+  'content/docs/guides/running-tests.mdx',
+  'content/docs/guides/replay.mdx',
+  'content/docs/guides/results.mdx',
+  'content/docs/extending/custom-adapters.mdx',
+  'content/docs/contributing/development.mdx',
+  'content/docs/contributing/packages.mdx',
 ]
 
 for (const page of requiredPages) {
   if (!(await Bun.file(resolve(docsRoot, page)).exists())) {
     throw new Error(`Missing required docs page: ${page}`)
+  }
+}
+
+const contentRoot = resolve(docsRoot, 'content/docs')
+for await (const page of new Bun.Glob('**/*.mdx').scan(contentRoot)) {
+  const content = await Bun.file(resolve(contentRoot, page)).text()
+  for (const match of content.matchAll(/\]\(([^)]+)\)|href="([^"]+)"/g)) {
+    const href = (match[1] ?? match[2])?.split('#')[0]
+    if (!href || /^https?:/.test(href)) continue
+    const target = href.startsWith('/docs')
+      ? resolve(contentRoot, `.${href.slice(5)}`)
+      : resolve(contentRoot, dirname(page), href)
+    const candidates = [target, `${target}.mdx`, `${target}/index.mdx`]
+    const exists = await Promise.all(
+      candidates.map((candidate) => Bun.file(candidate).exists()),
+    )
+    if (!exists.some(Boolean)) {
+      throw new Error(`${page}: broken documentation link ${href}`)
+    }
+  }
+}
+
+const runDefinition = await Bun.file(
+  resolve(docsRoot, '../../packages/cli/src/run-command-definition.ts'),
+).text()
+const cliReference = await Bun.file(
+  resolve(contentRoot, 'reference/cli.mdx'),
+).text()
+for (const option of new Set(runDefinition.match(/--[a-z]+(?:-[a-z]+)*/g))) {
+  if (!cliReference.includes(option)) {
+    throw new Error(`CLI reference is missing run option: ${option}`)
   }
 }
 
@@ -25,8 +71,8 @@ for (const requiredText of [
   'pickle init',
   'examples/web-quick-start/pickle.config.jsonc',
   'examples/web-quick-start/features/example.feature',
-  'bunx pickle check',
-  'bunx pickle run --profile web',
+  'npx pickle check',
+  'npx pickle run --profile web',
 ]) {
   if (!quickStart.includes(requiredText)) {
     throw new Error(`Web quick start is missing: ${requiredText}`)

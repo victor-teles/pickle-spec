@@ -10,8 +10,8 @@ You need macOS, Node 22.12 or newer, Xcode, Xcode Command Line Tools, and a boot
 
 ### Find the bundle identifier
 
-```bash
-bunx pickle apps --platform ios --all
+```npm
+npx pickle apps --platform ios --all
 ```
 
 </Step>
@@ -58,9 +58,9 @@ Feature: iOS onboarding
     Then visible: text="Home"
 ```
 
-```bash
-bunx pickle doctor
-bunx pickle run --profile ios
+```npm
+npx pickle doctor
+npx pickle run --profile ios
 ```
 
 </Step>

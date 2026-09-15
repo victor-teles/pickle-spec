@@ -1,0 +1,51 @@
+---
+title: Results and retries
+description: Interpret result states, retry budgets, timeouts, and flaky results.
+---
+
+## Result states
+
+| State                  | Meaning                                                                |
+| ---------------------- | ---------------------------------------------------------------------- |
+| `passed`               | The Scenario completed successfully.                                   |
+| `failed`               | Scenario execution or an assertion failed.                             |
+| `infrastructure-error` | The execution environment failed to complete the attempt.              |
+| `skipped`              | Pickle did not execute the Scenario, for example because of `@ignore`. |
+| `cancelled`            | Execution was cancelled.                                               |
+
+Each Test result contains its attempts and step results. Inspect the final attempt together with earlier attempts when diagnosing a retry.
+
+## Separate retry budgets
+
+Pickle distinguishes infrastructure errors from functional failures. The default configuration allows one infrastructure retry and zero functional retries.
+
+Add this fragment to `pickle.config.jsonc` to configure both budgets:
+
+```jsonc
+"execution": {
+  "infrastructureRetries": 1,
+  "functionalRetries": 2,
+  "scenarioTimeoutMs": 30000,
+  "stepTimeoutMs": 10000
+}
+```
+
+A retry creates another attempt. A final passing result with multiple attempts is marked flaky. Cancelled execution and Replay divergence do not trigger ordinary retries.
+
+## Timeouts and concurrency
+
+`scenarioTimeoutMs` limits a Scenario attempt. `stepTimeoutMs` limits an individual step. Both values use milliseconds and must be positive integers.
+
+`concurrency` controls how many Scenarios can execute concurrently; its default is one. Higher concurrency needs enough browser or device resources.
+
+To override timing and concurrency for one run:
+
+```npm
+npx pickle run --concurrency 3 --scenario-timeout 30000 --step-timeout 10000
+```
+
+## Read evidence independently
+
+A missing screenshot does not change a passing result into a failure. Evidence availability records whether an observation exists or could be collected.
+
+[Evidence persistence](/docs/guides/running-tests#evidence-and-application-output) controls which evidence Pickle retains. Results and run events persist under every evidence policy.

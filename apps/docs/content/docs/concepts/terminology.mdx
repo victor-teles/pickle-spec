@@ -1,0 +1,31 @@
+---
+title: Core concepts
+description: Understand the objects and outcomes that appear in Pickle Spec.
+---
+
+## Terms used in these docs
+
+| Term                     | Meaning                                                                                     |
+| ------------------------ | ------------------------------------------------------------------------------------------- |
+| Specification            | A Gherkin Feature and its metadata, stored in a feature file.                               |
+| Scenario                 | One executable behavior, including any Background steps.                                    |
+| Execution target profile | A named configuration that selects an adapter and target settings.                          |
+| Adapter                  | The implementation that translates Scenario steps into browser or device operations.        |
+| Test run                 | An immutable record of one run request and its results.                                     |
+| Test result              | The outcome for one Scenario and execution target profile, including all attempts.          |
+| Attempt                  | One execution of a Scenario; a retry creates another attempt.                               |
+| Adaptive execution       | Execution that resolves operations when reusable instructions are unavailable.              |
+| Replay                   | Execution of stored deterministic instructions.                                             |
+| Execution cache          | Reusable instructions scoped to a Scenario, target configuration, and application revision. |
+| Execution plan           | A readable representation of those instructions, with supported editing operations.         |
+| Evidence                 | Screenshots, diagnostics, activity, and other observations associated with execution.       |
+
+Use these terms consistently. In particular, an attempt is part of a Test result, and a Test result is part of a Test run.
+
+## Result state and execution mode
+
+A passing Scenario can use Adaptive execution or Replay. Execution mode describes how it ran; result state describes its outcome.
+
+Cache outcome and inference count provide separate information. A mixed run can reuse a prefix, perform model inference, and still pass.
+
+Read [Results and retries](/docs/concepts/results-and-retries) to interpret failures and attempts.

@@ -1,0 +1,47 @@
+---
+title: Application server
+description: Start an application for a run and wait for readiness.
+---
+
+## Manage a local application
+
+Configure `server` when Pickle should start your application before executing Specifications. Add this fragment to `pickle.config.jsonc`:
+
+```jsonc
+"server": {
+  "command": "npm run dev",
+  "url": "http://localhost:3000",
+  "readinessPath": "/health",
+  "startupTimeoutMs": 60000,
+  "pollIntervalMs": 500,
+  "output": { "stdout": true, "stderr": true }
+}
+```
+
+Replace the command with your application's startup command. Use a health endpoint that exists in your application. Set your web profile's `baseUrl` to the application URL.
+
+`server.command` requires either `server.url` or `server.port`. With only a port, Pickle uses `http://localhost:<port>`.
+
+Pickle polls the readiness URL before running Scenarios. An explicit readiness path must return a status from 200 through 399.
+
+Without a readiness path, a response below 500 counts as ready. Configure a health endpoint when a generic page response is insufficient.
+
+## Reuse an existing server
+
+To reuse a healthy application server for one run:
+
+```npm
+npx pickle run --reuse-server
+```
+
+For repeated reuse, set `server.reuseExisting` to `true`. Pickle leaves a reused server running; it stops a server process that it starts.
+
+## Capture application output
+
+`server.output.stdout` and `server.output.stderr` enable independent diagnostic streams. Profile-level `applicationOutput` settings and CLI flags can override them.
+
+```npm
+npx pickle run --application-output stdout --application-output stderr
+```
+
+Pickle can capture output from its managed process. A reused server reports requested output streams as unsupported because Pickle does not own that process.

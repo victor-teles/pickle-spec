@@ -2,6 +2,17 @@
 title: Pickle Spec
 description: Run readable Gherkin Specifications against web and native applications.
 ---
+<div className="mascot-banner-light">
+
+![Pickle Spec mascot: an abstract green character waving.](../../../../assets/brand/pickle-spec-mascot-banner.webp)
+
+</div>
+
+<div className="mascot-banner-dark">
+
+![Pickle Spec mascot: an abstract green character waving.](../../../../assets/brand/pickle-spec-mascot-banner-dark.webp)
+
+</div>
 
 Pickle Spec turns each Scenario into a real browser or device session. You write the behavior. Pickle owns execution, retries, evidence, results, and deterministic Replay.
 
@@ -31,3 +42,46 @@ Pickle Spec turns each Scenario into a real browser or device session. You write
 ## Local by default
 
 Specifications, Test runs, caches, and artifacts stay on your machine or CI runner by default. Pickle Spec does not require a hosted control plane.
+
+The web adapter uses Stagehand for browser automation, and the mobile adapter uses Agent Device for Android Emulator and iOS Simulator automation. The CLI installs Studio as part of the compatible package set. Hosted synchronization and physical-device provisioning are outside the current release.
+
+## Work with your project
+
+Start with [Core concepts](/docs/concepts/terminology) to understand Scenarios, profiles, attempts, and Test runs.
+
+<Cards>
+  <Card
+    title="Open Studio"
+    href="/docs/guides/studio"
+    description="Author Specifications and inspect local test runs."
+  />
+  <Card
+    title="Run Specifications"
+    href="/docs/guides/running-tests"
+    description="Select Scenarios, capture evidence, and choose a reporter."
+  />
+  <Card
+    title="Use Adaptive execution and Replay"
+    href="/docs/guides/replay"
+    description="Manage cached execution and control model inference."
+  />
+  <Card
+    title="Compare and export results"
+    href="/docs/guides/results"
+    description="Rerun failures, compare runs, and export reports."
+  />
+</Cards>
+
+## Configure and diagnose execution
+
+- [Application server](/docs/guides/application-server): start your application and capture its output.
+- [Results and retries](/docs/concepts/results-and-retries): interpret states, retry budgets, and timeouts.
+- [Execution plans](/docs/guides/execution-plans): inspect cached instructions and edit supported web locators.
+- [Troubleshooting](/docs/guides/troubleshooting): diagnose setup failures and cache misses.
+- [CLI reference](/docs/reference/cli): find commands and supported options.
+
+## Extend and contribute
+
+Create a [custom adapter](/docs/extending/custom-adapters) for another execution target, explore [package ownership](/docs/contributing/packages), or follow the [development and release guide](/docs/contributing/development).
+
+See the [capability and release evidence inventory](https://github.com/victor-teles/pickle-spec/blob/main/docs/capability-status.md) for supported scope and revision-linked verification. Implemented behavior does not mean every target or the published npm package has been verified.

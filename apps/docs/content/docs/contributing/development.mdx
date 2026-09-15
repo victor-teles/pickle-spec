@@ -1,0 +1,48 @@
+---
+title: Development and releases
+description: Install the monorepo, run checks, and understand release gates.
+---
+
+## Repository checks
+
+This monorepo uses Bun workspaces and a committed Bun lockfile. Use Bun for repository development, even if your application uses another package manager to install Pickle.
+
+To install dependencies and run the repository checks, use:
+
+```bash
+bun install --frozen-lockfile
+bun run lint
+bun run typecheck
+bun run test
+bun run test:integration
+bun run test:e2e
+bun run release:check
+bun run benchmark:replay
+```
+
+To run one package test suite, use:
+
+```bash
+bunx turbo run test --filter=@pickle-spec/web
+```
+
+See [Release validation](https://github.com/victor-teles/pickle-spec/blob/main/docs/releasing.md) for package artifacts, required
+resource-independent gates, the separate integration and E2E lanes,
+provisioned smoke tests, and release exclusions.
+
+## Documentation site
+
+The documentation lives in `apps/docs` and uses Next.js with Fumadocs. Edit the MDX pages in `apps/docs/content/docs` and use each folder’s `meta.json` to control navigation.
+
+For user-facing install and CLI examples, use an `npm` code fence with `npm install --save-dev @pickle-spec/cli` or `npx pickle ...` commands. Fumadocs generates synchronized npm, pnpm, Yarn, and Bun tabs. Use a `bash` fence for repository commands and other shell snippets that should remain unchanged.
+
+```bash
+bun run docs
+```
+
+Open [localhost:3000](http://localhost:3000). To verify content and create a production build:
+
+```bash
+bun run --cwd apps/docs verify:content
+bun run docs:build
+```

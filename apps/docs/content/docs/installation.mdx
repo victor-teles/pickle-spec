@@ -1,0 +1,48 @@
+---
+title: Installation
+description: Install the CLI and prepare a project for its first run.
+---
+
+## Prerequisites
+
+Install Bun 1.4.2 or newer and make sure `bun` is available on your PATH. Pickle's CLI uses the Bun runtime regardless of which package manager installs it.
+
+Web execution also needs a browser and model credentials for Adaptive execution. Native execution needs Node.js and an Android Emulator or iOS Simulator. The target-specific quick starts cover those requirements.
+
+## Install the CLI
+
+Run this command from your application repository. Choose your package manager; the documentation remembers your selection across command examples.
+
+```npm
+npm install --save-dev @pickle-spec/cli
+```
+
+## Initialize your project
+
+Use your package manager to run the locally installed `pickle` executable:
+
+```npm
+npx pickle init
+```
+
+`pickle init` creates a configuration shell; it does not create a demonstration
+or claim a successful application test. Follow the
+[web quick start](/docs/web/quick-start) to configure a real
+target and add a meaningful assertion before opening Studio. Studio then shows
+the exact setup checks blocking the first run and starts one Scenario at a time.
+
+The CLI package installs Studio as part of the compatible package set. Pickle
+Spec does not require a cloud service. This release excludes hosted
+synchronization and physical-device provisioning.
+
+## Open Studio
+
+After configuring your target and adding a Specification, open the local UI:
+
+```npm
+npx pickle studio
+```
+
+## Next steps
+
+Start with the [web quick start](/docs/web/quick-start) or choose an [Android Emulator or iOS Simulator](/docs/native). Once your project is configured, [open Studio](/docs/guides/studio) or [run from the CLI](/docs/guides/running-tests).

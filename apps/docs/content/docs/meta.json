@@ -1,4 +1,14 @@
 {
   "title": "Pickle Spec",
-  "pages": ["index", "web", "concepts", "native"]
+  "pages": [
+    "index",
+    "installation",
+    "web",
+    "concepts",
+    "native",
+    "guides",
+    "reference",
+    "extending",
+    "contributing"
+  ]
 }

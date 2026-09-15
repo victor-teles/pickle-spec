@@ -3,7 +3,7 @@ title: Quick start for web
 description: Run a Gherkin Scenario against local Chrome.
 ---
 
-This tutorial runs one Specification against [Example Domain](https://example.com). You need Bun, local Chrome, and an Anthropic API key.
+This tutorial runs one Specification against [Example Domain](https://example.com). You need Bun 1.4.2 or newer, local Chrome, and an Anthropic API key. You can install and invoke Pickle with npm, pnpm, Yarn, or Bun; choose a tab in the command examples below. Bun must be installed because it runs the CLI.
 
 <Steps>
 <Step>
@@ -12,9 +12,9 @@ This tutorial runs one Specification against [Example Domain](https://example.co
 
 From your application repository, run:
 
-```bash
-bun add --dev @pickle-spec/cli
-bunx pickle init
+```npm
+npm install --save-dev @pickle-spec/cli
+npx pickle init
 mkdir -p features
 ```
 
@@ -64,9 +64,9 @@ Bun loads `.env` automatically. Do not commit API keys.
 
 ### Check and run the project
 
-```bash
-bunx pickle check
-bunx pickle run --profile web
+```npm
+npx pickle check
+npx pickle run --profile web
 ```
 
 `pickle check` validates the configuration, Gherkin, Feature state, and identity metadata without opening Chrome. The run opens a clean browser session and reports the Scenario result in the terminal.

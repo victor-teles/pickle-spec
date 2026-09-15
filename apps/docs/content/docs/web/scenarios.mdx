@@ -42,9 +42,9 @@ Set `applicationRevision` to identify the application build under test. A succes
 
 Use these commands when cache behavior matters:
 
-```bash
-bunx pickle run --refresh-cache
-bunx pickle run --cache-only
+```npm
+npx pickle run --refresh-cache
+npx pickle run --cache-only
 ```
 
 `--refresh-cache` rebuilds the cached instructions. `--cache-only` fails on a miss, a short prefix, or a divergence instead of calling a model.

@@ -43,7 +43,36 @@ Explicit outcomes support `text`, `visible`, `hidden`, `exists`, `editable`, `se
 
 `pickle check` validates the project files. `pickle doctor` checks Node, target discovery, and the configured device capabilities.
 
-```bash
-bunx pickle check
-bunx pickle doctor
+```npm
+npx pickle check
+npx pickle doctor
 ```
+
+## Discover and configure an application
+
+List application IDs from connected Android Emulators or iOS Simulators:
+
+```npm
+npx pickle apps --platform android
+npx pickle apps --platform ios --all
+```
+
+Configure a mobile application by ID. Pickle Spec uses an Android Emulator when
+`executionTarget` is omitted. Add `binaryPath` only when each run should
+reinstall the application before launch.
+
+```jsonc
+{
+  "schemaVersion": 1,
+  "executionTargetProfiles": {
+    "android": {
+      "adapter": "mobile",
+      "mobile": {
+        "application": { "id": "com.example.checkout" },
+      },
+    },
+  },
+}
+```
+
+For iOS, select `ios-simulator` explicitly as shown in the [iOS guide](/docs/native/ios).
